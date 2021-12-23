@@ -11,13 +11,14 @@ import tempfile
 from base64 import b64encode
 from builtins import input, range, str
 from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Dict
 
 from dateutil.relativedelta import relativedelta
 from dynamo3 import Binary
 from rich.console import Console
+from rich.highlighter import JSONHighlighter
 
 from .util import getmaxyx, plural
 
@@ -292,14 +293,27 @@ class ColumnFormat(BaseFormat):
 
 
 class JsonFormat(BaseFormat):
+    _jsonHighlighter = JSONHighlighter()
+
     def write(self, result):
         pass
 
     def display(self):
         for result in self._results:
-            self._ostream.write(
-                json.dumps(result, default=self._default_json_serializer)
+            start_date = datetime.now(timezone.utc)
+            # self._ostream.write(
+            #     json.dumps(result, default=self._default_json_serializer)
+            # )
+            console.out(
+                self._jsonHighlighter(
+                    json.dumps(result, default=self._default_json_serializer, indent=4)
+                )
             )
+
+            end_date = datetime.now(timezone.utc)
+            process_duration = end_date - start_date
+            print(f"Took {process_duration} h:m:s")
+
             self._ostream.write("\n")
 
 
