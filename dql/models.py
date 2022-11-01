@@ -8,6 +8,13 @@ from dynamo3.constants import TableStatusType
 from dynamo3.fields import BaseIndex
 from dynamo3.types import TYPES_REV
 
+from rich.console import Group
+from rich.panel import Panel
+from rich.text import Text
+from rich.table import Table
+from rich.rule import Rule
+import rich.repr
+
 from .exceptions import EngineRuntimeError
 
 
@@ -258,6 +265,14 @@ class GlobalIndexMeta(object):
         return self._index.throughput
 
     @property
+    def throughput_read(self) -> Optional[str]:
+        return 0 if self.throughput is None else self.throughput.read
+
+    @property
+    def throughput_write(self) -> Optional[str]:
+        return 0 if self.throughput is None else self.throughput.write
+
+    @property
     def item_count(self):
         """Getter for item_count"""
         return self._index.item_count
@@ -278,7 +293,49 @@ class GlobalIndexMeta(object):
             self.throughput,
         )
 
-    def pformat(self, consumed_capacity=None):
+    def pformat(self, consumed_capacity=None, format_type="basic"):
+        if format_type == "rich":
+            return self.pformat_rich(consumed_capacity)
+        else:
+            return self.pformat_basic(consumed_capacity)
+
+    def pformat_rich(self, consumed_capacity=None):
+        consumed_capacity = consumed_capacity or {}
+        lines = []
+        lines.append(Text(f"  items: {self.item_count:,} ({self.size:,} bytes)"))
+
+        read = "Read: " + format_throughput(
+            self.throughput_read, consumed_capacity.get("read")
+        )
+        write = "Write: " + format_throughput(
+            self.throughput_write, consumed_capacity.get("write")
+        )
+
+        lines.append(Text("  " + read + "  " + write))
+
+        if self.hash_key is not None:
+            lines.append(Text(self.hash_key.name))
+        if self.range_key is not None:
+            lines.append(Text(self.range_key.schema))
+
+        if self.includes is not None:
+            keys = "[%s]" % ", ".join(("'%s'" % i for i in self.includes))
+            lines.append(Text("  Projection: %s" % keys))
+
+        title_parts = ["GLOBAL", self.index_type, "INDEX", self.name]
+        if self.status != "ACTIVE":
+            title_parts.insert(0, "[%s]" % self.status)
+        title = " ".join(title_parts)
+
+        return Panel(
+            Group(*lines),
+            title=title,
+            title_align="left",
+            style="white",
+            border_style="blue",
+        )
+
+    def pformat_basic(self, consumed_capacity=None):
         """Pretty format for insertion into table pformat"""
         consumed_capacity = consumed_capacity or {}
         lines = []
@@ -560,7 +617,7 @@ class TableMeta(object):
         return total
 
     def __repr__(self):
-        return "TableMeta(%s)" % self.name
+        return f"TableMeta({self.name})"
 
     def __str__(self):
         return self.name
@@ -603,10 +660,95 @@ class TableMeta(object):
         prefix = " ".join(parts) + ")"
         return prefix + " ".join([g.schema for g in self.global_indexes.values()]) + ";"
 
-    def pformat(self) -> str:
+    def pformat(self, format_type="basic") -> Any:
+        if format_type == 'rich':
+            return self.pformat_rich()
+        else:
+            return self.pformat_basic()
+
+    def pformat_rich(self) -> Any:
+        """Pretty string format"""
+        lines = [
+            rich.markup.render(f"[green]Name:[/] {self.name}"),
+            rich.markup.render(f"[green]Status:[/] {self.status}"),
+            rich.markup.render(f"[green]Items:[/] {self.item_count:,}"),
+            rich.markup.render(f"[green]Size:[/] {self.size:,} bytes"),
+        ]
+
+        cap = self.consumed_capacity.get("__table__", {})
+        read_throughput = 0 if self.throughput is None else self.throughput.read
+        write_throughput = 0 if self.throughput is None else self.throughput.write
+
+        lines.append(
+            rich.markup.render("[green]Read:[/] " + format_throughput(read_throughput, cap.get("read")))
+        )
+        lines.append(
+            rich.markup.render("[green]Write:[/] " + format_throughput(write_throughput, cap.get("write")))
+        )
+
+        if self.decreases_today > 0:
+            lines.append(rich.markup.render("[green]Decreases today:[/] %d" % self.decreases_today))
+
+        if self.hash_key:
+            lines.append(rich.markup.render(f"[green]Hash Key:[/] {self.hash_key.name} [yellow]({self.hash_key.data_type})[/]"))
+        if self.range_key:
+            lines.append(rich.markup.render(f"[green]Range Key:[/] {self.range_key.name} [yellow]({self.range_key.data_type})[/]"))
+
+        for field in self.attrs.values():
+            if field.key_type == "INDEX":
+                lines.append(rich.markup.render(f"[green]Index:[/] {str(field)}"))
+
+        t = Table(title="Global Indexes", title_justify="left", title_style="green")
+        t.add_column("Name", style="bold green")
+        t.add_column("Type")
+        t.add_column("Items")
+        t.add_column("Size")
+        t.add_column("Read")
+        t.add_column("Write")
+        t.add_column("HashKey")
+        t.add_column("RangeKey")
+        t.add_column("Status")
+
+        for index_name, gindex in self.global_indexes.items():
+            idx_cap = self.consumed_capacity.get(index_name)
+
+            hash_key=range_key=""
+            if gindex.hash_key:
+                hash_key = f"{gindex.hash_key.name} [yellow]({gindex.hash_key.data_type})[/]"
+
+            if gindex.range_key:
+                range_key = f"{gindex.range_key.name} [yellow]({gindex.range_key.data_type})[/]"
+
+            t.add_row(
+                gindex.name,
+                gindex.index_type,
+                str(gindex.item_count),
+                f"{gindex.size:,} bytes",
+                format_throughput(gindex.throughput_read, idx_cap.get("read")),
+                format_throughput(gindex.throughput_write, idx_cap.get("write")),
+                hash_key,
+                range_key,
+                str(gindex.status),
+            )
+
+        g = Panel(
+            Group(
+                Group(*lines),
+                Rule(""),
+                t,
+            ),
+            title=self.name,
+            title_align='left',
+            style="white",
+            border_style="green"
+        )
+
+        return g
+
+    def pformat_basic(self) -> str:
         """Pretty string format"""
         lines = []
-        lines.append(("%s (%s)" % (self.name, self.status)).center(50, "-"))
+        lines.append((f"{self.name} ({self.status})").center(50, "-"))
         lines.append("items: {0:,} ({1:,} bytes)".format(self.item_count, self.size))
         cap = self.consumed_capacity.get("__table__", {})
         read_throughput = 0 if self.throughput is None else self.throughput.read

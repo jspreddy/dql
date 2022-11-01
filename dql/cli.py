@@ -17,6 +17,7 @@ from pyparsing import ParseException
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.traceback import install
+from rich import print
 
 from .engine import FragmentEngine
 from .exceptions import EngineRuntimeError
@@ -533,18 +534,19 @@ class DQLClient(cmd.Cmd):
             table_descriptions = self.engine.describe_all()
         else:
             tables = list(self.engine.connection.list_tables())
-            filtered = [t for t in tables if fnmatch(t, table)]
-            if len(filtered) == 1:
+            filtered_tables = [t for t in tables if fnmatch(t, table)]
+            if len(filtered_tables) == 1:
                 print(
                     self.engine.describe(
-                        filtered[0], refresh=True, metrics=True
-                    ).pformat()
+                        filtered_tables[0], refresh=True, metrics=True
+                    ).pformat(format_type="rich")
                 )
                 return
-            elif len(filtered) == 0:
+            elif len(filtered_tables) == 0:
                 raise EngineRuntimeError("Table %r not found" % table)
             else:
-                table_descriptions = [self.engine.describe(t, True) for t in filtered]
+                table_descriptions = [self.engine.describe(t, True) for t in filtered_tables]
+
         fields = OrderedDict(
             [
                 ("Name", "name"),
