@@ -14,10 +14,15 @@ from typing import Any, Callable, ContextManager, Dict, Optional, Tuple
 
 import botocore
 from pyparsing import ParseException
-from rich.panel import Panel
-from rich.syntax import Syntax
-from rich.traceback import install
 from rich import print
+from rich.console import Group
+from rich.panel import Panel
+from rich.rule import Rule
+from rich.syntax import Syntax
+from rich.table import Table
+from rich.text import Text
+from rich.traceback import install
+import humanize
 
 from .engine import FragmentEngine
 from .exceptions import EngineRuntimeError
@@ -528,48 +533,65 @@ class DQLClient(cmd.Cmd):
         ]
 
     @repl_command
-    def do_ls(self, table: str = None) -> None:
-        """List all tables or print details of one table"""
-        if table is None:
-            table_descriptions = self.engine.describe_all()
-        else:
-            tables = list(self.engine.connection.list_tables())
-            filtered_tables = [t for t in tables if fnmatch(t, table)]
-            if len(filtered_tables) == 1:
-                print(
-                    self.engine.describe(
-                        filtered_tables[0], refresh=True, metrics=True
-                    ).pformat(format_type="rich")
-                )
-                return
-            elif len(filtered_tables) == 0:
-                raise EngineRuntimeError("Table %r not found" % table)
-            else:
-                table_descriptions = [self.engine.describe(t, True) for t in filtered_tables]
+    def do_ls(self, table: str = None, refresh=False, metrics=False) -> None:
+        """
+        List all tables or print details of one table
 
-        fields = OrderedDict(
-            [
-                ("Name", "name"),
-                ("Status", "status"),
-                ("Read", "total_read_throughput"),
-                ("Write", "total_write_throughput"),
-            ]
-        )
-        # Calculate max width of all items for each column
-        sizes = [
-            1
-            + max([len(str(getattr(t, f))) for t in table_descriptions] + [len(title)])
-            for title, f in fields.items()
-        ]
-        # Print the header
-        for size, title in zip(sizes, fields):
-            print(title.ljust(size), end="")
-        print()
-        # Print each table row
+        tablename: It is a glob pattern, we will try to pattern match and list/describe the tables.
+
+        - If we find only a single table, then we will describe it in detail.
+        - If we find multiple tables matching, then we will list them.
+
+        Examples:
+        ---------
+        Describe a specific table:      > `ls tablename`
+        List tables containing foo:     > `ls *foo*`
+        List tables begining with foo-: > `ls foo-*`
+        List tables ending with -foo:   > `ls *-foo`
+        List while ignoring caching:    > `ls foo-* refresh=True`
+        List and show metrics:          > `ls foo-* metrics=True`
+        """
+        if table is None:
+            table_descriptions = self.engine.describe_all(refresh=refresh)
+            self.display_table_descriptions(table_descriptions)
+            return
+
+        tables = list(self.engine.connection.list_tables())
+        filtered_tables = [t for t in tables if fnmatch(t, table)]
+
+        if len(filtered_tables) == 1:
+            print(
+                self.engine.describe(
+                    filtered_tables[0], refresh=refresh, metrics=metrics
+                ).pformat(format_type="rich")
+            )
+            return
+        elif len(filtered_tables) == 0:
+            raise EngineRuntimeError("Table %r not found" % table)
+        else:
+            table_descriptions = [self.engine.describe(t, refresh=refresh, metrics=metrics) for t in filtered_tables]
+
+        self.display_table_descriptions(table_descriptions)
+
+    def display_table_descriptions(self, table_descriptions):
+        t = Table(title="Tables", title_justify="left", title_style="green")
+        t.add_column("Name", style="green")
+        t.add_column("Items")
+        t.add_column("Read")
+        t.add_column("Write")
+        t.add_column("Status")
+        t.add_column("Size")
+
         for row_table in table_descriptions:
-            for size, field in zip(sizes, fields.values()):
-                print(str(getattr(row_table, field)).ljust(size), end="")
-            print()
+            t.add_row(
+                row_table.name,
+                humanize.intword(row_table.item_count),
+                str(row_table.total_read_throughput),
+                str(row_table.total_write_throughput),
+                row_table.status,
+                humanize.naturalsize(row_table.size, binary=True),
+            )
+        print(t)
 
     def complete_ls(self, text, *_):
         """Autocomplete for ls"""

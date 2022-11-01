@@ -11,9 +11,8 @@ from dynamo3.types import TYPES_REV
 from rich.console import Group
 from rich.panel import Panel
 from rich.text import Text
-from rich.table import Table
 from rich.rule import Rule
-import rich.repr
+import rich
 
 from .exceptions import EngineRuntimeError
 
@@ -698,7 +697,7 @@ class TableMeta(object):
             if field.key_type == "INDEX":
                 lines.append(rich.markup.render(f"[green]Index:[/] {str(field)}"))
 
-        t = Table(title="Global Indexes", title_justify="left", title_style="green")
+        t = rich.table.Table(title="Global Indexes", title_justify="left", title_style="green")
         t.add_column("Name", style="bold green")
         t.add_column("Type")
         t.add_column("Items")

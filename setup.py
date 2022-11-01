@@ -14,6 +14,7 @@ REQUIREMENTS = [
     "botocore>=1.17.55",
     "rich>=6.1.1",
     "typing_extensions",
+    "humanize>=4.0.0",
 ]
 
 REQUIREMENTS_TEST = open(os.path.join(HERE, "requirements_test.txt")).readlines()
