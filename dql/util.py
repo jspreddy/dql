@@ -184,5 +184,5 @@ def open_file_smart_mode(filename, write=False):
     else:
         if not text_format:
             mode += "b"
-        with open(filename, mode) as ofile:
+        with open(filename, mode, encoding="utf-8") as ofile:
             yield ofile

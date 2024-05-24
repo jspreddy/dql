@@ -405,7 +405,7 @@ class Engine(object):
     def _on_throttle(self, conn, command, kwargs, response, capacity, seconds):
         """Print out a message when the query is throttled"""
         LOG.info(
-            "Throughput limit exceeded during %s. " "Sleeping for %d second%s",
+            "Throughput limit exceeded during %s. Sleeping for %d second%s",
             command,
             seconds,
             plural(seconds),
@@ -598,7 +598,7 @@ class Engine(object):
         # Save the data to a file
         if tree.save_file:
             if selection.is_count:
-                raise Exception("Cannot use count(*) with SAVE")
+                raise SyntaxError("Cannot use count(*) with SAVE")
             count = 0
             result = order(selection.convert(item, True) for item in result)
             filename = tree.save_file[0]
@@ -954,7 +954,7 @@ class Engine(object):
         if filename[0] in ['"', "'"]:
             filename = unwrap(filename)
         if not os.path.exists(filename):
-            raise Exception("No such file %r" % filename)
+            raise FileNotFoundError("No such file %r" % filename)
         remainder, ext = os.path.splitext(filename)
         is_gzip = ext.lower() in [".gz", ".gzip"]
         if is_gzip:

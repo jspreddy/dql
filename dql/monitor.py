@@ -36,7 +36,7 @@ class Monitor(object):
         if CURSES_SUPPORTED:
             curses.wrapper(self.run)
         else:
-            print("Your system does not have curses installed. " "Cannot use 'watch'")
+            print("Your system does not have curses installed. Cannot use 'watch'")
 
     def run(self, stdscr):
         """Initialize curses and refresh in a loop"""
