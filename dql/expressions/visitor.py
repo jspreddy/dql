@@ -49,6 +49,7 @@ class Visitor(object):
             self._reserved_words is None
             or path.upper() in self._reserved_words
             or "-" in path
+            or path.startswith("_")
         )
 
     def _replace_path(self, path):
