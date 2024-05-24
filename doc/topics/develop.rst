@@ -51,11 +51,10 @@ Setting up local envs::
 
         # Version numbers are listed in the .python-version file.
         pyenv install 3.8.2
-        pyenv install 3.7.7
-        pyenv install 3.6.10
+        pyenv install 3.7.17
 
-    # Create a virtual env named "dql-local-env" with python version 3.7.7
-    pyenv virtualenv 3.7.7 dql-local-env
+    # Create a virtual env named "dql-local-env" with python version 3.7.17
+    pyenv virtualenv 3.7.17 dql-local-env
 
     # Look at the virtual envs. dql-local-env should have a * next to it indicating
     # that it is selected.

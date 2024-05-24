@@ -3,23 +3,22 @@
 from decimal import Decimal
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
 
+import rich
 from dynamo3 import DynamoKey, GlobalIndex, Table, Throughput
 from dynamo3.constants import TableStatusType
 from dynamo3.fields import BaseIndex
 from dynamo3.types import TYPES_REV
-
 from rich.console import Group
 from rich.panel import Panel
-from rich.text import Text
 from rich.rule import Rule
-import rich
+from rich.text import Text
 
 from .exceptions import EngineRuntimeError
 
 
-def format_throughput(available: float, used: Optional[float] = None) -> str:
+def format_throughput(available: Optional[float], used: Optional[float] = None) -> str:
     """Format the read/write throughput for display"""
-    if available == 0:
+    if available == 0 or available is None:
         if used is not None:
             return "{0:.0f}/∞".format(used)
         return "N/A"
@@ -30,7 +29,6 @@ def format_throughput(available: float, used: Optional[float] = None) -> str:
 
 
 class QueryIndex(object):
-
     """
     A representation of global/local indexes that used during query building.
 
@@ -109,7 +107,6 @@ class QueryIndex(object):
 
 
 class TableField(object):
-
     """
     A DynamoDB table attribute
 
@@ -168,7 +165,6 @@ class TableField(object):
 
 
 class IndexField(TableField):
-
     """A TableField that is also part of a Local Secondary Index"""
 
     def __init__(self, name, data_type, index_type, index_name, includes=None):
@@ -218,7 +214,6 @@ class IndexField(TableField):
 
 
 class GlobalIndexMeta(object):
-
     """Container for global index data"""
 
     def __init__(self, index: GlobalIndex):
@@ -264,12 +259,12 @@ class GlobalIndexMeta(object):
         return self._index.throughput
 
     @property
-    def throughput_read(self) -> Optional[str]:
-        return 0 if self.throughput is None else self.throughput.read
+    def throughput_read(self) -> Optional[int]:
+        return getattr(self.throughput, "read", None)
 
     @property
-    def throughput_write(self) -> Optional[str]:
-        return 0 if self.throughput is None else self.throughput.write
+    def throughput_write(self) -> Optional[int]:
+        return getattr(self.throughput, "write", None)
 
     @property
     def item_count(self):
@@ -392,7 +387,6 @@ class GlobalIndexMeta(object):
 
 
 class TableMeta(object):
-
     """
     Container for table metadata
 
@@ -659,8 +653,8 @@ class TableMeta(object):
         prefix = " ".join(parts) + ")"
         return prefix + " ".join([g.schema for g in self.global_indexes.values()]) + ";"
 
-    def pformat(self, format_type="basic") -> Any:
-        if format_type == 'rich':
+    def pformat(self, format_type: str = "basic") -> Any:
+        if format_type == "rich":
             return self.pformat_rich()
         else:
             return self.pformat_basic()
@@ -679,25 +673,44 @@ class TableMeta(object):
         write_throughput = 0 if self.throughput is None else self.throughput.write
 
         lines.append(
-            rich.markup.render("[green]Read:[/] " + format_throughput(read_throughput, cap.get("read")))
+            rich.markup.render(
+                "[green]Read:[/] " + format_throughput(read_throughput, cap.get("read"))
+            )
         )
         lines.append(
-            rich.markup.render("[green]Write:[/] " + format_throughput(write_throughput, cap.get("write")))
+            rich.markup.render(
+                "[green]Write:[/] "
+                + format_throughput(write_throughput, cap.get("write"))
+            )
         )
 
         if self.decreases_today > 0:
-            lines.append(rich.markup.render("[green]Decreases today:[/] %d" % self.decreases_today))
+            lines.append(
+                rich.markup.render(
+                    "[green]Decreases today:[/] %d" % self.decreases_today
+                )
+            )
 
         if self.hash_key:
-            lines.append(rich.markup.render(f"[green]Hash Key:[/] {self.hash_key.name} [yellow]({self.hash_key.data_type})[/]"))
+            lines.append(
+                rich.markup.render(
+                    f"[green]Hash Key:[/] {self.hash_key.name} [yellow]({self.hash_key.data_type})[/]"
+                )
+            )
         if self.range_key:
-            lines.append(rich.markup.render(f"[green]Range Key:[/] {self.range_key.name} [yellow]({self.range_key.data_type})[/]"))
+            lines.append(
+                rich.markup.render(
+                    f"[green]Range Key:[/] {self.range_key.name} [yellow]({self.range_key.data_type})[/]"
+                )
+            )
 
         for field in self.attrs.values():
             if field.key_type == "INDEX":
                 lines.append(rich.markup.render(f"[green]Index:[/] {str(field)}"))
 
-        t = rich.table.Table(title="Global Indexes", title_justify="left", title_style="green")
+        t = rich.table.Table(
+            title="Global Indexes", title_justify="left", title_style="green"
+        )
         t.add_column("Name", style="bold green")
         t.add_column("Type")
         t.add_column("Items")
@@ -711,20 +724,26 @@ class TableMeta(object):
         for index_name, gindex in self.global_indexes.items():
             idx_cap = self.consumed_capacity.get(index_name)
 
-            hash_key=range_key=""
+            hash_key = range_key = ""
             if gindex.hash_key:
-                hash_key = f"{gindex.hash_key.name} [yellow]({gindex.hash_key.data_type})[/]"
+                hash_key = (
+                    f"{gindex.hash_key.name} [yellow]({gindex.hash_key.data_type})[/]"
+                )
 
             if gindex.range_key:
-                range_key = f"{gindex.range_key.name} [yellow]({gindex.range_key.data_type})[/]"
+                range_key = (
+                    f"{gindex.range_key.name} [yellow]({gindex.range_key.data_type})[/]"
+                )
 
             t.add_row(
                 gindex.name,
                 gindex.index_type,
                 str(gindex.item_count),
                 f"{gindex.size:,} bytes",
-                format_throughput(gindex.throughput_read, idx_cap.get("read")),
-                format_throughput(gindex.throughput_write, idx_cap.get("write")),
+                format_throughput(gindex.throughput_read, getattr(idx_cap, "read", 0)),
+                format_throughput(
+                    gindex.throughput_write, getattr(idx_cap, "write", 0)
+                ),
                 hash_key,
                 range_key,
                 str(gindex.status),
@@ -737,9 +756,9 @@ class TableMeta(object):
                 t,
             ),
             title=self.name,
-            title_align='left',
+            title_align="left",
             style="white",
-            border_style="green"
+            border_style="green",
         )
 
         return g

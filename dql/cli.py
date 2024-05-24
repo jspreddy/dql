@@ -1,4 +1,5 @@
 """ Interative DQL client """
+
 import cmd
 import functools
 import json
@@ -13,6 +14,7 @@ from fnmatch import fnmatch
 from typing import Any, Callable, ContextManager, Dict, Optional, Tuple
 
 import botocore
+import humanize
 from pyparsing import ParseException
 from rich import print
 from rich.console import Group
@@ -22,7 +24,6 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 from rich.traceback import install
-import humanize
 
 from .engine import FragmentEngine
 from .exceptions import EngineRuntimeError
@@ -204,7 +205,6 @@ def exception_handler(engine):
 
 
 class DQLClient(cmd.Cmd):
-
     """
     Interactive commandline interface.
 
@@ -234,7 +234,7 @@ class DQLClient(cmd.Cmd):
     def initialize(
         self,
         region: str = "us-west-1",
-        host: str = None,
+        host: Optional[str] = None,
         port: int = 8000,
         config_dir: Optional[str] = None,
         session: Optional[Any] = None,
@@ -533,7 +533,9 @@ class DQLClient(cmd.Cmd):
         ]
 
     @repl_command
-    def do_ls(self, table: str = None, refresh=False, metrics=False) -> None:
+    def do_ls(
+        self, table: Optional[str] = None, refresh: bool = False, metrics: bool = False
+    ) -> None:
         """
         List all tables or print details of one table
 
@@ -569,7 +571,10 @@ class DQLClient(cmd.Cmd):
         elif len(filtered_tables) == 0:
             raise EngineRuntimeError("Table %r not found" % table)
         else:
-            table_descriptions = [self.engine.describe(t, refresh=refresh, metrics=metrics) for t in filtered_tables]
+            table_descriptions = [
+                self.engine.describe(t, refresh=refresh, metrics=metrics)
+                for t in filtered_tables
+            ]
 
         self.display_table_descriptions(table_descriptions)
 
@@ -769,7 +774,7 @@ class DQLClient(cmd.Cmd):
 
         print_count = 0
         total = None
-        for (cmd_fragment, capacity) in self.engine.consumed_capacities:
+        for cmd_fragment, capacity in self.engine.consumed_capacities:
             total += capacity
             print(cmd_fragment)
             print(indent(str(capacity)))
