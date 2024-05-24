@@ -1,11 +1,11 @@
 """ Visitor classes for traversing expressions """
+
 import re
 
 FIELD_RE = re.compile(r"[\w\-]+(?![^\[]*\])", re.U)
 
 
 class Visitor(object):
-
     """
     Visitor that replaces field names and values with encoded versions
 
@@ -82,7 +82,6 @@ class Visitor(object):
 
 
 class DummyVisitor(Visitor):
-
     """No-op visitor for testing"""
 
     def get_field(self, field):

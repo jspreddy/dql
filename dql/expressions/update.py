@@ -1,4 +1,5 @@
 """ Update expressions """
+
 from dql.util import resolve
 
 from .base import Expression, Field, Value
@@ -20,7 +21,6 @@ def field_or_value(clause):
 
 
 class UpdateExpression(Expression):
-
     """Entry point for Update expressions"""
 
     def __init__(self, expressions):
@@ -45,7 +45,6 @@ class UpdateExpression(Expression):
 
 
 class UpdateSetMany(Expression):
-
     """Expression fragment for multiple set statements"""
 
     def __init__(self, updates):
@@ -63,7 +62,6 @@ class UpdateSetMany(Expression):
 
 
 class SetFunction(Expression):
-
     """
     Expression fragment for a function used in a SET statement
 
@@ -93,7 +91,6 @@ class SetFunction(Expression):
 
 
 class UpdateSetOne(Expression):
-
     """Expression fragment for a single SET statement"""
 
     def __init__(self, field, value1, op=None, value2=None):
@@ -123,7 +120,6 @@ class UpdateSetOne(Expression):
 
 
 class UpdateRemove(Expression):
-
     """Expression fragment for a REMOVE statement"""
 
     def __init__(self, fields):
@@ -140,7 +136,6 @@ class UpdateRemove(Expression):
 
 
 class UpdateAdd(Expression):
-
     """Expression fragment for an ADD statement"""
 
     def __init__(self, updates):
@@ -157,7 +152,6 @@ class UpdateAdd(Expression):
 
 
 class UpdateDelete(Expression):
-
     """Expression fragment for a DELETE statement"""
 
     def __init__(self, updates):
@@ -174,7 +168,6 @@ class UpdateDelete(Expression):
 
 
 class FieldValue(Expression):
-
     """A field-value pair used in an expression"""
 
     def __init__(self, field, value):

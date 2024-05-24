@@ -1,4 +1,5 @@
 """ Tests for saving data to files """
+
 import os
 import shutil
 import tempfile
@@ -9,7 +10,6 @@ from . import BaseSystemTest
 
 
 class TestSave(BaseSystemTest):
-
     """System tests for saving to file"""
 
     def setUp(self):

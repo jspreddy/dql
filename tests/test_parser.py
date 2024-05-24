@@ -1,4 +1,5 @@
 """ Tests for the language parser """
+
 from typing import Any, Dict, List, Tuple, Union
 from unittest import TestCase
 
@@ -324,7 +325,6 @@ TEST_CASES: Dict[str, List[Tuple[str, Union[str, List[Any]]]]] = {
 
 
 class TestParser(TestCase):
-
     """Tests for the language parser"""
 
     def _run_tests(self, key, grammar=statement_parser):
@@ -542,12 +542,12 @@ class TestExpressions(TestCase):
 
     def test_constraints(self):
         """Test parsing constraint expressions (WHERE ...)"""
-        for (expression, expected) in CONSTRAINTS:
+        for expression, expected in CONSTRAINTS:
             self._run_test(expression, expected, where, "where", lambda x: x)
 
     def test_updates(self):
         """Test parsing update expressions (SET ...)"""
-        for (expression, expected) in UPDATES:
+        for expression, expected in UPDATES:
             self._run_test(
                 expression,
                 expected,
@@ -558,7 +558,7 @@ class TestExpressions(TestCase):
 
     def test_selection(self):
         """Test parsing selection expressions (SELECT ...)"""
-        for (expression, expected) in SELECTION:
+        for expression, expected in SELECTION:
             self._run_test(
                 expression,
                 expected,

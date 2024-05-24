@@ -1,4 +1,5 @@
 """ Grammars for parsing query strings """
+
 from pyparsing import (
     Forward,
     Group,

@@ -1,4 +1,5 @@
 """ Tests for queries """
+
 import time
 from datetime import datetime, timedelta
 
@@ -13,7 +14,6 @@ from . import BaseSystemTest
 
 
 class TestQueries(BaseSystemTest):
-
     """System tests for queries"""
 
     def test_drop(self):
@@ -199,7 +199,6 @@ class TestAlter(BaseSystemTest):
 
 
 class TestInsert(BaseSystemTest):
-
     """Tests for INSERT"""
 
     def test_insert(self):
@@ -240,7 +239,6 @@ class TestInsert(BaseSystemTest):
 
 
 class TestSelect(BaseSystemTest):
-
     """Tests for SELECT"""
 
     def test_hash_key(self):
@@ -506,7 +504,6 @@ class TestSelect(BaseSystemTest):
 
 
 class TestSelectScan(BaseSystemTest):
-
     """Tests for SELECT that involve doing a table scan"""
 
     def setUp(self):
@@ -773,7 +770,6 @@ class TestSelectScan(BaseSystemTest):
 
 
 class TestCreate(BaseSystemTest):
-
     """Tests for CREATE"""
 
     def test_create(self):
@@ -915,7 +911,6 @@ class TestCreate(BaseSystemTest):
 
 
 class TestUpdate(BaseSystemTest):
-
     """Tests for UPDATE"""
 
     def test_update(self):
@@ -1111,7 +1106,6 @@ class TestUpdate(BaseSystemTest):
 
 
 class TestDelete(BaseSystemTest):
-
     """Tests for DELETE"""
 
     def test_delete(self):

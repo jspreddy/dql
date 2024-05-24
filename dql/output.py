@@ -92,7 +92,6 @@ def delta_to_str(rd):
 
 
 class BaseFormat(object):
-
     """Base class for formatters"""
 
     def __init__(
@@ -198,7 +197,6 @@ class BaseFormat(object):
 
 
 class ExpandedFormat(BaseFormat):
-
     """A layout that puts item attributes on separate lines"""
 
     @property
@@ -233,7 +231,6 @@ class ExpandedFormat(BaseFormat):
 
 
 class ColumnFormat(BaseFormat):
-
     """A layout that puts item attributes in columns"""
 
     def __init__(self, *args, **kwargs):
@@ -318,7 +315,6 @@ class JsonFormat(BaseFormat):
 
 
 class SmartFormat(object):
-
     """A layout that chooses column/expanded format intelligently"""
 
     _sub_formatter: BaseFormat
@@ -337,7 +333,6 @@ class SmartFormat(object):
 
 
 class SmartBuffer(object):
-
     """A buffer that wraps another buffer and encodes unicode strings."""
 
     def __init__(self, buf):

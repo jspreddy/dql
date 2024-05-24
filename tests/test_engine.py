@@ -1,4 +1,5 @@
 """ Tests for the query engine """
+
 import unittest
 from decimal import Decimal
 
@@ -11,7 +12,6 @@ from . import BaseSystemTest
 
 
 class TestDataTypes(BaseSystemTest):
-
     """Make sure we can parse and handle all data types"""
 
     def test_str(self):
@@ -94,7 +94,6 @@ class TestDataTypes(BaseSystemTest):
 
 
 class TestFragmentEngine(BaseSystemTest):
-
     """Tests for the FragmentEngine"""
 
     engine: FragmentEngine

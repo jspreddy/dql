@@ -1,4 +1,5 @@
 """ Utility methods """
+
 import calendar
 import contextlib
 import gzip

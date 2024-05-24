@@ -1,4 +1,5 @@
 """ Tests for the CLI """
+
 import json
 import shutil
 import tempfile
@@ -35,7 +36,6 @@ class UniqueCollection(object):
 
 
 class BaseCLITest(TestCase):
-
     """Base class for CLI tests"""
 
     dynamo: DynamoDBConnection = None
@@ -76,7 +76,6 @@ class BaseCLITest(TestCase):
 
 
 class TestCli(BaseCLITest):
-
     """Tests for the CLI"""
 
     def assert_prints(self, command, message):
@@ -123,7 +122,6 @@ class TestCli(BaseCLITest):
 
 
 class TestCliCommands(BaseCLITest):
-
     """Tests that run the 'dql --command'"""
 
     def _run_command(self, command: str) -> str:

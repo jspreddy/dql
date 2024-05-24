@@ -1,4 +1,5 @@
 """ Execution engine """
+
 import contextlib
 import csv
 import gzip
@@ -89,7 +90,7 @@ def iter_insert_items(tree):
     elif tree.map_values:
         for item in tree.map_values:
             data = {}
-            for (key, val) in item:
+            for key, val in item:
                 data[key] = resolve(val)
             yield data
     else:
@@ -97,7 +98,6 @@ def iter_insert_items(tree):
 
 
 class Engine(object):
-
     """
     DQL execution engine
 
@@ -174,7 +174,7 @@ class Engine(object):
     def _format_explain(self):
         """Format the results of an EXPLAIN"""
         lines = []
-        for (command, kwargs) in self._call_list:
+        for command, kwargs in self._call_list:
             lines.append(command + " " + pformat(kwargs))
         return "\n".join(lines)
 
@@ -273,8 +273,7 @@ class Engine(object):
         refresh: bool = ...,
         metrics: bool = ...,
         require: Literal[True] = ...,
-    ) -> TableMeta:
-        ...
+    ) -> TableMeta: ...
 
     @overload
     def describe(
@@ -283,8 +282,7 @@ class Engine(object):
         refresh: bool = ...,
         metrics: bool = ...,
         require: bool = ...,
-    ) -> Optional[TableMeta]:
-        ...
+    ) -> Optional[TableMeta]: ...
 
     def describe(
         self,
@@ -993,7 +991,6 @@ class Engine(object):
 
 
 class FragmentEngine(Engine):
-
     """
     A DQL execution engine that can handle query fragments
 

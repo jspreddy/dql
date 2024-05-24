@@ -1,4 +1,5 @@
 """ Wrapper around the dynamo3 RateLimit class """
+
 from typing import Dict
 
 from dynamo3 import RateLimit

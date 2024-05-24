@@ -9,7 +9,6 @@ from dql.history import HistoryManager
 
 
 class TestHistoryManager(TestCase):
-
     """Tests for HistoryManager"""
 
     historyManager: HistoryManager

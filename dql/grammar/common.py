@@ -1,4 +1,5 @@
 """ Common use grammars """
+
 from pyparsing import (
     Combine,
     Forward,

@@ -1,4 +1,5 @@
 """ DQL language parser """
+
 from pyparsing import (
     CharsNotIn,
     Combine,

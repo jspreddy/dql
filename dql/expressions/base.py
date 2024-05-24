@@ -1,4 +1,5 @@
 """ Common utilities for all expressions """
+
 import re
 
 from .visitor import dummy_visitor
@@ -7,7 +8,6 @@ PATH_PATTERN = re.compile(r"\w+|\[(\d+)\]")
 
 
 class Expression(object):
-
     """Base class for all expressions and expression fragments"""
 
     def build(self, visitor):
@@ -19,7 +19,6 @@ class Expression(object):
 
 
 class Field(Expression):
-
     """Wrapper for a field in an expression"""
 
     def __init__(self, field):
@@ -55,7 +54,6 @@ class Field(Expression):
 
 
 class Value(Expression):
-
     """Wrapper for a value in an expression"""
 
     def __init__(self, val):

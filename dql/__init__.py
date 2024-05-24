@@ -1,4 +1,5 @@
 """ Simple SQL-like query language for dynamo. """
+
 import argparse
 import logging.config
 import os

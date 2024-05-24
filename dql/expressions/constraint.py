@@ -1,4 +1,5 @@
 """ Constraint expressions for selecting """
+
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, List, Optional, Set, Union
 
@@ -11,7 +12,6 @@ numeric = Union[int, float, Decimal]
 
 
 class ConstraintExpression(Expression):
-
     """
     Base class and entry point for constraint expressions
 
@@ -66,7 +66,6 @@ class ConstraintExpression(Expression):
 
 
 class Invert(ConstraintExpression):
-
     """Invert another constraint expression with NOT"""
 
     def __init__(self, constraint: "ConstraintExpression"):
@@ -87,7 +86,6 @@ class Invert(ConstraintExpression):
 
 
 class Conjunction(ConstraintExpression):
-
     """Use AND and OR to join 2 or more expressions"""
 
     def __init__(self, is_and: bool, *args: "ConstraintExpression"):
@@ -175,7 +173,6 @@ class Conjunction(ConstraintExpression):
 
 
 class OperatorConstraint(ConstraintExpression):
-
     """Constraint expression for operations, e.g. foo = 4"""
 
     def __init__(self, field: str, operator: str, value: Union[Field, Value]):
@@ -231,7 +228,6 @@ class OperatorConstraint(ConstraintExpression):
 
 
 class FunctionConstraint(ConstraintExpression):
-
     """Constraint for function expressions e.g. attribute_exists(field)"""
 
     def __init__(self, fn_name: str, field: str, operand: Any = None):
@@ -272,7 +268,6 @@ class FunctionConstraint(ConstraintExpression):
 
 
 class TypeConstraint(FunctionConstraint):
-
     """Constraint for attribute_type() function"""
 
     @classmethod
@@ -282,7 +277,6 @@ class TypeConstraint(FunctionConstraint):
 
 
 class SizeConstraint(ConstraintExpression):
-
     """Constraint expression for size() function"""
 
     def __init__(self, field: str, operator: str, value: Any):
@@ -316,7 +310,6 @@ class SizeConstraint(ConstraintExpression):
 
 
 class BetweenConstraint(ConstraintExpression):
-
     """Constraint expression for BETWEEN low AND high"""
 
     def __init__(self, field: str, low: numeric, high: numeric):
@@ -352,7 +345,6 @@ class BetweenConstraint(ConstraintExpression):
 
 
 class InConstraint(ConstraintExpression):
-
     """Constraint expression for membership in a set"""
 
     def __init__(self, field: str, values: List):

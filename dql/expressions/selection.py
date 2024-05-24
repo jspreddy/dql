@@ -1,4 +1,5 @@
 """ Selection expressions """
+
 from collections import OrderedDict
 from datetime import datetime
 from typing import Any, Dict, List
@@ -79,7 +80,6 @@ def parse_expression(clause):
 
 
 class SelectionExpression(Expression):
-
     """Entry point for Selection expressions"""
 
     def __init__(self, expressions, is_count=False):

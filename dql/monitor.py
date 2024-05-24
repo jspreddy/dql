@@ -1,4 +1,5 @@
 """ Utilities for monitoring the consumed capacity of tables """
+
 import time
 from datetime import datetime
 from typing import TYPE_CHECKING, List
