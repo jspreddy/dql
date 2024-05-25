@@ -714,14 +714,17 @@ class Engine(object):
             ) as progress,
             futures.ThreadPoolExecutor(max_workers=WORKER_COUNT) as executor,
         ):
-            main_progress_bar = progress.add_task(f"[blue] Processed records. {0}")
+            main_progress_bar = progress.add_task("[green] Total records processed")
             chunk = take(keys_iterable, CHUNK_SIZE)
+            chunk_progress_bar = progress.add_task("[green] Processing next batch")
 
             while len(chunk) > 0:
                 future_results = []
                 chunk_len = len(chunk)
-                chunk_progress_bar = progress.add_task(
-                    f"[green] Processing next {chunk_len} items", total=chunk_len
+                progress.update(
+                    chunk_progress_bar,
+                    total=chunk_len,
+                    completed=0,
                 )
 
                 for key in chunk:
@@ -741,7 +744,6 @@ class Engine(object):
                 # spinner.update(text=f"[blue] Total Processed: {count}")
                 progress.update(
                     main_progress_bar,
-                    description=f"[blue] Processed records. {count}",
                     total=count,
                     completed=count,
                 )
