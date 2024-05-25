@@ -269,7 +269,7 @@ class TestSelect(BaseSystemTest):
         """SELECT statement can fetch items directly"""
         self.make_table()
         self.query("INSERT INTO foobar (id, bar) VALUES ('a', 1), ('b', 2)")
-        results = self.query("SELECT * FROM foobar KEYS IN " "('a', 1), ('b', 2)")
+        results = self.query("SELECT * FROM foobar KEYS IN ('a', 1), ('b', 2)")
         results = list(results)
         self.assertCountEqual(results, [{"id": "a", "bar": 1}, {"id": "b", "bar": 2}])
 
@@ -299,9 +299,9 @@ class TestSelect(BaseSystemTest):
         """SELECT auto-selects correct index name"""
         self.make_table(index="ts")
         self.query(
-            "INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 100), " "('a', 2, 200)"
+            "INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 100), ('a', 2, 200)"
         )
-        results = self.query("SELECT * FROM foobar WHERE id = 'a' " "and ts < 150")
+        results = self.query("SELECT * FROM foobar WHERE id = 'a' and ts < 150")
         results = list(results)
         self.assertCountEqual(results, [{"id": "a", "bar": 1, "ts": 100}])
 
@@ -323,7 +323,7 @@ class TestSelect(BaseSystemTest):
         """SELECT can specify limit"""
         self.make_table()
         self.query(
-            "INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 100), " "('a', 2, 200)"
+            "INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 100), ('a', 2, 200)"
         )
         results = self.query("SELECT * FROM foobar WHERE id = 'a' LIMIT 1")
         self.assertEqual(len(list(results)), 1)
@@ -336,7 +336,7 @@ class TestSelect(BaseSystemTest):
             "('a', 2, 200), ('a', 3, 300)"
         )
         results = self.query(
-            "SELECT * FROM foobar WHERE id = 'a' and " "ts > 200 LIMIT 1 SCAN LIMIT 2"
+            "SELECT * FROM foobar WHERE id = 'a' and ts > 200 LIMIT 1 SCAN LIMIT 2"
         )
         self.assertEqual(len(list(results)), 0)
 
@@ -347,16 +347,16 @@ class TestSelect(BaseSystemTest):
             "INSERT INTO foobar (id, bar, order) VALUES "
             "('a', 1, 'first'), ('a', 2, 'second')"
         )
-        results = self.query("SELECT order FROM foobar " "WHERE id = 'a' and bar = 1")
+        results = self.query("SELECT order FROM foobar WHERE id = 'a' and bar = 1")
         results = [dict(r) for r in results]
         self.assertCountEqual(results, [{"order": "first"}])
 
     def test_begins_with(self):
         """SELECT can filter attrs that begin with a string"""
-        self.query("CREATE TABLE foobar (id NUMBER HASH KEY, " "bar STRING RANGE KEY)")
-        self.query("INSERT INTO foobar (id, bar) VALUES " "(1, 'abc'), (1, 'def')")
+        self.query("CREATE TABLE foobar (id NUMBER HASH KEY, bar STRING RANGE KEY)")
+        self.query("INSERT INTO foobar (id, bar) VALUES (1, 'abc'), (1, 'def')")
         results = self.query(
-            "SELECT * FROM foobar " "WHERE id = 1 AND begins_with(bar, 'a')"
+            "SELECT * FROM foobar WHERE id = 1 AND begins_with(bar, 'a')"
         )
         results = [dict(r) for r in results]
         self.assertCountEqual(results, [{"id": 1, "bar": "abc"}])
@@ -364,9 +364,9 @@ class TestSelect(BaseSystemTest):
     def test_between(self):
         """SELECT can filter attrs that are between values"""
         self.make_table()
-        self.query("INSERT INTO foobar (id, bar) VALUES " "('a', 5), ('a', 10)")
+        self.query("INSERT INTO foobar (id, bar) VALUES ('a', 5), ('a', 10)")
         results = self.query(
-            "SELECT * FROM foobar " "WHERE id = 'a' AND bar BETWEEN 1 AND 8"
+            "SELECT * FROM foobar WHERE id = 'a' AND bar BETWEEN 1 AND 8"
         )
         results = [dict(r) for r in results]
         self.assertCountEqual(results, [{"id": "a", "bar": 5}])
@@ -374,10 +374,8 @@ class TestSelect(BaseSystemTest):
     def test_filter(self):
         """SELECT can filter results before returning them"""
         self.make_table()
-        self.query(
-            "INSERT INTO foobar (id, bar, baz) VALUES " "('a', 1, 1), ('a', 2, 2)"
-        )
-        results = self.query("SELECT * FROM foobar " "WHERE id = 'a' AND baz = 1")
+        self.query("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('a', 2, 2)")
+        results = self.query("SELECT * FROM foobar WHERE id = 'a' AND baz = 1")
         results = [dict(r) for r in results]
         self.assertCountEqual(results, [{"id": "a", "bar": 1, "baz": 1}])
 
@@ -389,7 +387,7 @@ class TestSelect(BaseSystemTest):
             "('a', 1, 1, 1), ('a', 2, 2, 1)"
         )
         results = self.query(
-            "SELECT * FROM foobar " "WHERE id = 'a' AND baz = 1 AND foo = 1"
+            "SELECT * FROM foobar WHERE id = 'a' AND baz = 1 AND foo = 1"
         )
         results = [dict(r) for r in results]
         self.assertCountEqual(results, [{"id": "a", "foo": 1, "bar": 1, "baz": 1}])
@@ -402,7 +400,7 @@ class TestSelect(BaseSystemTest):
             "('a', 1, 1, 1), ('a', 2, 2, 2)"
         )
         results = self.query(
-            "SELECT * FROM foobar " "WHERE id = 'a' AND (baz = 1 OR foo = 2)"
+            "SELECT * FROM foobar WHERE id = 'a' AND (baz = 1 OR foo = 2)"
         )
         results = [dict(r) for r in results]
         self.assertCountEqual(
@@ -416,7 +414,7 @@ class TestSelect(BaseSystemTest):
     def test_count(self):
         """SELECT can items"""
         self.make_table()
-        self.query("INSERT INTO foobar (id, bar) VALUES ('a', 1), " "('a', 2)")
+        self.query("INSERT INTO foobar (id, bar) VALUES ('a', 1), ('a', 2)")
         count = self.query("SELECT count(*) FROM foobar WHERE id = 'a'")
         self.assertEqual(count, 2)
         self.assertEqual(count.scanned_count, 2)
@@ -425,19 +423,17 @@ class TestSelect(BaseSystemTest):
         """SELECT count(*) auto-selects correct index name"""
         self.make_table(index="ts")
         self.query(
-            "INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 100), " "('a', 2, 200)"
+            "INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 100), ('a', 2, 200)"
         )
-        count = self.query("SELECT count(*) FROM foobar " "WHERE id = 'a' and ts < 150")
+        count = self.query("SELECT count(*) FROM foobar WHERE id = 'a' and ts < 150")
         self.assertEqual(count, 1)
         self.assertEqual(count.scanned_count, 1)
 
     def test_count_filter(self):
         """SELECT count(*) can use conditional filter on results"""
         self.make_table()
-        self.query(
-            "INSERT INTO foobar (id, foo, bar) VALUES " "('a', 1, 1), ('a', 2, 2)"
-        )
-        count = self.query("SELECT count(*) FROM foobar " "WHERE id = 'a' AND foo = 1")
+        self.query("INSERT INTO foobar (id, foo, bar) VALUES ('a', 1, 1), ('a', 2, 2)")
+        count = self.query("SELECT count(*) FROM foobar WHERE id = 'a' AND foo = 1")
         self.assertEqual(count, 1)
         self.assertEqual(count.scanned_count, 2)
 
@@ -460,9 +456,7 @@ class TestSelect(BaseSystemTest):
     def test_order_by_index(self):
         """SELECT data ORDER BY range key"""
         self.make_table()
-        self.query(
-            "INSERT INTO foobar (id, bar) VALUES " "('a', 1), ('a', 3), ('a', 2)"
-        )
+        self.query("INSERT INTO foobar (id, bar) VALUES ('a', 1), ('a', 3), ('a', 2)")
         ret = self.query("SELECT * FROM foobar WHERE id = 'a' ORDER BY bar")
         ret = list(ret)
         expected = [{"id": "a", "bar": 1}, {"id": "a", "bar": 2}, {"id": "a", "bar": 3}]
@@ -546,8 +540,8 @@ class TestSelectScan(BaseSystemTest):
 
     def test_begins_with(self):
         """SELECT scan can filter attrs that begin with a string"""
-        self.query("CREATE TABLE foobar (id NUMBER HASH KEY, " "bar STRING RANGE KEY)")
-        self.query("INSERT INTO foobar (id, bar) VALUES " "(1, 'abc'), (1, 'def')")
+        self.query("CREATE TABLE foobar (id NUMBER HASH KEY, bar STRING RANGE KEY)")
+        self.query("INSERT INTO foobar (id, bar) VALUES (1, 'abc'), (1, 'def')")
         self._run(
             "* FROM foobar WHERE begins_with(bar, 'a')", [{"id": 1, "bar": "abc"}]
         )
@@ -555,7 +549,7 @@ class TestSelectScan(BaseSystemTest):
     def test_between(self):
         """SELECT scan can filter attrs that are between values"""
         self.make_table()
-        self.query("INSERT INTO foobar (id, bar) VALUES " "('a', 5), ('a', 10)")
+        self.query("INSERT INTO foobar (id, bar) VALUES ('a', 5), ('a', 10)")
         self._run("* FROM foobar WHERE bar BETWEEN 1 AND 8", [{"id": "a", "bar": 5}])
 
     def test_null(self):
@@ -625,9 +619,7 @@ class TestSelectScan(BaseSystemTest):
     def test_filter_or(self):
         """SELECT scan can use multi-conditional OR filter"""
         self.make_table()
-        self.query(
-            "INSERT INTO foobar (id, foo, bar) VALUES " "('a', 1, 1), ('b', 2, 2)"
-        )
+        self.query("INSERT INTO foobar (id, foo, bar) VALUES ('a', 1, 1), ('b', 2, 2)")
         self._run(
             "* FROM foobar WHERE foo = 1 OR bar = 2",
             [{"id": "a", "foo": 1, "bar": 1}, {"id": "b", "foo": 2, "bar": 2}],
@@ -651,7 +643,7 @@ class TestSelectScan(BaseSystemTest):
             "CREATE TABLE foobar (id STRING HASH KEY, foo STRING) "
             "GLOBAL KEYS INDEX ('gindex', foo)"
         )
-        self.query("INSERT INTO foobar (id, foo) VALUES " "('a', 'a')")
+        self.query("INSERT INTO foobar (id, foo) VALUES ('a', 'a')")
         self._run("* FROM foobar USING gindex", [{"id": "a", "foo": "a"}])
 
     def test_scan_global_with_constraints(self):
@@ -660,7 +652,7 @@ class TestSelectScan(BaseSystemTest):
             "CREATE TABLE foobar (id STRING HASH KEY, foo STRING) "
             "GLOBAL KEYS INDEX ('gindex', foo)"
         )
-        self.query("INSERT INTO foobar (id, foo) VALUES " "('a', 'a'), ('b', 'b')")
+        self.query("INSERT INTO foobar (id, foo) VALUES ('a', 'a'), ('b', 'b')")
         self._run(
             "* FROM foobar WHERE id = 'a' USING gindex", [{"id": "a", "foo": "a"}]
         )
@@ -916,9 +908,7 @@ class TestUpdate(BaseSystemTest):
     def test_update(self):
         """UPDATE sets attributes"""
         table = self.make_table()
-        self.query(
-            "INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), " "('b', 2, 2)"
-        )
+        self.query("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
         self.query("UPDATE foobar SET baz = 3")
         items = list(self.dynamo.scan(table))
         self.assertCountEqual(
@@ -928,9 +918,7 @@ class TestUpdate(BaseSystemTest):
     def test_update_where(self):
         """UPDATE sets attributes when clause is true"""
         table = self.make_table()
-        self.query(
-            "INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), " "('b', 2, 2)"
-        )
+        self.query("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
         self.query("UPDATE foobar SET baz = 3 WHERE id = 'a'")
         items = list(self.dynamo.scan(table))
         self.assertCountEqual(
@@ -940,18 +928,14 @@ class TestUpdate(BaseSystemTest):
     def test_update_count(self):
         """UPDATE returns number of records updated"""
         self.make_table()
-        self.query(
-            "INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), " "('b', 2, 2)"
-        )
+        self.query("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
         count = self.query("UPDATE foobar SET baz = 3 WHERE id = 'a'")
         self.assertEqual(count, 1)
 
     def test_update_where_in(self):
         """UPDATE can update items by their primary keys"""
         table = self.make_table()
-        self.query(
-            "INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), " "('b', 2, 2)"
-        )
+        self.query("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
         self.query("UPDATE foobar SET baz = 3 KEYS IN ('a', 1), ('b', 2)")
         items = list(self.dynamo.scan(table))
         self.assertCountEqual(
@@ -962,27 +946,21 @@ class TestUpdate(BaseSystemTest):
         """UPDATE can alert items using KEYS IN and WHERE"""
         table = self.make_table(range_key=None)
         self.query("INSERT INTO foobar (id, bar) VALUES ('a', 1), ('b', 2)")
-        self.query(
-            "UPDATE foobar SET bar = 3 KEYS IN ('a', 1), ('b', 2) " "WHERE bar < 2"
-        )
+        self.query("UPDATE foobar SET bar = 3 KEYS IN ('a', 1), ('b', 2) WHERE bar < 2")
         items = list(self.dynamo.scan(table))
         self.assertCountEqual(items, [{"id": "a", "bar": 3}, {"id": "b", "bar": 2}])
 
     def test_update_keys_count(self):
         """UPDATE returns number of records updated with KEYS IN"""
         self.make_table()
-        self.query(
-            "INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), " "('b', 2, 2)"
-        )
-        ret = self.query("UPDATE foobar SET baz = 3 KEYS IN ('a', 1), " "('b', 2)")
+        self.query("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
+        ret = self.query("UPDATE foobar SET baz = 3 KEYS IN ('a', 1), ('b', 2)")
         self.assertEqual(ret, 2)
 
     def test_update_increment(self):
         """UPDATE can increment attributes"""
         table = self.make_table()
-        self.query(
-            "INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), " "('b', 2, 2)"
-        )
+        self.query("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
         self.query("UPDATE foobar ADD baz 2")
         self.query("UPDATE foobar ADD baz -1")
         items = list(self.dynamo.scan(table))
@@ -1002,7 +980,7 @@ class TestUpdate(BaseSystemTest):
     def test_update_delete(self):
         """UPDATE can delete elements from set"""
         table = self.make_table()
-        self.query("INSERT INTO foobar (id, bar, baz) VALUES " "('a', 1, (1, 2, 3, 4))")
+        self.query("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, (1, 2, 3, 4))")
         self.query("UPDATE foobar DELETE baz (2)")
         self.query("UPDATE foobar DELETE baz (1, 3)")
         items = list(self.dynamo.scan(table))
@@ -1011,9 +989,7 @@ class TestUpdate(BaseSystemTest):
     def test_update_remove(self):
         """UPDATE can remove attributes"""
         table = self.make_table()
-        self.query(
-            "INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), " "('b', 2, 2)"
-        )
+        self.query("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
         self.query("UPDATE foobar REMOVE baz")
         items = list(self.dynamo.scan(table))
         self.assertCountEqual(items, [{"id": "a", "bar": 1}, {"id": "b", "bar": 2}])
@@ -1021,9 +997,7 @@ class TestUpdate(BaseSystemTest):
     def test_update_returns(self):
         """UPDATE can specify what the query returns"""
         self.make_table()
-        self.query(
-            "INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), " "('b', 2, 2)"
-        )
+        self.query("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
         result = self.query("UPDATE foobar REMOVE baz RETURNS ALL NEW ")
         items = list(result)
         self.assertCountEqual(items, [{"id": "a", "bar": 1}, {"id": "b", "bar": 2}])
@@ -1144,19 +1118,17 @@ class TestDelete(BaseSystemTest):
         """DELETE statement auto-selects correct index name"""
         table = self.make_table(index="ts")
         self.query(
-            "INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 100), " "('a', 2, 200)"
+            "INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 100), ('a', 2, 200)"
         )
-        self.query("DELETE FROM foobar WHERE id = 'a' " "and ts > 150")
+        self.query("DELETE FROM foobar WHERE id = 'a' and ts > 150")
         results = list(self.dynamo.scan(table))
         self.assertCountEqual(results, [{"id": "a", "bar": 1, "ts": 100}])
 
     def test_delete_using(self):
         """DELETE statement can specify an index"""
         table = self.make_table(index="ts")
-        self.query(
-            "INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 0), " "('a', 2, 5)"
-        )
-        self.query("DELETE FROM foobar WHERE id = 'a' and ts < 8 " "USING ts-index")
+        self.query("INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 0), ('a', 2, 5)")
+        self.query("DELETE FROM foobar WHERE id = 'a' and ts < 8 USING ts-index")
         items = list(self.dynamo.scan(table))
         self.assertEqual(len(items), 0)
 
