@@ -32,7 +32,7 @@ class TestHistoryManager(TestCase):
         self.assertTrue(os.path.isfile(file_path))
 
     def assertFileContents(self, file_path, expected_contents):
-        actual = Path(file_path).read_text()
+        actual = Path(file_path).read_text(encoding="utf-8")
         self.assertEqual(expected_contents, actual)
 
     def test_history_file_is_created_on_load(self):

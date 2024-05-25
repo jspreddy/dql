@@ -4,6 +4,7 @@ import contextlib
 import csv
 import gzip
 import io
+import itertools
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ import sys
 import time
 from base64 import b64encode
 from builtins import int
+from concurrent import futures
 from decimal import Decimal, InvalidOperation
 from pprint import pformat
 from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union, cast, overload
@@ -36,6 +38,14 @@ from dynamo3.constants import PAY_PER_REQUEST, PROVISIONED, RESERVED_WORDS
 from dynamo3.result import Count
 from dynamo3.types import TYPES
 from pyparsing import ParseException
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from typing_extensions import Literal
 
 from .exceptions import EngineRuntimeError, ExplainSignal
@@ -47,6 +57,7 @@ from .expressions import (
 )
 from .grammar import line_parser, parser
 from .models import GlobalIndexMeta, TableMeta
+from .output import console
 from .util import open_file_smart_mode, plural, resolve, unwrap
 
 LOG = logging.getLogger(__name__)
@@ -404,7 +415,7 @@ class Engine(object):
 
     def _on_throttle(self, conn, command, kwargs, response, capacity, seconds):
         """Print out a message when the query is throttled"""
-        LOG.info(
+        console.log(
             "Throughput limit exceeded during %s. Sleeping for %d second%s",
             command,
             seconds,
@@ -656,7 +667,7 @@ class Engine(object):
         if tree.keys_in:
             if tree.using:
                 raise SyntaxError("Cannot use USING with KEYS IN")
-            keys = self._iter_where_in(tree)
+            keys_iterable = self._iter_where_in(tree)
         else:
             visitor = Visitor(self.reserved_words)
             (action, kwargs, _) = self._build_query(table, tree, visitor)
@@ -675,23 +686,78 @@ class Engine(object):
             ):
                 return False
             method = getattr(self.connection, action)
-            keys = method(table.name, **kwargs)
+            keys_iterable = method(table.name, **kwargs)
             if self._explaining:
                 try:
-                    list(keys)
+                    list(keys_iterable)
                 except ExplainSignal:
-                    keys = [{}]
+                    keys_iterable = [{}]
 
         method = getattr(self.connection, method_name)
         count = 0
-        for key in keys:
-            try:
-                ret = method(table.name, key, **method_kwargs)
-            except CheckFailed:
-                continue
-            count += 1
-            if ret:
-                result.append(ret)
+        # def run_method(key, **method_kwargs):
+        #     return method(table.name, key, **method_kwargs)
+
+        def take(iterable, n):
+            "Return first n items of the iterable as a list."
+            return list(itertools.islice(iterable, n))
+
+        CHUNK_SIZE = 2000
+        WORKER_COUNT = 20
+        with (
+            Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+            ) as progress,
+            futures.ThreadPoolExecutor(max_workers=WORKER_COUNT) as executor,
+        ):
+            main_progress_bar = progress.add_task(f"[blue] Processed records. {0}")
+            chunk = take(keys_iterable, CHUNK_SIZE)
+
+            while len(chunk) > 0:
+                future_results = []
+                chunk_len = len(chunk)
+                chunk_progress_bar = progress.add_task(
+                    f"[green] Processing next {chunk_len} items", total=chunk_len
+                )
+
+                for key in chunk:
+                    future_results.append(
+                        executor.submit(method, table.name, key, **method_kwargs)
+                    )
+
+                for f in futures.as_completed(future_results):
+                    try:
+                        res = f.result()
+                    except CheckFailed:
+                        continue
+                    progress.update(chunk_progress_bar, advance=1)
+                    count += 1
+                    if res:
+                        result.append(res)
+                # spinner.update(text=f"[blue] Total Processed: {count}")
+                progress.update(
+                    main_progress_bar,
+                    description=f"[blue] Processed records. {count}",
+                    total=count,
+                    completed=count,
+                )
+                chunk = take(keys_iterable, CHUNK_SIZE)
+
+        # TODO: Change the behaviour to optionally display progress as per a Render class.
+        # Old Code
+        # for key in keys:
+        #     try:
+        #         ret = method(table.name, key, **method_kwargs)
+        #     except CheckFailed:
+        #         continue
+        #     count += 1
+        #     if ret:
+        #         result.append(ret)
+
         if result:
             return result
         else:

@@ -60,7 +60,7 @@ def create_throughput(variable=primitive):
 
 def create_throttle():
     """Create a THROTTLE statement"""
-    throttle_amount = "*" | Combine(number + "%") | number
+    throttle_amount = Keyword("*") | Combine(number + "%") | number
     return Group(
         function("throttle", throttle_amount, throttle_amount, caseless=True)
     ).setResultsName("throttle")
@@ -272,7 +272,7 @@ def create_update():
 def create_alter():
     """Create the grammar for the 'alter' statement"""
     alter = upkey("alter").setResultsName("action")
-    prim_or_star = primitive | "*"
+    prim_or_star = primitive | Keyword("*")
 
     set_throughput = (
         Suppress(upkey("set"))
