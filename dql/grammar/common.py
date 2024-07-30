@@ -53,6 +53,7 @@ and_, or_, from_, into, table_key, null, not_ = map(
 and_or = and_ | or_
 
 var = Word(alphas + "_", alphanums + "_-.[]").setName("variable").setResultsName("var")
+index_name = (upkey("-") | Word(alphas + "_", alphanums + "_-.")).setName("index_name").setResultsName("index_name")
 table = Word(alphas, alphanums + "_-.").setResultsName("table")
 type_ = (
     (upkey("string") | upkey("number") | upkey("binary"))

@@ -33,6 +33,7 @@ from .common import (
     upkey,
     value,
     var,
+    index_name,
     var_val,
 )
 from .query import (
@@ -342,7 +343,7 @@ def create_parser():
 
 
 # pylint: disable=C0103
-using = (upkey("using") + Optional(var)).setResultsName("using")
+using = (upkey("using") + index_name).setResultsName("using")
 throughput = create_throughput()
 throttle = create_throttle()
 index = Group(

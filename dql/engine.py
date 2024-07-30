@@ -450,16 +450,22 @@ class Engine(object):
         """Build a scan/query from a statement"""
         kwargs = {}
         index = None
+        skip_index = False
         if tree.using:
-            index_name = kwargs["index"] = tree.using[1]
-            index = table.get_index(index_name)
+            index_name = tree.using[1]
+            if index_name == '-':
+                skip_index = True
+            else:
+                kwargs["index"] = index_name
+                index = table.get_index(index_name)
+
         if isinstance(tree.where, ConstraintExpression):
             constraints = tree.where
             possible_hash = constraints.possible_hash_fields()
             possible_range = constraints.possible_range_fields()
             if index is None:
                 # See if we can find an index to query on
-                indexes = table.get_matching_indexes(possible_hash, possible_range)
+                indexes = None if skip_index else table.get_matching_indexes(possible_hash, possible_range)
                 if not indexes:
                     action = "scan"
                     kwargs["filter"] = constraints.build(visitor)
