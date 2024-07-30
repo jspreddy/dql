@@ -86,6 +86,12 @@ After setting up your local env, you can install the executable of dql::
     # check the version
     dql --version
 
+    # To install with pyenv & pipx, package with `tox -e package` first, then:
+    pyenv local 3.9.19
+    pyenv which python
+    pipx install --python $(pyenv which python) ./dist/filename.tar.gz
+
+
 Versioning
 ----------
 Use `bump2version` instead of `bumpversion` because `bump2version` is actively maintained. This advise comes from `bumpversion` project itself. See `bumpversion`'s pypi page for details.
