@@ -342,7 +342,7 @@ def create_parser():
 
 
 # pylint: disable=C0103
-using = (upkey("using") + var).setResultsName("using")
+using = (upkey("using") + Optional(var)).setResultsName("using")
 throughput = create_throughput()
 throttle = create_throttle()
 index = Group(
