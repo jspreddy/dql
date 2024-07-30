@@ -453,7 +453,7 @@ class Engine(object):
         skip_index = False
         if tree.using:
             index_name = tree.using[1]
-            if index_name == '-':
+            if index_name == "-":
                 skip_index = True
             else:
                 kwargs["index"] = index_name
@@ -465,7 +465,11 @@ class Engine(object):
             possible_range = constraints.possible_range_fields()
             if index is None:
                 # See if we can find an index to query on
-                indexes = None if skip_index else table.get_matching_indexes(possible_hash, possible_range)
+                indexes = (
+                    None
+                    if skip_index
+                    else table.get_matching_indexes(possible_hash, possible_range)
+                )
                 if not indexes:
                     action = "scan"
                     kwargs["filter"] = constraints.build(visitor)

@@ -23,6 +23,7 @@ from .common import (
     filename,
     from_,
     function,
+    index_name,
     into,
     number,
     primitive,
@@ -33,7 +34,6 @@ from .common import (
     upkey,
     value,
     var,
-    index_name,
     var_val,
 )
 from .query import (
