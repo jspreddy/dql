@@ -66,3 +66,8 @@ Changing tables::
     us-west-1> DROP TABLE forum_threads;
 
 And don't forget to use ``help``!
+
+
+Developer/Maintainer Guide:
+---------------------------
+`See here for developer guide. <https://github.com/jspreddy/dql/blob/sai/cli-updates/doc/topics/develop.rst>`
