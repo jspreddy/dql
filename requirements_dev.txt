@@ -6,3 +6,8 @@ sphinx_rtd_theme
 tox
 virtualenv-pyenv
 wheel
+build
+isort
+mypy
+black==24.4.1
+pylint

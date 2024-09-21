@@ -71,7 +71,7 @@ Setting up local envs::
 
         # running specific tox env
         tox -e format
-        tox -e py38-lint
+        tox -e lint
         tox -e package
 
 After setting up your local env, you can install the executable of dql::

@@ -3,7 +3,3 @@ types-mock
 nose
 mock
 snapshottest
-black==24.4.1
-mypy
-pylint
-isort
