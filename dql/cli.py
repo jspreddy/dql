@@ -302,7 +302,7 @@ class DQLClient(cmd.Cmd):
 
     def update_prompt(self):
         """Update the prompt"""
-        PROMPT_OFFSET=3
+        PROMPT_OFFSET = 3
 
         if self.engine.partial:
             # self.prompt = PROMPT_OFFSET * " " + "| "

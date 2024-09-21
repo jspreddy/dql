@@ -19,8 +19,8 @@ from pprint import pformat
 from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union, cast, overload
 
 import botocore
-from botocore.exceptions import ClientError
 import botocore.session
+from botocore.exceptions import ClientError
 from dynamo3 import (
     Binary,
     Capacity,
@@ -164,7 +164,7 @@ class Engine(object):
     def session_identity(self):
         if not self._identity:
             session = botocore.session.get_session()
-            sts = session.create_client('sts')
+            sts = session.create_client("sts")
             self._identity = sts.get_caller_identity()
 
         return self._identity
