@@ -302,14 +302,29 @@ class DQLClient(cmd.Cmd):
 
     def update_prompt(self):
         """Update the prompt"""
-        prefix = ""
-        if self._local_endpoint is not None:
-            prefix += "(%s:%d) " % self._local_endpoint
-        prefix += self.engine.region
+        PROMPT_OFFSET=3
+
         if self.engine.partial:
-            self.prompt = len(prefix) * " " + "> "
-        else:
-            self.prompt = prefix + "> "
+            # self.prompt = PROMPT_OFFSET * " " + "| "
+            print("[bold blue]" + (PROMPT_OFFSET * " " + "| ") + "[/]", end="")
+            return
+
+        parts = ["\n"]
+        # if self.engine.session_identity:
+        #     parts.append(self.engine.session_identity + "\n")
+        if self._local_endpoint is not None:
+            parts.append("[bold blue]" + "(%s:%d) " % self._local_endpoint + "[/]")
+        if self.engine.region:
+            parts.append("[bold blue]" + self.engine.region + "[/]\n")
+        parts.append("[bold blue]" + (PROMPT_OFFSET * "=" + "> ") + "[/]")
+        # self.prompt = "".join(parts)
+        print("".join(parts), end="")
+        self.prompt = ""
+
+    @repl_command
+    def do_whoami(self, *args, **kwargs):
+        """Show information about the session"""
+        print(self.engine.session_identity)
 
     def do_shell(self, arglist):
         """Run a shell command"""

@@ -20,6 +20,7 @@ from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union, cast, over
 
 import botocore
 from botocore.exceptions import ClientError
+import botocore.session
 from dynamo3 import (
     Binary,
     Capacity,
@@ -127,6 +128,7 @@ class Engine(object):
 
     _session: Any
     _connection: DynamoDBConnection
+    _identity: Any
 
     def __init__(self, connection=None):
         self._connection = None
@@ -144,6 +146,7 @@ class Engine(object):
         self.rate_limit = None
         self._encoder = json.JSONEncoder(separators=(",", ":"), default=default)
         self.caution_callback = None
+        self._identity = None
 
     def connect(self, *args, **kwargs):
         """Proxy to DynamoDBConnection.connect."""
@@ -156,6 +159,15 @@ class Engine(object):
     def region(self):
         """Get the connected dynamo region or host"""
         return self._connection.region
+
+    @property
+    def session_identity(self):
+        if not self._identity:
+            session = botocore.session.get_session()
+            sts = session.create_client('sts')
+            self._identity = sts.get_caller_identity()
+
+        return self._identity
 
     @property
     def connection(self) -> DynamoDBConnection:
