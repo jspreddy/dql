@@ -558,6 +558,7 @@ class DQLClient(cmd.Cmd):
             self.display_table_descriptions(table_descriptions)
             return
 
+        table = table.rstrip(";")
         tables = list(self.engine.connection.list_tables())
         filtered_tables = [t for t in tables if fnmatch(t, table)]
 
