@@ -1,5 +1,6 @@
 types-python-dateutil
 types-mock
-nose
 mock
 snapshottest
+pytest 
+pytest-cov

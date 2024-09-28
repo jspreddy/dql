@@ -277,7 +277,7 @@ class DQLClient(cmd.Cmd):
             host=host,
             port=port,
             is_secure=(host is None),
-            **kwargs
+            **kwargs,
         )
 
         self.conf = self.load_config()

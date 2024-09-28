@@ -2,6 +2,68 @@
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "dql"
+version = "0.6.4-dev1"
+description = "DynamoDB Query Language"
+authors = [{ name = "Steven Arcangeli", email = "stevearc@stevearc.com" }]
+license = { text = "MIT" }
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+keywords = ["aws", "dynamo", "dynamodb", "sql"]
+dependencies = [
+    "dynamo3>=1.0.0",
+    "pyparsing==2.1.4",
+    "python-dateutil",
+    "botocore>=1.17.55",
+    "rich>=6.1.1",
+    "typing_extensions",
+    "humanize>=4.0.0",
+]
+requires-python = ">=3.7"
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "bump2version",
+    "numpydoc",
+    "sphinx",
+    "sphinx_rtd_theme",
+    "tox",
+    "virtualenv-pyenv",
+    "wheel",
+    "build",
+    "isort",
+    "mypy",
+]
+
+[project.urls]
+Homepage = "http://github.com/stevearc/dql"
+
+[project.scripts]
+dql = "dql:main"
+
+[tool.setuptools]
+packages = ["dql"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"*" = ["README.rst", "CHANGES.rst"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["tests"]
+
 [tool.isort]
 profile = "black"
 multi_line_output = 3
@@ -18,3 +80,7 @@ check_untyped_defs = true
 warn_unused_ignores = true
 warn_unreachable = true
 no_implicit_reexport = true
+
+[tool.pytest.ini_options]
+addopts = "--verbose"
+testpaths = ["tests"]
