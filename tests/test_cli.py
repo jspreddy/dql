@@ -8,9 +8,7 @@ from base64 import b64encode
 from collections.abc import Iterable
 from io import BytesIO, StringIO, TextIOWrapper
 from typing import Any, List
-from urllib.parse import urlparse
 
-from dynamo3 import DynamoDBConnection
 from mock import patch
 from snapshottest import TestCase
 
@@ -38,7 +36,6 @@ class UniqueCollection(object):
 class BaseCLITest(TestCase):
     """Base class for CLI tests"""
 
-    dynamo: DynamoDBConnection = None
     cli: DQLClient
     confdir: str
     patcher: Any
@@ -48,8 +45,11 @@ class BaseCLITest(TestCase):
         super().setUpClass()
         cls.cli = DQLClient()
         cls.confdir = tempfile.mkdtemp()
-        host = urlparse(cls.dynamo.host)
-        cls.cli.initialize(host=host.hostname, port=host.port, config_dir=cls.confdir)
+        cls.cli.initialize(
+            host="localhost",
+            port=8000,
+            config_dir=cls.confdir,
+        )
         # Have to patch this so we don't make requests to CloudWatch
         cls.patcher = patch("dql.engine.Engine._get_metric", spec=True)
         method = cls.patcher.start()

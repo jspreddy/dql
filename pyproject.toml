@@ -36,6 +36,7 @@ requires-python = ">=3.7"
 dev = [
     "pytest",
     "pytest-cov",
+    "pytest-dynamodb",
     "bump2version",
     "numpydoc",
     "sphinx",
@@ -84,3 +85,8 @@ no_implicit_reexport = true
 [tool.pytest.ini_options]
 addopts = "--verbose"
 testpaths = ["tests"]
+
+[tool.pytest-dynamodb]
+dir = "./.dynamo-local/data"
+port = 8000
+delay = 2

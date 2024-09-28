@@ -238,6 +238,8 @@ class DQLClient(cmd.Cmd):
         port: int = 8000,
         config_dir: Optional[str] = None,
         session: Optional[Any] = None,
+        access_key: Optional[str] = None,
+        secret_key: Optional[str] = None,
     ) -> None:
         """Set up the repl for execution."""
         self.history_manager.try_to_load_history()
@@ -265,19 +267,19 @@ class DQLClient(cmd.Cmd):
         self.session = session
         self.engine = FragmentEngine()
         self.engine.caution_callback = self.caution_callback
-        kwargs = {}
         if host is not None:
             self._local_endpoint = (host, port)
             # If we don't pass these in we might get a missing credentials error
-            kwargs["access_key"] = ""
-            kwargs["secret_key"] = ""
+            access_key = access_key or "asdf"
+            secret_key = secret_key or "asdf"
         self.engine.connect(
             region,
             session=session,
             host=host,
             port=port,
             is_secure=(host is None),
-            **kwargs,
+            access_key=access_key,
+            secret_key=secret_key,
         )
 
         self.conf = self.load_config()

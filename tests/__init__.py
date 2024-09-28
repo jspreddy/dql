@@ -12,6 +12,15 @@ class BaseSystemTest(unittest.TestCase):
 
     dynamo: DynamoDBConnection = None
 
+    def __init__(self, methodName: str = "runTest") -> None:
+        super().__init__(methodName)
+        self.dynamo = DynamoDBConnection.connect(
+            region="us-east-1",
+            host="localhost",
+            port=8000,
+            is_secure=False,
+        )
+
     def setUp(self):
         super(BaseSystemTest, self).setUp()
         self.engine = Engine(self.dynamo)
