@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dql"
-version = "0.6.4-dev1"
+version = "0.6.4-dev2"
 description = "DynamoDB Query Language"
 authors = [{ name = "Steven Arcangeli", email = "stevearc@stevearc.com" }]
 license = { text = "MIT" }
