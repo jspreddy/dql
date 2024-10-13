@@ -299,29 +299,46 @@ class DQLClient(cmd.Cmd):
             self.engine.reset()
 
     def postcmd(self, stop, line):
-        self.update_prompt()
+        if not stop:
+            # If we are stopping the loop, no need to print the prompt.
+            self.update_prompt()
         return stop
 
     def update_prompt(self):
         """Update the prompt"""
         PROMPT_OFFSET = 3
+        ENABLE_COLOR = False
+        # Color prompt has some bugs. Need to figure out why readline is 
+        # replacing the current prompt when scrolling through history.
+
+        def wrap(text):
+            if ENABLE_COLOR:
+                return f"[bold blue]{text}[/]"
+            else:
+                return text
+
+        def print_or_prompt(text):
+            if ENABLE_COLOR:
+                print(text, end="")
+                self.prompt = ""
+            else:
+                self.prompt = text
 
         if self.engine.partial:
-            # self.prompt = PROMPT_OFFSET * " " + "| "
-            print("[bold blue]" + (PROMPT_OFFSET * " " + "| ") + "[/]", end="")
+            print_or_prompt(wrap(PROMPT_OFFSET * " " + "| "))
             return
 
         parts = ["\n"]
         # if self.engine.session_identity:
         #     parts.append(self.engine.session_identity + "\n")
         if self._local_endpoint is not None:
-            parts.append("[bold blue]" + "(%s:%d) " % self._local_endpoint + "[/]")
+            parts.append(wrap("(%s:%d) " % self._local_endpoint))
+
         if self.engine.region:
-            parts.append("[bold blue]" + self.engine.region + "[/]\n")
-        parts.append("[bold blue]" + (PROMPT_OFFSET * "=" + "> ") + "[/]")
-        # self.prompt = "".join(parts)
-        print("".join(parts), end="")
-        self.prompt = ""
+            parts.append(wrap(self.engine.region + "\n"))
+
+        parts.append(wrap(PROMPT_OFFSET * "=" + "> "))
+        print_or_prompt("".join(parts))
 
     @repl_command
     def do_whoami(self, *args, **kwargs):
