@@ -61,7 +61,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["dql", "dql/*"]
+include = ["dql*"]
 namespaces = false
 
 [tool.setuptools.package-data]
