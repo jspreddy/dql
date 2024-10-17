@@ -23,7 +23,32 @@ Installation can be done in a variety of ways
 
 * An executable `pex <https://github.com/pantsbuild/pex>`__ file is available on `the release page <https://github.com/stevearc/dql/releases>`__.
 * You can run a script to generate the pex file yourself: ``curl -o- install.py https://raw.githubusercontent.com/stevearc/dql/master/bin/install.py | python``
-* With pip: ``pip install dql``
+* With pip: ``pip install dql`` (To get the official version)
+* If you want my development version, see branch `v-next`_
+
+Prerequisites for development version: ``pipx, pyenv``
+
+Installing from remote source code::
+
+    # 1. Install python
+    pyenv install 3.9.19
+    # 2. Set active python environment
+    pyenv shell 3.9.19
+    # 3. Install dql
+    pipx install --python python3.9 git+https://github.com/jspreddy/dql.git@v-next
+
+Install from local source code::
+
+    # 1. Clone repo,
+    git clone https://github.com/jspreddy/dql.git
+    # 2. checkout branch `v-next`
+    git checkout v-next
+    # 3. init python environment
+    pyenv install 3.9.19
+    pyenv shell 3.9.19
+    # 4. editable install
+    pipx install --python python3.9 -e .
+
 
 Examples
 --------
@@ -70,20 +95,4 @@ And don't forget to use ``help``!
 
 Developer/Maintainer Guide:
 ---------------------------
-`See here for developer guide. <https://github.com/jspreddy/dql/blob/sai/cli-updates/doc/topics/develop.rst>`
-
-Prerequisites: ``pipx, pyenv``
-
-Install from local source code::
-
-    # 1. Clone repo,
-    # 2. checkout branch `sai/cli-updates`
-    # 3. init python environment
-    pyenv shell 3.9.19
-    # 4. editable install
-    pipx install --python python3.9 -e .
-
-Installing from remote source code::
-
-    # This seems to be running into issues with code not being properly packaged.
-    pipx install --python python3.9 git+https://github.com/jspreddy/dql.git@sai/cli-updates
+`See here for developer guide for v-next branch. <https://github.com/jspreddy/dql/blob/v-next/doc/topics/develop.rst>`
