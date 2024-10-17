@@ -82,3 +82,8 @@ Install from local source code::
     pyenv shell 3.9.19
     # 4. editable install
     pipx install --python python3.9 -e .
+
+Installing from remote source code::
+
+    # This seems to be running into issues with code not being properly packaged.
+    pipx install --python python3.9 git+https://github.com/jspreddy/dql.git@sai/cli-updates
