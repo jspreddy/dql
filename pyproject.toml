@@ -57,8 +57,12 @@ Homepage = "http://github.com/stevearc/dql"
 dql = "dql:main"
 
 [tool.setuptools]
-packages = ["dql"]
 include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dql", "dql/*"]
+namespaces = false
 
 [tool.setuptools.package-data]
 "*" = ["README.rst", "CHANGES.rst"]

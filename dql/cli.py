@@ -308,7 +308,7 @@ class DQLClient(cmd.Cmd):
         """Update the prompt"""
         PROMPT_OFFSET = 3
         ENABLE_COLOR = False
-        # Color prompt has some bugs. Need to figure out why readline is 
+        # Color prompt has some bugs. Need to figure out why readline is
         # replacing the current prompt when scrolling through history.
 
         def wrap(text):
