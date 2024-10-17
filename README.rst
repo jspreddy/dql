@@ -71,3 +71,14 @@ And don't forget to use ``help``!
 Developer/Maintainer Guide:
 ---------------------------
 `See here for developer guide. <https://github.com/jspreddy/dql/blob/sai/cli-updates/doc/topics/develop.rst>`
+
+Prerequisites: ``pipx, pyenv``
+
+Install from local source code::
+
+    # 1. Clone repo,
+    # 2. checkout branch `sai/cli-updates`
+    # 3. init python environment
+    pyenv shell 3.9.19
+    # 4. editable install
+    pipx install --python python3.9 -e .

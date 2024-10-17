@@ -32,6 +32,7 @@ dependencies = [
     "humanize>=4.0.0",
 ]
 requires-python = ">=3.7"
+
 [project.optional-dependencies]
 dev = [
     "pytest",
