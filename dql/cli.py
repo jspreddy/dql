@@ -231,6 +231,11 @@ class DQLClient(cmd.Cmd):
 
     history_manager: HistoryManager = HistoryManager()
 
+
+    ########################################################################
+    # Initialization
+    ########################################################################
+
     def initialize(
         self,
         region: str = "us-west-1",
@@ -289,6 +294,11 @@ class DQLClient(cmd.Cmd):
         self.throttle = TableLimits()
         self.throttle.load(self.conf["_throttle"])
 
+
+    ########################################################################
+    # Important Structural functions
+    ########################################################################
+
     def start(self):
         """Start running the interactive session (blocking)"""
         self.running = True
@@ -340,11 +350,6 @@ class DQLClient(cmd.Cmd):
         parts.append(wrap(PROMPT_OFFSET * "=" + "> "))
         print_or_prompt("".join(parts))
 
-    @repl_command
-    def do_whoami(self, *args, **kwargs):
-        """Show information about the session"""
-        print(self.engine.session_identity)
-
     def do_shell(self, arglist):
         """Run a shell command"""
         proc = subprocess.Popen(
@@ -377,6 +382,86 @@ class DQLClient(cmd.Cmd):
         with open(conf_file, "r") as ifile:
             return json.load(ifile)
 
+    def default(self, command):
+        """This is an override of super class method."""
+        self._run_cmd(command)
+
+    def completedefault(self, text, line, *_):
+        """Autocomplete table names in queries"""
+        tokens = line.split()
+        try:
+            before = tokens[-2]
+            complete = before.lower() in ("from", "update", "table", "into")
+            if tokens[0].lower() == "dump":
+                complete = True
+            if complete:
+                return [
+                    t + " "
+                    for t in self.engine.cached_descriptions
+                    if t.startswith(text)
+                ]
+        except KeyError:
+            pass
+
+    def _run_cmd(self, command):
+        """Run a DQL command"""
+        if self.throttle:
+            tables = self.engine.describe_all(False)
+            limiter = self.throttle.get_limiter(tables)
+        else:
+            limiter = None
+        self.engine.rate_limit = limiter
+        results = self.engine.execute(command)
+        if results is None:
+            pass
+        elif isinstance(results, str):
+            if not self._silent:
+                print(results)
+        else:
+            with self.display() as ostream:
+                formatter = FORMATTERS[self.conf["format"]](
+                    results,
+                    ostream,
+                    pagesize=self.conf["pagesize"],
+                    width=self.conf["width"],
+                    lossy_json_float=self.conf["lossy_json_float"],
+                )
+                formatter.display()
+
+        print_count = 0
+        total = None
+        for cmd_fragment, capacity in self.engine.consumed_capacities:
+            total += capacity
+            print(cmd_fragment)
+            print(indent(str(capacity)))
+            print_count += 1
+        if print_count > 1:
+            print("TOTAL")
+            print(indent(str(total)))
+
+    def run_command(
+        self, command: str, use_json: bool = False, raise_exceptions: bool = False
+    ) -> None:
+        """Run a command passed in from the command line with -c"""
+        self.display = DISPLAYS["stdout"]
+        self.conf["pagesize"] = 0
+        if use_json:
+            self.conf["format"] = "json"
+            self._silent = True
+        if raise_exceptions:
+            self.onecmd(command)
+        else:
+            with exception_handler(self.engine):
+                self.onecmd(command)
+
+    def emptyline(self):
+        self.default("")
+
+
+    ########################################################################
+    # Options and completers
+    ########################################################################
+
     @repl_command
     def do_opt(self, *_args, **kwargs):
         """Get and set options"""
@@ -403,10 +488,6 @@ class DQLClient(cmd.Cmd):
             else:
                 method(*args, **kwargs)
                 self.save_config()
-
-    def help_opt(self):
-        """Print the help text for options"""
-        print(OPTIONS)
 
     def getopt_default(self, option):
         """Default method to get an option"""
@@ -514,6 +595,16 @@ class DQLClient(cmd.Cmd):
     def complete_opt_lossy_json_float(self, text, *_):
         """Autocomplete for lossy_json_float option"""
         return [t for t in ("true", "false", "yes", "no") if t.startswith(text.lower())]
+
+
+    ########################################################################
+    # Commands and Completers
+    ########################################################################
+
+    @repl_command
+    def do_whoami(self, *args, **kwargs):
+        """Show information about the session"""
+        print(self.engine.session_identity)
 
     @repl_command
     def do_watch(self, *args):
@@ -761,63 +852,6 @@ class DQLClient(cmd.Cmd):
         self.conf["_throttle"] = self.throttle.save()
         self.save_config()
 
-    def default(self, command):
-        """This is an override of super class method."""
-        self._run_cmd(command)
-
-    def completedefault(self, text, line, *_):
-        """Autocomplete table names in queries"""
-        tokens = line.split()
-        try:
-            before = tokens[-2]
-            complete = before.lower() in ("from", "update", "table", "into")
-            if tokens[0].lower() == "dump":
-                complete = True
-            if complete:
-                return [
-                    t + " "
-                    for t in self.engine.cached_descriptions
-                    if t.startswith(text)
-                ]
-        except KeyError:
-            pass
-
-    def _run_cmd(self, command):
-        """Run a DQL command"""
-        if self.throttle:
-            tables = self.engine.describe_all(False)
-            limiter = self.throttle.get_limiter(tables)
-        else:
-            limiter = None
-        self.engine.rate_limit = limiter
-        results = self.engine.execute(command)
-        if results is None:
-            pass
-        elif isinstance(results, str):
-            if not self._silent:
-                print(results)
-        else:
-            with self.display() as ostream:
-                formatter = FORMATTERS[self.conf["format"]](
-                    results,
-                    ostream,
-                    pagesize=self.conf["pagesize"],
-                    width=self.conf["width"],
-                    lossy_json_float=self.conf["lossy_json_float"],
-                )
-                formatter.display()
-
-        print_count = 0
-        total = None
-        for cmd_fragment, capacity in self.engine.consumed_capacities:
-            total += capacity
-            print(cmd_fragment)
-            print(indent(str(capacity)))
-            print_count += 1
-        if print_count > 1:
-            print("TOTAL")
-            print(indent(str(total)))
-
     @repl_command
     def do_EOF(self):  # pylint: disable=C0103
         """Exit"""
@@ -860,23 +894,10 @@ class DQLClient(cmd.Cmd):
         self.history_manager.remove_items(n=1)  # remove "exit" from history
         return self._common_exit()
 
-    def run_command(
-        self, command: str, use_json: bool = False, raise_exceptions: bool = False
-    ) -> None:
-        """Run a command passed in from the command line with -c"""
-        self.display = DISPLAYS["stdout"]
-        self.conf["pagesize"] = 0
-        if use_json:
-            self.conf["format"] = "json"
-            self._silent = True
-        if raise_exceptions:
-            self.onecmd(command)
-        else:
-            with exception_handler(self.engine):
-                self.onecmd(command)
 
-    def emptyline(self):
-        self.default("")
+    ########################################################################
+    # Help functions
+    ########################################################################
 
     def help_help(self):
         """Print the help text for help"""
@@ -929,3 +950,7 @@ class DQLClient(cmd.Cmd):
     def help_update(self):
         """Print the help text for UPDATE"""
         print(UPDATE)
+
+    def help_opt(self):
+        """Print the help text for options"""
+        print(OPTIONS)
