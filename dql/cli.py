@@ -457,6 +457,9 @@ class DQLClient(cmd.Cmd):
     def emptyline(self):
         self.default("")
 
+    def do_help(self, arg):
+        """Show help for a command"""
+        super().do_help(arg)
 
     ########################################################################
     # Options and completers
@@ -864,6 +867,11 @@ class DQLClient(cmd.Cmd):
 
     @repl_command
     def do_cls(self):
+        """Clear the screen. Add a visual break (2 spaces and 1 horizontal rule)."""
+        return self._do_clear()
+
+    @repl_command
+    def do_c(self):
         """Clear the screen. Add a visual break (2 spaces and 1 horizontal rule)."""
         return self._do_clear()
 
