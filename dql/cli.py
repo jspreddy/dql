@@ -231,7 +231,6 @@ class DQLClient(cmd.Cmd):
 
     history_manager: HistoryManager = HistoryManager()
 
-
     ########################################################################
     # Initialization
     ########################################################################
@@ -293,7 +292,6 @@ class DQLClient(cmd.Cmd):
         self.display = DISPLAYS[self.conf["display"]]
         self.throttle = TableLimits()
         self.throttle.load(self.conf["_throttle"])
-
 
     ########################################################################
     # Important Structural functions
@@ -599,7 +597,6 @@ class DQLClient(cmd.Cmd):
         """Autocomplete for lossy_json_float option"""
         return [t for t in ("true", "false", "yes", "no") if t.startswith(text.lower())]
 
-
     ########################################################################
     # Commands and Completers
     ########################################################################
@@ -901,7 +898,6 @@ class DQLClient(cmd.Cmd):
         """Exit"""
         self.history_manager.remove_items(n=1)  # remove "exit" from history
         return self._common_exit()
-
 
     ########################################################################
     # Help functions
