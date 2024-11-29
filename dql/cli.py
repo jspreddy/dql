@@ -56,6 +56,8 @@ from .output import (
 )
 from .throttle import TableLimits
 
+__version__ = "0.6.4-dev6"
+
 # From http://docs.aws.amazon.com/general/latest/gr/rande.html#ddb_region
 REGIONS = [
     "us-east-1",
@@ -607,6 +609,11 @@ class DQLClient(cmd.Cmd):
         print(self.engine.session_identity)
 
     @repl_command
+    def do_iam(self, *args, **kwargs):
+        """Show information about the IAM user"""
+        print(self.engine.session_identity)
+
+    @repl_command
     def do_watch(self, *args):
         """Watch Dynamo tables consumed capacity"""
         tables = set()
@@ -898,6 +905,11 @@ class DQLClient(cmd.Cmd):
         """Exit"""
         self.history_manager.remove_items(n=1)  # remove "exit" from history
         return self._common_exit()
+
+    @repl_command
+    def do_version(self):
+        """Print the version of DQL"""
+        print(__version__)
 
     ########################################################################
     # Help functions
