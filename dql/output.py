@@ -17,11 +17,11 @@ from typing import Dict
 
 from dateutil.relativedelta import relativedelta
 from dynamo3 import Binary
+from rich import box
 from rich.console import Console
 from rich.highlighter import JSONHighlighter
-from rich.table import Table
-from rich import box
 from rich.pretty import pprint
+from rich.table import Table
 
 from .util import getmaxyx, plural
 
@@ -98,7 +98,13 @@ class BaseFormat(object):
     """Base class for formatters"""
 
     def __init__(
-        self, results, ostream, width="auto", pagesize="auto", lossy_json_float=True, engine_info=None
+        self,
+        results,
+        ostream,
+        width="auto",
+        pagesize="auto",
+        lossy_json_float=True,
+        engine_info=None,
     ):
         self._results = make_list(results)
         self._ostream = ostream
@@ -322,10 +328,12 @@ class RichFormat(BaseFormat):
             if self._engine_info["index"]:
                 important_cols.extend(self._engine_info["index"].primary_key_attributes)
 
-            if "ddb_query" in self._engine_info and "attributes" in self._engine_info["ddb_query"]:
+            if (
+                "ddb_query" in self._engine_info
+                and "attributes" in self._engine_info["ddb_query"]
+            ):
                 # specific selection was made in query, so dont sort columns.
                 should_sort = False
-
 
         table = Table(
             title="Results",
@@ -336,17 +344,24 @@ class RichFormat(BaseFormat):
         )
 
         # sort columns with important first, and then alphabetically
-        sorted_cols = sorted(self._all_columns, key=lambda x: (
-            0 if x in important_cols else 1,
-            0 if x in important_cols else x.lower()
-        )) if should_sort else self._all_columns
+        sorted_cols = (
+            sorted(
+                self._all_columns,
+                key=lambda x: (
+                    0 if x in important_cols else 1,
+                    0 if x in important_cols else x.lower(),
+                ),
+            )
+            if should_sort
+            else self._all_columns
+        )
 
         for col in sorted_cols:
             justify = "left"
-            style=""
+            style = ""
 
             if col in important_cols:
-                style="green"
+                style = "green"
 
             table.add_column(col, justify=justify, header_style=style)
 

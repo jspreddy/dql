@@ -115,6 +115,7 @@ class QueryIndex(object):
         else:
             return (self.hash_key, self.range_key)
 
+
 class TableField(object):
     """
     A DynamoDB table attribute

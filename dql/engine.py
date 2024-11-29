@@ -138,7 +138,6 @@ class Engine(object):
     _explaining: Any
     _query_rate_limit: Any
 
-
     def __init__(self, connection=None):
         self._connection = None
         self.connection = connection
