@@ -13,7 +13,7 @@ from builtins import input, range, str
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Dict
+from typing import Dict, List
 
 from dateutil.relativedelta import relativedelta
 from dynamo3 import Binary
@@ -304,7 +304,7 @@ class RichFormat(BaseFormat):
 
     def __init__(self, *args, **kwargs):
         super(RichFormat, self).__init__(*args, **kwargs)
-        self._all_columns = []
+        self._all_columns: List[str] = []
         if not self._results:
             return
         # Get all unique column names
@@ -348,8 +348,10 @@ class RichFormat(BaseFormat):
             sorted(
                 self._all_columns,
                 key=lambda x: (
+                    # grouping into 0,1
                     0 if x in important_cols else 1,
-                    0 if x in important_cols else x.lower(),
+                    # order in group. important cols order. or alphabetical.
+                    important_cols.index(x) if x in important_cols else x.upper(),
                 ),
             )
             if should_sort
