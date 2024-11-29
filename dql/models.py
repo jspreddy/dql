@@ -105,6 +105,15 @@ class QueryIndex(object):
         else:
             return "QueryIndex(%r, %s, %s)" % (self.name, self.hash_key, self.range_key)
 
+    @property
+    def primary_key_attributes(self):
+        """Get the names of the primary key attributes as a tuple"""
+        if self.hash_key is None:
+            raise ValueError("Missing hash key")
+        if self.range_key is None:
+            return (self.hash_key,)
+        else:
+            return (self.hash_key, self.range_key)
 
 class TableField(object):
     """

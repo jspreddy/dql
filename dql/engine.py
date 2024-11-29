@@ -130,6 +130,15 @@ class Engine(object):
     _connection: DynamoDBConnection
     _identity: Any
 
+    _parsed_information: Any
+    _analyzing: Any
+    _call_list: Any
+    _cloudwatch_connection: Any
+    _encoder: Any
+    _explaining: Any
+    _query_rate_limit: Any
+
+
     def __init__(self, connection=None):
         self._connection = None
         self.connection = connection
@@ -147,6 +156,7 @@ class Engine(object):
         self._encoder = json.JSONEncoder(separators=(",", ":"), default=default)
         self.caution_callback = None
         self._identity = None
+        self._parsed_information = {}
 
     def connect(self, *args, **kwargs):
         """Proxy to DynamoDBConnection.connect."""
@@ -173,6 +183,14 @@ class Engine(object):
     def connection(self) -> DynamoDBConnection:
         """Get the dynamo connection"""
         return self._connection
+
+    @property
+    def parsed_information(self):
+        """Get the parsed information from engine"""
+        tablename = self._parsed_information["tree"].table
+        self._parsed_information["table"] = self.describe(tablename)
+
+        return self._parsed_information
 
     @connection.setter
     def connection(self, connection: DynamoDBConnection) -> None:
@@ -361,6 +379,7 @@ class Engine(object):
 
     def _run(self, tree):
         """Run a query from a parse tree"""
+        self._parsed_information["tree"] = tree
         if tree.throttle:
             limiter = self._parse_throttle(tree.table, tree.throttle)
             self._query_rate_limit = limiter
@@ -600,6 +619,9 @@ class Engine(object):
                 kwargs["attributes"] = attributes
         kwargs["expr_values"] = visitor.expression_values
         kwargs["alias"] = visitor.attribute_names
+
+        self._parsed_information["ddb_query"] = kwargs
+        self._parsed_information["index"] = index
 
         method = getattr(self.connection, action)
         result = method(tablename, **kwargs)

@@ -48,6 +48,7 @@ from .output import (
     ColumnFormat,
     ExpandedFormat,
     JsonFormat,
+    RichFormat,
     SmartBuffer,
     SmartFormat,
     console,
@@ -78,6 +79,7 @@ FORMATTERS = {
     "expanded": ExpandedFormat,
     "column": ColumnFormat,
     "json": JsonFormat,
+    "rich": RichFormat,
 }
 DEFAULT_CONFIG = {
     "width": "auto",
@@ -425,6 +427,7 @@ class DQLClient(cmd.Cmd):
                     pagesize=self.conf["pagesize"],
                     width=self.conf["width"],
                     lossy_json_float=self.conf["lossy_json_float"],
+                    engine_info=self.engine.parsed_information,
                 )
                 formatter.display()
 

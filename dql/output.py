@@ -19,6 +19,9 @@ from dateutil.relativedelta import relativedelta
 from dynamo3 import Binary
 from rich.console import Console
 from rich.highlighter import JSONHighlighter
+from rich.table import Table
+from rich import box
+from rich.pretty import pprint
 
 from .util import getmaxyx, plural
 
@@ -95,13 +98,14 @@ class BaseFormat(object):
     """Base class for formatters"""
 
     def __init__(
-        self, results, ostream, width="auto", pagesize="auto", lossy_json_float=True
+        self, results, ostream, width="auto", pagesize="auto", lossy_json_float=True, engine_info=None
     ):
         self._results = make_list(results)
         self._ostream = ostream
         self._width = width
         self._pagesize = pagesize
         self._lossy_json_float = lossy_json_float
+        self._engine_info = engine_info
 
     @property
     def _default_json_serializer(self):
@@ -287,6 +291,73 @@ class ColumnFormat(BaseFormat):
             self._ostream.write(truncate(val, width))
             self._ostream.write(" |")
         self._ostream.write("\n")
+
+
+class RichFormat(BaseFormat):
+    """Format results as a Rich table"""
+
+    def __init__(self, *args, **kwargs):
+        super(RichFormat, self).__init__(*args, **kwargs)
+        self._all_columns = []
+        if not self._results:
+            return
+        # Get all unique column names
+        for result in self._results:
+            for key in result:
+                if key not in self._all_columns:
+                    self._all_columns.append(key)
+
+    def display(self):
+        """Display results in a Rich table"""
+        if not self._results:
+            return
+
+        important_cols = []
+        should_sort = True
+        if self._engine_info:
+            # pprint(self._engine_info, expand_all=True)
+            pk = self._engine_info["table"].primary_key_attributes
+            important_cols.extend(pk)
+
+            if self._engine_info["index"]:
+                important_cols.extend(self._engine_info["index"].primary_key_attributes)
+
+            if "ddb_query" in self._engine_info and "attributes" in self._engine_info["ddb_query"]:
+                # specific selection was made in query, so dont sort columns.
+                should_sort = False
+
+
+        table = Table(
+            title="Results",
+            title_justify="left",
+            title_style="green",
+            highlight=True,
+            # row_styles=["", "on grey27"]
+        )
+
+        # sort columns with important first, and then alphabetically
+        sorted_cols = sorted(self._all_columns, key=lambda x: (
+            0 if x in important_cols else 1,
+            0 if x in important_cols else x.lower()
+        )) if should_sort else self._all_columns
+
+        for col in sorted_cols:
+            justify = "left"
+            style=""
+
+            if col in important_cols:
+                style="green"
+
+            table.add_column(col, justify=justify, header_style=style)
+
+        # Add rows
+        for result in self._results:
+            row = []
+            for col in sorted_cols:
+                row.append(self.format_field(result.get(col, None)))
+            table.add_row(*row)
+
+        console.print(table)
 
 
 class JsonFormat(BaseFormat):
