@@ -415,7 +415,7 @@ class DQLClient(cmd.Cmd):
         self.engine.rate_limit = limiter
         results = self.engine.execute(command)
         if results is None:
-            pass
+            return
         elif isinstance(results, str):
             if not self._silent:
                 print(results)
