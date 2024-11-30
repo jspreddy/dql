@@ -359,13 +359,12 @@ class RichFormat(BaseFormat):
         )
 
         for col in sorted_cols:
-            justify = "left"
             style = ""
 
             if col in important_cols:
                 style = "green"
 
-            table.add_column(col, justify=justify, header_style=style)
+            table.add_column(col, header_style=style)
 
         # Add rows
         for result in self._results:

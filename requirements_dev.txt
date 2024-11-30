@@ -1,13 +1,14 @@
 -r requirements_test.txt
+black==24.4.1
+build
 bump2version
+faker
+isort
+mypy
 numpydoc
+pylint
 sphinx
 sphinx_rtd_theme
 tox
 virtualenv-pyenv
 wheel
-build
-isort
-mypy
-black==24.4.1
-pylint
