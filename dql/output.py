@@ -59,6 +59,13 @@ def serialize_json_var_lossy_float(obj):
         return b64encode(obj.value).decode("ascii")
     elif isinstance(obj, set):
         return list(obj)
+        # return list(obj).sort(
+        #     key=lambda x: json.dumps(
+        #         x,
+        #         default=serialize_json_var_lossy_float,
+        #         sort_keys=True
+        #     )
+        # )
     else:
         raise TypeError("%s %r is not JSON serializable" % (type(obj), obj))
 
@@ -390,14 +397,13 @@ class JsonFormat(BaseFormat):
             # )
             console.out(
                 self._jsonHighlighter(
-                    json.dumps(result, default=self._default_json_serializer, indent=4)
+                    json.dumps(result, default=self._default_json_serializer, indent=4, sort_keys=True)
                 )
             )
 
             end_date = datetime.now(timezone.utc)
             process_duration = end_date - start_date
-            print(f"Took {process_duration} h:m:s")
-
+            # print(f"Took {process_duration} h:m:s")
             self._ostream.write("\n")
 
 

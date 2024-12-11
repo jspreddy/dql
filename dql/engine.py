@@ -137,10 +137,14 @@ class Engine(object):
     _encoder: Any
     _explaining: Any
     _query_rate_limit: Any
+    cached_descriptions: dict[str, TableMeta]
+    consumed_capacities: list[tuple[str, Capacity]]
 
-    def __init__(self, connection=None):
+    def __init__(self, connection: Optional[DynamoDBConnection] = None):
         self._connection = None
-        self.connection = connection
+        if connection is not None:
+            self.connection = connection
+
         self.cached_descriptions = {}
         self._cloudwatch_connection = None
         self.allow_select_scan = False
@@ -173,7 +177,7 @@ class Engine(object):
     def session_identity(self):
         if not self._identity:
             session = botocore.session.get_session()
-            sts = session.create_client("sts")
+            sts: Any = session.create_client("sts")
             self._identity = sts.get_caller_identity()
 
         return self._identity
@@ -183,6 +187,20 @@ class Engine(object):
         """Get the dynamo connection"""
         return self._connection
 
+    @connection.setter
+    def connection(self, connection: DynamoDBConnection) -> None:
+        """Change the dynamo connection"""
+        if connection is not None:
+            connection.subscribe("capacity", self._on_capacity_data)
+            connection.default_return_capacity = True
+
+        if self._connection is not None:
+            connection.unsubscribe("capacity", self._on_capacity_data)
+
+        self._connection = connection
+        self._cloudwatch_connection = None
+        self.cached_descriptions = {}
+
     @property
     def parsed_information(self):
         """Get the parsed information from engine"""
@@ -190,18 +208,6 @@ class Engine(object):
         self._parsed_information["table"] = self.describe(tablename)
 
         return self._parsed_information
-
-    @connection.setter
-    def connection(self, connection: DynamoDBConnection) -> None:
-        """Change the dynamo connection"""
-        if connection is not None:
-            connection.subscribe("capacity", self._on_capacity_data)
-            connection.default_return_capacity = True
-        if self._connection is not None:
-            connection.unsubscribe("capacity", self._on_capacity_data)
-        self._connection = connection
-        self._cloudwatch_connection = None
-        self.cached_descriptions = {}
 
     @property
     def cloudwatch_connection(self):
