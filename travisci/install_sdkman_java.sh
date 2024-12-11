@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# nosetests dynamo plugin requires Java 8 or order to work properly.
+# DynamoDB Local requires Java 22.
 # However, TravisCI's xenial ships with Java 11 and Java can't be set
 # with `jdk` when python is selected as language.
 # Other ways of setting the jdk have not panned out.

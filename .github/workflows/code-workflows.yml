@@ -38,6 +38,10 @@ jobs:
         uses: actions/setup-python@v2
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install Java
+        run: ./travisci/install_sdkman_java.sh
+      - name: Install & start DynamoDB Local
+        run: ./travisci/install_dynamodb_local.sh background
       - name: Running tests for ${{ matrix.python-version }} with tox
         uses: ymyzk/run-tox-gh-actions@main
 
