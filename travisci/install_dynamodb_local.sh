@@ -33,8 +33,9 @@ echo "---------------------------------------"
 
 if [ -z "$BACKGROUND_PROCESS" ]; then
     # start the server
-    java -Djava.library.path=$DYNAMO_LOCAL_PATH/DynamoDBLocal_lib -jar DynamoDBLocal.jar -sharedDb -dbPath ./data
+    # java -Djava.library.path=$DYNAMO_LOCAL_PATH/DynamoDBLocal_lib -jar DynamoDBLocal.jar -inMemory -sharedDb -dbPath ./data
+    java -Djava.library.path=$DYNAMO_LOCAL_PATH/DynamoDBLocal_lib -jar DynamoDBLocal.jar -inMemory -sharedDb
 else
     # start the server in the background
-    java -Djava.library.path=$DYNAMO_LOCAL_PATH/DynamoDBLocal_lib -jar DynamoDBLocal.jar -sharedDb -dbPath ./data &
+    java -Djava.library.path=$DYNAMO_LOCAL_PATH/DynamoDBLocal_lib -jar DynamoDBLocal.jar -inMemory -sharedDb &
 fi

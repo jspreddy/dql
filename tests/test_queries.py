@@ -1,5 +1,4 @@
-""" Tests for queries """
-
+import pytest
 import time
 from datetime import datetime, timedelta
 
@@ -115,6 +114,7 @@ class TestAlter(BaseSystemTest):
         self.assertFalse(desc.is_on_demand)
         self.assertEqual(desc.throughput, Throughput(2, 3))
 
+    @pytest.mark.skip(reason="ddb local seems to have a bug. See manual-tests/update-gsi-fails/")
     def test_alter_index_throughput(self):
         """Can alter throughput of a global index"""
         self.query(
