@@ -1,21 +1,19 @@
 """ Tests for the CLI """
 
-import pytest
-import unittest
 import json
+import shutil
+import tempfile
+import unittest
 from base64 import b64encode
 from collections.abc import Iterable
 from io import BytesIO, StringIO, TextIOWrapper
 from typing import Any, List
 
+import pytest
 from mock import patch
+from rich.pretty import pprint as print  # pylint: disable=W0622
 
 from dql.cli import DQLClient, repl_command
-
-from rich.pretty import pprint as print # pylint: disable=W0622
-import tempfile
-import shutil
-
 
 
 class UniqueCollection(object):
@@ -34,7 +32,7 @@ class UniqueCollection(object):
         return not self.__eq__(other)
 
 
-class BaseCLITest():
+class BaseCLITest:
     """Base class for CLI tests"""
 
     @pytest.fixture(autouse=True)
@@ -49,7 +47,6 @@ class BaseCLITest():
         conn = cli.engine.connection
         for tablename in conn.list_tables():
             conn.delete_table(tablename, wait=True)
-
 
 
 class TestCli(BaseCLITest):
@@ -95,7 +92,9 @@ class TestCli(BaseCLITest):
             if name == "OPTIONS":
                 continue
             if not name.startswith("_"):
-                self.assert_prints(cli, "help %s" % name.lower(), getattr(dql.help, name))
+                self.assert_prints(
+                    cli, "help %s" % name.lower(), getattr(dql.help, name)
+                )
 
 
 class TestCliCommands(BaseCLITest):
@@ -125,7 +124,7 @@ class TestCliCommands(BaseCLITest):
                 assert False
         return ret
 
-    def test_scan_table(self, cli: DQLClient, snapshot):
+    def test_scan_table(self, cli: DQLClient, snapshot) -> None:
         """Can create, insert, and scan from table"""
         lines = self._run_command_raw_output(
             cli,
@@ -138,11 +137,11 @@ class TestCliCommands(BaseCLITest):
                     bool=TRUE
                 );
                 SCAN * FROM foobar;
-            """
+            """,
         )
         assert lines == snapshot
 
-    def test_ls(self, cli: DQLClient, snapshot):
+    def test_ls(self, cli: DQLClient, snapshot) -> None:
         """Snapshot test for ls format"""
         self._run_command_and_parse_output(
             cli,
@@ -152,7 +151,7 @@ class TestCliCommands(BaseCLITest):
                     range NUMBER RANGE KEY,
                     foo STRING INDEX('foo-index')
                 ) GLOBAL INDEX ('bar-index', bar STRING);
-            """
+            """,
         )
         output = self._run_command_raw_output(cli, "ls foobar")
         assert output == snapshot
@@ -172,7 +171,7 @@ class TestCliCommands(BaseCLITest):
                     range NUMBER RANGE KEY,
                     bar STRING INDEX('bar-index')
                 );
-            """
+            """,
         )
         output = self._run_command_raw_output(cli, "ls")
         assert output == snapshot

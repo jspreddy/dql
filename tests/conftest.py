@@ -1,9 +1,12 @@
-import pytest
-import tempfile
 import shutil
-from mock import patch
-from dql import DQLClient
+import tempfile
+
+import pytest
 import rich
+from mock import patch
+
+from dql import DQLClient
+
 
 @pytest.fixture(scope="session")
 def cli():
@@ -24,6 +27,7 @@ def cli():
 
     shutil.rmtree(confdir)
     patcher.stop()
+
 
 @pytest.fixture(scope="session", autouse=True)
 def cli_window_size():

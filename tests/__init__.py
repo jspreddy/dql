@@ -1,17 +1,18 @@
 """ Testing tools for DQL """
 
-import pytest
 import unittest
 
+import pytest
 from dynamo3 import DynamoDBConnection
 
 from dql import Engine
 
+
 class BaseSystemTest(unittest.TestCase):
     """Base class for system tests"""
 
-    dynamo = None
-    engine = None
+    dynamo: DynamoDBConnection
+    engine: Engine
 
     @pytest.fixture(autouse=True)
     def setup_test(self):
@@ -28,7 +29,7 @@ class BaseSystemTest(unittest.TestCase):
         for tablename in self.dynamo.list_tables():
             self.dynamo.delete_table(tablename)
 
-        yield # come back here for teardown
+        yield  # come back here for teardown
 
         # Teardown code
         for tablename in self.dynamo.list_tables():

@@ -397,7 +397,12 @@ class JsonFormat(BaseFormat):
             # )
             console.out(
                 self._jsonHighlighter(
-                    json.dumps(result, default=self._default_json_serializer, indent=4, sort_keys=True)
+                    json.dumps(
+                        result,
+                        default=self._default_json_serializer,
+                        indent=4,
+                        sort_keys=True,
+                    )
                 )
             )
 
