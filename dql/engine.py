@@ -847,7 +847,7 @@ class Engine(object):
         return self._query_and_op(tree, table, "update_item", kwargs)
 
     def _create(self, tree):
-        """Run a SELECT statement"""
+        """Run a CREATE TABLE statement"""
         tablename = tree.table
         indexes = []
         global_indexes = []
@@ -875,6 +875,8 @@ class Engine(object):
                     elif index_type[0] == "INCLUDE":
                         factory = LocalIndex.include
                         kwargs["includes"] = [resolve(v) for v in index.include_vars]
+                    else:
+                        raise SyntaxError("Invalid index type %r" % index_type)
                     index_name = resolve(index[1])
                     field = DynamoKey(name, data_type=TYPES[type_])
                     idx = factory(index_name, field, **kwargs)
@@ -943,6 +945,7 @@ class Engine(object):
             throughput = clause[tp_index]
             kwargs["throughput"] = Throughput(*map(resolve, throughput))
         index_type = clause.index_type[0]
+
         if index_type in ("ALL", "INDEX"):
             factory = GlobalIndex.all
         elif index_type == "KEYS":
@@ -952,6 +955,8 @@ class Engine(object):
             if not clause.include_vars:
                 raise SyntaxError("Include index %r missing include fields" % name)
             kwargs["includes"] = [resolve(v) for v in clause.include_vars]
+        else:
+            raise SyntaxError("Invalid index type %r" % index_type)
         return factory(name, g_hash_key, g_range_key, **kwargs)
 
     def _insert(self, tree):

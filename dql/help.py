@@ -58,7 +58,7 @@ CREATE = """
     CREATE TABLE foobars (id STRING HASH KEY, baz NUMBER,
                         THROUGHPUT (2, 2))
                         GLOBAL INDEX ('bar-index', bar STRING, baz)
-                        GLOBAL INCLUDE INDEX ('baz-index', baz, ['bar'], THROUGHPUT (4, 2));
+                        GLOBAL INCLUDE INDEX ('another-index', fizz STRING, pop STRING, ['bar'], THROUGHPUT (4, 2));
 """
 
 DELETE = """
