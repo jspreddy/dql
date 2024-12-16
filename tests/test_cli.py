@@ -124,7 +124,9 @@ class TestCliCommands(BaseCLITest):
                 assert False
         return ret
 
-    @pytest.mark.skip(reason="TODO: Fix this flakey test which fails sometimes due to sorting in set attributes.")
+    @pytest.mark.skip(
+        reason="TODO: Fix this flakey test which fails sometimes due to sorting in set attributes."
+    )
     def test_scan_table(self, cli: DQLClient, snapshot) -> None:
         """Can create, insert, and scan from table"""
         lines = self._run_command_raw_output(
