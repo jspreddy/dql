@@ -139,6 +139,7 @@ class Engine(object):
     _query_rate_limit: Any
     cached_descriptions: dict[str, TableMeta]
     consumed_capacities: list[tuple[str, Capacity]]
+    rate_limit: Any
 
     def __init__(self, connection: Optional[DynamoDBConnection] = None):
         self._connection = None
