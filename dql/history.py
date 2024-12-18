@@ -8,7 +8,7 @@ class HistoryManager(object):
     history_file_name = "history"
 
     def _create_file_if_not_exists(self, path: str) -> None:
-        with open(path, "a"):
+        with open(path, "a", encoding="utf-8"):
             pass
 
     def _prep_history_file(self, history_dir: Optional[str] = None) -> str:
@@ -49,7 +49,7 @@ class HistoryManager(object):
             current_history_length = readline.get_current_history_length()
             new_history_length = current_history_length - self._initial_history_length
             if new_history_length < 0:
-                raise Exception(
+                raise RuntimeError(
                     f"Unable to write new history. Length is less than 0. ({current_history_length} - {self._initial_history_length})"
                 )
             else:
@@ -73,7 +73,7 @@ class HistoryManager(object):
                 # pop n items from history list
                 readline.remove_history_item(readline.get_current_history_length() - 1)
         else:
-            raise Exception(
+            raise RuntimeError(
                 f"Requested history item removal is not in current session history range. "
                 f"({self._initial_history_length}, {current_history_length})"
             )

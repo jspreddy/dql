@@ -16,6 +16,8 @@ from typing import Any, Callable, ContextManager, Dict, Optional, Tuple
 import botocore
 import humanize
 from pyparsing import ParseException
+
+# pylint: disable=redefined-builtin
 from rich import print
 from rich.console import Group
 from rich.panel import Panel
@@ -373,7 +375,7 @@ class DQLClient(cmd.Cmd):
         if not os.path.exists(self._conf_dir):
             os.makedirs(self._conf_dir)
         conf_file = os.path.join(self._conf_dir, "dql.json")
-        with open(conf_file, "w") as ofile:
+        with open(conf_file, "w", encoding="utf-8") as ofile:
             json.dump(self.conf, ofile, indent=2)
 
     def load_config(self):
@@ -381,7 +383,7 @@ class DQLClient(cmd.Cmd):
         conf_file = os.path.join(self._conf_dir, "dql.json")
         if not os.path.exists(conf_file):
             return {}
-        with open(conf_file, "r") as ifile:
+        with open(conf_file, "r", encoding="utf-8") as ifile:
             return json.load(ifile)
 
     def default(self, command):
@@ -462,9 +464,10 @@ class DQLClient(cmd.Cmd):
     def emptyline(self):
         self.default("")
 
-    def do_help(self, arg):
-        """Show help for a command"""
-        super().do_help(arg)
+    # Passthrough is unnecessary.
+    # def do_help(self, arg):
+    #     """Show help for a command"""
+    #     super().do_help(arg)
 
     ########################################################################
     # Options and completers
@@ -639,7 +642,7 @@ class DQLClient(cmd.Cmd):
     @repl_command
     def do_file(self, filename):
         """Read and execute a .dql file"""
-        with open(filename, "r") as infile:
+        with open(filename, "r", encoding="utf-8") as infile:
             self._run_cmd(infile.read())
 
     def complete_file(self, text, line, *_):

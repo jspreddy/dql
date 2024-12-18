@@ -382,6 +382,9 @@ class RichFormat(BaseFormat):
 
         console.print(table)
 
+    def write(self, result):
+        pass
+
 
 class JsonFormat(BaseFormat):
     _jsonHighlighter = JSONHighlighter()

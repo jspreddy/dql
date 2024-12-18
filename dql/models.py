@@ -513,8 +513,8 @@ class TableMeta(object):
         """Get a specific index by name"""
         try:
             return self.get_indexes()[index_name]
-        except KeyError:
-            raise EngineRuntimeError("Unknown index %r" % index_name)
+        except KeyError as exc:
+            raise EngineRuntimeError("Unknown index %r" % index_name) from exc
 
     def get_indexes(self) -> Dict[str, QueryIndex]:
         """Get a dict of index names to index"""
