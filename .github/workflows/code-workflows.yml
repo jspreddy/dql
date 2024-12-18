@@ -52,6 +52,9 @@ jobs:
 
       - name: Running tests for ${{ matrix.python-version }} with tox
         uses: ymyzk/run-tox-gh-actions@main
+        with:
+          tox-args:
+            -e test
 
   # publish-job:
   #   name: Publish to PyPI and upload binary
