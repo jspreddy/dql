@@ -127,7 +127,7 @@ class TestCliCommands(BaseCLITest):
     @pytest.mark.skip(
         reason="TODO: Fix this flakey test which fails sometimes due to sorting in set attributes."
     )
-    def test_scan_table(self, cli: DQLClient, snapshot) -> None:
+    def test_scan_table(self, cli: DQLClient, snapshot: Any) -> None:
         """Can create, insert, and scan from table"""
         lines = self._run_command_raw_output(
             cli,
@@ -144,7 +144,7 @@ class TestCliCommands(BaseCLITest):
         )
         assert lines == snapshot
 
-    def test_ls(self, cli: DQLClient, snapshot) -> None:
+    def test_ls(self, cli: DQLClient, snapshot: Any) -> None:
         """Snapshot test for ls format"""
         self._run_command_and_parse_output(
             cli,
@@ -159,7 +159,7 @@ class TestCliCommands(BaseCLITest):
         output = self._run_command_raw_output(cli, "ls foobar_ls_test")
         assert output == snapshot
 
-    def test_ls_with_multiple_tables(self, cli, snapshot):
+    def test_ls_with_multiple_tables(self, cli: DQLClient, snapshot: Any) -> None:
         """Snapshot test for ls format"""
         self._run_command_and_parse_output(
             cli,

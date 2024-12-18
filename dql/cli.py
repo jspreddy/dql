@@ -388,8 +388,10 @@ class DQLClient(cmd.Cmd):
         """This is an override of super class method."""
         self._run_cmd(command)
 
-    def completedefault(self, text, line, *_):
+    def completedefault(self, *args):
         """Autocomplete table names in queries"""
+        text = args[0]
+        line = args[1]
         tokens = line.split()
         try:
             before = tokens[-2]

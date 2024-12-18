@@ -16,7 +16,18 @@ from builtins import int
 from concurrent import futures
 from decimal import Decimal, InvalidOperation
 from pprint import pformat
-from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union, cast, overload
+from typing import (
+    Any,
+    BinaryIO,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Union,
+    cast,
+    overload,
+)
 
 import botocore
 import botocore.session
@@ -158,7 +169,7 @@ class Engine(object):
         self._query_rate_limit = None
         self.rate_limit = None
         self._encoder = json.JSONEncoder(separators=(",", ":"), default=default)
-        self.caution_callback = None
+        self.caution_callback: Optional[Callable] = None
         self._identity = None
         self._parsed_information = {}
 

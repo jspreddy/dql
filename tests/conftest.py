@@ -36,4 +36,4 @@ def cli_window_size():
     """
     rich.get_console().width = 200
     yield
-    rich.get_console().width = None
+    rich.get_console().width = None  # type: ignore[assignment]
