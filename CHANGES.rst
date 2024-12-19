@@ -5,10 +5,10 @@ Changelog
 
 0.6.4-dev8 (Current Development)
 --------------------------------
-* Added: Added colorization for `json` formatter
-* Added: `rich` formatter for query results
-* Added: New CLI commands - `whoami`, `version`, `iam`
-* Added: `c` command as alias for `clear`
+* Added: Added colorization for ``json`` formatter
+* Added: ``rich`` formatter for query results
+* Added: New CLI commands - ``whoami``, ``version``, ``iam``
+* Added: ``c`` command as alias for ``clear``
 * Added: Progress display for batching operations
 * Added: Ability to force "no index" when querying
 
@@ -22,7 +22,7 @@ Changelog
 
 * Fix: Binary mode save encoding issues
 * Fix: LS command breaking with semicolon usage
-* Fix: Query attribute name errors when begins with _ "underscore"
+* Fix: Query attribute name errors when begins with ``_`` "underscore"
 * Fix: Fixed issues with analyze command reprinting results
 * Fix: CLI prompt bugs
 * Fix: Fixed some packaging issues
@@ -38,8 +38,8 @@ Changelog
 * Added: Run tests with python 3.9
 * Chore: general cleanup & lint fixes
 * Chore: removing travis-ci; adding github workflows
-* Added: `clear` & `cls` commands.
-* Updated: clear, cls, exit commands are no longer tracked in history.
+* Added: ``clear`` & ``cls`` commands.
+* Updated: ``clear``, ``cls``, ``exit`` commands are no longer tracked in history.
 
 0.6.1
 -----
