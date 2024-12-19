@@ -5,7 +5,7 @@ SCRIPT_PATH=$(dirname "$0")
 ROOT_PATH=$SCRIPT_PATH/..
 DYNAMO_LOCAL_PATH=$ROOT_PATH/.dynamo-local
 
-
+BACKGROUND_PROCESS=$1
 
 mkdir -p $DYNAMO_LOCAL_PATH
 mkdir -p $DYNAMO_LOCAL_PATH/data
@@ -29,7 +29,13 @@ tar -xzf dynamodb_local_latest.tar.gz
 
 echo "---------------------------------------"
 echo "Starting dynamodb local                "
-echo "---------------------------------------"  
+echo "---------------------------------------"
 
-# start the server
-java -Djava.library.path=$DYNAMO_LOCAL_PATH/DynamoDBLocal_lib -jar DynamoDBLocal.jar -sharedDb -dbPath ./data
+if [ -z "$BACKGROUND_PROCESS" ]; then
+    # start the server
+    # java -Djava.library.path=$DYNAMO_LOCAL_PATH/DynamoDBLocal_lib -jar DynamoDBLocal.jar -inMemory -sharedDb -dbPath ./data
+    java -Djava.library.path=$DYNAMO_LOCAL_PATH/DynamoDBLocal_lib -jar DynamoDBLocal.jar -inMemory -sharedDb
+else
+    # start the server in the background
+    java -Djava.library.path=$DYNAMO_LOCAL_PATH/DynamoDBLocal_lib -jar DynamoDBLocal.jar -inMemory -sharedDb &
+fi

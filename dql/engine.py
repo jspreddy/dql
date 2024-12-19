@@ -16,7 +16,18 @@ from builtins import int
 from concurrent import futures
 from decimal import Decimal, InvalidOperation
 from pprint import pformat
-from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union, cast, overload
+from typing import (
+    Any,
+    BinaryIO,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Union,
+    cast,
+    overload,
+)
 
 import botocore
 import botocore.session
@@ -130,9 +141,22 @@ class Engine(object):
     _connection: DynamoDBConnection
     _identity: Any
 
-    def __init__(self, connection=None):
+    _parsed_information: Any
+    _analyzing: Any
+    _call_list: Any
+    _cloudwatch_connection: Any
+    _encoder: Any
+    _explaining: Any
+    _query_rate_limit: Any
+    cached_descriptions: dict[str, TableMeta]
+    consumed_capacities: list[tuple[str, Capacity]]
+    rate_limit: Any
+
+    def __init__(self, connection: Optional[DynamoDBConnection] = None):
         self._connection = None
-        self.connection = connection
+        if connection is not None:
+            self.connection = connection
+
         self.cached_descriptions = {}
         self._cloudwatch_connection = None
         self.allow_select_scan = False
@@ -145,8 +169,9 @@ class Engine(object):
         self._query_rate_limit = None
         self.rate_limit = None
         self._encoder = json.JSONEncoder(separators=(",", ":"), default=default)
-        self.caution_callback = None
+        self.caution_callback: Optional[Callable] = None
         self._identity = None
+        self._parsed_information = {}
 
     def connect(self, *args, **kwargs):
         """Proxy to DynamoDBConnection.connect."""
@@ -164,7 +189,7 @@ class Engine(object):
     def session_identity(self):
         if not self._identity:
             session = botocore.session.get_session()
-            sts = session.create_client("sts")
+            sts: Any = session.create_client("sts")
             self._identity = sts.get_caller_identity()
 
         return self._identity
@@ -180,11 +205,21 @@ class Engine(object):
         if connection is not None:
             connection.subscribe("capacity", self._on_capacity_data)
             connection.default_return_capacity = True
+
         if self._connection is not None:
             connection.unsubscribe("capacity", self._on_capacity_data)
+
         self._connection = connection
         self._cloudwatch_connection = None
         self.cached_descriptions = {}
+
+    @property
+    def parsed_information(self):
+        """Get the parsed information from engine"""
+        tablename = self._parsed_information["tree"].table
+        self._parsed_information["table"] = self.describe(tablename)
+
+        return self._parsed_information
 
     @property
     def cloudwatch_connection(self):
@@ -361,6 +396,7 @@ class Engine(object):
 
     def _run(self, tree):
         """Run a query from a parse tree"""
+        self._parsed_information["tree"] = tree
         if tree.throttle:
             limiter = self._parse_throttle(tree.table, tree.throttle)
             self._query_rate_limit = limiter
@@ -601,6 +637,9 @@ class Engine(object):
         kwargs["expr_values"] = visitor.expression_values
         kwargs["alias"] = visitor.attribute_names
 
+        self._parsed_information["ddb_query"] = kwargs
+        self._parsed_information["index"] = index
+
         method = getattr(self.connection, action)
         result = method(tablename, **kwargs)
 
@@ -820,7 +859,7 @@ class Engine(object):
         return self._query_and_op(tree, table, "update_item", kwargs)
 
     def _create(self, tree):
-        """Run a SELECT statement"""
+        """Run a CREATE TABLE statement"""
         tablename = tree.table
         indexes = []
         global_indexes = []
@@ -848,6 +887,8 @@ class Engine(object):
                     elif index_type[0] == "INCLUDE":
                         factory = LocalIndex.include
                         kwargs["includes"] = [resolve(v) for v in index.include_vars]
+                    else:
+                        raise SyntaxError("Invalid index type %r" % index_type)
                     index_name = resolve(index[1])
                     field = DynamoKey(name, data_type=TYPES[type_])
                     idx = factory(index_name, field, **kwargs)
@@ -916,6 +957,7 @@ class Engine(object):
             throughput = clause[tp_index]
             kwargs["throughput"] = Throughput(*map(resolve, throughput))
         index_type = clause.index_type[0]
+
         if index_type in ("ALL", "INDEX"):
             factory = GlobalIndex.all
         elif index_type == "KEYS":
@@ -925,6 +967,8 @@ class Engine(object):
             if not clause.include_vars:
                 raise SyntaxError("Include index %r missing include fields" % name)
             kwargs["includes"] = [resolve(v) for v in clause.include_vars]
+        else:
+            raise SyntaxError("Invalid index type %r" % index_type)
         return factory(name, g_hash_key, g_range_key, **kwargs)
 
     def _insert(self, tree):

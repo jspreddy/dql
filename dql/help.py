@@ -58,7 +58,7 @@ CREATE = """
     CREATE TABLE foobars (id STRING HASH KEY, baz NUMBER,
                         THROUGHPUT (2, 2))
                         GLOBAL INDEX ('bar-index', bar STRING, baz)
-                        GLOBAL INCLUDE INDEX ('baz-index', baz, ['bar'], THROUGHPUT (4, 2));
+                        GLOBAL INCLUDE INDEX ('another-index', fizz STRING, pop STRING, ['bar'], THROUGHPUT (4, 2));
 """
 
 DELETE = """
@@ -219,6 +219,6 @@ OPTIONS = """
                 width : int, The number of characters wide to format the display
              pagesize : int, The number of results to get per page for queries
               display : (less|stdout), The reader used to view query results
-               format : (smart|column|expanded), Display format for query results
+               format : (smart|column|expanded|json|rich), Display format for query results
     allow_select_scan : bool, If True, SELECT statements can perform table scans
 """

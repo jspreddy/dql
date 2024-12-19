@@ -2,6 +2,7 @@
 
 import unittest
 
+import pytest
 from dynamo3 import DynamoDBConnection
 
 from dql import Engine
@@ -10,26 +11,27 @@ from dql import Engine
 class BaseSystemTest(unittest.TestCase):
     """Base class for system tests"""
 
-    dynamo: DynamoDBConnection = None
+    dynamo: DynamoDBConnection
+    engine: Engine
 
-    def __init__(self, methodName: str = "runTest") -> None:
-        super().__init__(methodName)
+    @pytest.fixture(autouse=True)
+    def setup_test(self):
         self.dynamo = DynamoDBConnection.connect(
-            region="us-east-1",
+            region="us-west-1",
             host="localhost",
             port=8000,
             is_secure=False,
+            access_key="test",
+            secret_key="test",
         )
-
-    def setUp(self):
-        super(BaseSystemTest, self).setUp()
         self.engine = Engine(self.dynamo)
         # Clear out any pre-existing tables
         for tablename in self.dynamo.list_tables():
             self.dynamo.delete_table(tablename)
 
-    def tearDown(self):
-        super(BaseSystemTest, self).tearDown()
+        yield  # come back here for teardown
+
+        # Teardown code
         for tablename in self.dynamo.list_tables():
             self.dynamo.delete_table(tablename)
 

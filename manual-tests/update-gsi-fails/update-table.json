@@ -1,0 +1,11 @@
+[
+  {
+    "Update": {
+      "IndexName": "foo_index",
+      "ProvisionedThroughput": {
+        "ReadCapacityUnits": 2,
+        "WriteCapacityUnits": 2
+      }
+    }
+  }
+]

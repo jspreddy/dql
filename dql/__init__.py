@@ -4,10 +4,10 @@ import argparse
 import logging.config
 import os
 
-from .cli import DQLClient
+from .cli import DQLClient, __version__
 from .engine import Engine, FragmentEngine
 
-__version__ = "0.6.4-dev6"
+
 __all__ = ["Engine", "FragmentEngine", "DQLClient"]
 
 LOG_CONFIG = {

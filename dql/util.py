@@ -182,7 +182,9 @@ def open_file_smart_mode(filename, write=False):
             else:
                 yield gzip_file
     else:
-        if not text_format:
-            mode += "b"
-        with open(filename, mode, encoding="utf-8") as ofile:
-            yield ofile
+        if text_format:
+            with open(filename, mode, encoding="utf-8") as ofile:
+                yield ofile
+        else:
+            with open(filename, mode + "b") as ofile:
+                yield ofile

@@ -1,0 +1,5 @@
+create table users-fake-data (id string hash key);
+
+alter table users-fake-data CREATE GLOBAL INDEX ('organ-donor-index', organ_donor_status BOOLEAN, age NUMBER) IF NOT EXISTS;
+
+load user_table_output.json into users-fake-data;

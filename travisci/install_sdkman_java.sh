@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# nosetests dynamo plugin requires Java 8 or order to work properly.
+# DynamoDB Local requires Java 22.
 # However, TravisCI's xenial ships with Java 11 and Java can't be set
 # with `jdk` when python is selected as language.
 # Other ways of setting the jdk have not panned out.
@@ -14,14 +14,15 @@ source "$HOME/.sdkman/bin/sdkman-init.sh"
 echo "---------------------------------------"
 sdk version
 echo "---------------------------------------"
-sdk list java
+# sdk list java
 echo "---------------------------------------"
 
 
 echo "---------------------------------------"
 echo "Installing java using sdkman..........."
 echo "---------------------------------------"
-sdk install java 8.0.265.hs-adpt < /dev/null
+sdk install java 22.0.2-amzn < /dev/null
+sdk use java 22.0.2-amzn
 sdk current java
 echo "---------------------------------------"
 echo "java -version"

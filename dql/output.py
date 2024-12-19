@@ -13,12 +13,15 @@ from builtins import input, range, str
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Dict
+from typing import Dict, List
 
 from dateutil.relativedelta import relativedelta
 from dynamo3 import Binary
+from rich import box
 from rich.console import Console
 from rich.highlighter import JSONHighlighter
+from rich.pretty import pprint
+from rich.table import Table
 
 from .util import getmaxyx, plural
 
@@ -56,6 +59,13 @@ def serialize_json_var_lossy_float(obj):
         return b64encode(obj.value).decode("ascii")
     elif isinstance(obj, set):
         return list(obj)
+        # return list(obj).sort(
+        #     key=lambda x: json.dumps(
+        #         x,
+        #         default=serialize_json_var_lossy_float,
+        #         sort_keys=True
+        #     )
+        # )
     else:
         raise TypeError("%s %r is not JSON serializable" % (type(obj), obj))
 
@@ -95,13 +105,20 @@ class BaseFormat(object):
     """Base class for formatters"""
 
     def __init__(
-        self, results, ostream, width="auto", pagesize="auto", lossy_json_float=True
+        self,
+        results,
+        ostream,
+        width="auto",
+        pagesize="auto",
+        lossy_json_float=True,
+        engine_info=None,
     ):
         self._results = make_list(results)
         self._ostream = ostream
         self._width = width
         self._pagesize = pagesize
         self._lossy_json_float = lossy_json_float
+        self._engine_info = engine_info
 
     @property
     def _default_json_serializer(self):
@@ -289,6 +306,86 @@ class ColumnFormat(BaseFormat):
         self._ostream.write("\n")
 
 
+class RichFormat(BaseFormat):
+    """Format results as a Rich table"""
+
+    def __init__(self, *args, **kwargs):
+        super(RichFormat, self).__init__(*args, **kwargs)
+        self._all_columns: List[str] = []
+        if not self._results:
+            return
+        # Get all unique column names
+        for result in self._results:
+            for key in result:
+                if key not in self._all_columns:
+                    self._all_columns.append(key)
+
+    def display(self):
+        """Display results in a Rich table"""
+        if not self._results:
+            return
+
+        important_cols = []
+        should_sort = True
+        if self._engine_info:
+            # pprint(self._engine_info, expand_all=True)
+            pk = self._engine_info["table"].primary_key_attributes
+            important_cols.extend(pk)
+
+            if self._engine_info["index"]:
+                important_cols.extend(self._engine_info["index"].primary_key_attributes)
+
+            if (
+                "ddb_query" in self._engine_info
+                and "attributes" in self._engine_info["ddb_query"]
+            ):
+                # specific selection was made in query, so dont sort columns.
+                should_sort = False
+
+        table = Table(
+            title="Results",
+            title_justify="left",
+            title_style="green",
+            highlight=True,
+            # row_styles=["", "on grey27"]
+        )
+
+        # sort columns with important first, and then alphabetically
+        sorted_cols = (
+            sorted(
+                self._all_columns,
+                key=lambda x: (
+                    # grouping into 0,1
+                    0 if x in important_cols else 1,
+                    # order in group. important cols order. or alphabetical.
+                    important_cols.index(x) if x in important_cols else x.upper(),
+                ),
+            )
+            if should_sort
+            else self._all_columns
+        )
+
+        for col in sorted_cols:
+            style = ""
+
+            if col in important_cols:
+                style = "green"
+
+            table.add_column(col, header_style=style)
+
+        # Add rows
+        for result in self._results:
+            row = []
+            for col in sorted_cols:
+                row.append(self.format_field(result.get(col, None)))
+            table.add_row(*row)
+
+        console.print(table)
+
+    def write(self, result):
+        pass
+
+
 class JsonFormat(BaseFormat):
     _jsonHighlighter = JSONHighlighter()
 
@@ -303,14 +400,18 @@ class JsonFormat(BaseFormat):
             # )
             console.out(
                 self._jsonHighlighter(
-                    json.dumps(result, default=self._default_json_serializer, indent=4)
+                    json.dumps(
+                        result,
+                        default=self._default_json_serializer,
+                        indent=4,
+                        sort_keys=True,
+                    )
                 )
             )
 
             end_date = datetime.now(timezone.utc)
             process_duration = end_date - start_date
-            print(f"Took {process_duration} h:m:s")
-
+            # print(f"Took {process_duration} h:m:s")
             self._ostream.write("\n")
 
 

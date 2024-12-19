@@ -1,6 +1,37 @@
 Changelog
 =========
 
+--------------------------------------------------------------------------------
+
+0.6.4-dev8 (Current Development)
+--------------------------------
+* Added: Added colorization for `json` formatter
+* Added: `rich` formatter for query results
+* Added: New CLI commands - `whoami`, `version`, `iam`
+* Added: `c` command as alias for `clear`
+* Added: Progress display for batching operations
+* Added: Ability to force "no index" when querying
+
+* Updated: package dependency updates
+* Updated: Test (Replaced snapshottest with syrupy)
+* Updated: Test (Replaced nosetests with pytest)
+* Updated: Test (Direct local DynamoDB testing support)
+* Updated: Test (Fake-data and fake-data generation scripts)
+* Updated: Build (Migrated from setup.py to pyproject.toml)
+* Updated: CI workflows to run on github actions
+
+* Fix: Binary mode save encoding issues
+* Fix: LS command breaking with semicolon usage
+* Fix: Query attribute name errors when begins with _ "underscore"
+* Fix: Fixed issues with analyze command reprinting results
+* Fix: CLI prompt bugs
+* Fix: Fixed some packaging issues
+
+* Chore: Various lint, typechecking and formatting fixes
+
+--------------------------------------------------------------------------------
+
+
 0.6.2
 -----
 * Fix: Issue with missing dependency (typing_extensions) made apparent by python 3.9

@@ -105,6 +105,16 @@ class QueryIndex(object):
         else:
             return "QueryIndex(%r, %s, %s)" % (self.name, self.hash_key, self.range_key)
 
+    @property
+    def primary_key_attributes(self):
+        """Get the names of the primary key attributes as a tuple"""
+        if self.hash_key is None:
+            raise ValueError("Missing hash key")
+        if self.range_key is None:
+            return (self.hash_key,)
+        else:
+            return (self.hash_key, self.range_key)
+
 
 class TableField(object):
     """
@@ -503,8 +513,8 @@ class TableMeta(object):
         """Get a specific index by name"""
         try:
             return self.get_indexes()[index_name]
-        except KeyError:
-            raise EngineRuntimeError("Unknown index %r" % index_name)
+        except KeyError as exc:
+            raise EngineRuntimeError("Unknown index %r" % index_name) from exc
 
     def get_indexes(self) -> Dict[str, QueryIndex]:
         """Get a dict of index names to index"""
