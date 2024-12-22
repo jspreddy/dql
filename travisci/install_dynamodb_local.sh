@@ -20,12 +20,15 @@ echo $ROOT_PATH
 echo $DYNAMO_LOCAL_PATH
 
 
-
-# download the zip file
-curl -O https://d1ni2b6xgvw0s0.cloudfront.net/v2.x/dynamodb_local_latest.tar.gz
-
-# unzip the file
-tar -xzf dynamodb_local_latest.tar.gz
+# check if tar file not exists, download it
+if [ ! -f "dynamodb_local_latest.tar.gz" ]; then
+    # download the zip file
+    curl -O https://d1ni2b6xgvw0s0.cloudfront.net/v2.x/dynamodb_local_latest.tar.gz
+    # unzip the file
+    tar -xzf dynamodb_local_latest.tar.gz
+else
+    echo "(dynamodb_local_latest.tar.gz) already exists, skipping download"
+fi
 
 echo "---------------------------------------"
 echo "Starting dynamodb local                "
