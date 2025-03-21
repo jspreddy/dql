@@ -365,22 +365,44 @@ class RichFormat(BaseFormat):
             else self._all_columns
         )
 
+        cols_to_display = []
+        other_cols = []
+        NUM_COLS_TO_DISPLAY = 15
+
         for col in sorted_cols:
             style = ""
-
             if col in important_cols:
                 style = "green"
+            if NUM_COLS_TO_DISPLAY > 0:
+                table.add_column(col, header_style=style)
+                cols_to_display.append(col)
+            else:
+                other_cols.append(col)
+            NUM_COLS_TO_DISPLAY -= 1
 
-            table.add_column(col, header_style=style)
+        if NUM_COLS_TO_DISPLAY < 0:
+            table.add_column("...", header_style="grey50")
+            cols_to_display.append("...")
 
         # Add rows
         for result in self._results:
             row = []
-            for col in sorted_cols:
-                row.append(self.format_field(result.get(col, None)))
+            for col in cols_to_display:
+                if col == "...":
+                    row.append("")
+                else:
+                    row.append(self.format_field(result.get(col, None)))
             table.add_row(*row)
 
         console.print(table)
+
+        # display the additional columns in a table
+        if other_cols:
+            additional_table = Table(title="More columns available", highlight=True)
+            additional_table.add_column("...", header_style="grey50")
+            for col in other_cols:
+                additional_table.add_row(col)
+            console.print(additional_table)
 
     def write(self, result):
         pass
