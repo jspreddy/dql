@@ -30,7 +30,7 @@ from .common import function, quoted, upkey
 integer = pyparsing_common.signedInteger
 number = integer | pyparsing_common.number.setParseAction(lambda x: Decimal(x[0]))
 
-boolean = (upkey("true") | upkey("false")).setParseAction(lambda x: x == "TRUE")
+boolean = (upkey("true") | upkey("false")).setParseAction(lambda x: x[0] == "TRUE")
 multiline_string = QuotedString('"', escChar="\\", multiline=True) | QuotedString(
     "'", escChar="\\", multiline=True
 )
