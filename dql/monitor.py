@@ -6,11 +6,6 @@ from typing import TYPE_CHECKING, List
 
 from .util import getmaxyx
 
-if TYPE_CHECKING:
-    from _curses import _CursesWindow  # pylint:disable=E0611
-
-    Window = _CursesWindow
-
 try:
     import curses
 
@@ -22,7 +17,7 @@ except ImportError:
 class Monitor(object):
     """Tool for monitoring the consumed capacity of many tables"""
 
-    win: "_CursesWindow | None"
+    win = None
 
     def __init__(self, engine, tables):
         self.engine = engine
