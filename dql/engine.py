@@ -931,9 +931,8 @@ class Engine(object):
                 if data_type is not None:
                     if TYPES[data_type] != key.data_type:
                         raise SyntaxError(
-                            "Key %r %s already declared with type %s" % field,
-                            data_type,
-                            key.data_type,
+                            "Key %r %s already declared with type %s"
+                            % (field, data_type, key.data_type)
                         )
             else:
                 if data_type is None:
