@@ -22,11 +22,11 @@ except ImportError:
 class Monitor(object):
     """Tool for monitoring the consumed capacity of many tables"""
 
-    win: "Window"
+    win: "_CursesWindow | None"
 
     def __init__(self, engine, tables):
         self.engine = engine
-        self.win = None  # type: ignore
+        self.win = None
         self._tables = tables
         self._refresh_rate = 30
         self._max_width = 80
@@ -97,6 +97,8 @@ class Monitor(object):
 
     def _add_throughput(self, y, x, width, op, title, available, used):
         """Write a single throughput measure to a row"""
+        if self.win is None:
+            return
         percent = float(used) / available
         self.win.addstr(y, x, "[")
         # Because we have disabled scrolling, writing the lower right corner
@@ -116,6 +118,8 @@ class Monitor(object):
 
     def refresh(self, fetch_data):
         """Redraw the display"""
+        if self.win is None:
+            return
         self.win.erase()
         height, width = getmaxyx()
         if curses.is_term_resized(height, width):
