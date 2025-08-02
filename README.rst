@@ -33,7 +33,7 @@ Installing from remote source code::
     # 1. Install uv
     curl -LsSf https://astral.sh/uv/install.sh | sh
     # 2. Install dql
-    uv pip install git+https://github.com/jspreddy/dql.git@v-next
+    uv tool install --python 3.9.21 git+https://github.com/jspreddy/dql.git@v-next
 
 Install from local source code::
 
