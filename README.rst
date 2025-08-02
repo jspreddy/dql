@@ -119,10 +119,13 @@ Quick start for developers:
     source .venv/bin/activate
 
     # Run tests
-    uv run pytest tests
+    uv run task test
 
     # Run linting
-    uv run mypy dql tests bin/install.py
+    uv run task lint
+
+    # Format code
+    uv run task format
 
 ## Complete Migration Plan: Poetry + pyenv + virtualenv → uv
 

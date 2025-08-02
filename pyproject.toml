@@ -52,6 +52,7 @@ dev = [
     "types-mock",
     "mock",
     "syrupy",
+    "pex",
 ]
 
 [project.urls]
@@ -81,6 +82,8 @@ dev-dependencies = [
     "types-mock",
     "mock",
     "syrupy",
+    "pex",
+    "taskipy>=1.14.1",
 ]
 
 [tool.setuptools]
@@ -122,3 +125,32 @@ testpaths = ["tests"]
 dir = "./.dynamo-local/data"
 port = 8000
 delay = 2
+
+[tool.taskipy.tasks]
+version = "which python && python --version"
+
+# Test scripts
+test = "pytest tests"
+test-verbose = "pytest --verbose tests"
+test-specific = "pytest {args}"
+
+# Linting and formatting scripts
+lint = "task lint-mypy && task lint-isort && task lint-black && task lint-pylint"
+
+lint-mypy = "mypy dql tests bin/install.py"
+lint-isort = "isort --skip snapshots --check dql tests bin/install.py"
+lint-black = "black --exclude=snapshots --check dql tests bin/install.py"
+lint-pylint = "pylint --rcfile=.pylintrc dql tests bin/install.py"
+
+format = "task format-isort && task format-black"
+
+format-isort = "isort --skip snapshots --atomic dql tests bin/install.py"
+format-black = "black --exclude=snapshots dql tests bin/install.py"
+
+# Coverage scripts
+coverage = "pytest --cov=dql --cov-report=html --cov-branch tests"
+coverage-ci = "pytest --cov=dql --cov-report=html --cov-branch tests"
+
+# Package building script
+package = "task version && uv build --verbose && uv run pex . -m dql:main -o build/dql"
+

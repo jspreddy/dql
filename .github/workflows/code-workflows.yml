@@ -26,11 +26,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev
       - name: Run linting
-        run: |
-          uv run mypy dql tests bin/install.py
-          uv run isort --skip snapshots --check dql tests bin/install.py
-          uv run black --exclude=snapshots --check dql tests bin/install.py
-          uv run pylint --rcfile=.pylintrc dql tests bin/install.py
+        run: uv run task lint
 
   test-job:
     needs: lint-job
@@ -66,7 +62,7 @@ jobs:
         run: uv sync --dev
 
       - name: Run tests
-        run: uv run pytest tests
+        run: uv run task test
 
   # publish-job:
   #   name: Publish to PyPI and upload binary

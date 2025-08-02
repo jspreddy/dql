@@ -98,6 +98,20 @@ The `pyproject.toml` file has been updated with:
 | `pyenv local 3.11` | `uv python install 3.11` | Install Python version |
 | `virtualenv .venv` | `uv venv` | Create virtual environment |
 
+## Tox to UV Scripts Migration
+
+```bash
+uv run task --list
+```
+
+| Tox Command | UV Command | Description |
+|-------------|------------|-------------|
+| `tox -e test` | `uv run task test` | Run all tests |
+| `tox -e lint` | `uv run task lint` | Run all linting tools |
+| `tox -e format` | `uv run task format` | Format code |
+| `tox -e coverage` | `uv run task coverage` | Run tests with coverage |
+| `tox -e package` | `uv run task package` | Build package |
+
 ## Development Workflow
 
 ### Setting Up Development Environment
@@ -122,40 +136,34 @@ source .venv/bin/activate
 
 ```bash
 # Run all tests
-uv run pytest tests
+uv run task test
+
+# Run tests with verbose output
+uv run test-verbose
 
 # Run specific test file
-uv run pytest tests/test_specific.py
+uv run test-specific tests/test_specific.py
 
 # Run with coverage
-uv run pytest --cov=dql tests
+uv run coverage
 ```
 
 ### Code Quality
 
 ```bash
-# Type checking
-uv run mypy dql tests bin/install.py
+# Run all linting checks
+uv run task lint
 
-# Linting
-uv run pylint --rcfile=.pylintrc dql tests bin/install.py
+# Format code
+uv run task format
 
-# Formatting
-uv run isort --skip snapshots --atomic dql tests bin/install.py
-uv run black --exclude=snapshots dql tests bin/install.py
 ```
 
-### Adding Dependencies
+### Package Building
 
 ```bash
-# Add production dependency
-uv add requests
-
-# Add development dependency
-uv add --dev pytest-mock
-
-# Add dependency with version constraint
-uv add "django>=4.0,<5.0"
+# Build package with pex
+uv run task package
 ```
 
 ## CI/CD Updates
