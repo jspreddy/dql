@@ -15,15 +15,22 @@ jobs:
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          version: "latest"
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Running lint with tox
-        uses: ymyzk/run-tox-gh-actions@main
-        with:
-          tox-args:
-            -e lint
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Run linting
+        run: |
+          uv run mypy dql tests bin/install.py
+          uv run isort --skip snapshots --check dql tests bin/install.py
+          uv run black --exclude=snapshots --check dql tests bin/install.py
+          uv run pylint --rcfile=.pylintrc dql tests bin/install.py
 
   test-job:
     needs: lint-job
@@ -45,16 +52,21 @@ jobs:
       - name: Install & start DynamoDB Local
         run: ./travisci/install_dynamodb_local.sh background
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v1
+        with:
+          version: "latest"
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Running tests for ${{ matrix.python-version }} with tox
-        uses: ymyzk/run-tox-gh-actions@main
-        with:
-          tox-args:
-            -e test
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run tests
+        run: uv run pytest tests
 
   # publish-job:
   #   name: Publish to PyPI and upload binary

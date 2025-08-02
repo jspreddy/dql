@@ -43,11 +43,17 @@ dev = [
     "sphinx",
     "sphinx_rtd_theme",
     "tox",
-    "virtualenv-pyenv",
     "wheel",
     "build",
     "isort",
     "mypy",
+    "black==24.4.1",
+    "pylint",
+    "faker",
+    "types-python-dateutil",
+    "types-mock",
+    "mock",
+    "syrupy",
 ]
 
 [project.urls]
@@ -55,6 +61,29 @@ Homepage = "http://github.com/stevearc/dql"
 
 [project.scripts]
 dql = "dql:main"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest",
+    "pytest-cov",
+    "pytest-dynamodb",
+    "bump2version",
+    "numpydoc",
+    "sphinx",
+    "sphinx_rtd_theme",
+    "tox",
+    "wheel",
+    "build",
+    "isort",
+    "mypy",
+    "black==24.4.1",
+    "pylint",
+    "faker",
+    "types-python-dateutil",
+    "types-mock",
+    "mock",
+    "syrupy",
+]
 
 [tool.setuptools]
 include-package-data = true

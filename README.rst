@@ -26,16 +26,14 @@ Installation can be done in a variety of ways
 * With pip: ``pip install dql`` (To get the official version)
 * If you want my development version, see branch `v-next`_
 
-Prerequisites for development version: ``pipx, pyenv``
+Prerequisites for development version: ``uv``
 
 Installing from remote source code::
 
-    # 1. Install python
-    pyenv install 3.9.21
-    # 2. Set active python environment
-    pyenv shell 3.9.21
-    # 3. Install dql
-    pipx install --python python3.9 git+https://github.com/jspreddy/dql.git@v-next
+    # 1. Install uv
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    # 2. Install dql
+    uv pip install git+https://github.com/jspreddy/dql.git@v-next
 
 Install from local source code::
 
@@ -43,11 +41,13 @@ Install from local source code::
     git clone https://github.com/jspreddy/dql.git
     # 2. checkout branch `v-next`
     git checkout v-next
-    # 3. init python environment
-    pyenv install 3.9.21
-    pyenv shell 3.9.21
-    # 4. editable install
-    pipx install --python python3.9 -e .
+    # 3. Install dependencies and create virtual environment
+    uv sync --dev
+    uv venv
+    # 4. Activate virtual environment
+    source .venv/bin/activate
+    # 5. Install in editable mode
+    uv pip install -e .
 
 
 Examples
@@ -96,3 +96,113 @@ And don't forget to use ``help``!
 Developer/Maintainer Guide:
 ---------------------------
 `See here for developer guide for v-next branch. <https://github.com/jspreddy/dql/blob/v-next/doc/topics/develop.rst>`
+
+Migration to uv:
+----------------
+This project has been migrated from Poetry + pyenv + virtualenv to `uv <https://docs.astral.sh/uv/>`_, a fast Python package manager and installer.
+
+For detailed migration information, see `UV_MIGRATION.md <UV_MIGRATION.md>`_.
+
+Quick start for developers:
+
+    # Install uv
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+
+    # Clone and setup
+    git clone https://github.com/jspreddy/dql.git
+    cd dql
+    git checkout v-next
+
+    # Install dependencies
+    uv sync --dev
+    uv venv
+    source .venv/bin/activate
+
+    # Run tests
+    uv run pytest tests
+
+    # Run linting
+    uv run mypy dql tests bin/install.py
+
+## Complete Migration Plan: Poetry + pyenv + virtualenv → uv
+
+I've created a comprehensive migration plan for your DQL project. Here's what has been implemented:
+
+### 📁 Files Created/Modified
+
+1. **`pyproject.toml`** - Updated with uv configuration
+2. **`tox.ini`** - Modified to use uv instead of virtualenv-pyenv
+3. **`.envrc`** - Updated to work with uv virtual environments
+4. **`.github/workflows/code-workflows.yml`** - Updated CI/CD to use uv
+5. **`migrate-to-uv.sh`** - Automated migration script
+6. **`cleanup-old-tools.sh`** - Cleanup script for old configurations
+7. **`UV_MIGRATION.md`** - Comprehensive migration guide
+8. **`README.rst`** - Updated with uv installation instructions
+
+### 🚀 Migration Steps
+
+#### Phase 1: Preparation
+1. **Install uv**: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+2. **Run migration script**: `./migrate-to-uv.sh`
+
+#### Phase 2: Verification
+1. **Test installation**: `uv run pytest tests`
+2. **Test linting**: `uv run mypy dql tests bin/install.py`
+3. **Verify CI/CD**: Push changes and check GitHub Actions
+
+#### Phase 3: Cleanup (Optional)
+1. **Remove old files**: `./cleanup-old-tools.sh`
+2. **Update IDE settings** to use `.venv/bin/python`
+
+### 🔄 Key Changes
+
+| Component | Before | After |
+|-----------|--------|-------|
+| **Package Manager** | Poetry | uv |
+| **Python Management** | pyenv | uv python |
+| **Virtual Environment** | virtualenv | uv venv |
+| **Lock File** | poetry.lock | uv.lock |
+| **CI/CD** | tox + actions/setup-python | uv + astral-sh/setup-uv |
+
+### 📋 New Commands
+
+```bash
+# Install dependencies
+uv sync --dev
+
+# Run commands
+uv run pytest tests
+uv run mypy dql tests bin/install.py
+
+# Add dependencies
+uv add requests
+uv add --dev pytest-mock
+
+# Create virtual environment
+uv venv
+```
+
+### 🎯 Benefits
+
+- **10-100x faster** dependency installation
+- **Single tool** replaces multiple tools
+- **Better dependency resolution**
+- **Modern Rust-based architecture**
+- **Simplified workflow**
+
+### 📚 Documentation
+
+- **`UV_MIGRATION.md`** - Complete migration guide
+- **Updated README** - Quick start instructions
+- **Migration scripts** - Automated setup
+
+### ⚠️ Important Notes
+
+1. **Backup files** are created during migration
+2. **CI/CD pipeline** has been updated
+3. **IDE configuration** may need updating
+4. **Team members** should be notified of the change
+
+The migration is designed to be **reversible** - you can always rollback to the previous setup if needed. All the necessary files and scripts are in place for a smooth transition to uv.
+
+Would you like me to help you execute any specific part of this migration plan?
