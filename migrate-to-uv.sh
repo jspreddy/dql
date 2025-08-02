@@ -42,11 +42,7 @@ if [ -f ".python-version" ]; then
     echo "✅ Backed up .python-version"
 fi
 
-# Initialize uv
-echo "🔧 Initializing uv..."
-uv init --no-readme
-
-# Install dependencies
+# Install dependencies (uv will use existing pyproject.toml)
 echo "📥 Installing dependencies with uv..."
 uv sync --dev
 
