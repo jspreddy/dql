@@ -31,9 +31,9 @@ Prerequisites for development version: ``pipx, pyenv``
 Installing from remote source code::
 
     # 1. Install python
-    pyenv install 3.9.19
+    pyenv install 3.9.21
     # 2. Set active python environment
-    pyenv shell 3.9.19
+    pyenv shell 3.9.21
     # 3. Install dql
     pipx install --python python3.9 git+https://github.com/jspreddy/dql.git@v-next
 
@@ -44,8 +44,8 @@ Install from local source code::
     # 2. checkout branch `v-next`
     git checkout v-next
     # 3. init python environment
-    pyenv install 3.9.19
-    pyenv shell 3.9.19
+    pyenv install 3.9.21
+    pyenv shell 3.9.21
     # 4. editable install
     pipx install --python python3.9 -e .
 

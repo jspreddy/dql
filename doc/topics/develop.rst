@@ -50,10 +50,10 @@ Setting up local envs::
     pyenv install <version-number>
 
         # Version numbers are listed in the .python-version file.
-        pyenv install 3.9.19
+        pyenv install 3.9.21
 
-    # Create a virtual env named "dql-local-env" with python version 3.9.19
-    pyenv virtualenv 3.9.19 dql-local-env
+    # Create a virtual env named "dql-local-env" with python version 3.9.21
+    pyenv virtualenv 3.9.21 dql-local-env
 
     # Look at the virtual envs. dql-local-env should have a * next to it indicating
     # that it is selected.
@@ -86,7 +86,7 @@ After setting up your local env, you can install the executable of dql::
     dql --version
 
     # To install with pyenv & pipx, package with `tox -e package` first, then:
-    pyenv local 3.9.19
+    pyenv local 3.9.21
     pyenv which python
     pipx install --python $(pyenv which python) ./dist/filename.tar.gz
 
