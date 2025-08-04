@@ -35,8 +35,12 @@ class HistoryManager(object):
             # Windows doesn't have readline, so gracefully ignore.
             pass
         else:
-            readline.read_history_file(history_file)
-            self._initial_history_length = readline.get_current_history_length()
+            try:
+                readline.read_history_file(history_file)
+                self._initial_history_length = readline.get_current_history_length()
+            except Exception as e:
+                print(f"Error reading history file: {e}")
+                raise e
 
     def try_to_write_history(self, history_dir: Optional[str] = None) -> None:
         history_file = self._prep_history_file(history_dir)
