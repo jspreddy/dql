@@ -130,6 +130,9 @@ delay = 2
 [tool.taskipy.tasks]
 version = "which python && python --version"
 
+clean = "rm -rf .dynamo-local build dql.egg-info .pytest_cache .coverage; uv venv --clear"
+resync = "uv sync --dev --refresh --reinstall --no-cache"
+
 # Test scripts
 test = "pytest tests"
 test-verbose = "pytest --verbose tests"
@@ -143,10 +146,10 @@ lint-isort = "isort --skip snapshots --check dql tests bin/install.py"
 lint-black = "black --exclude=snapshots --check dql tests bin/install.py"
 lint-pylint = "pylint --rcfile=.pylintrc dql tests bin/install.py"
 
-format = "task format-isort && task format-black"
+fix = "task format-isort && task format-black"
 
-format-isort = "isort --skip snapshots --atomic dql tests bin/install.py"
-format-black = "black --exclude=snapshots dql tests bin/install.py"
+fix-isort = "isort --skip snapshots --atomic dql tests bin/install.py"
+fix-black = "black --exclude=snapshots dql tests bin/install.py"
 
 # Coverage scripts
 coverage = "pytest --cov=dql --cov-report=html --cov-branch tests"
