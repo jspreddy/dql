@@ -254,8 +254,9 @@ class DQLClient(cmd.Cmd):
         """Set up the repl for execution."""
         self.history_manager.try_to_load_history()
         try:
-            import gnureadline as readline
             import rlcompleter
+
+            import gnureadline as readline
         except ImportError:
             # Windows doesn't have readline, so gracefully ignore.
             pass

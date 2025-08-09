@@ -1,9 +1,10 @@
 import os
-import gnureadline as readline
 import shutil
 import tempfile
 from pathlib import Path
 from unittest import TestCase
+
+import gnureadline as readline
 
 from dql.history import HistoryManager
 
