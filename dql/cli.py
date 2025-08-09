@@ -261,7 +261,7 @@ class DQLClient(cmd.Cmd):
             pass
         else:
             # Mac OS X readline compatibility from http://stackoverflow.com/a/7116997
-            if "libedit" in readline.__doc__:
+            if "libedit" in str(readline.__doc__):
                 readline.parse_and_bind("bind ^I rl_complete")
             else:
                 readline.parse_and_bind("tab: complete")
