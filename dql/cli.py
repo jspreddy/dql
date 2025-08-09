@@ -93,6 +93,26 @@ DEFAULT_CONFIG = {
     "_throttle": {},
 }
 
+
+# try:
+#     import gnureadline as readline
+#     import rlcompleter
+# except ImportError:
+#     # Windows doesn't have readline, so gracefully ignore.
+#     pass
+# else:
+#     # Mac OS X readline compatibility from http://stackoverflow.com/a/7116997
+#     if "libedit" in str(readline.__doc__):
+#         readline.parse_and_bind("bind ^I rl_complete")
+#     else:
+#         readline.parse_and_bind("tab: complete")
+#     # Tab-complete names with a '-' in them
+#     delims = set(readline.get_completer_delims())
+#     if "-" in delims:
+#         delims.remove("-")
+#         readline.set_completer_delims("".join(delims))
+
+
 # Installing the rich traceback handler for un-handled errors.
 install()
 
@@ -254,11 +274,11 @@ class DQLClient(cmd.Cmd):
         """Set up the repl for execution."""
         self.history_manager.try_to_load_history()
         try:
-            import rlcompleter
-
             import gnureadline as readline
+            import rlcompleter
         except ImportError:
             # Windows doesn't have readline, so gracefully ignore.
+            print("No gnureadline found")
             pass
         else:
             # Mac OS X readline compatibility from http://stackoverflow.com/a/7116997
