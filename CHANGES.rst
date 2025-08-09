@@ -3,6 +3,16 @@ Changelog
 
 --------------------------------------------------------------------------------
 
+0.6.4-dev9 (Current Development)
+--------------------------------
+* bugfix: boolean keyword not parsing properly
+* bugfix: minor fix w.r.t. error handling in a specific SyntaxError case.
+* bugfix: minor type checking fix.
+* Added: rich format will now display 15 columns and then only display column headers in a separate line.
+* chore: latest github runner
+* chore: upgrade python 3.9.19 to 3.9.21
+
+
 0.6.4-dev8 (Current Development)
 --------------------------------
 * Added: Added colorization for ``json`` formatter
