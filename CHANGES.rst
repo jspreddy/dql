@@ -3,7 +3,17 @@ Changelog
 
 --------------------------------------------------------------------------------
 
-0.6.4-dev9 (Current Development)
+0.6.4-dev10 (Current Development)
+--------------------------------
+* chore: migrate build/testing env from ``[tox,pyenv,poetry]`` to ``uv``
+* chore: dev & test dependencies are now in pyproject.toml
+* update: remove python 3.6, 3.7, 3.8 official support.
+* update: use ``gnureadline`` instead of builtin readline for better cross-platform, cross-python distribution support.
+
+
+
+
+0.6.4-dev9
 --------------------------------
 * bugfix: boolean keyword not parsing properly
 * bugfix: minor fix w.r.t. error handling in a specific SyntaxError case.
@@ -13,7 +23,7 @@ Changelog
 * chore: upgrade python 3.9.19 to 3.9.21
 
 
-0.6.4-dev8 (Current Development)
+0.6.4-dev8
 --------------------------------
 * Added: Added colorization for ``json`` formatter
 * Added: ``rich`` formatter for query results
