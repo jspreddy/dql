@@ -9,7 +9,7 @@ class HistoryManager(object):
 
     def _create_file_if_not_exists(self, path: str) -> None:
         with open(path, "a", encoding="utf-8"):
-            pass
+            return
 
     def _prep_history_file(self, history_dir: Optional[str] = None) -> str:
         """
@@ -30,10 +30,10 @@ class HistoryManager(object):
     def try_to_load_history(self, history_dir: Optional[str] = None) -> None:
         history_file = self._prep_history_file(history_dir)
         try:
-            import readline
+            import gnureadline as readline
         except ImportError:
             # Windows doesn't have readline, so gracefully ignore.
-            pass
+            return
         else:
             try:
                 readline.read_history_file(history_file)
@@ -44,11 +44,13 @@ class HistoryManager(object):
 
     def try_to_write_history(self, history_dir: Optional[str] = None) -> None:
         history_file = self._prep_history_file(history_dir)
+        print(f"writing history to file: {history_file}")
         try:
-            import readline
-        except ImportError:
+            import gnureadline as readline
+        except ImportError as e:
             # Windows doesn't have readline, so gracefully ignore.
-            pass
+            print(f"error importing gnureadline: {e}")
+            return
         else:
             current_history_length = readline.get_current_history_length()
             new_history_length = current_history_length - self._initial_history_length
@@ -66,18 +68,23 @@ class HistoryManager(object):
             return
 
         try:
-            import readline
+            import gnureadline as readline
         except ImportError:
             # Windows doesn't have readline, so gracefully ignore.
             return
 
-        current_history_length = readline.get_current_history_length()
-        if current_history_length - n >= self._initial_history_length:
-            for _ in range(n):
-                # pop n items from history list
-                readline.remove_history_item(readline.get_current_history_length() - 1)
-        else:
-            raise RuntimeError(
-                f"Requested history item removal is not in current session history range. "
-                f"({self._initial_history_length}, {current_history_length})"
-            )
+        try:
+            current_history_length = readline.get_current_history_length()
+            if current_history_length - n >= self._initial_history_length:
+                for _ in range(n):
+                    # pop n items from history list
+                    readline.remove_history_item(
+                        readline.get_current_history_length() - 1
+                    )
+            else:
+                raise RuntimeError(
+                    f"Requested history item removal is not in current session history range. "
+                    f"({self._initial_history_length}, {current_history_length})"
+                )
+        except Exception as e:
+            print(e)
