@@ -5,22 +5,24 @@ Changelog
 
 0.6.4-dev10 (Current Development)
 --------------------------------
-* chore: migrate build/testing env from ``[tox,pyenv,poetry]`` to ``uv``
-* chore: dev & test dependencies are now in pyproject.toml
-* update: remove python 3.6, 3.7, 3.8 official support.
-* update: use ``gnureadline`` instead of builtin readline for better cross-platform, cross-python distribution support.
+* Updated: remove python 3.6, 3.7, 3.8 official support.
+* Updated: use ``gnureadline`` instead of builtin readline for better cross-platform, cross-python distribution support.
 
+* Chore: migrate build/testing env from ``[tox,pyenv,poetry]`` to ``uv``
+* Chore: dev & test dependencies are now in ``pyproject.toml``
 
 
 
 0.6.4-dev9
 --------------------------------
-* bugfix: boolean keyword not parsing properly
-* bugfix: minor fix w.r.t. error handling in a specific SyntaxError case.
-* bugfix: minor type checking fix.
 * Added: rich format will now display 15 columns and then only display column headers in a separate line.
-* chore: latest github runner
-* chore: upgrade python 3.9.19 to 3.9.21
+
+* Fix: boolean keyword not parsing properly
+* Fix: minor fix w.r.t. error handling in a specific SyntaxError case
+* Fix: minor type checking fix
+
+* Chore: latest github runner
+* Chore: upgrade python 3.9.19 to 3.9.21
 
 
 0.6.4-dev8
