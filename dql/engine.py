@@ -523,7 +523,9 @@ class Engine(object):
                     kwargs["filter"] = constraints.build(visitor)
                     kwargs["expr_values"] = visitor.expression_values
                     kwargs["alias"] = visitor.attribute_names
-                elif len(indexes) == 1:
+                elif len(indexes) == 1 or (
+                    len(indexes) > 1 and indexes[0].name == "TABLE"
+                ):
                     index = indexes[0]
                     action = "query"
                     add_query_kwargs(kwargs, visitor, constraints, index)
@@ -531,8 +533,8 @@ class Engine(object):
                     names = ", ".join([index.name for index in indexes])
                     raise SyntaxError(
                         "No index specified with USING <index>, "
-                        "but multiple possibilities for query: "
-                        "%s" % names
+                        + "but multiple possibilities for query: "
+                        + "%s" % names
                     )
             else:
                 if index.hash_key in possible_hash:

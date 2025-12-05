@@ -3,6 +3,23 @@ Changelog
 
 --------------------------------------------------------------------------------
 
+0.6.4-dev10
+--------------------------------
+* Fix: Fixed issue with auto-selecting the table-index when no index is specified and table + other indexes are useable.
+
+
+0.6.4-dev9
+--------------------------------
+* Added: rich format will now display 15 columns and then only display column headers in a separate line.
+
+* Fix: boolean keyword not parsing properly
+* Fix: minor fix w.r.t. error handling in a specific SyntaxError case
+* Fix: minor type checking fix
+
+* Chore: latest github runner
+* Chore: upgrade python 3.9.19 to 3.9.21
+
+
 0.6.4-dev8 (Current Development)
 --------------------------------
 * Added: Added colorization for ``json`` formatter
