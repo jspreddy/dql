@@ -44,6 +44,7 @@ from .help import (
     SELECT,
     UPDATE,
 )
+from . import readline_compat  # noqa: F401  # patch sys.modules['readline'] early
 from .history import HistoryManager
 from .monitor import Monitor
 from .output import (
@@ -92,26 +93,6 @@ DEFAULT_CONFIG = {
     "lossy_json_float": True,
     "_throttle": {},
 }
-
-
-# try:
-#     import gnureadline as readline
-#     import rlcompleter
-# except ImportError:
-#     # Windows doesn't have readline, so gracefully ignore.
-#     pass
-# else:
-#     # Mac OS X readline compatibility from http://stackoverflow.com/a/7116997
-#     if "libedit" in str(readline.__doc__):
-#         readline.parse_and_bind("bind ^I rl_complete")
-#     else:
-#         readline.parse_and_bind("tab: complete")
-#     # Tab-complete names with a '-' in them
-#     delims = set(readline.get_completer_delims())
-#     if "-" in delims:
-#         delims.remove("-")
-#         readline.set_completer_delims("".join(delims))
-
 
 # Installing the rich traceback handler for un-handled errors.
 install()
@@ -273,24 +254,6 @@ class DQLClient(cmd.Cmd):
     ) -> None:
         """Set up the repl for execution."""
         self.history_manager.try_to_load_history()
-        try:
-            import gnureadline as readline
-            import rlcompleter
-        except ImportError:
-            # Windows doesn't have readline, so gracefully ignore.
-            print("No gnureadline found")
-            pass
-        else:
-            # Mac OS X readline compatibility from http://stackoverflow.com/a/7116997
-            if "libedit" in str(readline.__doc__):
-                readline.parse_and_bind("bind ^I rl_complete")
-            else:
-                readline.parse_and_bind("tab: complete")
-            # Tab-complete names with a '-' in them
-            delims = set(readline.get_completer_delims())
-            if "-" in delims:
-                delims.remove("-")
-                readline.set_completer_delims("".join(delims))
 
         self._conf_dir = config_dir or os.path.join(
             os.environ.get("HOME", "."), ".config"
