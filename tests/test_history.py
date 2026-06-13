@@ -4,7 +4,9 @@ import tempfile
 from pathlib import Path
 from unittest import TestCase
 
-import gnureadline as readline
+from dql import readline_compat
+
+readline = readline_compat.readline
 
 from dql.history import HistoryManager
 
@@ -23,7 +25,8 @@ class TestHistoryManager(TestCase):
         super().setUp()
         self._histDir = tempfile.mkdtemp()
         self._histFile = os.path.join(self._histDir, HistoryManager.history_file_name)
-        readline.clear_history()
+        if readline is not None:
+            readline.clear_history()
 
     def tearDown(self):
         super().tearDown()
