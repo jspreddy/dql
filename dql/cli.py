@@ -27,6 +27,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.traceback import install
 
+from . import readline_compat  # noqa: F401  # patch sys.modules['readline'] early
 from .engine import FragmentEngine
 from .exceptions import EngineRuntimeError
 from .help import (
@@ -44,7 +45,6 @@ from .help import (
     SELECT,
     UPDATE,
 )
-from . import readline_compat  # noqa: F401  # patch sys.modules['readline'] early
 from .history import HistoryManager
 from .monitor import Monitor
 from .output import (

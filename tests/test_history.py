@@ -55,6 +55,9 @@ class TestHistoryManager(TestCase):
 
     def test_history_file_contains_history_from_readline(self):
         """Assert that a history file will be written with proper contents."""
+        if readline is None:
+            self.fail("readline is not available")
+
         expectedHistFilePath = self._histFile
 
         readline.add_history("this is a simulated cli input")
@@ -64,6 +67,9 @@ class TestHistoryManager(TestCase):
 
     def test_history_file_contains_proper_appended_history(self):
         """Assert that a history file will be appended to"""
+        if readline is None:
+            self.fail("readline is not available")
+
         expectedHistFilePath = self._histFile
 
         readline.add_history("this is a simulated cli input")

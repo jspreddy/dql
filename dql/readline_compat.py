@@ -4,6 +4,7 @@ cmd.Cmd imports the stdlib ``readline`` module at runtime.  We prefer
 ``gnureadline`` for consistent behavior across Python builds, so we register
 it as ``readline`` in ``sys.modules`` before anything else imports readline.
 """
+
 import sys
 from typing import Any, Optional
 

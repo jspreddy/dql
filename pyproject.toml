@@ -150,7 +150,7 @@ lint-isort = "isort --skip snapshots --check dql tests bin/install.py"
 lint-black = "black --exclude=snapshots --check dql tests bin/install.py"
 lint-pylint = "pylint --rcfile=.pylintrc dql tests bin/install.py"
 
-fix = "task format-isort && task format-black"
+fix = "task fix-isort && task fix-black"
 
 fix-isort = "isort --skip snapshots --atomic dql tests bin/install.py"
 fix-black = "black --exclude=snapshots dql tests bin/install.py"
