@@ -3,7 +3,7 @@ Changelog
 
 --------------------------------------------------------------------------------
 
-0.6.4-dev10 (Current Development)
+0.6.4-dev11 (Current Development)
 --------------------------------
 * Updated: remove python 3.6, 3.7, 3.8 official support.
 * Updated: use ``gnureadline`` instead of builtin readline for better cross-platform, cross-python distribution support.
@@ -11,6 +11,10 @@ Changelog
 * Chore: migrate build/testing env from ``[tox,pyenv,poetry]`` to ``uv``
 * Chore: dev & test dependencies are now in ``pyproject.toml``
 
+
+0.6.4-dev10
+--------------------------------
+* Fix: Fixed issue with auto-selecting the table-index when no index is specified and table + other indexes are useable.
 
 
 0.6.4-dev9
