@@ -274,30 +274,6 @@ dependencies = [
     { name = "typing-extensions" },
 ]
 
-[package.optional-dependencies]
-dev = [
-    { name = "black" },
-    { name = "build" },
-    { name = "bump2version" },
-    { name = "faker" },
-    { name = "isort" },
-    { name = "mock" },
-    { name = "mypy" },
-    { name = "numpydoc" },
-    { name = "pex" },
-    { name = "pylint" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-dynamodb" },
-    { name = "sphinx" },
-    { name = "sphinx-rtd-theme" },
-    { name = "syrupy" },
-    { name = "tox" },
-    { name = "types-mock" },
-    { name = "types-python-dateutil" },
-    { name = "wheel" },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "black" },
@@ -325,36 +301,15 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "black", marker = "extra == 'dev'", specifier = "==24.4.1" },
     { name = "botocore", specifier = ">=1.17.55" },
-    { name = "build", marker = "extra == 'dev'" },
-    { name = "bump2version", marker = "extra == 'dev'" },
     { name = "dynamo3", specifier = ">=1.0.0" },
-    { name = "faker", marker = "extra == 'dev'" },
     { name = "gnureadline", specifier = ">=8.2.13" },
     { name = "humanize", specifier = ">=4.0.0" },
-    { name = "isort", marker = "extra == 'dev'" },
-    { name = "mock", marker = "extra == 'dev'" },
-    { name = "mypy", marker = "extra == 'dev'" },
-    { name = "numpydoc", marker = "extra == 'dev'" },
-    { name = "pex", marker = "extra == 'dev'" },
-    { name = "pylint", marker = "extra == 'dev'" },
     { name = "pyparsing", specifier = "==2.1.4" },
-    { name = "pytest", marker = "extra == 'dev'" },
-    { name = "pytest-cov", marker = "extra == 'dev'" },
-    { name = "pytest-dynamodb", marker = "extra == 'dev'" },
     { name = "python-dateutil" },
     { name = "rich", specifier = ">=6.1.1" },
-    { name = "sphinx", marker = "extra == 'dev'" },
-    { name = "sphinx-rtd-theme", marker = "extra == 'dev'" },
-    { name = "syrupy", marker = "extra == 'dev'" },
-    { name = "tox", marker = "extra == 'dev'" },
-    { name = "types-mock", marker = "extra == 'dev'" },
-    { name = "types-python-dateutil", marker = "extra == 'dev'" },
     { name = "typing-extensions" },
-    { name = "wheel", marker = "extra == 'dev'" },
 ]
-provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [

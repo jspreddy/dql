@@ -36,30 +36,6 @@ dependencies = [
 ]
 requires-python = ">=3.9,<3.10"
 
-[project.optional-dependencies]
-dev = [
-    "pytest",
-    "pytest-cov",
-    "pytest-dynamodb",
-    "bump2version",
-    "numpydoc",
-    "sphinx",
-    "sphinx_rtd_theme",
-    "tox",
-    "wheel",
-    "build",
-    "isort",
-    "mypy",
-    "black==24.4.1",
-    "pylint",
-    "faker",
-    "types-python-dateutil",
-    "types-mock",
-    "mock",
-    "syrupy",
-    "pex",
-]
-
 [project.urls]
 Homepage = "http://github.com/stevearc/dql"
 
