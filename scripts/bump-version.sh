@@ -13,15 +13,19 @@ for arg in "$@"; do
   esac
 done
 
-run_bump2version() {
-  if command -v bump2version >/dev/null 2>&1; then
-    command bump2version "$@"
+# `uv run task bump` rebuilds the local package and may leave uv.lock modified.
+uv lock
+if ! git diff --quiet uv.lock; then
+  if git diff --quiet -- . ':!uv.lock' && git diff --cached --quiet; then
+    git add uv.lock
+    git commit -m "Sync uv.lock with pyproject.toml"
   else
-    uv run bump2version "$@"
+    echo "error: uv.lock is out of sync; commit or stash other changes first" >&2
+    exit 1
   fi
-}
+fi
 
-run_bump2version "$@"
+uv run bump2version "$@"
 
 if [[ "$dry_run" == true || "$no_commit" == true ]]; then
   exit 0

@@ -130,12 +130,13 @@ Config based on: `<https://medium.com/@williamhayes/versioning-using-bumpversion
 
 Run bump2version through the project environment (``scripts/bump-version.sh`` runs ``uv lock`` and amends the bump commit to include ``uv.lock``)::
 
-    uv run task bump -- --dry-run --allow-dirty patch   # preview changes
-    uv run task bump -- patch                         # bump patch and reset to x.x.x-dev0
-    uv run task bump -- minor                         # bump minor and reset to x.x.x-dev0
-    uv run task bump -- major                         # bump major and reset to x.x.x-dev0
-    uv run task bump -- build                         # increment dev build (x.x.x-dev0 -> x.x.x-dev1)
-    uv run task bump -- --tag release                 # release as x.x.x (creates git tag)
+    uv run task bump --dry-run build   # preview dev build bump
+    uv run task bump --dry-run patch   # preview patch bump
+    uv run task bump patch             # bump patch and reset to x.x.x-dev0
+    uv run task bump minor             # bump minor and reset to x.x.x-dev0
+    uv run task bump major             # bump major and reset to x.x.x-dev0
+    uv run task bump build             # increment dev build (x.x.x-dev0 -> x.x.x-dev1)
+    uv run task bump --tag release     # release as x.x.x (creates git tag)
 
 Each bump updates ``pyproject.toml``, ``doc/conf.py``, ``dql/cli.py``, and ``uv.lock``, and creates a git commit (``tag = False`` in config unless releasing with ``--tag release``).
 
