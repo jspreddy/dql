@@ -49,7 +49,12 @@ from dynamo3 import (
 from dynamo3.constants import PAY_PER_REQUEST, PROVISIONED, RESERVED_WORDS
 from dynamo3.result import Count
 from dynamo3.types import TYPES
+
+# isort: off
+import dql.pyparsing_compat  # noqa: F401
 from pyparsing import ParseException
+# isort: on
+
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -59,8 +64,6 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from typing_extensions import Literal
-
-import dql.pyparsing_compat  # noqa: F401
 
 from .exceptions import EngineRuntimeError, ExplainSignal
 from .expressions import (

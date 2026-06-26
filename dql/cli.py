@@ -15,7 +15,11 @@ from typing import Any, Callable, ContextManager, Dict, Optional, Tuple
 
 import botocore
 import humanize
+
+# isort: off
+import dql.pyparsing_compat  # noqa: F401
 from pyparsing import ParseException
+# isort: on
 
 # pylint: disable=redefined-builtin
 from rich import print
@@ -26,8 +30,6 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 from rich.traceback import install
-
-import dql.pyparsing_compat  # noqa: F401
 
 from . import readline_compat  # noqa: F401  # patch sys.modules['readline'] early
 from .engine import FragmentEngine
