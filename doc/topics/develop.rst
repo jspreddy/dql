@@ -91,22 +91,55 @@ After setting up your local env, you can install the executable of dql::
     pipx install --python $(pyenv which python) ./dist/filename.tar.gz
 
 
+Migration to uv
+---------------
+This project has been migrated from Poetry + pyenv + virtualenv to `uv <https://docs.astral.sh/uv/>`_, a fast Python package manager and installer.
+
+For detailed migration information, see ``UV_MIGRATION.md`` at the repository root.
+
+Quick start for developers::
+
+    # Install uv
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+
+    # Clone and setup
+    git clone https://github.com/jspreddy/dql.git
+    cd dql
+    git checkout v-next
+
+    # Install dependencies
+    uv sync --dev
+    uv venv
+    source .venv/bin/activate
+
+    # Run tests
+    uv run task test
+
+    # Run linting
+    uv run task lint
+
+    # Format code
+    uv run task format
+
+
 Versioning
 ----------
-Use `bump2version` instead of `bumpversion` because `bump2version` is actively maintained. This advise comes from `bumpversion` project itself. See `bumpversion`'s pypi page for details.
+Use `bump2version` instead of `bumpversion` because `bump2version` is actively maintained. Configuration lives in ``.bumpversion.cfg``.
 
 Config based on: `<https://medium.com/@williamhayes/versioning-using-bumpversion-4d13c914e9b8>`_
 
-Usage::
+Run bump2version through the project environment (``scripts/bump-version.sh`` runs ``uv lock`` and amends the bump commit to include ``uv.lock``)::
 
-    # will update the relevant part and start a new `x.x.x-dev0` build version
-    $> bump2version patch
-    $> bump2version minor
-    $> bump2version major
+    uv run task bump -- --dry-run --allow-dirty patch   # preview changes
+    uv run task bump -- patch                         # bump patch and reset to x.x.x-dev0
+    uv run task bump -- minor                         # bump minor and reset to x.x.x-dev0
+    uv run task bump -- major                         # bump major and reset to x.x.x-dev0
+    uv run task bump -- build                         # increment dev build (x.x.x-dev0 -> x.x.x-dev1)
+    uv run task bump -- --tag release                 # release as x.x.x (creates git tag)
 
-    # update the build number from `x.x.x-dev0` to `x.x.x-dev1`
-    $> bump2version build
+Each bump updates ``pyproject.toml``, ``doc/conf.py``, ``dql/cli.py``, and ``uv.lock``, and creates a git commit (``tag = False`` in config unless releasing with ``--tag release``).
 
-    # release when ready, will convert the version to `x.x.x`, commit and tag it.
-    $> bump2version --tag release
+``uv.lock`` stores PEP 440-normalized versions (for example ``0.6.4.dev10``), so it is not listed in ``.bumpversion.cfg``; ``uv lock`` regenerates it from ``pyproject.toml``.
+
+Also update ``CHANGES.rst`` with release notes for the new version before committing or tagging a release.
 
