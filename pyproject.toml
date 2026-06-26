@@ -141,7 +141,7 @@ resync = "uv sync --dev --refresh --reinstall --no-cache"
 # Test scripts
 test = "pytest tests"
 test-verbose = "pytest --verbose tests"
-test-specific = "pytest {args}"
+test-specific = "pytest"
 
 # Linting and formatting scripts
 lint = "task lint-mypy && task lint-isort && task lint-black && task lint-pylint"
