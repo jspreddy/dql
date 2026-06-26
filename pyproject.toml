@@ -115,6 +115,7 @@ resync = "uv sync --dev --refresh --reinstall --no-cache"
 
 # Test scripts
 test = "pytest tests"
+test-matrix = "sh ./scripts/test-python-versions.sh"
 test-verbose = "pytest --verbose tests"
 test-specific = "pytest"
 

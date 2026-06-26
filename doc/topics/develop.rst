@@ -42,6 +42,7 @@ List available tasks::
 Common commands::
 
     uv run task test              # run all tests
+    uv run task test-matrix       # run tests on Python 3.9, 3.10, and 3.11
     uv run task test-verbose      # run tests with verbose output
     uv run task test-specific tests/test_parser.py  # run a specific test file
     uv run task lint              # run mypy, isort, black, pylint
@@ -59,7 +60,11 @@ Multi-Python testing
 Supported Python versions: 3.9, 3.10, and 3.11. CI runs the lint and test jobs
 against all three.
 
-To test locally with another Python version::
+Run tests locally across all supported versions (requires DynamoDB Local)::
+
+    uv run task test-matrix
+
+To test a single version::
 
     uv python install 3.10
     UV_PYTHON=3.10 uv sync --dev
