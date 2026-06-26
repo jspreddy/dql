@@ -60,7 +60,7 @@ from .output import (
 )
 from .throttle import TableLimits
 
-__version__ = "0.6.4-dev11"
+__version__ = "0.6.4-dev12"
 
 # From http://docs.aws.amazon.com/general/latest/gr/rande.html#ddb_region
 REGIONS = [
