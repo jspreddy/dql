@@ -34,7 +34,7 @@ dependencies = [
     "humanize>=4.0.0",
     "gnureadline>=8.2.13",
 ]
-requires-python = ">=3.9,<3.10"
+requires-python = ">=3.9,<3.12"
 
 [project.urls]
 Homepage = "http://github.com/stevearc/dql"
@@ -51,7 +51,6 @@ dev = [
     "numpydoc",
     "sphinx",
     "sphinx_rtd_theme",
-    "tox",
     "wheel",
     "build",
     "isort",

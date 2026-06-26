@@ -15,6 +15,8 @@ from typing import Any, Callable, ContextManager, Dict, Optional, Tuple
 
 import botocore
 import humanize
+
+import dql.pyparsing_compat  # noqa: F401
 from pyparsing import ParseException
 
 # pylint: disable=redefined-builtin

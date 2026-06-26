@@ -49,6 +49,8 @@ from dynamo3 import (
 from dynamo3.constants import PAY_PER_REQUEST, PROVISIONED, RESERVED_WORDS
 from dynamo3.result import Count
 from dynamo3.types import TYPES
+
+import dql.pyparsing_compat  # noqa: F401
 from pyparsing import ParseException
 from rich.progress import (
     BarColumn,

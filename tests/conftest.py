@@ -1,3 +1,5 @@
+import dql.pyparsing_compat  # noqa: F401
+
 import shutil
 import tempfile
 

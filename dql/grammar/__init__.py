@@ -1,5 +1,7 @@
 """ DQL language parser """
 
+import dql.pyparsing_compat  # noqa: F401
+
 from pyparsing import (
     CharsNotIn,
     Combine,
