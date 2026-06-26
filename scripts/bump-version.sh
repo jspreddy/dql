@@ -25,6 +25,8 @@ if ! git diff --quiet uv.lock; then
   fi
 fi
 
+tags_before=$(git tag -l | LC_ALL=C sort)
+
 uv run bump2version "$@"
 
 if [[ "$dry_run" == true || "$no_commit" == true ]]; then
@@ -33,4 +35,15 @@ fi
 
 uv lock
 git add uv.lock
+if git diff --cached --quiet; then
+  exit 0
+fi
+
 git commit --amend --no-edit
+
+# bump2version tags the pre-amend commit; move any new tags to the amended HEAD.
+tags_after=$(git tag -l | LC_ALL=C sort)
+while IFS= read -r tag; do
+  [[ -n "$tag" ]] || continue
+  git tag -f "$tag" HEAD
+done < <(comm -13 <(printf '%s\n' "$tags_before") <(printf '%s\n' "$tags_after"))
