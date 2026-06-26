@@ -66,8 +66,8 @@ Homepage = "http://github.com/stevearc/dql"
 [project.scripts]
 dql = "dql:main"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest",
     "pytest-cov",
     "pytest-dynamodb",
