@@ -50,7 +50,12 @@ class HistoryManager(object):
         if readline is None:
             return
 
-        current_history_length = readline.get_current_history_length()
+        try:
+            current_history_length = readline.get_current_history_length()
+        except Exception as e:
+            print(f"Error reading history length: {e}")
+            return
+
         new_history_length = current_history_length - self._initial_history_length
         if new_history_length < 0:
             raise RuntimeError(

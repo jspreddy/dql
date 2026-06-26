@@ -97,6 +97,18 @@ class TestHistoryManager(TestCase):
         ):
             self.historyManager.try_to_write_history(self._histDir)
 
+    def test_write_history_handles_get_length_failure(self):
+        """Assert that get_current_history_length failures do not propagate."""
+        if readline is None:
+            self.fail("readline is not available")
+
+        with patch.object(
+            readline,
+            "get_current_history_length",
+            side_effect=OSError("read error"),
+        ):
+            self.historyManager.try_to_write_history(self._histDir)
+
     def test_remove_items_handles_readline_failure(self):
         """Assert that readline removal failures do not propagate to the caller."""
         if readline is None:
