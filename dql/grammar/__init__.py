@@ -1,5 +1,7 @@
 """ DQL language parser """
 
+# isort: off
+import dql.pyparsing_compat  # noqa: F401
 from pyparsing import (
     CharsNotIn,
     Combine,
@@ -19,7 +21,7 @@ from pyparsing import (
     restOfLine,
 )
 
-import dql.pyparsing_compat  # noqa: F401
+# isort: on
 
 from .common import (
     filename,
@@ -339,9 +341,9 @@ def create_parser():
     analyze = upkey("analyze").setResultsName("action") + Group(
         select | scan | delete | update | insert
     )
-    dql = explain | analyze | base
-    dql.ignore("--" + restOfLine)
-    return dql
+    statement = explain | analyze | base
+    statement.ignore("--" + restOfLine)
+    return statement
 
 
 # pylint: disable=C0103
