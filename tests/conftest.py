@@ -1,5 +1,3 @@
-import dql.pyparsing_compat  # noqa: F401
-
 import shutil
 import tempfile
 
@@ -7,6 +5,7 @@ import pytest
 import rich
 from mock import patch
 
+import dql.pyparsing_compat  # noqa: F401
 from dql import DQLClient
 
 
