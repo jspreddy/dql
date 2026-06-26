@@ -57,19 +57,32 @@ class HistoryManager(object):
                 f"Unable to write new history. Length is less than 0. ({current_history_length} - {self._initial_history_length})"
             )
 
-        # append will fail if the file does not exist.
-        readline.append_history_file(new_history_length, history_file)
+        try:
+            # append will fail if the file does not exist.
+            readline.append_history_file(new_history_length, history_file)
+        except Exception as e:
+            print(f"Error writing history file: {e}")
 
     def remove_items(self, n=1):
         """Remove items from current session's in-memory history."""
         if n <= 0 or readline is None:
             return
 
-        current_history_length = readline.get_current_history_length()
+        try:
+            current_history_length = readline.get_current_history_length()
+        except Exception as e:
+            print(f"Error removing history items: {e}")
+            return
+
         if current_history_length - n >= self._initial_history_length:
-            for _ in range(n):
-                # pop n items from history list
-                readline.remove_history_item(readline.get_current_history_length() - 1)
+            try:
+                for _ in range(n):
+                    # pop n items from history list
+                    readline.remove_history_item(
+                        readline.get_current_history_length() - 1
+                    )
+            except Exception as e:
+                print(f"Error removing history items: {e}")
         else:
             raise RuntimeError(
                 f"Requested history item removal is not in current session history range. "

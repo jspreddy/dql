@@ -3,6 +3,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import patch
 
 from dql import readline_compat
 
@@ -83,3 +84,27 @@ class TestHistoryManager(TestCase):
             expectedHistFilePath,
             "this is a simulated cli input\nanother simulated cli input\n",
         )
+
+    def test_write_history_handles_append_failure(self):
+        """Assert that append failures do not propagate to the caller."""
+        if readline is None:
+            self.fail("readline is not available")
+
+        readline.add_history("this is a simulated cli input")
+
+        with patch.object(
+            readline, "append_history_file", side_effect=OSError("permission denied")
+        ):
+            self.historyManager.try_to_write_history(self._histDir)
+
+    def test_remove_items_handles_readline_failure(self):
+        """Assert that readline removal failures do not propagate to the caller."""
+        if readline is None:
+            self.fail("readline is not available")
+
+        readline.add_history("this is a simulated cli input")
+
+        with patch.object(
+            readline, "remove_history_item", side_effect=OSError("read error")
+        ):
+            self.historyManager.remove_items(n=1)
