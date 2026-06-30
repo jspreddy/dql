@@ -19,6 +19,7 @@ import humanize
 # isort: off
 import dql.pyparsing_compat  # noqa: F401
 from pyparsing import ParseException
+
 # isort: on
 
 # pylint: disable=redefined-builtin

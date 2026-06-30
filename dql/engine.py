@@ -53,6 +53,7 @@ from dynamo3.types import TYPES
 # isort: off
 import dql.pyparsing_compat  # noqa: F401
 from pyparsing import ParseException
+
 # isort: on
 
 from rich.progress import (
