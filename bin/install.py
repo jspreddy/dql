@@ -5,13 +5,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from distutils.spawn import find_executable
 from urllib.request import urlretrieve
 
 
 def make_virtualenv(env):
     """Create a virtualenv"""
-    if find_executable("virtualenv") is not None:
+    if shutil.which("virtualenv") is not None:
         cmd = ["virtualenv", env]
     else:
         cmd = ["python", "-m", "venv", env]

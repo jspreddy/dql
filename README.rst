@@ -26,16 +26,14 @@ Installation can be done in a variety of ways
 * With pip: ``pip install dql`` (To get the official version)
 * If you want my development version, see branch `v-next`_
 
-Prerequisites for development version: ``pipx, pyenv``
+Prerequisites for development version: ``uv``
 
 Installing from remote source code::
 
-    # 1. Install python
-    pyenv install 3.9.21
-    # 2. Set active python environment
-    pyenv shell 3.9.21
-    # 3. Install dql
-    pipx install --python python3.9 git+https://github.com/jspreddy/dql.git@v-next
+    # 1. Install uv
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    # 2. Install dql
+    uv tool install --python 3.9.21 git+https://github.com/jspreddy/dql.git@v-next
 
 Install from local source code::
 
@@ -43,11 +41,13 @@ Install from local source code::
     git clone https://github.com/jspreddy/dql.git
     # 2. checkout branch `v-next`
     git checkout v-next
-    # 3. init python environment
-    pyenv install 3.9.21
-    pyenv shell 3.9.21
-    # 4. editable install
-    pipx install --python python3.9 -e .
+    # 3. Install dependencies and create virtual environment
+    uv sync --dev
+    uv venv
+    # 4. Activate virtual environment
+    source .venv/bin/activate
+    # 5. Install in editable mode
+    uv pip install -e .
 
 
 Examples
@@ -96,3 +96,4 @@ And don't forget to use ``help``!
 Developer/Maintainer Guide:
 ---------------------------
 `See here for developer guide for v-next branch. <https://github.com/jspreddy/dql/blob/v-next/doc/topics/develop.rst>`
+

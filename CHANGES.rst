@@ -3,6 +3,31 @@ Changelog
 
 --------------------------------------------------------------------------------
 
+0.6.4-dev12 (Current Development)
+--------------------------------
+* Added: official Python 3.10 and 3.11 support.
+
+* Fix: pyparsing compatibility on Python 3.10+ (``collections.abc`` shims for pinned pyparsing 2.1.4).
+* Fix: improved error handling when reading/writing readline session history.
+
+* Chore: CI runs lint and tests on Python 3.9, 3.10, and 3.11.
+* Chore: add ``uv run task test-matrix`` for local multi-python testing.
+* Chore: remove tox; GitHub Actions run uv tasks directly.
+* Chore: update GitHub Actions to latest action versions.
+
+
+0.6.4-dev11
+--------------------------------
+* Updated: remove python 3.6, 3.7, 3.8 official support.
+* Updated: use ``gnureadline`` instead of builtin readline for better cross-platform, cross-python distribution support.
+
+* Fix: readline history persists correctly by registering ``gnureadline`` as ``sys.modules['readline']`` before CLI import.
+
+* Chore: migrate build/testing env from ``[tox,pyenv,poetry]`` to ``uv``.
+* Chore: dev & test dependencies are now in ``pyproject.toml``.
+* Chore: build backend switched to ``uv_build``.
+
+
 0.6.4-dev10
 --------------------------------
 * Fix: Fixed issue with auto-selecting the table-index when no index is specified and table + other indexes are useable.
@@ -20,7 +45,7 @@ Changelog
 * Chore: upgrade python 3.9.19 to 3.9.21
 
 
-0.6.4-dev8 (Current Development)
+0.6.4-dev8
 --------------------------------
 * Added: Added colorization for ``json`` formatter
 * Added: ``rich`` formatter for query results

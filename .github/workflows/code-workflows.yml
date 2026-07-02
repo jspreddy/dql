@@ -11,19 +11,22 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.9]
+        python-version: ['3.9', '3.10', '3.11']
     steps:
       - name: Check out repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: "latest"
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Running lint with tox
-        uses: ymyzk/run-tox-gh-actions@main
-        with:
-          tox-args:
-            -e lint
+      - name: Install dependencies
+        run: uv sync --dev
+      - name: Run linting
+        run: uv run task lint
 
   test-job:
     needs: lint-job
@@ -31,30 +34,35 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9'] # TODO: add '3.10' and '3.11' once they are working.
+        python-version: ['3.9', '3.10', '3.11']
     steps:
       - name: Check out repository code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'corretto'
           java-version: '21'
 
       - name: Install & start DynamoDB Local
-        run: ./travisci/install_dynamodb_local.sh background
+        run: ./scripts/install_dynamodb_local.sh background
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: "latest"
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Running tests for ${{ matrix.python-version }} with tox
-        uses: ymyzk/run-tox-gh-actions@main
-        with:
-          tox-args:
-            -e test
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run tests
+        run: uv run task test
 
   # publish-job:
   #   name: Publish to PyPI and upload binary

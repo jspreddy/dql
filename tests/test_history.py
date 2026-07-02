@@ -1,9 +1,13 @@
 import os
-import readline
 import shutil
 import tempfile
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import patch
+
+from dql import readline_compat
+
+readline = readline_compat.readline
 
 from dql.history import HistoryManager
 
@@ -22,7 +26,8 @@ class TestHistoryManager(TestCase):
         super().setUp()
         self._histDir = tempfile.mkdtemp()
         self._histFile = os.path.join(self._histDir, HistoryManager.history_file_name)
-        readline.clear_history()
+        if readline is not None:
+            readline.clear_history()
 
     def tearDown(self):
         super().tearDown()
@@ -51,6 +56,9 @@ class TestHistoryManager(TestCase):
 
     def test_history_file_contains_history_from_readline(self):
         """Assert that a history file will be written with proper contents."""
+        if readline is None:
+            self.fail("readline is not available")
+
         expectedHistFilePath = self._histFile
 
         readline.add_history("this is a simulated cli input")
@@ -60,6 +68,9 @@ class TestHistoryManager(TestCase):
 
     def test_history_file_contains_proper_appended_history(self):
         """Assert that a history file will be appended to"""
+        if readline is None:
+            self.fail("readline is not available")
+
         expectedHistFilePath = self._histFile
 
         readline.add_history("this is a simulated cli input")
@@ -73,3 +84,39 @@ class TestHistoryManager(TestCase):
             expectedHistFilePath,
             "this is a simulated cli input\nanother simulated cli input\n",
         )
+
+    def test_write_history_handles_append_failure(self):
+        """Assert that append failures do not propagate to the caller."""
+        if readline is None:
+            self.fail("readline is not available")
+
+        readline.add_history("this is a simulated cli input")
+
+        with patch.object(
+            readline, "append_history_file", side_effect=OSError("permission denied")
+        ):
+            self.historyManager.try_to_write_history(self._histDir)
+
+    def test_write_history_handles_get_length_failure(self):
+        """Assert that get_current_history_length failures do not propagate."""
+        if readline is None:
+            self.fail("readline is not available")
+
+        with patch.object(
+            readline,
+            "get_current_history_length",
+            side_effect=OSError("read error"),
+        ):
+            self.historyManager.try_to_write_history(self._histDir)
+
+    def test_remove_items_handles_readline_failure(self):
+        """Assert that readline removal failures do not propagate to the caller."""
+        if readline is None:
+            self.fail("readline is not available")
+
+        readline.add_history("this is a simulated cli input")
+
+        with patch.object(
+            readline, "remove_history_item", side_effect=OSError("read error")
+        ):
+            self.historyManager.remove_items(n=1)

@@ -1,7 +1,0 @@
-types-python-dateutil
-types-mock
-mock
-pytest
-pytest-cov
-pytest-dynamodb
-syrupy

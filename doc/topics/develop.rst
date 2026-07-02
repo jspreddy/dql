@@ -4,109 +4,90 @@ To get started developing dql, clone the repo::
 
     git clone https://github.com/stevearc/dql.git
 
-It is recommended that you create a virtualenv to develop::
-
-    # python 3
-    python3 -m venv dql_env
-    # python 2
-    virtualenv dql_env
-
-    source ./dql_env/bin/activate
-    pip install -e .
-
-Running Tests
--------------
-The command to run tests is ``python setup.py nosetests``, but I recommend using
-`tox <https://tox.readthedocs.io/en/latest/>`__. Some of these tests require
-`DynamoDB Local
+Some tests require `DynamoDB Local
 <http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Tools.html>`_.
-There is a nose plugin that will download and run the DynamoDB Local service
-during the tests. It requires the java 6/7 runtime, so make sure you have that
-installed.
+The test suite uses a pytest plugin that downloads and runs DynamoDB Local during
+tests. It requires a Java runtime.
 
+Local development with uv
+-------------------------
+This project uses `uv <https://docs.astral.sh/uv/>`_ for dependency management and
+`taskipy <https://github.com/taskipy/taskipy>`_ for project tasks.
 
-Local dev Using ``pyenv pyenv-virtualenv tox tox-pyenv``
---------------------------------------------------------
+Prerequisites:
 
-Pre-requisites
+- `uv <https://docs.astral.sh/uv/getting-started/installation/>`_
+- Java (for DynamoDB Local during tests)
 
-- Install `pyenv <https://github.com/pyenv/pyenv>`_
-    - Why use pyenv? `Intro to pyenv <https://realpython.com/intro-to-pyenv/#what-about-a-package-manager>`_
-- Install `pyenv-virtualenv <https://github.com/pyenv/pyenv-virtualenv#installing-with-homebrew-for-macos-users>`_ so that you can manage virtualenvs from pyenv.
-- Install Java: I recomend using `sdkman <https://sdkman.io/install>`_ to manage your java installations.
-    - I use java version 8.0.265.j9-adpt
-    - ``sdk install java 8.0.265.j9-adpt``
+Setup::
 
-Setting up local envs::
+    # Install uv
+    curl -LsSf https://astral.sh/uv/install.sh | sh
 
-    # See installed python versions
-    pyenv versions
+    # Clone and setup
+    git clone https://github.com/jspreddy/dql.git
+    cd dql
+    git checkout v-next
 
-    # See which python you are currently using. This will also show missing versions
-    # required by .python-version file.
-    pyenv which python
+    # Install dependencies
+    uv sync --dev
+    source .venv/bin/activate
 
-    # Install the required python versions using pyenv.
-    pyenv install <version-number>
+Project tasks
+-------------
+List available tasks::
 
-        # Version numbers are listed in the .python-version file.
-        pyenv install 3.9.21
+    uv run task --list
 
-    # Create a virtual env named "dql-local-env" with python version 3.9.21
-    pyenv virtualenv 3.9.21 dql-local-env
+Common commands::
 
-    # Look at the virtual envs. dql-local-env should have a * next to it indicating
-    # that it is selected.
-    pyenv virtualenvs
+    uv run task test              # run all tests
+    uv run task test-matrix       # run tests on Python 3.9, 3.10, and 3.11
+    uv run task test-verbose      # run tests with verbose output
+    uv run task test-specific tests/test_parser.py  # run a specific test file
+    uv run task lint              # run mypy, isort, black, pylint
+    uv run task fix               # format code with isort and black
+    uv run task coverage          # run tests with HTML coverage report (htmlcov/)
+    uv run task package           # build package and pex binary
+    uv run task dynamo            # install DynamoDB Local
 
-    # You should be currently using "~/.pyenv/versions/dql-local-env/bin/python"
-    pyenv which python
+Tests require DynamoDB Local. Start it before running tests::
 
-    # install dependencies
-    pip install -r requirements_dev.txt
+    ./scripts/install_dynamodb_local.sh background
 
-    # running tests with tox
-    tox
+Multi-Python testing
+--------------------
+Supported Python versions: 3.9, 3.10, and 3.11. CI runs the lint and test jobs
+against all three.
 
-        # running specific tox env
-        tox -e format
-        tox -e lint
-        tox -e package
+Run tests locally across all supported versions (requires DynamoDB Local)::
 
-After setting up your local env, you can install the executable of dql::
+    uv run task test-matrix
 
-    pip install -e .
+To test a single version::
 
-    # In case you have a global dql already installed for your day to day use,
-    # I recommend bumping the patch number so that you know which version you
-    # are currently executing.
-    bump2version patch
-
-    # check the version
-    dql --version
-
-    # To install with pyenv & pipx, package with `tox -e package` first, then:
-    pyenv local 3.9.21
-    pyenv which python
-    pipx install --python $(pyenv which python) ./dist/filename.tar.gz
-
+    uv python install 3.10
+    UV_PYTHON=3.10 uv sync --dev
+    UV_PYTHON=3.10 uv run task test
 
 Versioning
 ----------
-Use `bump2version` instead of `bumpversion` because `bump2version` is actively maintained. This advise comes from `bumpversion` project itself. See `bumpversion`'s pypi page for details.
+Use `bump2version` instead of `bumpversion` because `bump2version` is actively maintained. Configuration lives in ``.bumpversion.cfg``.
 
 Config based on: `<https://medium.com/@williamhayes/versioning-using-bumpversion-4d13c914e9b8>`_
 
-Usage::
+Run bump2version through the project environment (``scripts/bump-version.sh`` runs ``uv lock`` and amends the bump commit to include ``uv.lock``)::
 
-    # will update the relevant part and start a new `x.x.x-dev0` build version
-    $> bump2version patch
-    $> bump2version minor
-    $> bump2version major
+    uv run task bump --dry-run build   # preview dev build bump
+    uv run task bump --dry-run patch   # preview patch bump
+    uv run task bump patch             # bump patch and reset to x.x.x-dev0
+    uv run task bump minor             # bump minor and reset to x.x.x-dev0
+    uv run task bump major             # bump major and reset to x.x.x-dev0
+    uv run task bump build             # increment dev build (x.x.x-dev0 -> x.x.x-dev1)
+    uv run task bump --tag release     # release as x.x.x (creates git tag)
 
-    # update the build number from `x.x.x-dev0` to `x.x.x-dev1`
-    $> bump2version build
+Each bump updates ``pyproject.toml``, ``doc/conf.py``, ``dql/cli.py``, and ``uv.lock``, and creates a git commit (``tag = False`` in config unless releasing with ``--tag release``).
 
-    # release when ready, will convert the version to `x.x.x`, commit and tag it.
-    $> bump2version --tag release
+``uv.lock`` stores PEP 440-normalized versions (for example ``0.6.4.dev10``), so it is not listed in ``.bumpversion.cfg``; ``uv lock`` regenerates it from ``pyproject.toml``.
 
+Also update ``CHANGES.rst`` with release notes for the new version before committing or tagging a release.
