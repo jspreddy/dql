@@ -8,7 +8,7 @@ structure should make those boundaries explicit from the start.
 
 ```text
 crates/
-  dql-cli/       # clap arguments, REPL, config, history, meta-commands
+  dql-cli/       # clap arguments, ratatui TUI shell, config, meta-commands
   dql-parser/    # grammar, lexer/parser, typed AST
   dql-expr/      # expressions, visitors, placeholders, value coercion
   dql-models/    # table/index metadata and query-planning helpers
@@ -24,7 +24,7 @@ be able to depend on `dql-engine` and `dql-parser` without pulling in the REPL.
 | Python area | Rust target | Notes |
 | --- | --- | --- |
 | `dql/__init__.py` | `dql-cli/src/main.rs` | Use `clap` for `-c`, `--json`, region, host, port, and version flags. |
-| `dql/cli.py` | `dql-cli` | Use `rustyline` for history, completion, and multiline input. Keep meta-commands separate from DQL statements. |
+| `dql/cli.py` | `dql-cli` | Use `ratatui` for the interactive terminal UI, with a line-input/history layer for completion and multiline input. Keep meta-commands separate from DQL statements. |
 | `dql/grammar/` | `dql-parser` | Prefer a grammar-first parser such as `pest`, or a typed combinator parser if error recovery needs more control. |
 | `dql/expressions/` | `dql-expr` | Build typed constraint, selection, and update expressions; render DynamoDB expression strings and placeholders. |
 | `dql/models.py` | `dql-models` | Represent `TableMeta`, `QueryIndex`, fields, projections, throughput, and billing mode as Rust structs. |
@@ -80,24 +80,31 @@ adapter over `aws-sdk-dynamodb` for:
 The CLI should preserve both one-shot and interactive workflows. The REPL should
 route shell/meta-commands before DQL parsing, keep multiline statement support,
 and expose configuration for display, format, page size, width, throttling, and
-scan safety.
+scan safety. The interactive mode should be built as a `ratatui` application so
+DQL can grow from a prompt-compatible REPL into a richer terminal UI for command
+history, table browsing, help, query results, and watch/monitor views.
 
 ### Output
 
 Output should be treated as compatibility-sensitive. JSON output is easiest to
 compare mechanically and should be ported first. Smart, column, expanded, rich,
-and pager behavior can follow once the engine returns compatible values.
+and pager behavior can follow once the engine returns compatible values. The
+interactive output surface should use `ratatui` widgets where that improves
+navigation, while one-shot command output should remain pipe-friendly.
 
 ## Initial dependency candidates
 
 - CLI parsing: `clap`
-- REPL and history: `rustyline`
+- Interactive CLI/TUI: `ratatui` with a terminal backend such as `crossterm`
+- Line editing and history: integrate a line-input/history layer compatible
+  with the `ratatui` event loop
 - AWS access: `aws-config`, `aws-sdk-dynamodb`, and optionally
   `aws-sdk-cloudwatch`
 - Numeric values: `rust_decimal`
 - Time parsing: `chrono` plus a small compatibility layer for current interval
   syntax
 - JSON: `serde`, `serde_json`
-- Table output: `comfy-table` or custom formatting if parity requires it
+- Table output: `ratatui` widgets for interactive views, plus custom
+  pipe-friendly formatting for non-interactive output if parity requires it
 - Rate limiting: `governor` or a simple token bucket tailored to DynamoDB
   capacity units

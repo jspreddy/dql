@@ -114,13 +114,13 @@ Build the user-facing binary around the stable parser and engine.
 Deliverables:
 
 - `dql` binary with current flags and environment defaults
-- Interactive REPL with multiline fragments, history, completion, and prompt
-  behavior
+- Interactive `ratatui` terminal UI with multiline fragments, history,
+  completion, and prompt behavior
 - Meta-commands: `use`, `local`, `ls`, `file`, `opt`, `throttle`,
   `unthrottle`, `watch`, `whoami`, `shell`, `clear`, `cls`, `c`, `exit`, and
   `version`
 - Output formats: JSON first, then smart, column, expanded, rich, and pager
-  display
+  display; use `ratatui` widgets for interactive result browsing where useful
 - Help text for DQL statements and options
 
 Compatibility gate:
@@ -130,7 +130,8 @@ Compatibility gate:
 
 Primary risks:
 
-- Terminal formatting is user-visible and may need custom code for parity.
+- Terminal formatting is user-visible; the `ratatui` UI should preserve
+  pipe-friendly one-shot behavior while improving interactive navigation.
 - `watch` and CloudWatch metrics can be isolated behind optional features if
   they slow core parity work.
 
