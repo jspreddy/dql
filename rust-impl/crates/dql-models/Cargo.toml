@@ -1,0 +1,8 @@
+[package]
+name = "dql-models"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+dql-parser = { path = "../dql-parser" }
