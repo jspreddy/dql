@@ -242,6 +242,107 @@ pub fn render_update(update: &UpdateExpr) -> Result<RenderedExpression, ExprErro
     })
 }
 
+fn max_placeholder_index(prefix: &str, expr: &RenderedExpression) -> usize {
+    let mut max = 0usize;
+    if let Some(names) = &expr.attribute_names {
+        for key in names.keys() {
+            max = max.max(placeholder_index(key, prefix));
+        }
+    }
+    if let Some(values) = &expr.expression_values {
+        for key in values.keys() {
+            max = max.max(placeholder_index(key, prefix));
+        }
+    }
+    max
+}
+
+fn placeholder_index(key: &str, prefix: &str) -> usize {
+    key.strip_prefix(prefix)
+        .and_then(|suffix| suffix.parse().ok())
+        .unwrap_or(0)
+}
+
+/// Renumbers placeholders in `expr` so they do not collide with `avoid`.
+pub fn renumber_rendered_expression(
+    expr: &RenderedExpression,
+    avoid: &RenderedExpression,
+) -> RenderedExpression {
+    renumber_with_offsets(
+        expr,
+        max_placeholder_index(":v", avoid),
+        max_placeholder_index("#f", avoid),
+    )
+}
+
+fn renumber_with_offsets(
+    expr: &RenderedExpression,
+    value_offset: usize,
+    field_offset: usize,
+) -> RenderedExpression {
+    let mut value_remap = BTreeMap::new();
+    let mut field_remap = BTreeMap::new();
+    let mut next_value = value_offset;
+    let mut next_field = field_offset;
+
+    if let Some(values) = &expr.expression_values {
+        let mut keys = values.keys().cloned().collect::<Vec<_>>();
+        keys.sort_by_key(|key| placeholder_index(key, ":v"));
+        for old in keys {
+            next_value += 1;
+            value_remap.insert(old, format!(":v{next_value}"));
+        }
+    }
+    if let Some(names) = &expr.attribute_names {
+        let mut keys = names.keys().cloned().collect::<Vec<_>>();
+        keys.sort_by_key(|key| placeholder_index(key, "#f"));
+        for old in keys {
+            next_field += 1;
+            field_remap.insert(old, format!("#f{next_field}"));
+        }
+    }
+
+    let mut expression = expr.expression.clone();
+    let mut replacements = value_remap
+        .iter()
+        .map(|(old, new)| (old.as_str(), new.as_str()))
+        .chain(
+            field_remap
+                .iter()
+                .map(|(old, new)| (old.as_str(), new.as_str())),
+        )
+        .collect::<Vec<_>>();
+    replacements.sort_by_key(|(old, _)| std::cmp::Reverse(old.len()));
+    for (old, new) in replacements {
+        expression = expression.replace(old, new);
+    }
+
+    let expression_values = expr.expression_values.as_ref().map(|values| {
+        values
+            .iter()
+            .map(|(key, value)| {
+                let new_key = value_remap.get(key).cloned().unwrap_or_else(|| key.clone());
+                (new_key, value.clone())
+            })
+            .collect()
+    });
+    let attribute_names = expr.attribute_names.as_ref().map(|names| {
+        names
+            .iter()
+            .map(|(key, name)| {
+                let new_key = field_remap.get(key).cloned().unwrap_or_else(|| key.clone());
+                (new_key, name.clone())
+            })
+            .collect()
+    });
+
+    RenderedExpression {
+        expression,
+        attribute_names,
+        expression_values,
+    }
+}
+
 pub fn render_projection(selection: &Selection) -> RenderedExpression {
     let mut visitor = Visitor::with_default_reserved_words();
     let expression = match selection {
@@ -1050,6 +1151,44 @@ mod tests {
             render_update(&parse_update_expr("SET order = 1 REMOVE _old").unwrap()).unwrap();
         assert!(update.expression.contains("SET #f1 = :v1"));
         assert!(update.expression.contains("REMOVE #f2"));
+    }
+
+    #[test]
+    fn renumbers_rendered_expression_to_avoid_placeholder_collisions() {
+        let update = render_update(&parse_update_expr("SET bar = 3").unwrap()).unwrap();
+        let Statement::Select {
+            condition: Some(condition),
+            ..
+        } = parse_statement("SELECT * FROM t WHERE id = 'a'").unwrap()
+        else {
+            panic!("expected select with condition");
+        };
+        let condition = render_condition(&condition).unwrap();
+        let renumbered = renumber_rendered_expression(&condition, &update);
+        assert_eq!(
+            update
+                .expression_values
+                .as_ref()
+                .unwrap()
+                .keys()
+                .next()
+                .unwrap(),
+            ":v1"
+        );
+        assert_eq!(
+            renumbered
+                .expression_values
+                .as_ref()
+                .unwrap()
+                .keys()
+                .next()
+                .unwrap(),
+            ":v2"
+        );
+        assert_ne!(
+            update.expression_values.as_ref().unwrap()[":v1"],
+            renumbered.expression_values.as_ref().unwrap()[":v2"]
+        );
     }
 
     #[test]

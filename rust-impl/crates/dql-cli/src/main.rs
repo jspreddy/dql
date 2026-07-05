@@ -1,4 +1,4 @@
-use dql_engine::{Engine, InMemoryEngine, SdkBackend, SdkConfig, StatementResult, EngineError};
+use dql_engine::{Engine, EngineError, InMemoryEngine, SdkBackend, SdkConfig, StatementResult};
 use std::env;
 use std::error::Error;
 use std::io::{self, Write};

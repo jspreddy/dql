@@ -12,7 +12,10 @@ use aws_sdk_dynamodb::types::{
     ReturnConsumedCapacity, ReturnValue, Select, WriteRequest,
 };
 use aws_sdk_dynamodb::Client;
-use dql_expr::{render_condition, render_projection, render_update, RenderedExpression};
+use dql_expr::{
+    render_condition, render_projection, render_update, renumber_rendered_expression,
+    RenderedExpression,
+};
 use dql_models::TableMeta;
 use dql_parser::{AlterAction, Condition, QueryOptions, Selection, UpdateExpr};
 use std::collections::{BTreeMap, HashMap};
@@ -708,6 +711,7 @@ impl SdkBackend {
                 .set_expression_attribute_values(Some(expression_values_to_attributes(&values)?));
         }
         if let Some(condition_expr) = condition_expr {
+            let condition_expr = renumber_rendered_expression(condition_expr, rendered);
             request = request
                 .condition_expression(condition_expr.expression.clone())
                 .set_expression_attribute_names(merge_names(
@@ -790,6 +794,10 @@ impl SdkBackend {
                     )?));
             }
             if let Some(filter_condition) = filter_condition {
+                let filter_condition = match key_condition {
+                    Some(key) => renumber_rendered_expression(filter_condition, key),
+                    None => filter_condition.clone(),
+                };
                 query = query
                     .filter_expression(filter_condition.expression.clone())
                     .set_expression_attribute_names(merge_names(

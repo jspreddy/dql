@@ -358,7 +358,13 @@ impl<B: DynamoBackend> Engine<B> {
         }
         let request = ReadRequest {
             operation: operation_to_backend(plan.operation),
-            index_name: plan.index.as_ref().map(|index| index.name.as_str()),
+            index_name: plan.index.as_ref().and_then(|index| {
+                if index.name == "TABLE" {
+                    None
+                } else {
+                    Some(index.name.as_str())
+                }
+            }),
             key_condition: plan.key_condition.as_ref(),
             filter_condition: plan
                 .filter_condition

@@ -1,7 +1,7 @@
 //! DynamoDB Local integration parity suite.
 //!
-//! Run when Local is available:
-//! `cargo test -p dql-engine --test dynamodb_local_parity -- --ignored`
+//! Requires DynamoDB Local on localhost:8000 (see `DQL_LOCAL_HOST` /
+//! `DQL_LOCAL_PORT`). These tests fail if Local is not running.
 
 #[path = "support/mod.rs"]
 mod support;
@@ -17,7 +17,6 @@ fn run_script(harness: &mut LocalHarness, table: &str, script: &str) -> Statemen
 }
 
 #[test]
-#[ignore = "requires DynamoDB Local on localhost:8000"]
 fn parity_create_insert_select() {
     if skip_if_no_local() {
         return;
@@ -50,7 +49,6 @@ fn parity_create_insert_select() {
 }
 
 #[test]
-#[ignore = "requires DynamoDB Local on localhost:8000"]
 fn parity_update_and_delete() {
     if skip_if_no_local() {
         return;
@@ -81,7 +79,6 @@ fn parity_update_and_delete() {
 }
 
 #[test]
-#[ignore = "requires DynamoDB Local on localhost:8000"]
 fn parity_index_query() {
     if skip_if_no_local() {
         return;
@@ -112,7 +109,6 @@ fn parity_index_query() {
 }
 
 #[test]
-#[ignore = "requires DynamoDB Local on localhost:8000"]
 fn parity_scan_filter() {
     if skip_if_no_local() {
         return;
@@ -138,7 +134,6 @@ fn parity_scan_filter() {
 }
 
 #[test]
-#[ignore = "requires DynamoDB Local on localhost:8000"]
 fn parity_explain_query() {
     if skip_if_no_local() {
         return;

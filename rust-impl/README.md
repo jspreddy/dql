@@ -37,12 +37,17 @@ around the parallel workstreams identified in `rust-plans/`:
 
 ## DynamoDB Local
 
-Start DynamoDB Local on port 8000, then:
+Several integration tests require DynamoDB Local on port 8000 (override with
+`DQL_LOCAL_HOST` and `DQL_LOCAL_PORT`). They run as part of the normal test
+suite and fail if Local is not reachable.
+
+Start DynamoDB Local, then:
 
 ```bash
 cargo run -p dql-cli -- -H localhost -p 8000 -c "CREATE TABLE t (id STRING HASH KEY); SCAN * FROM t"
-cargo test -p dql-engine --test dynamodb_local_smoke -- --ignored
-cargo test -p dql-engine --test dynamodb_local_parity -- --ignored
+cargo test -p dql-engine --test dynamodb_local_smoke
+cargo test -p dql-engine --test dynamodb_local_parity
+cargo test --workspace
 ```
 
 Integration tests use `tests/support/mod.rs` (`LocalHarness`) to connect, run

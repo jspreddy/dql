@@ -228,7 +228,7 @@ impl TableMeta {
             local_indexes,
             global_indexes,
             throughput: throughput.clone(),
-            billing_mode: if is_on_demand(throughput) {
+            billing_mode: if throughput.is_none() || is_on_demand(throughput) {
                 BillingMode::OnDemand
             } else {
                 BillingMode::Provisioned

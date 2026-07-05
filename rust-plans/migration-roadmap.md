@@ -103,8 +103,8 @@ Status:
 - `MemoryBackend` covers UPDATE, ALTER, index planning, FilterExpression, selection
   arithmetic, KEYS IN, DELETE USING, keyword INSERT, CSV LOAD, and explain kwargs
 - CLI connects to DynamoDB Local when `-H` is provided
-- Integration tests `dynamodb_local_smoke` and `dynamodb_local_parity` are present but
-  ignored unless Local is running
+- Integration tests `dynamodb_local_smoke` and `dynamodb_local_parity` require
+  DynamoDB Local and fail if it is not running
 - `python_engine_query_model_parity` mirrors `tests/test_queries.py` with 128 passing
   tests; FragmentEngine and remaining regressions stay deferred to Phase 5
 

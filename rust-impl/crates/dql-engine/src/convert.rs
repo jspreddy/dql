@@ -179,10 +179,13 @@ pub fn build_create_table_input(
     meta: &TableMeta,
 ) -> Result<aws_sdk_dynamodb::operation::create_table::builders::CreateTableInputBuilder, EngineError>
 {
-    let attribute_definitions = meta
-        .attrs
-        .values()
-        .map(|field| {
+    let key_attribute_names = collect_key_attribute_names(meta);
+    let attribute_definitions = key_attribute_names
+        .iter()
+        .map(|name| {
+            let field = meta.attrs.get(name).ok_or_else(|| {
+                EngineError::Runtime(format!("missing attribute definition for key '{name}'"))
+            })?;
             AttributeDefinition::builder()
                 .attribute_name(field.name.clone())
                 .attribute_type(attribute_type_to_scalar(&field.data_type))
@@ -212,6 +215,8 @@ pub fn build_create_table_input(
         builder = builder.billing_mode(AwsBillingMode::PayPerRequest);
     } else if let Some(throughput) = throughput_to_aws(meta.throughput.as_ref()) {
         builder = builder.provisioned_throughput(throughput);
+    } else {
+        builder = builder.billing_mode(AwsBillingMode::PayPerRequest);
     }
     if !meta.local_indexes.is_empty() {
         let indexes = meta
@@ -365,6 +370,27 @@ fn scalar_type_to_attribute_type(value: &ScalarAttributeType) -> AttributeType {
         ScalarAttributeType::B => AttributeType::Binary,
         _ => AttributeType::Other("UNKNOWN".to_string()),
     }
+}
+
+fn collect_key_attribute_names(meta: &TableMeta) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    names.insert(meta.hash_key.clone());
+    if let Some(range_key) = &meta.range_key {
+        names.insert(range_key.clone());
+    }
+    for index in meta.local_indexes.values() {
+        names.insert(index.hash_key.clone());
+        if let Some(range_key) = &index.range_key {
+            names.insert(range_key.clone());
+        }
+    }
+    for index in meta.global_indexes.values() {
+        names.insert(index.hash_key.name.clone());
+        if let Some(range_key) = &index.range_key {
+            names.insert(range_key.name.clone());
+        }
+    }
+    names
 }
 
 fn attribute_type_to_scalar(value: &AttributeType) -> ScalarAttributeType {

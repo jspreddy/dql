@@ -82,8 +82,8 @@ Sources to port:
 
 Rust test shape:
 
-- Use a test harness that starts or connects to DynamoDB Local on the configured
-  port.
+- Use a test harness that connects to DynamoDB Local on the configured port.
+  These tests fail if Local is not running; they are not skipped automatically.
 - Create unique table names per test to avoid cross-test contamination.
 - Patch or disable CloudWatch metric calls when DynamoDB Local is used.
 - Assert both returned data and explain/analyze call details.
