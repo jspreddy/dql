@@ -4,7 +4,7 @@ use crate::{
     BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
     StatementResult,
 };
-use dql_expr::{render_condition, render_projection};
+use dql_expr::{project_selection, render_condition, render_projection};
 use dql_models::{plan_read, Operation, PlanError, PlanInput, QueryPlan, ReadKind, TableMeta};
 use dql_parser::{
     parse_script, Condition, InsertForm, OrderBy, QueryOptions, Selection, Statement, UpdateExpr,
@@ -582,15 +582,29 @@ fn apply_projection(items: &mut [Item], selection: &Selection) {
     let Selection::Items(projections) = selection else {
         return;
     };
-    let fields = projections
-        .iter()
-        .map(|item| item.expression.trim().to_string())
-        .collect::<Vec<_>>();
-    if fields.is_empty() {
+    let simple = projections.iter().all(|item| {
+        item.expression
+            .chars()
+            .all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '-')
+    });
+    if simple {
+        for item in items.iter_mut() {
+            let mut projected = Item::new();
+            for entry in projections {
+                if let Some(value) = item.get(entry.expression.trim()) {
+                    let key = entry
+                        .alias
+                        .clone()
+                        .unwrap_or_else(|| entry.expression.trim().to_string());
+                    projected.insert(key, value.clone());
+                }
+            }
+            *item = projected;
+        }
         return;
     }
     for item in items.iter_mut() {
-        item.retain(|key, _| fields.iter().any(|field| field == key));
+        *item = project_selection(item, selection);
     }
 }
 

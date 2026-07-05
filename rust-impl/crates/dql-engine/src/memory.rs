@@ -2,7 +2,7 @@ use crate::convert::{item_matches_primary_key, keys_in_to_items};
 use crate::{
     BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
 };
-use dql_expr::{render_condition, render_update};
+use dql_expr::{render_update, resolve_timestamp};
 use dql_models::BillingMode;
 use dql_models::TableMeta;
 use dql_parser::{
@@ -575,6 +575,17 @@ fn compare_order(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
             left.partial_cmp(&right)
         }
         (Value::String(left), Value::String(right)) => Some(left.cmp(right)),
+        (Value::Timestamp(left), Value::Timestamp(right)) => {
+            resolve_timestamp(left).partial_cmp(&resolve_timestamp(right))
+        }
+        (Value::Timestamp(left), Value::Number(right)) => {
+            let right = right.parse::<f64>().ok()?;
+            resolve_timestamp(left).partial_cmp(&right)
+        }
+        (Value::Number(left), Value::Timestamp(right)) => {
+            let left = left.parse::<f64>().ok()?;
+            left.partial_cmp(&resolve_timestamp(right))
+        }
         _ => None,
     }
 }

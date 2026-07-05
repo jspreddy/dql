@@ -871,26 +871,183 @@ mod test_select_scan {
         assert_items_len(result, 1);
     }
 
-    ignored_scan!(
-        test_select_filter_timestamp => "needs timestamp constraints",
-        test_select_alias => "needs selection aliases",
-        test_select_operation => "needs selection arithmetic",
-        test_select_none_operation => "needs nullable selection arithmetic",
-        test_select_type_error_operation => "needs Python-compatible selection type errors",
-        test_nested_operation => "needs nested selection arithmetic",
-        test_select_timestamp => "needs timestamp selection functions",
-        test_select_timestamp_ms => "needs timestamp millisecond functions",
-        test_select_timestamp_literal => "needs timestamp literal functions",
-        test_select_now => "needs now() selection",
-        test_select_timedelta => "needs interval arithmetic",
-    );
-
     fn seeded_scan_table_no_range() -> InMemoryEngine {
         let mut engine = InMemoryEngine::default();
         engine
             .execute("CREATE TABLE foobar (id STRING HASH KEY)")
             .unwrap();
         engine
+    }
+
+    #[test]
+    fn test_select_filter_timestamp() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', NOW() + INTERVAL '1 hour')")
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE bar > NOW()")
+            .unwrap();
+        assert_items_len(result, 1);
+    }
+
+    #[test]
+    fn test_select_alias() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', 5)")
+            .unwrap();
+        let result = engine.execute("SCAN id, bar AS baz FROM foobar").unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items[0].get("baz"), Some(&Value::Number("5".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_select_operation() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute("INSERT INTO foobar (id, bar, baz) VALUES ('a', 5, 3)")
+            .unwrap();
+        let result = engine.execute("SCAN bar + baz AS ret FROM foobar").unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items[0].get("ret"), Some(&Value::Number("8".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_select_none_operation() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', 5)")
+            .unwrap();
+        let result = engine.execute("SCAN bar + baz AS ret FROM foobar").unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items[0].get("ret"), Some(&Value::Number("5".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_select_type_error_operation() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute("INSERT INTO foobar (id, bar, baz) VALUES ('a', 5, (1, 2))")
+            .unwrap();
+        let result = engine.execute("SCAN bar + baz AS ret FROM foobar").unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items[0].get("ret"), Some(&Value::Null));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_nested_operation() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute("INSERT INTO foobar (id, foo, bar, baz) VALUES ('a', 10, 5, 3)")
+            .unwrap();
+        let result = engine
+            .execute("SCAN foo - (bar - baz) AS ret FROM foobar")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items[0].get("ret"), Some(&Value::Number("8".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_select_timestamp() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', NOW())")
+            .unwrap();
+        let result = engine.execute("SCAN ts(bar) AS bar FROM foobar").unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert!(matches!(items[0].get("bar"), Some(Value::Timestamp(_))));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_select_timestamp_ms() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', MS(NOW()))")
+            .unwrap();
+        let result = engine.execute("SCAN ts(bar) AS bar FROM foobar").unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert!(matches!(
+                    items[0].get("bar"),
+                    Some(Value::Timestamp(_)) | Some(Value::Number(_))
+                ));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_select_timestamp_literal() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', 4)")
+            .unwrap();
+        let result = engine
+            .execute("SCAN ts('2015-12-5') AS d FROM foobar")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert!(matches!(items[0].get("d"), Some(Value::Timestamp(_))));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_select_now() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', 4)")
+            .unwrap();
+        let result = engine.execute("SCAN now() AS d FROM foobar").unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert!(matches!(items[0].get("d"), Some(Value::Timestamp(_))));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_select_timedelta() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', NOW())")
+            .unwrap();
+        let result = engine
+            .execute("SCAN now() - ts(bar) AS d FROM foobar")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert!(matches!(items[0].get("d"), Some(Value::Interval(_))));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 
     #[test]

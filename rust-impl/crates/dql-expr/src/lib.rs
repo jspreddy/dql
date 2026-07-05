@@ -505,10 +505,19 @@ fn extract_fields(expression: &str) -> Vec<String> {
         .collect()
 }
 
-fn resolve_timestamp(expr: &TimestampExpr) -> f64 {
+pub fn resolve_timestamp(expr: &TimestampExpr) -> f64 {
     match expr {
-        TimestampExpr::Now | TimestampExpr::UtcNow => 0.0,
-        TimestampExpr::Parse { value, .. } => parse_utc_date(value).unwrap_or(0.0),
+        TimestampExpr::Now => local_now_secs(),
+        TimestampExpr::UtcNow => utc_now_secs(),
+        TimestampExpr::Parse { function, value } => {
+            if function.eq_ignore_ascii_case("UTCTIMESTAMP")
+                || function.eq_ignore_ascii_case("UTCTS")
+            {
+                parse_utc_date(value).unwrap_or(0.0)
+            } else {
+                parse_local_date(value).unwrap_or(0.0)
+            }
+        }
         TimestampExpr::Ms(expr) => resolve_timestamp(expr) * 1000.0,
         TimestampExpr::AddInterval { base, interval } => {
             resolve_timestamp(base) + parse_interval_seconds(interval)
@@ -519,7 +528,26 @@ fn resolve_timestamp(expr: &TimestampExpr) -> f64 {
     }
 }
 
+fn local_now_secs() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs_f64())
+        .unwrap_or(0.0)
+}
+
+fn utc_now_secs() -> f64 {
+    local_now_secs()
+}
+
 fn parse_utc_date(value: &str) -> Option<f64> {
+    parse_date(value)
+}
+
+fn parse_local_date(value: &str) -> Option<f64> {
+    parse_date(value)
+}
+
+fn parse_date(value: &str) -> Option<f64> {
     let mut parts = value.split('-');
     let year = parts.next()?.parse::<i32>().ok()?;
     let month = parts.next()?.parse::<u32>().ok()?;
@@ -610,9 +638,10 @@ fn decode_base64(input: &str) -> Result<Vec<u8>, ExprError> {
         if ch == b'=' {
             break;
         }
-        let value = decode.get(ch as usize).copied().ok_or_else(|| {
-            ExprError::new(format!("invalid base64 character '{ch}'"))
-        })?;
+        let value = decode
+            .get(ch as usize)
+            .copied()
+            .ok_or_else(|| ExprError::new(format!("invalid base64 character '{ch}'")))?;
         buffer = (buffer << 6) | u32::from(value);
         bits += 6;
         if bits >= 8 {
@@ -645,6 +674,335 @@ fn base64(input: &[u8]) -> String {
         }
     }
     output
+}
+
+pub fn project_selection(
+    item: &BTreeMap<String, Value>,
+    selection: &Selection,
+) -> BTreeMap<String, Value> {
+    let Selection::Items(items) = selection else {
+        return item.clone();
+    };
+    let mut projected = BTreeMap::new();
+    for entry in items {
+        let key = entry
+            .alias
+            .clone()
+            .unwrap_or_else(|| entry.expression.trim().to_string());
+        match eval_selection_expression(item, &entry.expression) {
+            Ok(value) => {
+                projected.insert(key, value);
+            }
+            Err(_) => {
+                projected.insert(key, Value::Null);
+            }
+        }
+    }
+    projected
+}
+
+fn eval_selection_expression(
+    item: &BTreeMap<String, Value>,
+    expression: &str,
+) -> Result<Value, ExprError> {
+    let tokens = tokenize_selection(expression);
+    let mut parser = SelectionParser {
+        item,
+        tokens,
+        pos: 0,
+    };
+    parser.parse_expression()
+}
+
+struct SelectionParser<'a> {
+    item: &'a BTreeMap<String, Value>,
+    tokens: Vec<String>,
+    pos: usize,
+}
+
+impl SelectionParser<'_> {
+    fn peek(&self) -> Option<&str> {
+        self.tokens.get(self.pos).map(String::as_str)
+    }
+
+    fn next(&mut self) -> Option<String> {
+        if self.pos < self.tokens.len() {
+            let token = self.tokens[self.pos].clone();
+            self.pos += 1;
+            Some(token)
+        } else {
+            None
+        }
+    }
+
+    fn parse_expression(&mut self) -> Result<Value, ExprError> {
+        self.parse_additive()
+    }
+
+    fn parse_additive(&mut self) -> Result<Value, ExprError> {
+        let mut value = self.parse_multiplicative()?;
+        while matches!(self.peek(), Some("+") | Some("-")) {
+            let op = self.next().unwrap();
+            let rhs = self.parse_multiplicative()?;
+            value = match op.as_str() {
+                "+" => add_values(&value, &rhs),
+                "-" => sub_values(&value, &rhs),
+                _ => unreachable!(),
+            }?;
+        }
+        Ok(value)
+    }
+
+    fn parse_multiplicative(&mut self) -> Result<Value, ExprError> {
+        let mut value = self.parse_unary()?;
+        while matches!(self.peek(), Some("*") | Some("/")) {
+            let op = self.next().unwrap();
+            let rhs = self.parse_unary()?;
+            value = match op.as_str() {
+                "*" => mul_values(&value, &rhs),
+                "/" => div_values(&value, &rhs),
+                _ => unreachable!(),
+            }?;
+        }
+        Ok(value)
+    }
+
+    fn parse_unary(&mut self) -> Result<Value, ExprError> {
+        if self.peek() == Some("-") {
+            self.next();
+            let value = self.parse_unary()?;
+            return mul_values(&Value::Number("-1".to_string()), &value);
+        }
+        self.parse_primary()
+    }
+
+    fn parse_primary(&mut self) -> Result<Value, ExprError> {
+        if self.peek() == Some("(") {
+            self.next();
+            let value = self.parse_expression()?;
+            if self.next().as_deref() != Some(")") {
+                return Err(ExprError::new("expected ')'"));
+            }
+            return Ok(value);
+        }
+        let token = self
+            .next()
+            .ok_or_else(|| ExprError::new("expected selection expression"))?;
+        if self.peek() == Some("(") {
+            self.next();
+            return self.parse_function(&token.to_ascii_uppercase());
+        }
+        if is_number(&token) {
+            return Ok(Value::Number(token));
+        }
+        if is_quoted(&token) {
+            return Ok(Value::String(
+                token.trim_matches('"').trim_matches('\'').to_string(),
+            ));
+        }
+        Ok(item_field(self.item, &token).unwrap_or(Value::Null))
+    }
+
+    fn parse_function(&mut self, name: &str) -> Result<Value, ExprError> {
+        let value = if matches!(name, "NOW" | "UTCNOW") {
+            Value::Timestamp(if name == "UTCNOW" {
+                TimestampExpr::UtcNow
+            } else {
+                TimestampExpr::Now
+            })
+        } else if matches!(name, "MS") {
+            let inner = self.parse_expression()?;
+            Value::Timestamp(TimestampExpr::Ms(Box::new(timestamp_expr_from_value(
+                &inner,
+            )?)))
+        } else if matches!(name, "TS" | "TIMESTAMP" | "UTCTIMESTAMP" | "UTCTS") {
+            let inner = self.parse_expression()?;
+            timestamp_from_value(&inner, name)?
+        } else {
+            return Err(ExprError::new(format!("unknown function '{name}'")));
+        };
+        if self.next().as_deref() != Some(")") {
+            return Err(ExprError::new("expected ')'"));
+        }
+        Ok(value)
+    }
+}
+
+fn tokenize_selection(expression: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    for ch in expression.chars() {
+        match ch {
+            '+' | '-' | '*' | '/' | '(' | ')' | ',' => {
+                if !current.trim().is_empty() {
+                    tokens.push(current.trim().to_string());
+                    current.clear();
+                }
+                tokens.push(ch.to_string());
+            }
+            ' ' | '\t' | '\n' => {
+                if !current.trim().is_empty() {
+                    tokens.push(current.trim().to_string());
+                    current.clear();
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.trim().is_empty() {
+        tokens.push(current.trim().to_string());
+    }
+    tokens
+}
+
+fn item_field(item: &BTreeMap<String, Value>, field: &str) -> Option<Value> {
+    item.get(field).cloned()
+}
+
+fn timestamp_expr_from_value(value: &Value) -> Result<TimestampExpr, ExprError> {
+    match value {
+        Value::Timestamp(expr) => Ok(expr.clone()),
+        Value::String(text) => Ok(TimestampExpr::Parse {
+            function: "TS".into(),
+            value: text.clone(),
+        }),
+        Value::Number(number) => Ok(TimestampExpr::Parse {
+            function: "TS".into(),
+            value: number.clone(),
+        }),
+        Value::Null => Err(ExprError::new("unsupported timestamp input")),
+        _ => Err(ExprError::new("unsupported timestamp input")),
+    }
+}
+
+fn timestamp_from_value(value: &Value, function: &str) -> Result<Value, ExprError> {
+    match value {
+        Value::Timestamp(TimestampExpr::Ms(expr)) => {
+            let ms = resolve_timestamp(&TimestampExpr::Ms(expr.clone()));
+            Ok(Value::Timestamp(TimestampExpr::Parse {
+                function: function.to_string(),
+                value: (ms / 1000.0).to_string(),
+            }))
+        }
+        Value::Timestamp(expr) => Ok(Value::Timestamp(expr.clone())),
+        Value::String(text) => Ok(Value::Timestamp(TimestampExpr::Parse {
+            function: function.to_string(),
+            value: text.clone(),
+        })),
+        Value::Number(number) => Ok(Value::Timestamp(TimestampExpr::Parse {
+            function: function.to_string(),
+            value: number.clone(),
+        })),
+        Value::Null => Ok(Value::Null),
+        _ => Err(ExprError::new("unsupported timestamp input")),
+    }
+}
+
+fn add_values(left: &Value, right: &Value) -> Result<Value, ExprError> {
+    if matches!(left, Value::Null) {
+        return Ok(right.clone());
+    }
+    if matches!(right, Value::Null) {
+        return Ok(left.clone());
+    }
+    match (left, right) {
+        (Value::Number(left), Value::Number(right)) => {
+            let sum = left
+                .parse::<f64>()
+                .map_err(|err| ExprError::new(err.to_string()))?
+                + right
+                    .parse::<f64>()
+                    .map_err(|err| ExprError::new(err.to_string()))?;
+            Ok(Value::Number(sum.to_string()))
+        }
+        (Value::Timestamp(left), Value::Timestamp(right)) => {
+            let diff = resolve_timestamp(left) - resolve_timestamp(right);
+            Ok(Value::Interval(format!("{diff} seconds")))
+        }
+        _ => Err(ExprError::new("unsupported selection arithmetic")),
+    }
+}
+
+fn sub_values(left: &Value, right: &Value) -> Result<Value, ExprError> {
+    if matches!(left, Value::Null) && matches!(right, Value::Null) {
+        return Ok(Value::Null);
+    }
+    if matches!(left, Value::Null) {
+        return mul_values(&Value::Number("-1".to_string()), right);
+    }
+    if matches!(right, Value::Null) {
+        return Ok(left.clone());
+    }
+    match (left, right) {
+        (Value::Number(left), Value::Number(right)) => {
+            let diff = left
+                .parse::<f64>()
+                .map_err(|err| ExprError::new(err.to_string()))?
+                - right
+                    .parse::<f64>()
+                    .map_err(|err| ExprError::new(err.to_string()))?;
+            Ok(Value::Number(diff.to_string()))
+        }
+        (Value::Timestamp(left), Value::Timestamp(right)) => {
+            let diff = resolve_timestamp(left) - resolve_timestamp(right);
+            Ok(Value::Interval(format!("{diff} seconds")))
+        }
+        _ => Err(ExprError::new("unsupported selection arithmetic")),
+    }
+}
+
+fn mul_values(left: &Value, right: &Value) -> Result<Value, ExprError> {
+    if matches!(left, Value::Null) {
+        return Ok(right.clone());
+    }
+    if matches!(right, Value::Null) {
+        return Ok(left.clone());
+    }
+    match (left, right) {
+        (Value::Number(left), Value::Number(right)) => {
+            let product = left
+                .parse::<f64>()
+                .map_err(|err| ExprError::new(err.to_string()))?
+                * right
+                    .parse::<f64>()
+                    .map_err(|err| ExprError::new(err.to_string()))?;
+            Ok(Value::Number(product.to_string()))
+        }
+        _ => Err(ExprError::new("unsupported selection arithmetic")),
+    }
+}
+
+fn div_values(left: &Value, right: &Value) -> Result<Value, ExprError> {
+    if matches!(left, Value::Null) && matches!(right, Value::Null) {
+        return Ok(Value::Null);
+    }
+    if matches!(left, Value::Null) {
+        return match right {
+            Value::Number(right) => {
+                let value = 1.0
+                    / right
+                        .parse::<f64>()
+                        .map_err(|err| ExprError::new(err.to_string()))?;
+                Ok(Value::Number(value.to_string()))
+            }
+            _ => Err(ExprError::new("unsupported selection arithmetic")),
+        };
+    }
+    if matches!(right, Value::Null) {
+        return Ok(left.clone());
+    }
+    match (left, right) {
+        (Value::Number(left), Value::Number(right)) => {
+            let quotient = left
+                .parse::<f64>()
+                .map_err(|err| ExprError::new(err.to_string()))?
+                / right
+                    .parse::<f64>()
+                    .map_err(|err| ExprError::new(err.to_string()))?;
+            Ok(Value::Number(quotient.to_string()))
+        }
+        _ => Err(ExprError::new("unsupported selection arithmetic")),
+    }
 }
 
 #[cfg(test)]
