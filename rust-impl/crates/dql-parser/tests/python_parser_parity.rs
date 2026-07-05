@@ -242,6 +242,23 @@ mod test_expressions {
     }
 
     #[test]
+    fn test_constraints_boolean_precedence() {
+        let statement =
+            parse_statement("SELECT * FROM foobars WHERE foo = 1 AND NOT (bar = 2 OR baz = 3)")
+                .unwrap();
+        match statement {
+            Statement::Select {
+                condition: Some(Condition::And(parts)),
+                ..
+            } => {
+                assert_eq!(parts.len(), 2);
+                assert!(matches!(parts[1], Condition::Not(_)));
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+    }
+
+    #[test]
     #[ignore = "needs full WHERE expression parser"]
     fn test_constraints_advanced_cases() {
         pending(

@@ -81,6 +81,8 @@ pub enum Condition {
         value: Value,
     },
     And(Vec<Condition>),
+    Or(Vec<Condition>),
+    Not(Box<Condition>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -517,15 +519,43 @@ impl Parser {
     }
 
     fn parse_condition(&mut self) -> Result<Condition, ParseError> {
-        let mut conditions = vec![self.parse_comparison()?];
+        self.parse_or_condition()
+    }
+
+    fn parse_or_condition(&mut self) -> Result<Condition, ParseError> {
+        let mut conditions = vec![self.parse_and_condition()?];
+        while self.accept_keyword("OR") {
+            conditions.push(self.parse_and_condition()?);
+        }
+        if conditions.len() == 1 {
+            Ok(conditions.remove(0))
+        } else {
+            Ok(Condition::Or(conditions))
+        }
+    }
+
+    fn parse_and_condition(&mut self) -> Result<Condition, ParseError> {
+        let mut conditions = vec![self.parse_primary_condition()?];
         while self.accept_keyword("AND") {
-            conditions.push(self.parse_comparison()?);
+            conditions.push(self.parse_primary_condition()?);
         }
         if conditions.len() == 1 {
             Ok(conditions.remove(0))
         } else {
             Ok(Condition::And(conditions))
         }
+    }
+
+    fn parse_primary_condition(&mut self) -> Result<Condition, ParseError> {
+        if self.accept_keyword("NOT") {
+            return Ok(Condition::Not(Box::new(self.parse_primary_condition()?)));
+        }
+        if self.accept_symbol('(') {
+            let condition = self.parse_condition()?;
+            self.expect_symbol(')')?;
+            return Ok(condition);
+        }
+        self.parse_comparison()
     }
 
     fn parse_comparison(&mut self) -> Result<Condition, ParseError> {

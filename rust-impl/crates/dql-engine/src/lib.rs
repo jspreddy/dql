@@ -315,6 +315,10 @@ fn matches_condition(item: &Item, condition: &Condition) -> bool {
         Condition::And(conditions) => conditions
             .iter()
             .all(|condition| matches_condition(item, condition)),
+        Condition::Or(conditions) => conditions
+            .iter()
+            .any(|condition| matches_condition(item, condition)),
+        Condition::Not(condition) => !matches_condition(item, condition),
     }
 }
 

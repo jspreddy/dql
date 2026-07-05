@@ -398,8 +398,20 @@ mod test_select {
         assert_items_len(result, 1);
     }
 
+    #[test]
+    fn test_filter_or() {
+        let mut engine = InMemoryEngine::new();
+        let result = engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, foo NUMBER, bar NUMBER, baz NUMBER);
+                 INSERT INTO foobar (id, foo, bar, baz) VALUES ('a', 1, 1, 1), ('a', 2, 2, 2);
+                 SELECT * FROM foobar WHERE id = 'a' AND (baz = 1 OR foo = 2)",
+            )
+            .unwrap();
+        assert_items_len(result, 2);
+    }
+
     ignored_select!(
-        test_filter_or => "needs OR constraints",
         test_count => "needs count selection",
         test_count_smart_index => "needs count selection and index planner",
         test_count_filter => "needs count selection",
@@ -500,8 +512,6 @@ mod test_select_scan {
         test_attribute_exists_quoted => "needs attribute_exists constraints",
         test_in => "needs IN constraints",
         test_contains => "needs contains constraints",
-        test_filter_or => "needs OR constraints",
-        test_filter_nested => "needs grouped constraints",
         test_scan_global => "needs GSI scan support",
         test_scan_global_with_constraints => "needs GSI scan constraints",
         test_filter_list => "needs list path constraints",
@@ -520,6 +530,28 @@ mod test_select_scan {
         test_select_now => "needs now() selection",
         test_select_timedelta => "needs interval arithmetic",
     );
+
+    #[test]
+    fn test_filter_or() {
+        let mut engine = seeded_scan_table();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE bar = 1 OR bar = 2")
+            .unwrap();
+        assert_items_len(result, 2);
+    }
+
+    #[test]
+    fn test_filter_nested() {
+        let mut engine = InMemoryEngine::new();
+        let result = engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, foo NUMBER, bar NUMBER);
+                 INSERT INTO foobar (id, foo, bar) VALUES ('a', 1, 1), ('b', 1, 2), ('c', 1, 3);
+                 SCAN * FROM foobar WHERE foo = 1 AND NOT (bar = 2 OR bar = 3)",
+            )
+            .unwrap();
+        assert_items_len(result, 1);
+    }
 
     fn seeded_scan_table() -> InMemoryEngine {
         let mut engine = InMemoryEngine::new();
