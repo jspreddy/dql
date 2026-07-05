@@ -1,0 +1,12 @@
+[package]
+name = "dql-cli"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "dql"
+path = "src/main.rs"
+
+[dependencies]
+dql-engine = { path = "../dql-engine" }
