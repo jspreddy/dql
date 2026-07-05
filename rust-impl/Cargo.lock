@@ -17,5 +17,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dql-expr"
+version = "0.6.4-dev12"
+dependencies = [
+ "dql-parser",
+]
+
+[[package]]
 name = "dql-parser"
 version = "0.6.4-dev12"

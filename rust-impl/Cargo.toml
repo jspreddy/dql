@@ -2,6 +2,7 @@
 members = [
     "crates/dql-cli",
     "crates/dql-engine",
+    "crates/dql-expr",
     "crates/dql-parser",
 ]
 resolver = "2"
