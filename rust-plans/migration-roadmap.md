@@ -30,7 +30,7 @@ Primary risks:
 - Update and constraint expressions have nested behavior that should become
   explicit typed AST nodes in Rust.
 
-## Phase 2: Expression and value compatibility
+## Phase 2: Expression and value compatibility [DONE]
 
 Implement DynamoDB expression rendering without making live AWS calls.
 

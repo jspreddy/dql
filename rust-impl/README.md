@@ -4,6 +4,8 @@ This workspace is the first Rust implementation slice for DQL. It is organized
 around the parallel workstreams identified in `rust-plans/`:
 
 - `crates/dql-parser`: typed AST and parser for the first statement set.
+- `crates/dql-expr`: expression rendering, placeholders, value conversion, and
+  JSON-safe serialization helpers.
 - `crates/dql-engine`: in-memory execution scaffold over the parser AST.
 - `crates/dql-cli`: binary entrypoint for version, one-shot commands, JSON
   output, and a minimal multiline REPL.
@@ -17,6 +19,9 @@ around the parallel workstreams identified in `rust-plans/`:
   sets, maps, timestamps, and intervals.
 - Typed parser ASTs for constraints, selections, update expressions, indexes,
   query options, and multiline fragment status.
+- Phase 2 expression/value compatibility for DynamoDB-style field and value
+  placeholders, condition/update/projection rendering, DQL value-to-attribute
+  conversion, and JSON-safe value serialization.
 - In-memory table creation, insertion, scanning, simple `SELECT ... WHERE`
   filtering, `SCAN ... WHERE` filtering, `LIMIT`, `SCAN LIMIT`, boolean
   `WHERE` groups, deletion, schema dumping, and explain operation recording.
