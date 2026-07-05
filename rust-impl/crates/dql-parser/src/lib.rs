@@ -1115,7 +1115,7 @@ impl Parser {
                 Ok(Value::Timestamp(TimestampExpr::Ms(Box::new(expr))))
             }
             Some(Token::Ident(value)) if value.eq_ignore_ascii_case("INTERVAL") => {
-                Ok(Value::Interval(self.expect_string_or_ident()?))
+                Ok(Value::Interval(self.parse_interval_arg()?))
             }
             Some(Token::Ident(value)) if value.eq_ignore_ascii_case("TRUE") => {
                 Ok(Value::Bool(true))
@@ -1184,16 +1184,26 @@ impl Parser {
             self.expect_keyword("INTERVAL")?;
             Ok(TimestampExpr::AddInterval {
                 base: Box::new(base),
-                interval: self.expect_string_or_ident()?,
+                interval: self.parse_interval_arg()?,
             })
         } else if self.accept_symbol('-') {
             self.expect_keyword("INTERVAL")?;
             Ok(TimestampExpr::SubInterval {
                 base: Box::new(base),
-                interval: self.expect_string_or_ident()?,
+                interval: self.parse_interval_arg()?,
             })
         } else {
             Ok(base)
+        }
+    }
+
+    fn parse_interval_arg(&mut self) -> Result<String, ParseError> {
+        if self.accept_symbol('(') {
+            let value = self.expect_string_or_ident()?;
+            self.expect_symbol(')')?;
+            Ok(value)
+        } else {
+            self.expect_string_or_ident()
         }
     }
 

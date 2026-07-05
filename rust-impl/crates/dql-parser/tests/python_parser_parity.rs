@@ -1,6 +1,6 @@
 use dql_parser::{
-    parse_script, parse_statement, parse_value, AttributeType, CompareOp, Condition, KeyType,
-    Statement, Value,
+    parse_fragment, parse_script, parse_selection, parse_statement, parse_update_expr, parse_value,
+    AttributeType, CompareOp, Condition, FragmentStatus, KeyType, Statement, Value,
 };
 
 fn assert_parse_ok(input: &str) {
@@ -12,10 +12,6 @@ fn assert_parse_err(input: &str) {
         parse_statement(input).is_err(),
         "{input:?} should fail to parse"
     );
-}
-
-fn pending(source: &str, reason: &str) {
-    panic!("pending Python parity for {source}: {reason}");
 }
 
 mod test_parser {
@@ -30,6 +26,7 @@ mod test_parser {
                 name,
                 attributes,
                 throughput,
+                ..
             } => {
                 assert!(!if_not_exists);
                 assert_eq!(name, "foobars");
@@ -92,11 +89,10 @@ mod test_parser {
     }
 
     #[test]
-    #[ignore = "needs full GLOBAL INDEX argument validation"]
     fn test_create_global_rejects_invalid_argument_counts() {
-        pending(
-            "tests/test_parser.py::TestParser::test_create_global",
-            "current parser skips GLOBAL INDEX internals",
+        assert_parse_err(r#"CREATE TABLE foobars (foo string hash key) GLOBAL INDEX ("gindex")"#);
+        assert_parse_err(
+            r#"CREATE TABLE foobars (foo string hash key) GLOBAL INDEX ("gindex", foo, bar, baz)"#,
         );
     }
 
@@ -122,12 +118,14 @@ mod test_parser {
     }
 
     #[test]
-    #[ignore = "needs ALTER parser"]
     fn test_alter() {
-        pending(
-            "tests/test_parser.py::TestParser::test_alter",
-            "ALTER statement is deferred",
-        );
+        assert_parse_ok("ALTER TABLE foobars SET THROUGHPUT (3, 4)");
+        assert_parse_ok("ALTER TABLE foobars SET THROUGHPUT (0, *)");
+        assert_parse_ok("ALTER TABLE foobars SET INDEX foo_idx THROUGHPUT (3, 4)");
+        assert_parse_ok("ALTER TABLE foobars DROP INDEX foo_idx");
+        assert_parse_ok("ALTER TABLE foobars CREATE GLOBAL INDEX ('foo_idx', foo)");
+        assert_parse_err("ALTER TABLE foobars SET foo = bar");
+        assert_parse_err("ALTER TABLE foobars SET THROUGHPUT 1, 1");
     }
 
     #[test]
@@ -200,11 +198,27 @@ mod test_parser {
     }
 
     #[test]
-    #[ignore = "needs timestamp and interval value parser"]
     fn test_variables_timestamp_forms() {
-        pending(
-            "tests/test_parser.py::TestParser::test_variables",
-            "timestamp, now, interval, and ms expressions are deferred",
+        assert!(matches!(
+            parse_value(r#"timestamp("2012")"#).unwrap(),
+            Value::Timestamp(_)
+        ));
+        assert!(matches!(
+            parse_value(r#"utctimestamp "2012""#).unwrap(),
+            Value::Timestamp(_)
+        ));
+        assert!(matches!(
+            parse_value(r#"ts("2012")"#).unwrap(),
+            Value::Timestamp(_)
+        ));
+        assert!(matches!(parse_value("now()").unwrap(), Value::Timestamp(_)));
+        assert!(matches!(
+            parse_value(r#"ms(now() + interval("1 day"))"#).unwrap(),
+            Value::Timestamp(_)
+        ));
+        assert_eq!(
+            parse_value(r#"interval("1 day")"#).unwrap(),
+            Value::Interval("1 day".to_string())
         );
     }
 }
@@ -259,30 +273,75 @@ mod test_expressions {
     }
 
     #[test]
-    #[ignore = "needs full WHERE expression parser"]
     fn test_constraints_advanced_cases() {
-        pending(
-            "tests/test_parser.py::TestExpressions::test_constraints",
-            "OR, NOT, functions, field comparisons, BETWEEN, IN, grouping, and timestamp expressions are deferred",
-        );
+        for expression in [
+            "WHERE foo != bar",
+            "WHERE NOT foo > 3",
+            "WHERE size(foo) < 3",
+            r#"WHERE begins_with(foo, "bar")"#,
+            "WHERE attribute_exists(foo)",
+            "WHERE attribute_not_exists(foo)",
+            "WHERE attribute_type(foo, N)",
+            r#"WHERE contains(foo, "test")"#,
+            "WHERE foo between 1 and 5",
+            "WHERE foo in (1, 5, 7)",
+            r#"WHERE foo > utcts("2015-12-5")"#,
+            r#"WHERE foo > ms(utcts "2015-12-5")"#,
+            r#"WHERE foo > utcts "2015-12-5" + interval "1 minute 1s""#,
+            r#"WHERE foo < 1 AND (bar >= 0 OR baz < "str" OR qux = 1)"#,
+        ] {
+            parse_statement(&format!("SELECT * FROM foobars {expression}"))
+                .unwrap_or_else(|err| panic!("{expression:?} should parse: {err}"));
+        }
     }
 
     #[test]
-    #[ignore = "needs UPDATE expression parser"]
     fn test_updates() {
-        pending(
-            "tests/test_parser.py::TestExpressions::test_updates",
-            "SET, ADD, DELETE, REMOVE, if_not_exists, list_append, and path update parsing are deferred",
-        );
+        for expression in [
+            "set foo = 1",
+            "set foo = foo + 1",
+            "set foo = 1 + foo",
+            "set foo = foo + foo",
+            "set foo = 1 + 2",
+            "set foo = foo - 2",
+            "set foo = foo - 2, bar = 3, baz = qux + 4",
+            "SET foo[2] = 4",
+            "SET foo.bar = 4",
+            "SET foo = if_not_exists(foo, 2)",
+            "SET foo = list_append(foo, 2)",
+            "SET foo = list_append(2, foo)",
+            "REMOVE foo",
+            "REMOVE foo, bar",
+            "REMOVE foo[0]",
+            "REMOVE foo.bar",
+            "ADD foo 1",
+            r#"ADD foo 1, bar "a""#,
+            "DELETE foo 1",
+            "DELETE foo 1, bar 2",
+        ] {
+            parse_update_expr(expression)
+                .unwrap_or_else(|err| panic!("{expression:?} should parse: {err}"));
+        }
     }
 
     #[test]
-    #[ignore = "needs SELECT projection expression parser"]
     fn test_selection() {
-        pending(
-            "tests/test_parser.py::TestExpressions::test_selection",
-            "projection arithmetic, aliases, count(*), and timestamp functions are deferred",
-        );
+        for expression in [
+            "foo",
+            "foo + bar",
+            "foo + bar * baz",
+            "foo - (bar - baz)",
+            "foo + bar AS baz",
+            "foo + 2",
+            "*",
+            "count(*)",
+            "timestamp(foo)",
+            "utcts(foo - bar)",
+            "now() - now()",
+        ] {
+            parse_selection(expression)
+                .unwrap_or_else(|err| panic!("{expression:?} should parse: {err}"));
+        }
     }
 }
 
@@ -294,5 +353,50 @@ mod test_delete {
         assert_parse_ok("DELETE FROM foobars");
         assert_parse_ok("DELETE FROM foobars WHERE id = 'a'");
         assert_parse_err("DELETE foobars");
+    }
+}
+
+mod phase_1_statements {
+    use super::*;
+
+    #[test]
+    fn parses_update_load_explain_analyze() {
+        assert_parse_ok("UPDATE foobars SET foo = 1 WHERE id = 'a'");
+        assert_parse_ok("LOAD 'items.json' INTO foobars");
+        assert_parse_ok("EXPLAIN ALTER TABLE foobars SET THROUGHPUT (1, 1)");
+        assert_parse_ok("ANALYZE INSERT INTO foobars (id) VALUES ('a')");
+    }
+
+    #[test]
+    fn parses_fragments() {
+        assert_eq!(
+            parse_fragment("CREATE TABLE test "),
+            FragmentStatus::Incomplete
+        );
+        assert!(matches!(
+            parse_fragment("CREATE TABLE test (id STRING HASH KEY);"),
+            FragmentStatus::Complete(_)
+        ));
+    }
+
+    #[test]
+    fn parses_readme_and_query_doc_examples() {
+        for statement in [
+            "CREATE TABLE forum_threads (name STRING HASH KEY, subject STRING RANGE KEY, THROUGHPUT (4, 2))",
+            "INSERT INTO forum_threads (name, subject, views, replies) VALUES ('Self Defense', 'Defense from Banana', 67, 4)",
+            "SCAN * FROM forum_threads",
+            "SELECT count(*) FROM forum_threads WHERE name = 'Self Defense'",
+            "UPDATE forum_threads ADD views 1 WHERE name = 'Self Defense' AND subject = 'Defense from Banana'",
+            "DELETE FROM forum_threads WHERE name = 'Cheese Shop'",
+            "ALTER TABLE forum_threads SET THROUGHPUT (8, 4)",
+            "DROP TABLE forum_threads",
+            "LOAD 'forum_threads.json' INTO forum_threads",
+            "DUMP SCHEMA forum_threads",
+            "EXPLAIN SELECT * FROM forum_threads WHERE name = 'Self Defense'",
+            "ANALYZE INSERT INTO forum_threads (name) VALUES ('x')",
+        ] {
+            parse_statement(statement)
+                .unwrap_or_else(|err| panic!("{statement:?} should parse: {err}"));
+        }
     }
 }
