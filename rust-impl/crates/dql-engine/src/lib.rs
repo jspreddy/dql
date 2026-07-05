@@ -44,6 +44,7 @@ pub struct BackendResponse<T> {
     pub output: T,
     pub capacity: Option<CapacityRecord>,
     pub count: Option<usize>,
+    pub updated_items: Option<Vec<Item>>,
 }
 
 impl<T> BackendResponse<T> {
@@ -57,6 +58,7 @@ impl<T> BackendResponse<T> {
                 write_units: 0.0,
             }),
             count: None,
+            updated_items: None,
         }
     }
 }
@@ -128,6 +130,7 @@ pub trait DynamoBackend {
         keys: &[Item],
         update: &UpdateExpr,
         condition: Option<&Condition>,
+        return_items: bool,
     ) -> Result<BackendResponse<usize>, EngineError>;
     fn delete_matching(
         &mut self,
@@ -139,6 +142,7 @@ pub trait DynamoBackend {
         table: &str,
         update: &UpdateExpr,
         condition: Option<&Condition>,
+        return_items: bool,
     ) -> Result<BackendResponse<usize>, EngineError>;
     fn alter_table(
         &mut self,

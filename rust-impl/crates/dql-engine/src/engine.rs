@@ -75,8 +75,15 @@ impl<B: DynamoBackend> Engine<B> {
                 update,
                 condition,
                 options,
+                returns,
                 ..
-            } => self.update(table, update, condition.as_ref(), options),
+            } => self.update(
+                table,
+                update,
+                condition.as_ref(),
+                options,
+                returns.as_deref(),
+            ),
             Statement::Scan {
                 table,
                 selection,
@@ -202,26 +209,34 @@ impl<B: DynamoBackend> Engine<B> {
         update: &UpdateExpr,
         condition: Option<&Condition>,
         options: &QueryOptions,
+        returns: Option<&str>,
     ) -> Result<StatementResult, EngineError> {
+        let return_items = returns.is_some_and(|value| {
+            value
+                .split_whitespace()
+                .any(|part| part.eq_ignore_ascii_case("NEW"))
+        });
         if let Some(keys_in) = &options.keys_in {
             validate_mutation_keys_in(options)?;
             let keys = self.keys_in_items(table, keys_in)?;
             self.record("update_item", table);
-            let response = self
-                .backend
-                .update_by_keys(table, &keys, update, condition)?;
-            self.capture_capacity(response.capacity);
-            return Ok(StatementResult::Affected(response.output));
+            let response =
+                self.backend
+                    .update_by_keys(table, &keys, update, condition, return_items)?;
+            self.capture_capacity(response.capacity.clone());
+            return finalize_update_result(response);
         }
         if condition.is_some() {
-            self.record("query", table);
+            self.record_update_read(table, condition, options);
         } else {
             self.record("scan", table);
         }
         self.record("update_item", table);
-        let response = self.backend.update_matching(table, update, condition)?;
-        self.capture_capacity(response.capacity);
-        Ok(StatementResult::Affected(response.output))
+        let response = self
+            .backend
+            .update_matching(table, update, condition, return_items)?;
+        self.capture_capacity(response.capacity.clone());
+        finalize_update_result(response)
     }
 
     fn scan(
@@ -412,6 +427,22 @@ impl<B: DynamoBackend> Engine<B> {
         self.record(operation, table);
     }
 
+    fn record_update_read(
+        &mut self,
+        table: &str,
+        condition: Option<&Condition>,
+        options: &QueryOptions,
+    ) {
+        let operation = if condition.is_some() {
+            self.plan_read_operation(table, ReadKind::Scan, &Selection::All, condition, options)
+                .map(|plan| plan.operation)
+                .unwrap_or(Operation::Scan)
+        } else {
+            Operation::Scan
+        };
+        self.record_read_operation(operation, table);
+    }
+
     fn plan_read_operation(
         &self,
         table: &str,
@@ -519,6 +550,16 @@ fn validate_mutation_keys_in(options: &QueryOptions) -> Result<(), EngineError> 
         ));
     }
     Ok(())
+}
+
+fn finalize_update_result(
+    response: BackendResponse<usize>,
+) -> Result<StatementResult, EngineError> {
+    if let Some(items) = response.updated_items {
+        Ok(StatementResult::Items(items))
+    } else {
+        Ok(StatementResult::Affected(response.output))
+    }
 }
 
 fn finalize_read_result(

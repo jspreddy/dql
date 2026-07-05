@@ -233,32 +233,206 @@ mod test_queries {
 
 mod test_alter {
     use super::*;
+    use dql_engine::DynamoBackend;
+    use dql_models::{BillingMode, TableMeta};
 
-    macro_rules! ignored_alter {
-        ($($name:ident),+ $(,)?) => {
-            $(
-                #[test]
-                #[ignore = "needs ALTER implementation"]
-                fn $name() {
-                    pending(concat!("tests/test_queries.py::TestAlter::", stringify!($name)), "ALTER is deferred");
-                }
-            )+
-        };
+    fn describe_table(engine: &InMemoryEngine, name: &str) -> TableMeta {
+        engine
+            .backend()
+            .describe_table(name)
+            .unwrap()
+            .expect("table should exist")
     }
 
-    ignored_alter!(
-        test_alter_throughput,
-        test_alter_throughput_partial_star,
-        test_alter_billing_mode,
-        test_alter_billing_mode_provisioned,
-        test_alter_index_throughput,
-        test_alter_drop,
-        test_alter_create,
-        test_explain_throughput,
-        test_explain_create_index,
-        test_alter_create_if_not_exists,
-        test_alter_drop_if_exists,
-    );
+    #[test]
+    fn test_alter_throughput() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY, THROUGHPUT (1, 1))")
+            .unwrap();
+        engine
+            .execute("ALTER TABLE foobar SET THROUGHPUT (2, 2)")
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        assert_eq!(
+            desc.throughput.as_ref().map(|tp| tp.read.clone()),
+            Some(Value::Number("2".to_string()))
+        );
+        assert_eq!(
+            desc.throughput.as_ref().map(|tp| tp.write.clone()),
+            Some(Value::Number("2".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_alter_throughput_partial_star() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY, THROUGHPUT (1, 1))")
+            .unwrap();
+        engine
+            .execute("ALTER TABLE foobar SET THROUGHPUT (2, *)")
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        assert_eq!(
+            desc.throughput.as_ref().map(|tp| tp.read.clone()),
+            Some(Value::Number("2".to_string()))
+        );
+        assert_eq!(
+            desc.throughput.as_ref().map(|tp| tp.write.clone()),
+            Some(Value::Number("1".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_alter_billing_mode() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY, THROUGHPUT (1, 1))")
+            .unwrap();
+        engine
+            .execute("ALTER TABLE foobar SET THROUGHPUT (0, 0)")
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        assert_eq!(desc.billing_mode, BillingMode::OnDemand);
+    }
+
+    #[test]
+    fn test_alter_billing_mode_provisioned() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY)")
+            .unwrap();
+        engine
+            .execute("ALTER TABLE foobar SET THROUGHPUT (2, 3)")
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        assert_eq!(desc.billing_mode, BillingMode::Provisioned);
+        assert_eq!(
+            desc.throughput.as_ref().map(|tp| tp.read.clone()),
+            Some(Value::Number("2".to_string()))
+        );
+        assert_eq!(
+            desc.throughput.as_ref().map(|tp| tp.write.clone()),
+            Some(Value::Number("3".to_string()))
+        );
+    }
+
+    #[test]
+    #[ignore = "DynamoDB Local GSI throughput bug"]
+    fn test_alter_index_throughput() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, foo NUMBER) \
+                 GLOBAL INDEX ('foo_index', foo, THROUGHPUT(1, 1))",
+            )
+            .unwrap();
+        engine
+            .execute("ALTER TABLE foobar SET INDEX foo_index THROUGHPUT (2, 2)")
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        let index = desc.global_indexes.get("foo_index").unwrap();
+        assert_eq!(
+            index.throughput.as_ref().map(|tp| tp.read.clone()),
+            Some(Value::Number("2".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_alter_drop() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, foo NUMBER) \
+                 GLOBAL INDEX ('foo_index', foo, THROUGHPUT(1, 1))",
+            )
+            .unwrap();
+        engine
+            .execute("ALTER TABLE foobar DROP INDEX foo_index")
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        assert!(desc.global_indexes.is_empty());
+    }
+
+    #[test]
+    fn test_alter_create() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY, foo NUMBER, THROUGHPUT (1, 1))")
+            .unwrap();
+        engine
+            .execute("ALTER TABLE foobar CREATE GLOBAL INDEX ('foo_index', baz STRING, TP (2, 3))")
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        let index = desc.global_indexes.get("foo_index").unwrap();
+        assert_eq!(index.hash_key.name, "baz");
+        assert!(index.range_key.is_none());
+        assert_eq!(
+            index.throughput.as_ref().map(|tp| tp.read.clone()),
+            Some(Value::Number("2".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_explain_throughput() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY)")
+            .unwrap();
+        let result = engine
+            .execute("EXPLAIN ALTER TABLE foobar SET THROUGHPUT (2, 2)")
+            .unwrap();
+        assert_eq!(
+            result,
+            StatementResult::Schema("update_table foobar".to_string())
+        );
+    }
+
+    #[test]
+    fn test_explain_create_index() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY)")
+            .unwrap();
+        let result = engine
+            .execute("EXPLAIN ALTER TABLE foobar CREATE GLOBAL INDEX('foo_index', baz STRING)")
+            .unwrap();
+        assert_eq!(
+            result,
+            StatementResult::Schema("update_table foobar".to_string())
+        );
+    }
+
+    #[test]
+    fn test_alter_create_if_not_exists() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, foo NUMBER) \
+                 GLOBAL INDEX ('foo_index', foo, THROUGHPUT(1, 1))",
+            )
+            .unwrap();
+        engine
+            .execute(
+                "ALTER TABLE foobar CREATE GLOBAL INDEX ('foo_index', baz STRING) IF NOT EXISTS",
+            )
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        let index = desc.global_indexes.get("foo_index").unwrap();
+        assert_eq!(index.hash_key.name, "foo");
+    }
+
+    #[test]
+    fn test_alter_drop_if_exists() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY)")
+            .unwrap();
+        engine
+            .execute("ALTER TABLE foobar DROP INDEX foo_index IF EXISTS")
+            .unwrap();
+    }
 }
 
 mod test_insert {
@@ -690,39 +864,357 @@ mod test_create {
 mod test_update {
     use super::*;
 
-    macro_rules! ignored_update {
-        ($($name:ident),+ $(,)?) => {
-            $(
-                #[test]
-                #[ignore = "needs UPDATE implementation"]
-                fn $name() {
-                    pending(concat!("tests/test_queries.py::TestUpdate::", stringify!($name)), "UPDATE is deferred");
-                }
-            )+
-        };
+    fn make_table(engine: &mut InMemoryEngine, range_key: bool, index: Option<&str>) {
+        let mut create = "CREATE TABLE foobar (id STRING HASH KEY".to_string();
+        if range_key {
+            create.push_str(", bar NUMBER RANGE KEY");
+        }
+        if let Some(index) = index {
+            create.push_str(&format!(", {index} NUMBER INDEX('{index}-index')"));
+        }
+        create.push(')');
+        engine.execute(&create).unwrap();
     }
 
-    ignored_update!(
-        test_update,
-        test_update_where,
-        test_update_count,
-        test_update_in_condition,
-        test_update_keys_count,
-        test_update_increment,
-        test_update_add,
-        test_update_delete,
-        test_update_remove,
-        test_update_returns,
-        test_update_soft,
-        test_update_append,
-        test_update_prepend,
-        test_update_condition,
-        test_update_index,
-        test_explain_update,
-        test_explain_update_get,
-        test_explain_update_scan,
-        test_update_bool,
-    );
+    fn scan_items(engine: &mut InMemoryEngine) -> Vec<Item> {
+        match engine.execute("SCAN * FROM foobar").unwrap() {
+            StatementResult::Items(items) => items,
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_update() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, true, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
+            .unwrap();
+        engine.execute("UPDATE foobar SET baz = 3").unwrap();
+        let items = scan_items(&mut engine);
+        assert_eq!(items.len(), 2);
+        assert!(items
+            .iter()
+            .all(|item| item.get("baz") == Some(&Value::Number("3".to_string()))));
+    }
+
+    #[test]
+    fn test_update_where() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, true, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
+            .unwrap();
+        engine
+            .execute("UPDATE foobar SET baz = 3 WHERE id = 'a'")
+            .unwrap();
+        let items = scan_items(&mut engine);
+        assert_eq!(
+            items
+                .iter()
+                .find(|item| item.get("id") == Some(&Value::String("a".to_string())))
+                .and_then(|item| item.get("baz")),
+            Some(&Value::Number("3".to_string()))
+        );
+        assert_eq!(
+            items
+                .iter()
+                .find(|item| item.get("id") == Some(&Value::String("b".to_string())))
+                .and_then(|item| item.get("baz")),
+            Some(&Value::Number("2".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_update_count() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, true, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
+            .unwrap();
+        let result = engine
+            .execute("UPDATE foobar SET baz = 3 WHERE id = 'a'")
+            .unwrap();
+        assert_eq!(result, StatementResult::Affected(1));
+    }
+
+    #[test]
+    fn test_update_in_condition() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, false, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', 1), ('b', 2)")
+            .unwrap();
+        engine
+            .execute("UPDATE foobar SET bar = 3 KEYS IN ('a'), ('b') WHERE bar < 2")
+            .unwrap();
+        let items = scan_items(&mut engine);
+        assert_eq!(
+            items
+                .iter()
+                .find(|item| item.get("id") == Some(&Value::String("a".to_string())))
+                .and_then(|item| item.get("bar")),
+            Some(&Value::Number("3".to_string()))
+        );
+        assert_eq!(
+            items
+                .iter()
+                .find(|item| item.get("id") == Some(&Value::String("b".to_string())))
+                .and_then(|item| item.get("bar")),
+            Some(&Value::Number("2".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_update_keys_count() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, true, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
+            .unwrap();
+        let result = engine
+            .execute("UPDATE foobar SET baz = 3 KEYS IN ('a', 1), ('b', 2)")
+            .unwrap();
+        assert_eq!(result, StatementResult::Affected(2));
+    }
+
+    #[test]
+    fn test_update_increment() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, true, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
+            .unwrap();
+        engine.execute("UPDATE foobar ADD baz 2").unwrap();
+        engine.execute("UPDATE foobar ADD baz -1").unwrap();
+        let items = scan_items(&mut engine);
+        assert_eq!(
+            items
+                .iter()
+                .find(|item| item.get("id") == Some(&Value::String("a".to_string())))
+                .and_then(|item| item.get("baz")),
+            Some(&Value::Number("2".to_string()))
+        );
+        assert_eq!(
+            items
+                .iter()
+                .find(|item| item.get("id") == Some(&Value::String("b".to_string())))
+                .and_then(|item| item.get("baz")),
+            Some(&Value::Number("3".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_update_add() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, true, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, ())")
+            .unwrap();
+        engine.execute("UPDATE foobar ADD baz (1)").unwrap();
+        engine.execute("UPDATE foobar ADD baz (2, 3)").unwrap();
+        let items = scan_items(&mut engine);
+        assert_eq!(
+            items[0].get("baz"),
+            Some(&Value::Set(vec![
+                Value::Number("1".to_string()),
+                Value::Number("2".to_string()),
+                Value::Number("3".to_string()),
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_update_delete() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, true, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, (1, 2, 3, 4))")
+            .unwrap();
+        engine.execute("UPDATE foobar DELETE baz (2)").unwrap();
+        engine.execute("UPDATE foobar DELETE baz (1, 3)").unwrap();
+        let items = scan_items(&mut engine);
+        assert_eq!(
+            items[0].get("baz"),
+            Some(&Value::Set(vec![Value::Number("4".to_string())]))
+        );
+    }
+
+    #[test]
+    fn test_update_remove() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, true, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
+            .unwrap();
+        engine.execute("UPDATE foobar REMOVE baz").unwrap();
+        let items = scan_items(&mut engine);
+        assert!(items.iter().all(|item| !item.contains_key("baz")));
+    }
+
+    #[test]
+    fn test_update_returns() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, true, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2)")
+            .unwrap();
+        let result = engine
+            .execute("UPDATE foobar REMOVE baz RETURNS ALL NEW")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 2);
+                assert!(items.iter().all(|item| !item.contains_key("baz")));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_update_soft() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, false, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', 1), ('b', NULL)")
+            .unwrap();
+        engine
+            .execute("UPDATE foobar SET bar = if_not_exists(bar, 2)")
+            .unwrap();
+        let items = scan_items(&mut engine);
+        assert_eq!(
+            items
+                .iter()
+                .find(|item| item.get("id") == Some(&Value::String("b".to_string())))
+                .and_then(|item| item.get("bar")),
+            Some(&Value::Number("2".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_update_append() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, false, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', [1])")
+            .unwrap();
+        engine
+            .execute("UPDATE foobar SET bar = list_append(bar, [2])")
+            .unwrap();
+        let items = scan_items(&mut engine);
+        assert_eq!(
+            items[0].get("bar"),
+            Some(&Value::List(vec![
+                Value::Number("1".to_string()),
+                Value::Number("2".to_string())
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_update_prepend() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, false, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', [1])")
+            .unwrap();
+        engine
+            .execute("UPDATE foobar SET bar = list_append([2], bar)")
+            .unwrap();
+        let items = scan_items(&mut engine);
+        assert_eq!(
+            items[0].get("bar"),
+            Some(&Value::List(vec![
+                Value::Number("2".to_string()),
+                Value::Number("1".to_string())
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_update_condition() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, false, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', 1), ('b', 2)")
+            .unwrap();
+        engine
+            .execute("UPDATE foobar SET bar = 3 WHERE bar < 2")
+            .unwrap();
+        let items = scan_items(&mut engine);
+        assert_eq!(
+            items
+                .iter()
+                .find(|item| item.get("id") == Some(&Value::String("a".to_string())))
+                .and_then(|item| item.get("bar")),
+            Some(&Value::Number("3".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_update_index() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, true, Some("ts"));
+        engine
+            .execute("INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 100)")
+            .unwrap();
+        engine
+            .execute("UPDATE foobar SET ts = 3 WHERE id = 'a' USING ts-index")
+            .unwrap();
+        let items = scan_items(&mut engine);
+        assert_eq!(items[0].get("ts"), Some(&Value::Number("3".to_string())));
+    }
+
+    #[test]
+    fn test_explain_update() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, true, None);
+        let result = engine
+            .execute("EXPLAIN UPDATE foobar SET baz = 1 WHERE id = 'a'")
+            .unwrap();
+        assert_eq!(
+            result,
+            StatementResult::Schema("query foobar\nupdate_item foobar".to_string())
+        );
+    }
+
+    #[test]
+    fn test_explain_update_get() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, false, None);
+        let result = engine
+            .execute("EXPLAIN UPDATE foobar SET baz = 1 KEYS IN 'a', 'b'")
+            .unwrap();
+        assert_eq!(
+            result,
+            StatementResult::Schema("update_item foobar".to_string())
+        );
+    }
+
+    #[test]
+    fn test_explain_update_scan() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, false, None);
+        let result = engine
+            .execute("EXPLAIN UPDATE foobar SET baz = 1 WHERE bar = 1")
+            .unwrap();
+        assert_eq!(
+            result,
+            StatementResult::Schema("scan foobar\nupdate_item foobar".to_string())
+        );
+    }
+
+    #[test]
+    fn test_update_bool() {
+        let mut engine = InMemoryEngine::default();
+        make_table(&mut engine, false, None);
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', true)")
+            .unwrap();
+        engine.execute("UPDATE foobar SET bar = false").unwrap();
+        let items = scan_items(&mut engine);
+        assert_eq!(items[0].get("bar"), Some(&Value::Bool(false)));
+    }
 
     #[test]
     fn test_update_where_in() {

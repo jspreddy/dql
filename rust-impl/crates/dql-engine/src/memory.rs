@@ -3,10 +3,11 @@ use crate::{
     BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
 };
 use dql_expr::{render_condition, render_update};
+use dql_models::BillingMode;
 use dql_models::TableMeta;
 use dql_parser::{
-    AlterAction, AttributeType, CompareOp, Condition, ConditionOperand, KeyType, QueryOptions,
-    Selection, UpdateClauseKind, UpdateExpr, Value,
+    parse_value, AlterAction, AttributeType, CompareOp, Condition, ConditionOperand, KeyType,
+    QueryOptions, Selection, Throughput, UpdateClauseKind, UpdateExpr, Value,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -136,6 +137,7 @@ impl DynamoBackend for MemoryBackend {
                 write_units: 0.0,
             }),
             count,
+            updated_items: None,
         })
     }
 
@@ -195,24 +197,33 @@ impl DynamoBackend for MemoryBackend {
         keys: &[Item],
         update: &UpdateExpr,
         condition: Option<&Condition>,
+        return_items: bool,
     ) -> Result<BackendResponse<usize>, EngineError> {
         let _ = render_update(update).map_err(|err| EngineError::Runtime(err.to_string()))?;
         let table_data = self
             .tables
             .get_mut(table)
             .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let meta = table_data.meta.clone();
         let mut count = 0;
+        let mut updated_items = Vec::new();
         for item in &mut table_data.items {
             if keys
                 .iter()
-                .any(|key| item_matches_primary_key(item, key, &table_data.meta))
+                .any(|key| item_matches_primary_key(item, key, &meta))
                 && condition.is_none_or(|condition| matches_condition(item, condition))
             {
                 apply_update(item, update)?;
                 count += 1;
+                if return_items {
+                    updated_items.push(item.clone());
+                }
             }
         }
-        Ok(BackendResponse::new("update_item", table, count))
+        Ok(BackendResponse {
+            updated_items: return_items.then_some(updated_items),
+            ..BackendResponse::new("update_item", table, count)
+        })
     }
 
     fn delete_matching(
@@ -240,6 +251,7 @@ impl DynamoBackend for MemoryBackend {
         table: &str,
         update: &UpdateExpr,
         condition: Option<&Condition>,
+        return_items: bool,
     ) -> Result<BackendResponse<usize>, EngineError> {
         let _ = render_update(update).map_err(|err| EngineError::Runtime(err.to_string()))?;
         let table_data = self
@@ -247,13 +259,20 @@ impl DynamoBackend for MemoryBackend {
             .get_mut(table)
             .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
         let mut count = 0;
+        let mut updated_items = Vec::new();
         for item in &mut table_data.items {
             if condition.is_none_or(|condition| matches_condition(item, condition)) {
                 apply_update(item, update)?;
                 count += 1;
+                if return_items {
+                    updated_items.push(item.clone());
+                }
             }
         }
-        Ok(BackendResponse::new("update_item", table, count))
+        Ok(BackendResponse {
+            updated_items: return_items.then_some(updated_items),
+            ..BackendResponse::new("update_item", table, count)
+        })
     }
 
     fn alter_table(
@@ -275,10 +294,26 @@ impl DynamoBackend for MemoryBackend {
                         .ok_or_else(|| {
                             EngineError::Runtime(format!("unknown index '{index_name}'"))
                         })?;
-                    index.throughput = Some(throughput.clone());
+                    let current = index.throughput.as_ref();
+                    index.throughput = Some(resolve_throughput(
+                        throughput,
+                        current.map(|value| &value.read),
+                        current.map(|value| &value.write),
+                    ));
                     format!("Updated throughput for index '{index_name}' on '{table}'")
                 } else {
-                    table_data.meta.throughput = Some(throughput.clone());
+                    let current = table_data.meta.throughput.as_ref();
+                    let resolved = resolve_throughput(
+                        throughput,
+                        current.map(|value| &value.read),
+                        current.map(|value| &value.write),
+                    );
+                    table_data.meta.billing_mode = if throughput_is_on_demand(&resolved) {
+                        BillingMode::OnDemand
+                    } else {
+                        BillingMode::Provisioned
+                    };
+                    table_data.meta.throughput = Some(resolved);
                     format!("Updated throughput for table '{table}'")
                 }
             }
@@ -417,7 +452,8 @@ fn apply_update(item: &mut Item, update: &UpdateExpr) -> Result<(), EngineError>
     for clause in &update.clauses {
         match clause.kind {
             UpdateClauseKind::Set => {
-                let value = parse_update_value(clause.expression.as_deref().unwrap_or_default())?;
+                let value =
+                    eval_set_expression(item, clause.expression.as_deref().unwrap_or_default())?;
                 item.insert(clause.path.clone(), value);
             }
             UpdateClauseKind::Remove => {
@@ -425,11 +461,23 @@ fn apply_update(item: &mut Item, update: &UpdateExpr) -> Result<(), EngineError>
             }
             UpdateClauseKind::Add => {
                 let delta = parse_update_value(clause.expression.as_deref().unwrap_or_default())?;
-                let current = item
-                    .get(&clause.path)
-                    .cloned()
-                    .unwrap_or(Value::Number("0".to_string()));
-                item.insert(clause.path.clone(), add_values(&current, &delta)?);
+                match item.get(&clause.path) {
+                    Some(Value::Set(existing)) if matches!(delta, Value::Set(_)) => {
+                        item.insert(clause.path.clone(), union_sets(existing, &delta)?);
+                    }
+                    Some(current) => {
+                        item.insert(clause.path.clone(), add_values(current, &delta)?);
+                    }
+                    None if matches!(delta, Value::Set(_)) => {
+                        item.insert(clause.path.clone(), delta);
+                    }
+                    None => {
+                        item.insert(
+                            clause.path.clone(),
+                            add_values(&Value::Number("0".to_string()), &delta)?,
+                        );
+                    }
+                }
             }
             UpdateClauseKind::Delete => {
                 let value = parse_update_value(clause.expression.as_deref().unwrap_or_default())?;
@@ -445,6 +493,120 @@ fn apply_update(item: &mut Item, update: &UpdateExpr) -> Result<(), EngineError>
         }
     }
     Ok(())
+}
+
+fn eval_set_expression(item: &Item, raw: &str) -> Result<Value, EngineError> {
+    let trimmed = normalize_update_expression(raw);
+    if let Some(args) = function_args(&trimmed, "if_not_exists") {
+        let (field, value_raw) = split_two_args(&args)?;
+        let field = field.trim();
+        if item.get(field).is_none_or(|value| *value == Value::Null) {
+            return parse_update_value(value_raw.trim());
+        }
+        return Ok(item.get(field).cloned().unwrap_or(Value::Null));
+    }
+    if let Some(args) = function_args(&trimmed, "list_append") {
+        let (left_raw, right_raw) = split_two_args(&args)?;
+        let left = eval_set_operand(item, left_raw.trim())?;
+        let right = eval_set_operand(item, right_raw.trim())?;
+        return append_lists(left, right);
+    }
+    parse_update_value(&trimmed)
+}
+
+fn normalize_update_expression(raw: &str) -> String {
+    raw.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace(" (", "(")
+        .replace("( ", "(")
+        .replace(" )", ")")
+        .replace(" ,", ",")
+        .replace(", ", ",")
+}
+
+fn eval_set_operand(item: &Item, raw: &str) -> Result<Value, EngineError> {
+    if is_identifier(raw) && item.contains_key(raw) {
+        Ok(item.get(raw).cloned().unwrap_or(Value::Null))
+    } else {
+        parse_update_value(raw)
+    }
+}
+
+fn append_lists(left: Value, right: Value) -> Result<Value, EngineError> {
+    let Value::List(mut values) = left else {
+        return Err(EngineError::Runtime(
+            "list_append requires list".to_string(),
+        ));
+    };
+    let Value::List(additions) = right else {
+        return Err(EngineError::Runtime(
+            "list_append requires list".to_string(),
+        ));
+    };
+    values.extend(additions);
+    Ok(Value::List(values))
+}
+
+fn union_sets(left: &[Value], right: &Value) -> Result<Value, EngineError> {
+    let Value::Set(additions) = right else {
+        return Err(EngineError::Runtime(
+            "ADD set requires set value".to_string(),
+        ));
+    };
+    let mut values = left.to_vec();
+    for entry in additions {
+        if !values.contains(entry) {
+            values.push(entry.clone());
+        }
+    }
+    Ok(Value::Set(values))
+}
+
+fn function_args<'a>(raw: &'a str, name: &str) -> Option<&'a str> {
+    let prefix = format!("{name}(");
+    raw.strip_prefix(&prefix)?.strip_suffix(')')
+}
+
+fn split_two_args(raw: &str) -> Result<(&str, &str), EngineError> {
+    let mut depth = 0usize;
+    for (index, ch) in raw.char_indices() {
+        if ch == '(' || ch == '[' || ch == '{' {
+            depth += 1;
+        } else if ch == ')' || ch == ']' || ch == '}' {
+            depth = depth.saturating_sub(1);
+        } else if ch == ',' && depth == 0 {
+            return Ok((raw[..index].trim(), raw[index + 1..].trim()));
+        }
+    }
+    Err(EngineError::Runtime(format!(
+        "expected two arguments in '{raw}'"
+    )))
+}
+
+fn resolve_throughput(
+    throughput: &Throughput,
+    current_read: Option<&Value>,
+    current_write: Option<&Value>,
+) -> Throughput {
+    Throughput {
+        read: resolve_throughput_value(&throughput.read, current_read),
+        write: resolve_throughput_value(&throughput.write, current_write),
+    }
+}
+
+fn resolve_throughput_value(value: &Value, current: Option<&Value>) -> Value {
+    match value {
+        Value::String(star) if star == "*" => {
+            current.cloned().unwrap_or(Value::Number("0".to_string()))
+        }
+        other => other.clone(),
+    }
+}
+
+fn throughput_is_on_demand(throughput: &Throughput) -> bool {
+    matches!(&throughput.read, Value::Number(value) if value == "0")
+        && matches!(&throughput.write, Value::Number(value) if value == "0")
 }
 
 fn add_values(left: &Value, right: &Value) -> Result<Value, EngineError> {
@@ -464,6 +626,9 @@ fn add_values(left: &Value, right: &Value) -> Result<Value, EngineError> {
 
 fn parse_update_value(raw: &str) -> Result<Value, EngineError> {
     let trimmed = raw.trim();
+    if trimmed.starts_with('(') {
+        return parse_value(trimmed).map_err(|err| EngineError::Runtime(err.to_string()));
+    }
     if is_number(trimmed) {
         return Ok(Value::Number(trimmed.to_string()));
     }
@@ -481,9 +646,19 @@ fn parse_update_value(raw: &str) -> Result<Value, EngineError> {
     if trimmed.eq_ignore_ascii_case("null") {
         return Ok(Value::Null);
     }
+    if trimmed.starts_with('[') {
+        return parse_value(trimmed).map_err(|err| EngineError::Runtime(err.to_string()));
+    }
     Err(EngineError::Runtime(format!(
         "unsupported update value '{raw}'"
     )))
+}
+
+fn is_identifier(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
 }
 
 fn is_number(value: &str) -> bool {

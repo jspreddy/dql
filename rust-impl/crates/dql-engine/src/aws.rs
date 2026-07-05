@@ -7,9 +7,9 @@ use crate::{
     BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
 };
 use aws_sdk_dynamodb::types::{
-    GlobalSecondaryIndexUpdate, KeySchemaElement, KeyType as AwsKeyType, Projection,
-    ProjectionType, ProvisionedThroughput, ReturnConsumedCapacity, ReturnValue, Select,
-    WriteRequest,
+    BillingMode as AwsBillingMode, GlobalSecondaryIndexUpdate, KeySchemaElement,
+    KeyType as AwsKeyType, Projection, ProjectionType, ProvisionedThroughput,
+    ReturnConsumedCapacity, ReturnValue, Select, WriteRequest,
 };
 use aws_sdk_dynamodb::Client;
 use dql_expr::{render_condition, render_projection, render_update, RenderedExpression};
@@ -258,6 +258,7 @@ impl DynamoBackend for SdkBackend {
             output: written,
             capacity: Some(capacity),
             count: None,
+            updated_items: None,
         })
     }
 
@@ -345,6 +346,7 @@ impl DynamoBackend for SdkBackend {
             output: deleted,
             capacity: Some(capacity),
             count: None,
+            updated_items: None,
         })
     }
 
@@ -353,6 +355,7 @@ impl DynamoBackend for SdkBackend {
         table: &str,
         update: &UpdateExpr,
         condition: Option<&Condition>,
+        return_items: bool,
     ) -> Result<BackendResponse<usize>, EngineError> {
         let rendered =
             render_update(update).map_err(|err| EngineError::Runtime(err.to_string()))?;
@@ -364,41 +367,23 @@ impl DynamoBackend for SdkBackend {
         let mut updated = 0usize;
         let mut read_units = 0.0;
         let mut write_units = 0.0;
+        let mut updated_items = Vec::new();
         for key in keys {
-            let mut request = self
-                .client
-                .update_item()
-                .table_name(table)
-                .set_key(Some(key))
-                .update_expression(rendered.expression.clone())
-                .return_consumed_capacity(ReturnConsumedCapacity::Total)
-                .return_values(ReturnValue::None);
-            if let Some(names) = rendered.attribute_names.clone() {
-                request = request.set_expression_attribute_names(names_to_hash(Some(names)));
-            }
-            if let Some(values) = rendered.expression_values.clone() {
-                request = request.set_expression_attribute_values(Some(
-                    expression_values_to_attributes(&values)?,
-                ));
-            }
-            if let Some(condition_expr) = condition_expr.as_ref() {
-                request = request
-                    .condition_expression(condition_expr.expression.clone())
-                    .set_expression_attribute_names(merge_names(
-                        rendered.attribute_names.as_ref(),
-                        condition_expr.attribute_names.as_ref(),
-                    ))
-                    .set_expression_attribute_values(merge_values(
-                        rendered.expression_values.as_ref(),
-                        condition_expr.expression_values.as_ref(),
-                    )?);
-            }
-            let response = self
-                .block_on(async { request.send().await })
-                .map_err(Self::aws_error)?;
+            let response = self.send_update_item(
+                table,
+                key,
+                &rendered,
+                condition_expr.as_ref(),
+                return_items,
+            )?;
             if let Some(capacity) = response.consumed_capacity() {
                 read_units += capacity.capacity_units().unwrap_or(0.0);
                 write_units += capacity.write_capacity_units().unwrap_or(0.0);
+            }
+            if return_items {
+                if let Some(attributes) = response.attributes() {
+                    updated_items.push(attributes_to_item(attributes)?);
+                }
             }
             updated += 1;
         }
@@ -408,6 +393,7 @@ impl DynamoBackend for SdkBackend {
             output: updated,
             capacity: Some(capacity),
             count: None,
+            updated_items: return_items.then_some(updated_items),
         })
     }
 
@@ -473,6 +459,7 @@ impl DynamoBackend for SdkBackend {
             output: deleted,
             capacity: Some(capacity),
             count: None,
+            updated_items: None,
         })
     }
 
@@ -482,6 +469,7 @@ impl DynamoBackend for SdkBackend {
         keys: &[Item],
         update: &UpdateExpr,
         condition: Option<&Condition>,
+        return_items: bool,
     ) -> Result<BackendResponse<usize>, EngineError> {
         let meta = self
             .describe_table(table)?
@@ -495,42 +483,24 @@ impl DynamoBackend for SdkBackend {
         let mut updated = 0usize;
         let mut read_units = 0.0;
         let mut write_units = 0.0;
+        let mut updated_items = Vec::new();
         for key_item in keys {
             let key = primary_key_from_meta(&meta, key_item)?;
-            let mut request = self
-                .client
-                .update_item()
-                .table_name(table)
-                .set_key(Some(key))
-                .update_expression(rendered.expression.clone())
-                .return_consumed_capacity(ReturnConsumedCapacity::Total)
-                .return_values(ReturnValue::None);
-            if let Some(names) = rendered.attribute_names.clone() {
-                request = request.set_expression_attribute_names(names_to_hash(Some(names)));
-            }
-            if let Some(values) = rendered.expression_values.clone() {
-                request = request.set_expression_attribute_values(Some(
-                    expression_values_to_attributes(&values)?,
-                ));
-            }
-            if let Some(condition_expr) = condition_expr.as_ref() {
-                request = request
-                    .condition_expression(condition_expr.expression.clone())
-                    .set_expression_attribute_names(merge_names(
-                        rendered.attribute_names.as_ref(),
-                        condition_expr.attribute_names.as_ref(),
-                    ))
-                    .set_expression_attribute_values(merge_values(
-                        rendered.expression_values.as_ref(),
-                        condition_expr.expression_values.as_ref(),
-                    )?);
-            }
-            let response = self
-                .block_on(async { request.send().await })
-                .map_err(Self::aws_error)?;
+            let response = self.send_update_item(
+                table,
+                key,
+                &rendered,
+                condition_expr.as_ref(),
+                return_items,
+            )?;
             if let Some(capacity) = response.consumed_capacity() {
                 read_units += capacity.capacity_units().unwrap_or(0.0);
                 write_units += capacity.write_capacity_units().unwrap_or(0.0);
+            }
+            if return_items {
+                if let Some(attributes) = response.attributes() {
+                    updated_items.push(attributes_to_item(attributes)?);
+                }
             }
             updated += 1;
         }
@@ -540,6 +510,7 @@ impl DynamoBackend for SdkBackend {
             output: updated,
             capacity: Some(capacity),
             count: None,
+            updated_items: return_items.then_some(updated_items),
         })
     }
 
@@ -550,39 +521,40 @@ impl DynamoBackend for SdkBackend {
     ) -> Result<BackendResponse<String>, EngineError> {
         let message = match action {
             AlterAction::SetThroughput { index, throughput } => {
-                let read = match &throughput.read {
-                    dql_parser::Value::Number(value) => value
-                        .parse::<i64>()
-                        .map_err(|err| EngineError::Runtime(err.to_string()))?,
-                    _ => return Err(EngineError::Runtime("invalid read throughput".to_string())),
-                };
-                let write = match &throughput.write {
-                    dql_parser::Value::Number(value) => value
-                        .parse::<i64>()
-                        .map_err(|err| EngineError::Runtime(err.to_string()))?,
-                    _ => return Err(EngineError::Runtime("invalid write throughput".to_string())),
-                };
-                let throughput = ProvisionedThroughput::builder()
-                    .read_capacity_units(read)
-                    .write_capacity_units(write)
-                    .build()
-                    .map_err(|err| EngineError::Runtime(err.to_string()))?;
+                let meta = self
+                    .describe_table(table)?
+                    .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+                let (read, write) = resolve_alter_throughput(throughput, &meta, index.as_deref())?;
                 let mut request = self.client.update_table().table_name(table);
                 if let Some(index_name) = index {
+                    let provisioned = ProvisionedThroughput::builder()
+                        .read_capacity_units(read)
+                        .write_capacity_units(write)
+                        .build()
+                        .map_err(|err| EngineError::Runtime(err.to_string()))?;
                     request = request.global_secondary_index_updates(
                         GlobalSecondaryIndexUpdate::builder()
                             .update(
                                 aws_sdk_dynamodb::types::UpdateGlobalSecondaryIndexAction::builder(
                                 )
                                 .index_name(index_name)
-                                .provisioned_throughput(throughput)
+                                .provisioned_throughput(provisioned)
                                 .build()
                                 .map_err(|err| EngineError::Runtime(err.to_string()))?,
                             )
                             .build(),
                     );
+                } else if read == 0 && write == 0 {
+                    request = request.billing_mode(AwsBillingMode::PayPerRequest);
                 } else {
-                    request = request.provisioned_throughput(throughput);
+                    let provisioned = ProvisionedThroughput::builder()
+                        .read_capacity_units(read)
+                        .write_capacity_units(write)
+                        .build()
+                        .map_err(|err| EngineError::Runtime(err.to_string()))?;
+                    request = request
+                        .billing_mode(AwsBillingMode::Provisioned)
+                        .provisioned_throughput(provisioned);
                 }
                 self.block_on(async { request.send().await })
                     .map_err(Self::aws_error)?;
@@ -706,6 +678,49 @@ impl DynamoBackend for SdkBackend {
 }
 
 impl SdkBackend {
+    fn send_update_item(
+        &self,
+        table: &str,
+        key: HashMap<String, aws_sdk_dynamodb::types::AttributeValue>,
+        rendered: &RenderedExpression,
+        condition_expr: Option<&RenderedExpression>,
+        return_items: bool,
+    ) -> Result<aws_sdk_dynamodb::operation::update_item::UpdateItemOutput, EngineError> {
+        let mut request = self
+            .client
+            .update_item()
+            .table_name(table)
+            .set_key(Some(key))
+            .update_expression(rendered.expression.clone())
+            .return_consumed_capacity(ReturnConsumedCapacity::Total)
+            .return_values(if return_items {
+                ReturnValue::AllNew
+            } else {
+                ReturnValue::None
+            });
+        if let Some(names) = rendered.attribute_names.clone() {
+            request = request.set_expression_attribute_names(names_to_hash(Some(names)));
+        }
+        if let Some(values) = rendered.expression_values.clone() {
+            request = request
+                .set_expression_attribute_values(Some(expression_values_to_attributes(&values)?));
+        }
+        if let Some(condition_expr) = condition_expr {
+            request = request
+                .condition_expression(condition_expr.expression.clone())
+                .set_expression_attribute_names(merge_names(
+                    rendered.attribute_names.as_ref(),
+                    condition_expr.attribute_names.as_ref(),
+                ))
+                .set_expression_attribute_values(merge_values(
+                    rendered.expression_values.as_ref(),
+                    condition_expr.expression_values.as_ref(),
+                )?);
+        }
+        self.block_on(async { request.send().await })
+            .map_err(Self::aws_error)
+    }
+
     fn keys_for_condition(
         &self,
         table: &str,
@@ -973,6 +988,42 @@ async fn build_client(config: SdkConfig) -> Result<Client, String> {
         builder = builder.endpoint_url(format!("http://{host}:{port}"));
     }
     Ok(Client::from_conf(builder.build()))
+}
+
+fn resolve_alter_throughput(
+    throughput: &dql_parser::Throughput,
+    meta: &TableMeta,
+    index: Option<&str>,
+) -> Result<(i64, i64), EngineError> {
+    let current = if let Some(index_name) = index {
+        meta.global_indexes
+            .get(index_name)
+            .and_then(|index| index.throughput.as_ref())
+    } else {
+        meta.throughput.as_ref()
+    };
+    let read = resolve_alter_throughput_value(&throughput.read, current.map(|value| &value.read))?;
+    let write =
+        resolve_alter_throughput_value(&throughput.write, current.map(|value| &value.write))?;
+    Ok((read, write))
+}
+
+fn resolve_alter_throughput_value(
+    value: &dql_parser::Value,
+    current: Option<&dql_parser::Value>,
+) -> Result<i64, EngineError> {
+    match value {
+        dql_parser::Value::String(star) if star == "*" => current
+            .and_then(|value| match value {
+                dql_parser::Value::Number(number) => number.parse().ok(),
+                _ => None,
+            })
+            .ok_or_else(|| EngineError::Runtime("missing throughput for '*'".to_string())),
+        dql_parser::Value::Number(number) => number
+            .parse::<i64>()
+            .map_err(|err: std::num::ParseIntError| EngineError::Runtime(err.to_string())),
+        _ => Err(EngineError::Runtime("invalid throughput value".to_string())),
+    }
 }
 
 fn primary_key_attributes(
