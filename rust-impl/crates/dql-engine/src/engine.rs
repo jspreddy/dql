@@ -5,7 +5,9 @@ use crate::{
 };
 use dql_expr::{render_condition, render_projection};
 use dql_models::{plan_read, Operation, PlanInput, QueryPlan, ReadKind, TableMeta};
-use dql_parser::{parse_script, Condition, QueryOptions, Selection, Statement, UpdateExpr, Value};
+use dql_parser::{
+    parse_script, Condition, InsertForm, QueryOptions, Selection, Statement, UpdateExpr, Value,
+};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -60,12 +62,10 @@ impl<B: DynamoBackend> Engine<B> {
                 self.create_table(statement, *if_not_exists)
             }
             Statement::DropTable { if_exists, name } => self.drop_table(*if_exists, name),
-            Statement::Insert {
-                table,
-                columns,
-                rows,
-            } => self.insert(table, columns, rows),
-            Statement::Delete { table, condition } => self.delete(table, condition.as_ref()),
+            Statement::Insert { table, form } => self.insert(table, form),
+            Statement::Delete {
+                table, condition, ..
+            } => self.delete(table, condition.as_ref()),
             Statement::Update {
                 table,
                 update,
@@ -122,13 +122,14 @@ impl<B: DynamoBackend> Engine<B> {
         Ok(StatementResult::Status(response.output))
     }
 
-    fn insert(
-        &mut self,
-        table: &str,
-        columns: &[String],
-        rows: &[Vec<Value>],
-    ) -> Result<StatementResult, EngineError> {
+    fn insert(&mut self, table: &str, form: &InsertForm) -> Result<StatementResult, EngineError> {
         self.record("batch_write_item", table);
+        let (columns, rows) = match form {
+            InsertForm::Values { columns, rows } => (columns.as_slice(), rows.as_slice()),
+            InsertForm::Keyword { rows } => {
+                return self.insert_keyword_rows(table, rows);
+            }
+        };
         let mut items = Vec::new();
         for row in rows {
             if row.len() != columns.len() {
@@ -138,6 +139,24 @@ impl<B: DynamoBackend> Engine<B> {
             }
             let mut item = Item::new();
             for (column, value) in columns.iter().zip(row.iter()) {
+                item.insert(column.clone(), value.clone());
+            }
+            items.push(item);
+        }
+        let response = self.backend.batch_write(table, items)?;
+        self.capture_capacity(response.capacity);
+        Ok(StatementResult::Affected(response.output))
+    }
+
+    fn insert_keyword_rows(
+        &mut self,
+        table: &str,
+        rows: &[Vec<(String, Value)>],
+    ) -> Result<StatementResult, EngineError> {
+        let mut items = Vec::new();
+        for row in rows {
+            let mut item = Item::new();
+            for (column, value) in row {
                 item.insert(column.clone(), value.clone());
             }
             items.push(item);
@@ -187,8 +206,7 @@ impl<B: DynamoBackend> Engine<B> {
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
-        let plan =
-            self.plan_read_operation(table, ReadKind::Scan, selection, condition, true)?;
+        let plan = self.plan_read_operation(table, ReadKind::Scan, selection, condition, true)?;
         self.execute_read(table, &plan, selection, condition, options)
     }
 
@@ -276,10 +294,8 @@ impl<B: DynamoBackend> Engine<B> {
                     }
                     let value: serde_json::Value = serde_json::from_str(&line)
                         .map_err(|err| EngineError::Runtime(err.to_string()))?;
-                    items.push(
-                        json_value_to_item(&value)
-                            .map_err(|err| EngineError::Runtime(err))?,
-                    );
+                    items
+                        .push(json_value_to_item(&value).map_err(|err| EngineError::Runtime(err))?);
                 }
             }
             other => {

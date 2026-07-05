@@ -1,6 +1,7 @@
 use dql_parser::{
     parse_fragment, parse_script, parse_selection, parse_statement, parse_update_expr, parse_value,
-    AttributeType, CompareOp, Condition, FragmentStatus, KeyType, Statement, Value,
+    AttributeType, CompareOp, Condition, FragmentStatus, InsertForm, KeyType, OrderBy,
+    QueryOptions, Statement, Value,
 };
 
 fn assert_parse_ok(input: &str) {
@@ -103,6 +104,7 @@ mod test_parser {
         assert_parse_ok(
             r#"INSERT INTO foobars (foo, bar) VALUES (b"binary", ("set", "of", "values"))"#,
         );
+        assert_parse_ok("INSERT INTO foobars (id='a', bar=1), (id='b', baz=4)");
         assert_parse_err("INSERT foobars (foo, bar) VALUES (1, 2)");
         assert_parse_err("INSERT INTO foobars foo, bar VALUES (1, 2)");
         assert_parse_err("INSERT INTO foobars (foo, bar) VALUES 1, 2");
@@ -352,7 +354,76 @@ mod test_delete {
     fn parses_delete_from_table() {
         assert_parse_ok("DELETE FROM foobars");
         assert_parse_ok("DELETE FROM foobars WHERE id = 'a'");
+        assert_parse_ok("DELETE FROM foobars KEYS IN 'a', 'b'");
+        assert_parse_ok("DELETE FROM foobars KEYS IN ('a', 1), ('b', 2) WHERE foo = 1 USING idx");
         assert_parse_err("DELETE foobars");
+    }
+}
+
+mod test_query_options {
+    use super::*;
+
+    #[test]
+    fn parses_select_query_options() {
+        let statement =
+            parse_statement("SELECT CONSISTENT * FROM foobars WHERE id = 'a' USING ts-index ORDER BY ts DESC LIMIT 5")
+                .unwrap();
+        match statement {
+            Statement::Select { options, .. } => {
+                assert!(options.consistent);
+                assert_eq!(options.using_index.as_deref(), Some("ts-index"));
+                assert_eq!(
+                    options.order_by,
+                    Some(OrderBy {
+                        field: "ts".to_string(),
+                        descending: true
+                    })
+                );
+                assert_eq!(options.limit, Some(5));
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_select_keys_in_and_using_dash() {
+        let statement = parse_statement("SELECT * FROM foobars KEYS IN 'a', 'b' USING -").unwrap();
+        match statement {
+            Statement::Select {
+                options, condition, ..
+            } => {
+                assert!(condition.is_none());
+                assert_eq!(options.keys_in.as_ref().map(|keys| keys.len()), Some(2));
+                assert_eq!(options.using_index.as_deref(), Some("-"));
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_scan_limits_and_order_by() {
+        let statement =
+            parse_statement("SCAN * FROM foobars LIMIT 3 SCAN LIMIT 4 ORDER BY foo ASC").unwrap();
+        match statement {
+            Statement::Scan { options, .. } => {
+                assert_eq!(options.limit, Some(3));
+                assert_eq!(options.scan_limit, Some(4));
+                assert_eq!(
+                    options.order_by,
+                    Some(OrderBy {
+                        field: "foo".to_string(),
+                        descending: false
+                    })
+                );
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_update_keys_in_and_using() {
+        assert_parse_ok("UPDATE foobars SET foo = 1 KEYS IN 'a' USING idx");
+        assert_parse_ok("UPDATE foobars SET foo = 1 WHERE id = 'a' USING idx RETURNS ALL NEW");
     }
 }
 

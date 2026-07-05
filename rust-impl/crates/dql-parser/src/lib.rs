@@ -192,10 +192,31 @@ pub enum UpdateClauseKind {
     Remove,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrderBy {
+    pub field: String,
+    pub descending: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct QueryOptions {
     pub limit: Option<usize>,
     pub scan_limit: Option<usize>,
+    pub using_index: Option<String>,
+    pub keys_in: Option<Vec<Vec<Value>>>,
+    pub consistent: bool,
+    pub order_by: Option<OrderBy>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum InsertForm {
+    Values {
+        columns: Vec<String>,
+        rows: Vec<Vec<Value>>,
+    },
+    Keyword {
+        rows: Vec<Vec<(String, Value)>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -213,18 +234,19 @@ pub enum Statement {
     },
     Insert {
         table: String,
-        columns: Vec<String>,
-        rows: Vec<Vec<Value>>,
+        form: InsertForm,
     },
     Delete {
         table: String,
         condition: Option<Condition>,
+        options: QueryOptions,
     },
     Update {
         table: String,
         update: UpdateExpr,
         condition: Option<Condition>,
         returns: Option<String>,
+        options: QueryOptions,
     },
     Scan {
         table: String,
@@ -470,6 +492,26 @@ fn is_ident_part(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.')
 }
 
+fn merge_query_options(mut base: QueryOptions, tail: QueryOptions) -> QueryOptions {
+    if tail.limit.is_some() {
+        base.limit = tail.limit;
+    }
+    if tail.scan_limit.is_some() {
+        base.scan_limit = tail.scan_limit;
+    }
+    if tail.using_index.is_some() {
+        base.using_index = tail.using_index;
+    }
+    if tail.keys_in.is_some() {
+        base.keys_in = tail.keys_in;
+    }
+    if tail.order_by.is_some() {
+        base.order_by = tail.order_by;
+    }
+    base.consistent |= tail.consistent;
+    base
+}
+
 struct Parser {
     tokens: Vec<Token>,
     pos: usize,
@@ -683,85 +725,135 @@ impl Parser {
     fn parse_insert(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword("INTO")?;
         let table = self.expect_ident()?;
-        self.expect_symbol('(')?;
-        let columns = self.parse_ident_list(')')?;
-        self.expect_keyword("VALUES")?;
-        let mut rows = Vec::new();
-        loop {
+        if self.peek_keyword_form() {
+            let rows = self.parse_keyword_insert_rows()?;
+            Ok(Statement::Insert {
+                table,
+                form: InsertForm::Keyword { rows },
+            })
+        } else {
             self.expect_symbol('(')?;
-            let mut row = Vec::new();
-            if !self.accept_symbol(')') {
-                loop {
-                    row.push(self.parse_value()?);
-                    if self.accept_symbol(',') {
-                        continue;
+            let columns = self.parse_ident_list(')')?;
+            self.expect_keyword("VALUES")?;
+            let mut rows = Vec::new();
+            loop {
+                self.expect_symbol('(')?;
+                let mut row = Vec::new();
+                if !self.accept_symbol(')') {
+                    loop {
+                        row.push(self.parse_value()?);
+                        if self.accept_symbol(',') {
+                            continue;
+                        }
+                        self.expect_symbol(')')?;
+                        break;
                     }
-                    self.expect_symbol(')')?;
+                }
+                rows.push(row);
+                if !self.accept_symbol(',') {
                     break;
                 }
             }
-            rows.push(row);
+            Ok(Statement::Insert {
+                table,
+                form: InsertForm::Values { columns, rows },
+            })
+        }
+    }
+
+    fn peek_keyword_form(&self) -> bool {
+        if !self.peek_symbol('(') {
+            return false;
+        }
+        matches!(
+            (self.tokens.get(self.pos + 1), self.tokens.get(self.pos + 2)),
+            (Some(Token::Ident(_)), Some(Token::Symbol('=')))
+        )
+    }
+
+    fn parse_keyword_insert_rows(&mut self) -> Result<Vec<Vec<(String, Value)>>, ParseError> {
+        let mut rows = Vec::new();
+        loop {
+            self.expect_symbol('(')?;
+            let mut pairs = Vec::new();
+            loop {
+                let key = self.expect_ident()?;
+                self.expect_symbol('=')?;
+                let value = self.parse_value()?;
+                pairs.push((key, value));
+                if self.accept_symbol(',') {
+                    continue;
+                }
+                self.expect_symbol(')')?;
+                break;
+            }
+            rows.push(pairs);
             if !self.accept_symbol(',') {
                 break;
             }
         }
-        Ok(Statement::Insert {
-            table,
-            columns,
-            rows,
-        })
+        Ok(rows)
     }
 
     fn parse_delete(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword("FROM")?;
         let table = self.expect_ident()?;
-        let condition = if self.accept_keyword("WHERE") {
-            Some(self.parse_condition()?)
-        } else {
-            None
-        };
-        self.skip_statement_tail();
-        Ok(Statement::Delete { table, condition })
+        let (condition, options) = self.parse_mutation_tail()?;
+        Ok(Statement::Delete {
+            table,
+            condition,
+            options,
+        })
     }
 
     fn parse_update(&mut self) -> Result<Statement, ParseError> {
         let table = self.expect_ident()?;
         let update = self.parse_update_expr_until(|parser| {
             parser.peek_keyword("WHERE")
-                || parser.peek_keyword("RETURNS")
+                || parser.peek_keyword("KEYS")
                 || parser.peek_keyword("USING")
+                || parser.peek_keyword("RETURNS")
                 || parser.peek_keyword("THROTTLE")
                 || parser.peek_symbol(';')
                 || parser.is_eof()
         })?;
-        let condition = if self.accept_keyword("WHERE") {
-            Some(self.parse_condition()?)
+        let mut options = QueryOptions::default();
+        let condition = self.parse_query_condition(&mut options)?;
+        if self.accept_keyword("USING") {
+            options.using_index = Some(self.parse_index_name()?);
+        }
+        let returns = if self.accept_keyword("RETURNS") {
+            Some(self.collect_until(|parser| {
+                parser.peek_keyword("THROTTLE") || parser.peek_symbol(';') || parser.is_eof()
+            }))
         } else {
             None
         };
-        let mut returns = None;
-        while !self.is_eof() && !self.peek_symbol(';') {
-            if self.accept_keyword("RETURNS") {
-                returns = Some(self.collect_until(|parser| {
-                    parser.peek_keyword("THROTTLE") || parser.peek_symbol(';') || parser.is_eof()
-                }));
-            } else {
-                self.pos += 1;
-            }
+        if self.accept_keyword("THROTTLE") {
+            self.skip_throttle_clause();
+        }
+        if !self.is_eof() && !self.peek_symbol(';') {
+            return Err(self.error("unexpected token after UPDATE"));
         }
         Ok(Statement::Update {
             table,
             update,
             condition,
             returns,
+            options,
         })
     }
 
     fn parse_scan(&mut self) -> Result<Statement, ParseError> {
+        let mut options = QueryOptions::default();
+        if self.accept_keyword("CONSISTENT") {
+            options.consistent = true;
+        }
         let selection = self.parse_selection_until(|parser| parser.peek_keyword("FROM"))?;
         self.expect_keyword("FROM")?;
         let table = self.expect_ident()?;
-        let (condition, options) = self.parse_query_tail()?;
+        let (condition, tail_options) = self.parse_query_tail()?;
+        options = merge_query_options(options, tail_options);
         Ok(Statement::Scan {
             table,
             selection,
@@ -771,10 +863,15 @@ impl Parser {
     }
 
     fn parse_select(&mut self) -> Result<Statement, ParseError> {
+        let mut options = QueryOptions::default();
+        if self.accept_keyword("CONSISTENT") {
+            options.consistent = true;
+        }
         let selection = self.parse_selection_until(|parser| parser.peek_keyword("FROM"))?;
         self.expect_keyword("FROM")?;
         let table = self.expect_ident()?;
-        let (condition, options) = self.parse_query_tail()?;
+        let (condition, tail_options) = self.parse_query_tail()?;
+        options = merge_query_options(options, tail_options);
         Ok(Statement::Select {
             table,
             selection,
@@ -784,23 +881,102 @@ impl Parser {
     }
 
     fn parse_query_tail(&mut self) -> Result<(Option<Condition>, QueryOptions), ParseError> {
-        let condition = if self.accept_keyword("WHERE") {
-            Some(self.parse_condition()?)
-        } else {
-            None
-        };
         let mut options = QueryOptions::default();
+        let condition = self.parse_query_condition(&mut options)?;
+        self.parse_query_options(&mut options)?;
+        Ok((condition, options))
+    }
+
+    fn parse_mutation_tail(&mut self) -> Result<(Option<Condition>, QueryOptions), ParseError> {
+        let mut options = QueryOptions::default();
+        let condition = self.parse_query_condition(&mut options)?;
         while !self.is_eof() && !self.peek_symbol(';') {
-            if self.accept_keyword("LIMIT") {
+            if self.accept_keyword("USING") {
+                options.using_index = Some(self.parse_index_name()?);
+            } else if self.accept_keyword("THROTTLE") {
+                self.skip_throttle_clause();
+            } else {
+                return Err(self.error("unexpected token in DELETE/UPDATE"));
+            }
+        }
+        Ok((condition, options))
+    }
+
+    fn parse_query_condition(
+        &mut self,
+        options: &mut QueryOptions,
+    ) -> Result<Option<Condition>, ParseError> {
+        if self.accept_keyword("KEYS") {
+            self.expect_keyword("IN")?;
+            options.keys_in = Some(self.parse_keys_in_list()?);
+        }
+        if self.accept_keyword("WHERE") {
+            Ok(Some(self.parse_condition()?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn parse_query_options(&mut self, options: &mut QueryOptions) -> Result<(), ParseError> {
+        while !self.is_eof() && !self.peek_symbol(';') {
+            if self.accept_keyword("USING") {
+                options.using_index = Some(self.parse_index_name()?);
+            } else if self.accept_keyword("LIMIT") {
                 options.limit = Some(self.expect_usize()?);
             } else if self.accept_keyword("SCAN") {
                 self.expect_keyword("LIMIT")?;
                 options.scan_limit = Some(self.expect_usize()?);
+            } else if self.accept_keyword("ORDER") {
+                self.expect_keyword("BY")?;
+                let field = self.expect_ident()?;
+                let descending = if self.accept_keyword("DESC") {
+                    true
+                } else {
+                    self.accept_keyword("ASC");
+                    false
+                };
+                options.order_by = Some(OrderBy { field, descending });
+            } else if self.accept_keyword("THROTTLE") {
+                self.skip_throttle_clause();
             } else {
-                self.pos += 1;
+                return Err(self.error("unexpected token in query options"));
             }
         }
-        Ok((condition, options))
+        Ok(())
+    }
+
+    fn parse_keys_in_list(&mut self) -> Result<Vec<Vec<Value>>, ParseError> {
+        let mut keys = Vec::new();
+        loop {
+            let key_values = if self.accept_symbol('(') {
+                let mut values = vec![self.parse_value()?];
+                if self.accept_symbol(',') {
+                    values.push(self.parse_value()?);
+                }
+                self.expect_symbol(')')?;
+                values
+            } else {
+                vec![self.parse_value()?]
+            };
+            keys.push(key_values);
+            if !self.accept_symbol(',') {
+                break;
+            }
+        }
+        Ok(keys)
+    }
+
+    fn parse_index_name(&mut self) -> Result<String, ParseError> {
+        if self.accept_symbol('-') {
+            Ok("-".to_string())
+        } else {
+            self.expect_ident()
+        }
+    }
+
+    fn skip_throttle_clause(&mut self) {
+        let _ = self.expect_usize();
+        let _ = self.expect_usize();
     }
 
     fn parse_alter(&mut self) -> Result<Statement, ParseError> {
@@ -1628,8 +1804,7 @@ mod tests {
         match statement {
             Statement::Insert {
                 table,
-                columns,
-                rows,
+                form: InsertForm::Values { columns, rows },
             } => {
                 assert_eq!(table, "t");
                 assert_eq!(columns, vec!["id", "payload"]);
