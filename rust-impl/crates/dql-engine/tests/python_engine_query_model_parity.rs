@@ -535,14 +535,152 @@ mod test_select {
 
     ignored_select!(
         test_reverse => "needs ORDER BY DESC support",
-        test_hash_index => "needs index planner",
-        test_smart_index => "needs index planner",
-        test_smart_global_index => "needs GSI planner",
-        test_scan_item_limit => "needs SCAN LIMIT support",
-        test_attrs => "needs projection support",
-        test_begins_with => "needs function constraints",
-        test_between => "needs BETWEEN constraints",
     );
+
+    fn make_indexed_table(engine: &mut InMemoryEngine) {
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY, ts NUMBER INDEX('ts-index'));
+                 INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 100), ('a', 2, 200)",
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn test_hash_index() {
+        let mut engine = InMemoryEngine::default();
+        make_indexed_table(&mut engine);
+        let result = engine
+            .execute("SELECT * FROM foobar WHERE id = 'a' AND ts < 150 USING ts-index")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("ts"), Some(&Value::Number("100".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_smart_index() {
+        let mut engine = InMemoryEngine::default();
+        make_indexed_table(&mut engine);
+        let result = engine
+            .execute("SELECT * FROM foobar WHERE id = 'a' AND ts < 150")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("ts"), Some(&Value::Number("100".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_smart_global_index() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, foo STRING RANGE KEY, bar NUMBER INDEX('bar-index'), baz STRING) \
+                 GLOBAL INDEX ('gindex', baz);
+                 INSERT INTO foobar (id, foo, bar, baz) VALUES ('a', 'a', 1, 'a'), ('b', 'b', 2, 'b')",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SELECT * FROM foobar WHERE baz = 'a'")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("id"), Some(&Value::String("a".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_scan_item_limit() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY, ts NUMBER INDEX('ts-index'));
+                 INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 100), ('a', 2, 200), ('a', 3, 300)",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SELECT * FROM foobar WHERE id = 'a' AND ts > 200 LIMIT 1 SCAN LIMIT 2")
+            .unwrap();
+        assert_items_len(result, 0);
+    }
+
+    #[test]
+    fn test_attrs() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY, order STRING);
+                 INSERT INTO foobar (id, bar, order) VALUES ('a', 1, 'first'), ('a', 2, 'second')",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SELECT order FROM foobar WHERE id = 'a' AND bar = 1")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(
+                    items[0].get("order"),
+                    Some(&Value::String("first".to_string()))
+                );
+                assert!(!items[0].contains_key("bar"));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_begins_with() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id NUMBER HASH KEY, bar STRING RANGE KEY);
+                 INSERT INTO foobar (id, bar) VALUES (1, 'abc'), (1, 'def')",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SELECT * FROM foobar WHERE id = 1 AND begins_with(bar, 'a')")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("bar"), Some(&Value::String("abc".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_between() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 5), ('a', 10)",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SELECT * FROM foobar WHERE id = 'a' AND bar BETWEEN 1 AND 8")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("bar"), Some(&Value::Number("5".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
 
     #[test]
     fn test_get() {

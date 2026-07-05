@@ -574,7 +574,24 @@ fn finalize_read_result(
     if let Some(order_by) = order_by {
         sort_items(&mut response.output, order_by);
     }
+    apply_projection(&mut response.output, selection);
     Ok(StatementResult::Items(response.output))
+}
+
+fn apply_projection(items: &mut [Item], selection: &Selection) {
+    let Selection::Items(projections) = selection else {
+        return;
+    };
+    let fields = projections
+        .iter()
+        .map(|item| item.expression.trim().to_string())
+        .collect::<Vec<_>>();
+    if fields.is_empty() {
+        return;
+    }
+    for item in items.iter_mut() {
+        item.retain(|key, _| fields.iter().any(|field| field == key));
+    }
 }
 
 fn sort_items(items: &mut [Item], order_by: &OrderBy) {

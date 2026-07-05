@@ -117,11 +117,13 @@ impl DynamoBackend for MemoryBackend {
             let keys = keys_in_to_items(&table_data.meta, keys_in)?;
             return self.batch_get_keys(table, &keys, request.consistent);
         }
-        let condition = request
-            .filter_condition
-            .or(request.key_condition)
-            .or(request.condition);
-        let items = apply_read_options(table_data.items.iter(), condition, &request.options);
+        let items = apply_read_options(
+            table_data.items.iter(),
+            request.key_condition,
+            request.filter_condition,
+            request.condition,
+            &request.options,
+        );
         let count = matches!(request.selection, Selection::CountAll).then_some(items.len());
         let op_name = match request.operation {
             ReadOperation::Query => "query",
@@ -389,9 +391,8 @@ pub fn matches_condition(item: &Item, condition: &Condition) -> bool {
         Condition::In { field, values } => item
             .get(field)
             .is_some_and(|item_value| values.iter().any(|value| item_value == value)),
-        Condition::Function { .. } | Condition::Size { .. } | Condition::AttributeType { .. } => {
-            false
-        }
+        Condition::Function { name, args } => evaluate_function_condition(item, name, args),
+        Condition::Size { .. } | Condition::AttributeType { .. } => false,
         Condition::And(conditions) => conditions
             .iter()
             .all(|condition| matches_condition(item, condition)),
@@ -402,14 +403,35 @@ pub fn matches_condition(item: &Item, condition: &Condition) -> bool {
     }
 }
 
+fn evaluate_function_condition(item: &Item, name: &str, args: &[ConditionOperand]) -> bool {
+    if name.eq_ignore_ascii_case("begins_with") {
+        let (field, prefix) = match args {
+            [ConditionOperand::Field(field), ConditionOperand::Value(prefix)] => (field, prefix),
+            _ => return false,
+        };
+        return item.get(field).is_some_and(|value| match (value, prefix) {
+            (Value::String(value), Value::String(prefix)) => value.starts_with(prefix),
+            _ => false,
+        });
+    }
+    false
+}
+
 fn apply_read_options<'a>(
     items: impl Iterator<Item = &'a Item>,
-    condition: Option<&Condition>,
+    key_condition: Option<&Condition>,
+    filter_condition: Option<&Condition>,
+    fallback_condition: Option<&Condition>,
     options: &QueryOptions,
 ) -> Vec<Item> {
     let scanned = items.take(options.scan_limit.unwrap_or(usize::MAX));
-    let filtered =
-        scanned.filter(|item| condition.is_none_or(|condition| matches_condition(item, condition)));
+    let filtered = scanned.filter(|item| {
+        let key_ok = match key_condition {
+            Some(condition) => matches_condition(item, condition),
+            None => fallback_condition.is_none_or(|condition| matches_condition(item, condition)),
+        };
+        filter_condition.is_none_or(|condition| matches_condition(item, condition)) && key_ok
+    });
     filtered
         .take(options.limit.unwrap_or(usize::MAX))
         .cloned()
