@@ -22,7 +22,9 @@ pub fn item_to_attributes(item: &Item) -> Result<HashMap<String, AttributeValue>
         .collect()
 }
 
-pub fn attributes_to_item(attributes: &HashMap<String, AttributeValue>) -> Result<Item, EngineError> {
+pub fn attributes_to_item(
+    attributes: &HashMap<String, AttributeValue>,
+) -> Result<Item, EngineError> {
     attributes
         .iter()
         .map(|(key, value)| {
@@ -147,7 +149,10 @@ pub fn table_meta_from_description(table: &TableDescription) -> Result<TableMeta
             },
         );
     }
-    let billing_mode = match table.billing_mode_summary().and_then(|summary| summary.billing_mode()) {
+    let billing_mode = match table
+        .billing_mode_summary()
+        .and_then(|summary| summary.billing_mode())
+    {
         Some(AwsBillingMode::PayPerRequest) => BillingMode::OnDemand,
         _ => BillingMode::Provisioned,
     };
@@ -171,10 +176,8 @@ pub fn table_meta_from_description(table: &TableDescription) -> Result<TableMeta
 
 pub fn build_create_table_input(
     meta: &TableMeta,
-) -> Result<
-    aws_sdk_dynamodb::operation::create_table::builders::CreateTableInputBuilder,
-    EngineError,
-> {
+) -> Result<aws_sdk_dynamodb::operation::create_table::builders::CreateTableInputBuilder, EngineError>
+{
     let attribute_definitions = meta
         .attrs
         .values()
@@ -247,13 +250,11 @@ pub fn build_create_table_input(
             .global_indexes
             .values()
             .map(|index| {
-                let mut key_schema = vec![
-                    KeySchemaElement::builder()
-                        .attribute_name(index.hash_key.name.clone())
-                        .key_type(AwsKeyType::Hash)
-                        .build()
-                        .map_err(|err| EngineError::Runtime(err.to_string()))?,
-                ];
+                let mut key_schema = vec![KeySchemaElement::builder()
+                    .attribute_name(index.hash_key.name.clone())
+                    .key_type(AwsKeyType::Hash)
+                    .build()
+                    .map_err(|err| EngineError::Runtime(err.to_string()))?];
                 if let Some(range_key) = &index.range_key {
                     key_schema.push(
                         KeySchemaElement::builder()
@@ -294,25 +295,24 @@ pub fn dynamo_to_attribute(value: &DynamoValue) -> AttributeValue {
         DynamoValue::Bool(value) => AttributeValue::Bool(*value),
         DynamoValue::Number(value) => AttributeValue::N(value.clone()),
         DynamoValue::String(value) => AttributeValue::S(value.clone()),
-        DynamoValue::Binary(value) => AttributeValue::B(
-            aws_sdk_dynamodb::primitives::Blob::new(
-                base64_decode(value).unwrap_or_default(),
-            ),
-        ),
+        DynamoValue::Binary(value) => AttributeValue::B(aws_sdk_dynamodb::primitives::Blob::new(
+            base64_decode(value).unwrap_or_default(),
+        )),
         DynamoValue::NumberSet(values) => AttributeValue::Ns(values.clone()),
         DynamoValue::StringSet(values) => AttributeValue::Ss(values.clone()),
         DynamoValue::BinarySet(values) => AttributeValue::Bs(
             values
                 .iter()
-                .filter_map(|value| Some(aws_sdk_dynamodb::primitives::Blob::new(base64_decode(value).ok()?)))
+                .filter_map(|value| {
+                    Some(aws_sdk_dynamodb::primitives::Blob::new(
+                        base64_decode(value).ok()?,
+                    ))
+                })
                 .collect(),
         ),
-        DynamoValue::List(values) => AttributeValue::L(
-            values
-                .iter()
-                .map(dynamo_to_attribute)
-                .collect(),
-        ),
+        DynamoValue::List(values) => {
+            AttributeValue::L(values.iter().map(dynamo_to_attribute).collect())
+        }
         DynamoValue::Map(values) => AttributeValue::M(
             values
                 .iter()
@@ -349,7 +349,11 @@ pub fn attribute_to_dynamo(value: &AttributeValue) -> Result<DynamoValue, Engine
                 .map(|(key, value)| attribute_to_dynamo(value).map(|parsed| (key.clone(), parsed)))
                 .collect::<Result<BTreeMap<_, _>, _>>()?,
         ),
-        _ => return Err(EngineError::Runtime("unsupported DynamoDB attribute value".to_string())),
+        _ => {
+            return Err(EngineError::Runtime(
+                "unsupported DynamoDB attribute value".to_string(),
+            ))
+        }
     })
 }
 
@@ -368,9 +372,15 @@ fn attribute_type_to_scalar(value: &AttributeType) -> ScalarAttributeType {
         AttributeType::Number => ScalarAttributeType::N,
         AttributeType::Binary => ScalarAttributeType::B,
         AttributeType::Bool => ScalarAttributeType::S,
-        AttributeType::Other(value) if value.eq_ignore_ascii_case("STRING") => ScalarAttributeType::S,
-        AttributeType::Other(value) if value.eq_ignore_ascii_case("NUMBER") => ScalarAttributeType::N,
-        AttributeType::Other(value) if value.eq_ignore_ascii_case("BINARY") => ScalarAttributeType::B,
+        AttributeType::Other(value) if value.eq_ignore_ascii_case("STRING") => {
+            ScalarAttributeType::S
+        }
+        AttributeType::Other(value) if value.eq_ignore_ascii_case("NUMBER") => {
+            ScalarAttributeType::N
+        }
+        AttributeType::Other(value) if value.eq_ignore_ascii_case("BINARY") => {
+            ScalarAttributeType::B
+        }
         AttributeType::Other(_) => ScalarAttributeType::S,
     }
 }
@@ -436,9 +446,9 @@ fn aws_projection_to_model(projection: Option<&Projection>) -> ModelProjectionTy
     };
     match projection.projection_type() {
         Some(ProjectionType::KeysOnly) => ModelProjectionType::KeysOnly,
-        Some(ProjectionType::Include) => ModelProjectionType::Include(
-            projection.non_key_attributes().iter().cloned().collect(),
-        ),
+        Some(ProjectionType::Include) => {
+            ModelProjectionType::Include(projection.non_key_attributes().iter().cloned().collect())
+        }
         _ => ModelProjectionType::All,
     }
 }
@@ -468,7 +478,9 @@ fn projection_from_query_index(index: &QueryIndex) -> Projection {
             if let Some(range_key) = &index.range_key {
                 key_attrs.insert(range_key.clone());
             }
-            if values.len() == key_attrs.len() && values.iter().all(|value| key_attrs.contains(value)) {
+            if values.len() == key_attrs.len()
+                && values.iter().all(|value| key_attrs.contains(value))
+            {
                 Projection::builder()
                     .projection_type(ProjectionType::KeysOnly)
                     .build()
@@ -550,9 +562,10 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, EngineError> {
     let mut buffer = 0u32;
     let mut bits = 0u32;
     for ch in input.bytes() {
-        let value = decode.get(ch as usize).copied().ok_or_else(|| {
-            EngineError::Runtime(format!("invalid base64 character '{ch}'"))
-        })?;
+        let value = decode
+            .get(ch as usize)
+            .copied()
+            .ok_or_else(|| EngineError::Runtime(format!("invalid base64 character '{ch}'")))?;
         buffer = (buffer << 6) | u32::from(value);
         bits += 6;
         if bits >= 8 {
@@ -562,4 +575,35 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, EngineError> {
         }
     }
     Ok(output)
+}
+
+pub fn keys_in_to_items(
+    meta: &TableMeta,
+    keys_in: &[Vec<Value>],
+) -> Result<Vec<Item>, EngineError> {
+    let pk_attrs = meta.primary_key_attributes();
+    keys_in
+        .iter()
+        .map(|key_values| {
+            if key_values.len() != pk_attrs.len() {
+                return Err(EngineError::Runtime(format!(
+                    "Primary key {key_values:?} does not match table key schema {pk_attrs:?}"
+                )));
+            }
+            let mut item = Item::new();
+            for (attr, value) in pk_attrs.iter().zip(key_values.iter()) {
+                item.insert(attr.clone(), value.clone());
+            }
+            Ok(item)
+        })
+        .collect()
+}
+
+pub fn item_matches_primary_key(item: &Item, key: &Item, meta: &TableMeta) -> bool {
+    item.get(&meta.hash_key) == key.get(&meta.hash_key)
+        && meta
+            .range_key
+            .as_ref()
+            .map(|range_key| item.get(range_key) == key.get(range_key))
+            .unwrap_or(true)
 }

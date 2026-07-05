@@ -69,6 +69,7 @@ pub enum EngineError {
 pub enum ReadOperation {
     Query,
     Scan,
+    BatchGetKeys,
 }
 
 pub struct ReadRequest<'a> {
@@ -107,6 +108,24 @@ pub trait DynamoBackend {
         table: &str,
         request: &ReadRequest<'_>,
     ) -> Result<BackendResponse<Vec<Item>>, EngineError>;
+    fn batch_get_keys(
+        &self,
+        table: &str,
+        keys: &[Item],
+    ) -> Result<BackendResponse<Vec<Item>>, EngineError>;
+    fn delete_by_keys(
+        &mut self,
+        table: &str,
+        keys: &[Item],
+        condition: Option<&Condition>,
+    ) -> Result<BackendResponse<usize>, EngineError>;
+    fn update_by_keys(
+        &mut self,
+        table: &str,
+        keys: &[Item],
+        update: &UpdateExpr,
+        condition: Option<&Condition>,
+    ) -> Result<BackendResponse<usize>, EngineError>;
     fn delete_matching(
         &mut self,
         table: &str,

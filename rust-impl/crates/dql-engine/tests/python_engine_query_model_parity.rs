@@ -360,7 +360,6 @@ mod test_select {
     }
 
     ignored_select!(
-        test_get => "needs KEYS IN support",
         test_reverse => "needs ORDER BY DESC support",
         test_hash_index => "needs index planner",
         test_smart_index => "needs index planner",
@@ -370,6 +369,21 @@ mod test_select {
         test_begins_with => "needs function constraints",
         test_between => "needs BETWEEN constraints",
     );
+
+    #[test]
+    fn test_get() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 1), ('b', 2)",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SELECT * FROM foobar KEYS IN ('a', 1), ('b', 2)")
+            .unwrap();
+        assert_items_len(result, 2);
+    }
 
     #[test]
     fn test_limit() {
@@ -426,8 +440,22 @@ mod test_select {
         assert_eq!(result, StatementResult::Schema("query foobar".to_string()));
     }
 
+    #[test]
+    fn test_explain_select_keys_in() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY)")
+            .unwrap();
+        let result = engine
+            .execute("EXPLAIN SELECT * FROM foobar KEYS IN 'a', 'b'")
+            .unwrap();
+        assert_eq!(
+            result,
+            StatementResult::Schema("batch_get_item foobar".to_string())
+        );
+    }
+
     ignored_select!(
-        test_explain_select_keys_in => "needs KEYS IN support",
         test_order_by_index => "needs ORDER BY with index support",
         test_order_by => "needs ORDER BY support",
         test_select_non_projected => "needs projection and index follow-up support",
@@ -650,7 +678,6 @@ mod test_update {
         test_update,
         test_update_where,
         test_update_count,
-        test_update_where_in,
         test_update_in_condition,
         test_update_keys_count,
         test_update_increment,
@@ -668,6 +695,28 @@ mod test_update {
         test_explain_update_scan,
         test_update_bool,
     );
+
+    #[test]
+    fn test_update_where_in() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 2);
+                 UPDATE foobar SET baz = 3 KEYS IN ('a', 1), ('b', 2)",
+            )
+            .unwrap();
+        let result = engine.execute("SCAN * FROM foobar").unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 2);
+                assert!(items
+                    .iter()
+                    .all(|item| item.get("baz") == Some(&Value::Number("3".to_string()))));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
 }
 
 mod test_delete {
@@ -725,8 +774,27 @@ mod test_delete {
         };
     }
 
+    #[test]
+    fn test_delete_in() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 1), ('b', 2);
+                 DELETE FROM foobar KEYS IN ('a', 1)",
+            )
+            .unwrap();
+        let result = engine.execute("SCAN * FROM foobar").unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("id"), Some(&Value::String("b".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
     ignored_delete!(
-        test_delete_in => "needs DELETE KEYS IN implementation",
         test_delete_in_filter => "needs DELETE IN constraints",
         test_delete_smart_index => "needs DELETE index planner",
         test_delete_using => "needs DELETE USING support",

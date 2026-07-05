@@ -1,6 +1,6 @@
 use crate::convert::{
     attributes_to_item, build_create_table_input, expression_values_to_attributes,
-    item_to_attributes, table_meta_from_description,
+    item_to_attributes, keys_in_to_items, table_meta_from_description,
 };
 use crate::throttle::RateLimit;
 use crate::{
@@ -288,6 +288,16 @@ impl DynamoBackend for SdkBackend {
                 rendered_filter.as_ref(),
                 request.options,
             )?,
+            ReadOperation::BatchGetKeys => {
+                let keys_in = request.options.keys_in.as_ref().ok_or_else(|| {
+                    EngineError::Runtime("batch get requires KEYS IN".to_string())
+                })?;
+                let meta = self
+                    .describe_table(table)?
+                    .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+                let keys = keys_in_to_items(&meta, keys_in)?;
+                self.batch_get_items(table, &keys)?
+            }
         };
         if request.follow_up_batch_get {
             items = self.batch_get_items(table, &items)?;
@@ -295,6 +305,7 @@ impl DynamoBackend for SdkBackend {
         let op_name = match request.operation {
             ReadOperation::Query => "query",
             ReadOperation::Scan => "scan",
+            ReadOperation::BatchGetKeys => "batch_get_item",
         };
         Ok(BackendResponse::new(op_name, table, items))
     }
@@ -351,6 +362,135 @@ impl DynamoBackend for SdkBackend {
         let mut read_units = 0.0;
         let mut write_units = 0.0;
         for key in keys {
+            let mut request = self
+                .client
+                .update_item()
+                .table_name(table)
+                .set_key(Some(key))
+                .update_expression(rendered.expression.clone())
+                .return_consumed_capacity(ReturnConsumedCapacity::Total)
+                .return_values(ReturnValue::None);
+            if let Some(names) = rendered.attribute_names.clone() {
+                request = request.set_expression_attribute_names(names_to_hash(Some(names)));
+            }
+            if let Some(values) = rendered.expression_values.clone() {
+                request = request.set_expression_attribute_values(Some(
+                    expression_values_to_attributes(&values)?,
+                ));
+            }
+            if let Some(condition_expr) = condition_expr.as_ref() {
+                request = request
+                    .condition_expression(condition_expr.expression.clone())
+                    .set_expression_attribute_names(merge_names(
+                        rendered.attribute_names.as_ref(),
+                        condition_expr.attribute_names.as_ref(),
+                    ))
+                    .set_expression_attribute_values(merge_values(
+                        rendered.expression_values.as_ref(),
+                        condition_expr.expression_values.as_ref(),
+                    )?);
+            }
+            let response = self
+                .block_on(async { request.send().await })
+                .map_err(Self::aws_error)?;
+            if let Some(capacity) = response.consumed_capacity() {
+                read_units += capacity.capacity_units().unwrap_or(0.0);
+                write_units += capacity.write_capacity_units().unwrap_or(0.0);
+            }
+            updated += 1;
+        }
+        let capacity = Self::capacity_from("update_item", table, read_units, write_units);
+        self.apply_throttle(&capacity)?;
+        Ok(BackendResponse {
+            output: updated,
+            capacity: Some(capacity),
+        })
+    }
+
+    fn batch_get_keys(
+        &self,
+        table: &str,
+        keys: &[Item],
+    ) -> Result<BackendResponse<Vec<Item>>, EngineError> {
+        let items = self.batch_get_items(table, keys)?;
+        Ok(BackendResponse::new("batch_get_item", table, items))
+    }
+
+    fn delete_by_keys(
+        &mut self,
+        table: &str,
+        keys: &[Item],
+        condition: Option<&Condition>,
+    ) -> Result<BackendResponse<usize>, EngineError> {
+        let meta = self
+            .describe_table(table)?
+            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let condition_expr = condition
+            .map(render_condition)
+            .transpose()
+            .map_err(|err| EngineError::Runtime(err.to_string()))?;
+        let mut deleted = 0usize;
+        let mut read_units = 0.0;
+        let mut write_units = 0.0;
+        for key_item in keys {
+            let key = primary_key_from_meta(&meta, key_item)?;
+            let mut request = self
+                .client
+                .delete_item()
+                .table_name(table)
+                .set_key(Some(key))
+                .return_consumed_capacity(ReturnConsumedCapacity::Total);
+            if let Some(condition_expr) = condition_expr.as_ref() {
+                request = request
+                    .condition_expression(condition_expr.expression.clone())
+                    .set_expression_attribute_names(names_to_hash(
+                        condition_expr.attribute_names.clone(),
+                    ))
+                    .set_expression_attribute_values(Some(expression_values_to_attributes(
+                        condition_expr
+                            .expression_values
+                            .as_ref()
+                            .unwrap_or(&BTreeMap::new()),
+                    )?));
+            }
+            let response = self
+                .block_on(async { request.send().await })
+                .map_err(Self::aws_error)?;
+            if let Some(capacity) = response.consumed_capacity() {
+                read_units += capacity.capacity_units().unwrap_or(0.0);
+                write_units += capacity.write_capacity_units().unwrap_or(0.0);
+            }
+            deleted += 1;
+        }
+        let capacity = Self::capacity_from("delete_item", table, read_units, write_units);
+        self.apply_throttle(&capacity)?;
+        Ok(BackendResponse {
+            output: deleted,
+            capacity: Some(capacity),
+        })
+    }
+
+    fn update_by_keys(
+        &mut self,
+        table: &str,
+        keys: &[Item],
+        update: &UpdateExpr,
+        condition: Option<&Condition>,
+    ) -> Result<BackendResponse<usize>, EngineError> {
+        let meta = self
+            .describe_table(table)?
+            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let rendered =
+            render_update(update).map_err(|err| EngineError::Runtime(err.to_string()))?;
+        let condition_expr = condition
+            .map(render_condition)
+            .transpose()
+            .map_err(|err| EngineError::Runtime(err.to_string()))?;
+        let mut updated = 0usize;
+        let mut read_units = 0.0;
+        let mut write_units = 0.0;
+        for key_item in keys {
+            let key = primary_key_from_meta(&meta, key_item)?;
             let mut request = self
                 .client
                 .update_item()

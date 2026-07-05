@@ -1,3 +1,4 @@
+use crate::convert::{item_matches_primary_key, keys_in_to_items};
 use crate::{
     BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
 };
@@ -107,6 +108,14 @@ impl DynamoBackend for MemoryBackend {
             .tables
             .get(table)
             .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        if request.operation == ReadOperation::BatchGetKeys {
+            let keys_in =
+                request.options.keys_in.as_ref().ok_or_else(|| {
+                    EngineError::Runtime("batch get requires KEYS IN".to_string())
+                })?;
+            let keys = keys_in_to_items(&table_data.meta, keys_in)?;
+            return self.batch_get_keys(table, &keys);
+        }
         let condition = request
             .filter_condition
             .or(request.key_condition)
@@ -115,8 +124,84 @@ impl DynamoBackend for MemoryBackend {
         let op_name = match request.operation {
             ReadOperation::Query => "query",
             ReadOperation::Scan => "scan",
+            ReadOperation::BatchGetKeys => "batch_get_item",
         };
         Ok(BackendResponse::new(op_name, table, items))
+    }
+
+    fn batch_get_keys(
+        &self,
+        table: &str,
+        keys: &[Item],
+    ) -> Result<BackendResponse<Vec<Item>>, EngineError> {
+        let table_data = self
+            .tables
+            .get(table)
+            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let mut items = Vec::new();
+        for key in keys {
+            if let Some(item) = table_data
+                .items
+                .iter()
+                .find(|item| item_matches_primary_key(item, key, &table_data.meta))
+            {
+                items.push(item.clone());
+            }
+        }
+        Ok(BackendResponse::new("batch_get_item", table, items))
+    }
+
+    fn delete_by_keys(
+        &mut self,
+        table: &str,
+        keys: &[Item],
+        condition: Option<&Condition>,
+    ) -> Result<BackendResponse<usize>, EngineError> {
+        let table_data = self
+            .tables
+            .get_mut(table)
+            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let before = table_data.items.len();
+        table_data.items.retain(|item| {
+            if !keys
+                .iter()
+                .any(|key| item_matches_primary_key(item, key, &table_data.meta))
+            {
+                return true;
+            }
+            !condition.is_none_or(|condition| matches_condition(item, condition))
+        });
+        Ok(BackendResponse::new(
+            "delete_item",
+            table,
+            before - table_data.items.len(),
+        ))
+    }
+
+    fn update_by_keys(
+        &mut self,
+        table: &str,
+        keys: &[Item],
+        update: &UpdateExpr,
+        condition: Option<&Condition>,
+    ) -> Result<BackendResponse<usize>, EngineError> {
+        let _ = render_update(update).map_err(|err| EngineError::Runtime(err.to_string()))?;
+        let table_data = self
+            .tables
+            .get_mut(table)
+            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let mut count = 0;
+        for item in &mut table_data.items {
+            if keys
+                .iter()
+                .any(|key| item_matches_primary_key(item, key, &table_data.meta))
+                && condition.is_none_or(|condition| matches_condition(item, condition))
+            {
+                apply_update(item, update)?;
+                count += 1;
+            }
+        }
+        Ok(BackendResponse::new("update_item", table, count))
     }
 
     fn delete_matching(
@@ -329,7 +414,10 @@ fn apply_update(item: &mut Item, update: &UpdateExpr) -> Result<(), EngineError>
             }
             UpdateClauseKind::Add => {
                 let delta = parse_update_value(clause.expression.as_deref().unwrap_or_default())?;
-                let current = item.get(&clause.path).cloned().unwrap_or(Value::Number("0".to_string()));
+                let current = item
+                    .get(&clause.path)
+                    .cloned()
+                    .unwrap_or(Value::Number("0".to_string()));
                 item.insert(clause.path.clone(), add_values(&current, &delta)?);
             }
             UpdateClauseKind::Delete => {
@@ -351,8 +439,12 @@ fn apply_update(item: &mut Item, update: &UpdateExpr) -> Result<(), EngineError>
 fn add_values(left: &Value, right: &Value) -> Result<Value, EngineError> {
     match (left, right) {
         (Value::Number(left), Value::Number(right)) => {
-            let sum = left.parse::<f64>().map_err(|err| EngineError::Runtime(err.to_string()))?
-                + right.parse::<f64>().map_err(|err| EngineError::Runtime(err.to_string()))?;
+            let sum = left
+                .parse::<f64>()
+                .map_err(|err| EngineError::Runtime(err.to_string()))?
+                + right
+                    .parse::<f64>()
+                    .map_err(|err| EngineError::Runtime(err.to_string()))?;
             Ok(Value::Number(sum.to_string()))
         }
         _ => Err(EngineError::Runtime("unsupported ADD update".to_string())),
@@ -378,7 +470,9 @@ fn parse_update_value(raw: &str) -> Result<Value, EngineError> {
     if trimmed.eq_ignore_ascii_case("null") {
         return Ok(Value::Null);
     }
-    Err(EngineError::Runtime(format!("unsupported update value '{raw}'")))
+    Err(EngineError::Runtime(format!(
+        "unsupported update value '{raw}'"
+    )))
 }
 
 fn is_number(value: &str) -> bool {

@@ -1,3 +1,4 @@
+use crate::convert::keys_in_to_items;
 use crate::json_util::json_value_to_item;
 use crate::{
     BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
@@ -64,14 +65,17 @@ impl<B: DynamoBackend> Engine<B> {
             Statement::DropTable { if_exists, name } => self.drop_table(*if_exists, name),
             Statement::Insert { table, form } => self.insert(table, form),
             Statement::Delete {
-                table, condition, ..
-            } => self.delete(table, condition.as_ref()),
+                table,
+                condition,
+                options,
+            } => self.delete(table, condition.as_ref(), options),
             Statement::Update {
                 table,
                 update,
                 condition,
+                options,
                 ..
-            } => self.update(table, update, condition.as_ref()),
+            } => self.update(table, update, condition.as_ref(), options),
             Statement::Scan {
                 table,
                 selection,
@@ -170,7 +174,16 @@ impl<B: DynamoBackend> Engine<B> {
         &mut self,
         table: &str,
         condition: Option<&Condition>,
+        options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
+        if let Some(keys_in) = &options.keys_in {
+            validate_mutation_keys_in(options)?;
+            let keys = self.keys_in_items(table, keys_in)?;
+            self.record("delete_item", table);
+            let response = self.backend.delete_by_keys(table, &keys, condition)?;
+            self.capture_capacity(response.capacity);
+            return Ok(StatementResult::Affected(response.output));
+        }
         if condition.is_some() {
             self.record("query", table);
         } else {
@@ -187,7 +200,18 @@ impl<B: DynamoBackend> Engine<B> {
         table: &str,
         update: &UpdateExpr,
         condition: Option<&Condition>,
+        options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
+        if let Some(keys_in) = &options.keys_in {
+            validate_mutation_keys_in(options)?;
+            let keys = self.keys_in_items(table, keys_in)?;
+            self.record("update_item", table);
+            let response = self
+                .backend
+                .update_by_keys(table, &keys, update, condition)?;
+            self.capture_capacity(response.capacity);
+            return Ok(StatementResult::Affected(response.output));
+        }
         if condition.is_some() {
             self.record("query", table);
         } else {
@@ -206,6 +230,9 @@ impl<B: DynamoBackend> Engine<B> {
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
+        if options.keys_in.is_some() {
+            return self.execute_keys_in_read(table, selection, condition, options);
+        }
         let plan =
             self.plan_read_operation(table, ReadKind::Scan, selection, condition, options)?;
         self.execute_read(table, &plan, selection, condition, options)
@@ -218,9 +245,36 @@ impl<B: DynamoBackend> Engine<B> {
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
+        if options.keys_in.is_some() {
+            return self.execute_keys_in_read(table, selection, condition, options);
+        }
         let plan =
             self.plan_read_operation(table, ReadKind::Select, selection, condition, options)?;
         self.execute_read(table, &plan, selection, condition, options)
+    }
+
+    fn execute_keys_in_read(
+        &mut self,
+        table: &str,
+        _selection: &Selection,
+        condition: Option<&Condition>,
+        options: &QueryOptions,
+    ) -> Result<StatementResult, EngineError> {
+        validate_read_keys_in(options, condition)?;
+        let keys_in = options.keys_in.as_ref().expect("keys_in checked above");
+        let keys = self.keys_in_items(table, keys_in)?;
+        self.record("batch_get_item", table);
+        let response = self.backend.batch_get_keys(table, &keys)?;
+        self.capture_capacity(response.capacity);
+        Ok(StatementResult::Items(response.output))
+    }
+
+    fn keys_in_items(&self, table: &str, keys_in: &[Vec<Value>]) -> Result<Vec<Item>, EngineError> {
+        let meta = self
+            .backend
+            .describe_table(table)?
+            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        keys_in_to_items(&meta, keys_in)
     }
 
     fn execute_read(
@@ -420,9 +474,46 @@ fn plan_error_to_engine_error(err: PlanError) -> EngineError {
 
 fn operation_to_backend(operation: Operation) -> ReadOperation {
     match operation {
-        Operation::Query | Operation::BatchGetKeys => ReadOperation::Query,
+        Operation::Query => ReadOperation::Query,
         Operation::Scan => ReadOperation::Scan,
+        Operation::BatchGetKeys => ReadOperation::BatchGetKeys,
     }
+}
+
+fn validate_read_keys_in(
+    options: &QueryOptions,
+    condition: Option<&Condition>,
+) -> Result<(), EngineError> {
+    if options.limit.is_some() {
+        return Err(EngineError::Runtime(
+            "Cannot use LIMIT with KEYS IN".to_string(),
+        ));
+    }
+    if options.using_index.is_some() {
+        return Err(EngineError::Runtime(
+            "Cannot use USING with KEYS IN".to_string(),
+        ));
+    }
+    if options.order_by.is_some() {
+        return Err(EngineError::Runtime(
+            "Cannot use ORDER BY with KEYS IN".to_string(),
+        ));
+    }
+    if condition.is_some() {
+        return Err(EngineError::Runtime(
+            "Cannot use WHERE with KEYS IN".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_mutation_keys_in(options: &QueryOptions) -> Result<(), EngineError> {
+    if options.using_index.is_some() {
+        return Err(EngineError::Runtime(
+            "Cannot use USING with KEYS IN".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
