@@ -10,10 +10,13 @@ around the parallel workstreams identified in `rust-plans/`:
 
 ## Implemented slice
 
-- Statement parsing for `CREATE TABLE`, `DROP TABLE`, `INSERT`, `DELETE`,
-  `SCAN`, `SELECT`, `DUMP SCHEMA`, `EXPLAIN`, and `ANALYZE`.
+- Phase 1 language-core parsing for `SELECT`, `SCAN`, `INSERT`, `UPDATE`,
+  `DELETE`, `CREATE`, `DROP`, `ALTER`, `DUMP`, `LOAD`, `EXPLAIN`, and
+  `ANALYZE`.
 - Literal parsing for strings, numbers, booleans, nulls, binary values, lists,
-  sets, and maps.
+  sets, maps, timestamps, and intervals.
+- Typed parser ASTs for constraints, selections, update expressions, indexes,
+  query options, and multiline fragment status.
 - In-memory table creation, insertion, scanning, simple `SELECT ... WHERE`
   filtering, `SCAN ... WHERE` filtering, `LIMIT`, `SCAN LIMIT`, boolean
   `WHERE` groups, deletion, schema dumping, and explain operation recording.

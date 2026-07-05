@@ -4,7 +4,7 @@ The rewrite should progress through compatibility gates. Each phase should leave
 behind runnable code, migrated tests, and a clear comparison point against the
 Python implementation.
 
-## Phase 1: Language core
+## Phase 1: Language core [DONE]
 
 Build the Rust parser and typed AST before touching DynamoDB execution.
 
