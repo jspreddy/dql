@@ -330,12 +330,12 @@ mod test_select {
     }
 
     #[test]
-    #[ignore = "needs CONSISTENT option support"]
     fn test_consistent() {
-        pending(
-            "tests/test_queries.py::TestSelect::test_consistent",
-            "CONSISTENT is deferred",
-        );
+        let mut engine = seeded_table();
+        let result = engine
+            .execute("SELECT CONSISTENT * FROM foobar WHERE id = 'a'")
+            .unwrap();
+        assert_items_len(result, 1);
     }
 
     #[test]
@@ -426,10 +426,38 @@ mod test_select {
     }
 
     ignored_select!(
-        test_count => "needs count selection",
         test_count_smart_index => "needs count selection and index planner",
-        test_count_filter => "needs count selection",
     );
+
+    #[test]
+    fn test_count() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 1), ('a', 2)",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SELECT count(*) FROM foobar WHERE id = 'a'")
+            .unwrap();
+        assert_eq!(result, StatementResult::Affected(2));
+    }
+
+    #[test]
+    fn test_count_filter() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, range NUMBER RANGE KEY, foo NUMBER);
+                 INSERT INTO foobar (id, range, foo) VALUES ('a', 1, 1), ('a', 2, 2)",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SELECT count(*) FROM foobar WHERE id = 'a' AND foo = 1")
+            .unwrap();
+        assert_eq!(result, StatementResult::Affected(1));
+    }
 
     #[test]
     fn test_explain_select() {

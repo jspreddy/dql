@@ -43,6 +43,7 @@ pub struct CapacityRecord {
 pub struct BackendResponse<T> {
     pub output: T,
     pub capacity: Option<CapacityRecord>,
+    pub count: Option<usize>,
 }
 
 impl<T> BackendResponse<T> {
@@ -55,6 +56,7 @@ impl<T> BackendResponse<T> {
                 read_units: 0.0,
                 write_units: 0.0,
             }),
+            count: None,
         }
     }
 }
@@ -112,6 +114,7 @@ pub trait DynamoBackend {
         &self,
         table: &str,
         keys: &[Item],
+        consistent: bool,
     ) -> Result<BackendResponse<Vec<Item>>, EngineError>;
     fn delete_by_keys(
         &mut self,

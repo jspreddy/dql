@@ -8,10 +8,11 @@ use crate::{
 };
 use aws_sdk_dynamodb::types::{
     GlobalSecondaryIndexUpdate, KeySchemaElement, KeyType as AwsKeyType, Projection,
-    ProjectionType, ProvisionedThroughput, ReturnConsumedCapacity, ReturnValue, WriteRequest,
+    ProjectionType, ProvisionedThroughput, ReturnConsumedCapacity, ReturnValue, Select,
+    WriteRequest,
 };
 use aws_sdk_dynamodb::Client;
-use dql_expr::{render_condition, render_update, RenderedExpression};
+use dql_expr::{render_condition, render_projection, render_update, RenderedExpression};
 use dql_models::TableMeta;
 use dql_parser::{AlterAction, Condition, QueryOptions, Selection, UpdateExpr};
 use std::collections::{BTreeMap, HashMap};
@@ -256,6 +257,7 @@ impl DynamoBackend for SdkBackend {
         Ok(BackendResponse {
             output: written,
             capacity: Some(capacity),
+            count: None,
         })
     }
 
@@ -280,14 +282,11 @@ impl DynamoBackend for SdkBackend {
                 request.index_name,
                 rendered_key.as_ref(),
                 rendered_filter.as_ref(),
-                request.options,
+                request,
             )?,
-            ReadOperation::Scan => self.scan_items(
-                table,
-                request.index_name,
-                rendered_filter.as_ref(),
-                request.options,
-            )?,
+            ReadOperation::Scan => {
+                self.scan_items(table, request.index_name, rendered_filter.as_ref(), request)?
+            }
             ReadOperation::BatchGetKeys => {
                 let keys_in = request.options.keys_in.as_ref().ok_or_else(|| {
                     EngineError::Runtime("batch get requires KEYS IN".to_string())
@@ -296,18 +295,21 @@ impl DynamoBackend for SdkBackend {
                     .describe_table(table)?
                     .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
                 let keys = keys_in_to_items(&meta, keys_in)?;
-                self.batch_get_items(table, &keys)?
+                self.batch_get_items(table, &keys, request.consistent)?
             }
         };
         if request.follow_up_batch_get {
-            items = self.batch_get_items(table, &items)?;
+            items = self.batch_get_items(table, &items, request.consistent)?;
         }
+        let count = matches!(request.selection, Selection::CountAll).then_some(items.len());
         let op_name = match request.operation {
             ReadOperation::Query => "query",
             ReadOperation::Scan => "scan",
             ReadOperation::BatchGetKeys => "batch_get_item",
         };
-        Ok(BackendResponse::new(op_name, table, items))
+        let mut response = BackendResponse::new(op_name, table, items);
+        response.count = count;
+        Ok(response)
     }
 
     fn delete_matching(
@@ -342,6 +344,7 @@ impl DynamoBackend for SdkBackend {
         Ok(BackendResponse {
             output: deleted,
             capacity: Some(capacity),
+            count: None,
         })
     }
 
@@ -404,6 +407,7 @@ impl DynamoBackend for SdkBackend {
         Ok(BackendResponse {
             output: updated,
             capacity: Some(capacity),
+            count: None,
         })
     }
 
@@ -411,8 +415,9 @@ impl DynamoBackend for SdkBackend {
         &self,
         table: &str,
         keys: &[Item],
+        consistent: bool,
     ) -> Result<BackendResponse<Vec<Item>>, EngineError> {
-        let items = self.batch_get_items(table, keys)?;
+        let items = self.batch_get_items(table, keys, consistent)?;
         Ok(BackendResponse::new("batch_get_item", table, items))
     }
 
@@ -467,6 +472,7 @@ impl DynamoBackend for SdkBackend {
         Ok(BackendResponse {
             output: deleted,
             capacity: Some(capacity),
+            count: None,
         })
     }
 
@@ -533,6 +539,7 @@ impl DynamoBackend for SdkBackend {
         Ok(BackendResponse {
             output: updated,
             capacity: Some(capacity),
+            count: None,
         })
     }
 
@@ -729,24 +736,31 @@ impl SdkBackend {
         index_name: Option<&str>,
         key_condition: Option<&RenderedExpression>,
         filter_condition: Option<&RenderedExpression>,
-        options: &QueryOptions,
+        request: &ReadRequest<'_>,
     ) -> Result<Vec<Item>, EngineError> {
+        let options = request.options;
+        let is_count = matches!(request.selection, Selection::CountAll);
         let mut items = Vec::new();
         let mut last_key: Option<HashMap<String, aws_sdk_dynamodb::types::AttributeValue>> = None;
         let item_limit = options.limit.unwrap_or(usize::MAX);
         let scan_limit = options.scan_limit.unwrap_or(usize::MAX);
         let mut scanned = 0usize;
+        let mut total_count = 0usize;
         loop {
-            let mut request = self
+            let mut query = self
                 .client
                 .query()
                 .table_name(table)
-                .return_consumed_capacity(ReturnConsumedCapacity::Total);
+                .return_consumed_capacity(ReturnConsumedCapacity::Total)
+                .consistent_read(request.consistent);
+            if is_count {
+                query = query.select(Select::Count);
+            }
             if let Some(index_name) = index_name {
-                request = request.index_name(index_name);
+                query = query.index_name(index_name);
             }
             if let Some(key_condition) = key_condition {
-                request = request
+                query = query
                     .key_condition_expression(key_condition.expression.clone())
                     .set_expression_attribute_names(names_to_hash(
                         key_condition.attribute_names.clone(),
@@ -759,7 +773,7 @@ impl SdkBackend {
                     )?));
             }
             if let Some(filter_condition) = filter_condition {
-                request = request
+                query = query
                     .filter_expression(filter_condition.expression.clone())
                     .set_expression_attribute_names(merge_names(
                         key_condition.and_then(|expr| expr.attribute_names.as_ref()),
@@ -770,28 +784,47 @@ impl SdkBackend {
                         filter_condition.expression_values.as_ref(),
                     )?);
             }
-            if let Some(last_key) = &last_key {
-                request = request.set_exclusive_start_key(Some(last_key.clone()));
+            if let Selection::Items(_) = request.selection {
+                let rendered = render_projection(request.selection);
+                if !rendered.expression.is_empty() {
+                    query = query
+                        .projection_expression(rendered.expression.clone())
+                        .set_expression_attribute_names(names_to_hash(
+                            rendered.attribute_names.clone(),
+                        ));
+                }
             }
-            let remaining = item_limit.saturating_sub(items.len());
+            if let Some(last_key) = &last_key {
+                query = query.set_exclusive_start_key(Some(last_key.clone()));
+            }
+            let remaining =
+                item_limit.saturating_sub(if is_count { total_count } else { items.len() });
             if remaining == 0 {
                 break;
             }
-            request = request.limit((remaining.min(100)) as i32);
+            query = query.limit((remaining.min(100)) as i32);
             let response = self
-                .block_on(async { request.send().await })
+                .block_on(async { query.send().await })
                 .map_err(Self::aws_error)?;
-            scanned += response.count() as usize;
-            for item in response.items() {
-                items.push(attributes_to_item(item)?);
-                if items.len() >= item_limit {
-                    break;
+            scanned += response.scanned_count() as usize;
+            if is_count {
+                total_count += response.count() as usize;
+            } else {
+                for item in response.items() {
+                    items.push(attributes_to_item(item)?);
+                    if items.len() >= item_limit {
+                        break;
+                    }
                 }
             }
             last_key = response.last_evaluated_key().cloned();
-            if items.len() >= item_limit || last_key.is_none() || scanned >= scan_limit {
+            let fetched = if is_count { total_count } else { items.len() };
+            if fetched >= item_limit || last_key.is_none() || scanned >= scan_limit {
                 break;
             }
+        }
+        if is_count {
+            items = (0..total_count).map(|_| Item::new()).collect();
         }
         Ok(items)
     }
@@ -801,24 +834,31 @@ impl SdkBackend {
         table: &str,
         index_name: Option<&str>,
         filter_condition: Option<&RenderedExpression>,
-        options: &QueryOptions,
+        request: &ReadRequest<'_>,
     ) -> Result<Vec<Item>, EngineError> {
+        let options = request.options;
+        let is_count = matches!(request.selection, Selection::CountAll);
         let mut items = Vec::new();
         let mut last_key: Option<HashMap<String, aws_sdk_dynamodb::types::AttributeValue>> = None;
         let item_limit = options.limit.unwrap_or(usize::MAX);
         let scan_limit = options.scan_limit.unwrap_or(usize::MAX);
         let mut scanned = 0usize;
+        let mut total_count = 0usize;
         loop {
-            let mut request = self
+            let mut scan = self
                 .client
                 .scan()
                 .table_name(table)
-                .return_consumed_capacity(ReturnConsumedCapacity::Total);
+                .return_consumed_capacity(ReturnConsumedCapacity::Total)
+                .consistent_read(request.consistent);
+            if is_count {
+                scan = scan.select(Select::Count);
+            }
             if let Some(index_name) = index_name {
-                request = request.index_name(index_name);
+                scan = scan.index_name(index_name);
             }
             if let Some(filter_condition) = filter_condition {
-                request = request
+                scan = scan
                     .filter_expression(filter_condition.expression.clone())
                     .set_expression_attribute_names(names_to_hash(
                         filter_condition.attribute_names.clone(),
@@ -830,28 +870,47 @@ impl SdkBackend {
                             .unwrap_or(&BTreeMap::new()),
                     )?));
             }
-            if let Some(last_key) = &last_key {
-                request = request.set_exclusive_start_key(Some(last_key.clone()));
+            if let Selection::Items(_) = request.selection {
+                let rendered = render_projection(request.selection);
+                if !rendered.expression.is_empty() {
+                    scan = scan
+                        .projection_expression(rendered.expression.clone())
+                        .set_expression_attribute_names(names_to_hash(
+                            rendered.attribute_names.clone(),
+                        ));
+                }
             }
-            let remaining = item_limit.saturating_sub(items.len());
+            if let Some(last_key) = &last_key {
+                scan = scan.set_exclusive_start_key(Some(last_key.clone()));
+            }
+            let remaining =
+                item_limit.saturating_sub(if is_count { total_count } else { items.len() });
             if remaining == 0 {
                 break;
             }
-            request = request.limit((remaining.min(100)) as i32);
+            scan = scan.limit((remaining.min(100)) as i32);
             let response = self
-                .block_on(async { request.send().await })
+                .block_on(async { scan.send().await })
                 .map_err(Self::aws_error)?;
             scanned += response.scanned_count() as usize;
-            for item in response.items() {
-                items.push(attributes_to_item(item)?);
-                if items.len() >= item_limit {
-                    break;
+            if is_count {
+                total_count += response.count() as usize;
+            } else {
+                for item in response.items() {
+                    items.push(attributes_to_item(item)?);
+                    if items.len() >= item_limit {
+                        break;
+                    }
                 }
             }
             last_key = response.last_evaluated_key().cloned();
-            if items.len() >= item_limit || last_key.is_none() || scanned >= scan_limit {
+            let fetched = if is_count { total_count } else { items.len() };
+            if fetched >= item_limit || last_key.is_none() || scanned >= scan_limit {
                 break;
             }
+        }
+        if is_count {
+            items = (0..total_count).map(|_| Item::new()).collect();
         }
         Ok(items)
     }
@@ -860,6 +919,7 @@ impl SdkBackend {
         &self,
         table: &str,
         partial_items: &[Item],
+        consistent: bool,
     ) -> Result<Vec<Item>, EngineError> {
         let meta = self
             .describe_table(table)?
@@ -872,6 +932,7 @@ impl SdkBackend {
                 .collect::<Result<Vec<_>, _>>()?;
             let keys_and_attributes = aws_sdk_dynamodb::types::KeysAndAttributes::builder()
                 .set_keys(Some(keys))
+                .consistent_read(consistent)
                 .build()
                 .map_err(|err| EngineError::Runtime(err.to_string()))?;
             let response = self

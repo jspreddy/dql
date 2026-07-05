@@ -114,25 +114,36 @@ impl DynamoBackend for MemoryBackend {
                     EngineError::Runtime("batch get requires KEYS IN".to_string())
                 })?;
             let keys = keys_in_to_items(&table_data.meta, keys_in)?;
-            return self.batch_get_keys(table, &keys);
+            return self.batch_get_keys(table, &keys, request.consistent);
         }
         let condition = request
             .filter_condition
             .or(request.key_condition)
             .or(request.condition);
         let items = apply_read_options(table_data.items.iter(), condition, &request.options);
+        let count = matches!(request.selection, Selection::CountAll).then_some(items.len());
         let op_name = match request.operation {
             ReadOperation::Query => "query",
             ReadOperation::Scan => "scan",
             ReadOperation::BatchGetKeys => "batch_get_item",
         };
-        Ok(BackendResponse::new(op_name, table, items))
+        Ok(BackendResponse {
+            output: items,
+            capacity: Some(CapacityRecord {
+                operation: op_name.to_string(),
+                table: table.to_string(),
+                read_units: 0.0,
+                write_units: 0.0,
+            }),
+            count,
+        })
     }
 
     fn batch_get_keys(
         &self,
         table: &str,
         keys: &[Item],
+        _consistent: bool,
     ) -> Result<BackendResponse<Vec<Item>>, EngineError> {
         let table_data = self
             .tables

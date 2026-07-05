@@ -7,7 +7,8 @@ use crate::{
 use dql_expr::{render_condition, render_projection};
 use dql_models::{plan_read, Operation, PlanError, PlanInput, QueryPlan, ReadKind, TableMeta};
 use dql_parser::{
-    parse_script, Condition, InsertForm, QueryOptions, Selection, Statement, UpdateExpr, Value,
+    parse_script, Condition, InsertForm, OrderBy, QueryOptions, Selection, Statement, UpdateExpr,
+    Value,
 };
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -256,7 +257,7 @@ impl<B: DynamoBackend> Engine<B> {
     fn execute_keys_in_read(
         &mut self,
         table: &str,
-        _selection: &Selection,
+        selection: &Selection,
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
@@ -264,9 +265,12 @@ impl<B: DynamoBackend> Engine<B> {
         let keys_in = options.keys_in.as_ref().expect("keys_in checked above");
         let keys = self.keys_in_items(table, keys_in)?;
         self.record("batch_get_item", table);
-        let response = self.backend.batch_get_keys(table, &keys)?;
-        self.capture_capacity(response.capacity);
-        Ok(StatementResult::Items(response.output))
+        let response = self
+            .backend
+            .batch_get_keys(table, &keys, options.consistent)?;
+        let capacity = response.capacity.clone();
+        self.capture_capacity(capacity);
+        finalize_read_result(response, selection, options.order_by.as_ref())
     }
 
     fn keys_in_items(&self, table: &str, keys_in: &[Vec<Value>]) -> Result<Vec<Item>, EngineError> {
@@ -309,8 +313,9 @@ impl<B: DynamoBackend> Engine<B> {
             follow_up_batch_get: plan.follow_up_batch_get,
         };
         let response = self.backend.execute_read(table, &request)?;
-        self.capture_capacity(response.capacity);
-        Ok(StatementResult::Items(response.output))
+        let capacity = response.capacity.clone();
+        self.capture_capacity(capacity);
+        finalize_read_result(response, selection, options.order_by.as_ref())
     }
 
     fn alter_table(
@@ -514,6 +519,51 @@ fn validate_mutation_keys_in(options: &QueryOptions) -> Result<(), EngineError> 
         ));
     }
     Ok(())
+}
+
+fn finalize_read_result(
+    mut response: BackendResponse<Vec<Item>>,
+    selection: &Selection,
+    order_by: Option<&OrderBy>,
+) -> Result<StatementResult, EngineError> {
+    if matches!(selection, Selection::CountAll) {
+        let count = response.count.unwrap_or(response.output.len());
+        return Ok(StatementResult::Affected(count));
+    }
+    if let Some(order_by) = order_by {
+        sort_items(&mut response.output, order_by);
+    }
+    Ok(StatementResult::Items(response.output))
+}
+
+fn sort_items(items: &mut [Item], order_by: &OrderBy) {
+    items.sort_by(|left, right| {
+        let left_value = left.get(&order_by.field);
+        let right_value = right.get(&order_by.field);
+        let ordering = compare_sort_values(left_value, right_value);
+        if order_by.descending {
+            ordering.reverse()
+        } else {
+            ordering
+        }
+    });
+}
+
+fn compare_sort_values(left: Option<&Value>, right: Option<&Value>) -> std::cmp::Ordering {
+    match (left, right) {
+        (None, None) => std::cmp::Ordering::Equal,
+        (None, Some(_)) => std::cmp::Ordering::Less,
+        (Some(_), None) => std::cmp::Ordering::Greater,
+        (Some(left), Some(right)) => match (left, right) {
+            (Value::Number(left), Value::Number(right)) => left
+                .parse::<f64>()
+                .unwrap_or(0.0)
+                .partial_cmp(&right.parse::<f64>().unwrap_or(0.0))
+                .unwrap_or(std::cmp::Ordering::Equal),
+            (Value::String(left), Value::String(right)) => left.cmp(right),
+            _ => std::cmp::Ordering::Equal,
+        },
+    }
 }
 
 #[cfg(test)]
