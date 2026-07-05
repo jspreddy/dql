@@ -1,6 +1,7 @@
+use dql_models::TableMeta;
 use dql_parser::{
-    parse_script, Attribute, AttributeType, CompareOp, Condition, ConditionOperand, KeyType,
-    ParseError, QueryOptions, Statement, Value,
+    parse_script, AttributeType, CompareOp, Condition, ConditionOperand, KeyType, ParseError,
+    QueryOptions, Statement, Value,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
@@ -27,6 +28,40 @@ pub enum StatementResult {
     Affected(usize),
     Items(Vec<Item>),
     Schema(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackendCall {
+    pub operation: String,
+    pub table: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CapacityRecord {
+    pub operation: String,
+    pub table: String,
+    pub read_units: f64,
+    pub write_units: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackendResponse<T> {
+    pub output: T,
+    pub capacity: Option<CapacityRecord>,
+}
+
+impl<T> BackendResponse<T> {
+    fn new(operation: &str, table: &str, output: T) -> Self {
+        Self {
+            output,
+            capacity: Some(CapacityRecord {
+                operation: operation.to_string(),
+                table: table.to_string(),
+                read_units: 0.0,
+                write_units: 0.0,
+            }),
+        }
+    }
 }
 
 impl StatementResult {
@@ -88,24 +123,173 @@ impl From<ParseError> for EngineError {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct TableSchema {
-    pub name: String,
-    pub attributes: Vec<Attribute>,
-    pub hash_key: String,
-    pub range_key: Option<String>,
+struct TableData {
+    meta: TableMeta,
+    items: Vec<Item>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct TableData {
-    schema: TableSchema,
-    items: Vec<Item>,
+pub trait DynamoBackend {
+    fn list_tables(&self) -> Vec<String>;
+    fn describe_table(&self, table: &str) -> Option<TableMeta>;
+    fn create_table(
+        &mut self,
+        meta: TableMeta,
+        if_not_exists: bool,
+    ) -> Result<BackendResponse<String>, EngineError>;
+    fn delete_table(
+        &mut self,
+        table: &str,
+        if_exists: bool,
+    ) -> Result<BackendResponse<String>, EngineError>;
+    fn batch_write(
+        &mut self,
+        table: &str,
+        items: Vec<Item>,
+    ) -> Result<BackendResponse<usize>, EngineError>;
+    fn read(
+        &self,
+        operation: ReadOperation,
+        table: &str,
+        condition: Option<&Condition>,
+        options: &QueryOptions,
+    ) -> Result<BackendResponse<Vec<Item>>, EngineError>;
+    fn delete_matching(
+        &mut self,
+        table: &str,
+        condition: Option<&Condition>,
+    ) -> Result<BackendResponse<usize>, EngineError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadOperation {
+    Query,
+    Scan,
+}
+
+#[derive(Debug, Default)]
+pub struct MemoryBackend {
+    tables: HashMap<String, TableData>,
+}
+
+impl DynamoBackend for MemoryBackend {
+    fn list_tables(&self) -> Vec<String> {
+        let mut names: Vec<_> = self.tables.keys().cloned().collect();
+        names.sort();
+        names
+    }
+
+    fn describe_table(&self, table: &str) -> Option<TableMeta> {
+        self.tables.get(table).map(|table| table.meta.clone())
+    }
+
+    fn create_table(
+        &mut self,
+        meta: TableMeta,
+        if_not_exists: bool,
+    ) -> Result<BackendResponse<String>, EngineError> {
+        let name = meta.name.clone();
+        if self.tables.contains_key(&name) {
+            if if_not_exists {
+                return Ok(BackendResponse::new(
+                    "create_table",
+                    &name,
+                    format!("Table '{name}' already exists"),
+                ));
+            }
+            return Err(EngineError::Runtime(format!(
+                "Table '{name}' already exists"
+            )));
+        }
+        self.tables.insert(
+            name.clone(),
+            TableData {
+                meta,
+                items: Vec::new(),
+            },
+        );
+        Ok(BackendResponse::new(
+            "create_table",
+            &name,
+            format!("Created table '{name}'"),
+        ))
+    }
+
+    fn delete_table(
+        &mut self,
+        table: &str,
+        if_exists: bool,
+    ) -> Result<BackendResponse<String>, EngineError> {
+        let output = if self.tables.remove(table).is_some() {
+            format!("Dropped table '{table}'")
+        } else if if_exists {
+            format!("Table '{table}' did not exist")
+        } else {
+            return Err(EngineError::Runtime(format!("Table '{table}' not found")));
+        };
+        Ok(BackendResponse::new("delete_table", table, output))
+    }
+
+    fn batch_write(
+        &mut self,
+        table: &str,
+        items: Vec<Item>,
+    ) -> Result<BackendResponse<usize>, EngineError> {
+        let table_data = self
+            .tables
+            .get_mut(table)
+            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let count = items.len();
+        table_data.items.extend(items);
+        Ok(BackendResponse::new("batch_write_item", table, count))
+    }
+
+    fn read(
+        &self,
+        operation: ReadOperation,
+        table: &str,
+        condition: Option<&Condition>,
+        options: &QueryOptions,
+    ) -> Result<BackendResponse<Vec<Item>>, EngineError> {
+        let table_data = self
+            .tables
+            .get(table)
+            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let items = apply_read_options(table_data.items.iter(), condition, options);
+        let op_name = match operation {
+            ReadOperation::Query => "query",
+            ReadOperation::Scan => "scan",
+        };
+        Ok(BackendResponse::new(op_name, table, items))
+    }
+
+    fn delete_matching(
+        &mut self,
+        table: &str,
+        condition: Option<&Condition>,
+    ) -> Result<BackendResponse<usize>, EngineError> {
+        let table_data = self
+            .tables
+            .get_mut(table)
+            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let before = table_data.items.len();
+        table_data
+            .items
+            .retain(|item| !condition.is_none_or(|condition| matches_condition(item, condition)));
+        Ok(BackendResponse::new(
+            "delete_item",
+            table,
+            before - table_data.items.len(),
+        ))
+    }
 }
 
 #[derive(Debug, Default)]
 pub struct InMemoryEngine {
-    tables: HashMap<String, TableData>,
+    backend: MemoryBackend,
     explain: bool,
     explain_log: Vec<String>,
+    analyzing: bool,
+    consumed_capacities: Vec<CapacityRecord>,
 }
 
 impl InMemoryEngine {
@@ -116,6 +300,7 @@ impl InMemoryEngine {
     pub fn execute(&mut self, input: &str) -> Result<StatementResult, EngineError> {
         let statements = parse_script(input)?;
         let mut last = StatementResult::None;
+        self.consumed_capacities.clear();
         for statement in &statements {
             last = self.run(statement)?;
         }
@@ -124,12 +309,9 @@ impl InMemoryEngine {
 
     pub fn run(&mut self, statement: &Statement) -> Result<StatementResult, EngineError> {
         match statement {
-            Statement::CreateTable {
-                if_not_exists,
-                name,
-                attributes,
-                ..
-            } => self.create_table(*if_not_exists, name, attributes),
+            Statement::CreateTable { if_not_exists, .. } => {
+                self.create_table(statement, *if_not_exists)
+            }
             Statement::DropTable { if_exists, name } => self.drop_table(*if_exists, name),
             Statement::Insert {
                 table,
@@ -160,69 +342,36 @@ impl InMemoryEngine {
                 "LOAD execution is not implemented in the in-memory scaffold".to_string(),
             )),
             Statement::Explain(inner) => self.explain(inner),
-            Statement::Analyze(inner) => self.run(inner),
+            Statement::Analyze(inner) => self.analyze(inner),
         }
     }
 
     pub fn table_names(&self) -> Vec<String> {
-        let mut names: Vec<_> = self.tables.keys().cloned().collect();
-        names.sort();
-        names
+        self.backend.list_tables()
+    }
+
+    pub fn consumed_capacities(&self) -> &[CapacityRecord] {
+        &self.consumed_capacities
     }
 
     fn create_table(
         &mut self,
+        statement: &Statement,
         if_not_exists: bool,
-        name: &str,
-        attributes: &[Attribute],
     ) -> Result<StatementResult, EngineError> {
-        self.record("create_table", name);
-        if self.tables.contains_key(name) {
-            if if_not_exists {
-                return Ok(StatementResult::Status(format!(
-                    "Table '{name}' already exists"
-                )));
-            }
-            return Err(EngineError::Runtime(format!(
-                "Table '{name}' already exists"
-            )));
-        }
-        let hash_key = attributes
-            .iter()
-            .find(|attribute| attribute.key_type == Some(KeyType::Hash))
-            .map(|attribute| attribute.name.clone())
-            .ok_or_else(|| EngineError::Runtime("CREATE TABLE requires a hash key".to_string()))?;
-        let range_key = attributes
-            .iter()
-            .find(|attribute| attribute.key_type == Some(KeyType::Range))
-            .map(|attribute| attribute.name.clone());
-        let schema = TableSchema {
-            name: name.to_string(),
-            attributes: attributes.to_vec(),
-            hash_key,
-            range_key,
-        };
-        self.tables.insert(
-            name.to_string(),
-            TableData {
-                schema,
-                items: Vec::new(),
-            },
-        );
-        Ok(StatementResult::Status(format!("Created table '{name}'")))
+        let meta = TableMeta::from_create_statement(statement)
+            .map_err(|err| EngineError::Runtime(err.to_string()))?;
+        self.record("create_table", &meta.name);
+        let response = self.backend.create_table(meta, if_not_exists)?;
+        self.capture_capacity(response.capacity);
+        Ok(StatementResult::Status(response.output))
     }
 
     fn drop_table(&mut self, if_exists: bool, name: &str) -> Result<StatementResult, EngineError> {
         self.record("delete_table", name);
-        if self.tables.remove(name).is_some() {
-            Ok(StatementResult::Status(format!("Dropped table '{name}'")))
-        } else if if_exists {
-            Ok(StatementResult::Status(format!(
-                "Table '{name}' did not exist"
-            )))
-        } else {
-            Err(EngineError::Runtime(format!("Table '{name}' not found")))
-        }
+        let response = self.backend.delete_table(name, if_exists)?;
+        self.capture_capacity(response.capacity);
+        Ok(StatementResult::Status(response.output))
     }
 
     fn insert(
@@ -232,10 +381,7 @@ impl InMemoryEngine {
         rows: &[Vec<Value>],
     ) -> Result<StatementResult, EngineError> {
         self.record("batch_write_item", table);
-        let table_data = self
-            .tables
-            .get_mut(table)
-            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let mut items = Vec::new();
         for row in rows {
             if row.len() != columns.len() {
                 return Err(EngineError::Runtime(format!(
@@ -246,9 +392,11 @@ impl InMemoryEngine {
             for (column, value) in columns.iter().zip(row.iter()) {
                 item.insert(column.clone(), value.clone());
             }
-            table_data.items.push(item);
+            items.push(item);
         }
-        Ok(StatementResult::Affected(rows.len()))
+        let response = self.backend.batch_write(table, items)?;
+        self.capture_capacity(response.capacity);
+        Ok(StatementResult::Affected(response.output))
     }
 
     fn delete(
@@ -262,15 +410,9 @@ impl InMemoryEngine {
             self.record("scan", table);
         }
         self.record("delete_item", table);
-        let table_data = self
-            .tables
-            .get_mut(table)
-            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
-        let before = table_data.items.len();
-        table_data
-            .items
-            .retain(|item| !condition.is_none_or(|condition| matches_condition(item, condition)));
-        Ok(StatementResult::Affected(before - table_data.items.len()))
+        let response = self.backend.delete_matching(table, condition)?;
+        self.capture_capacity(response.capacity);
+        Ok(StatementResult::Affected(response.output))
     }
 
     fn scan(
@@ -280,12 +422,11 @@ impl InMemoryEngine {
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
         self.record("scan", table);
-        let table_data = self
-            .tables
-            .get(table)
-            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
-        let items = apply_read_options(table_data.items.iter(), condition, options);
-        Ok(StatementResult::Items(items))
+        let response = self
+            .backend
+            .read(ReadOperation::Scan, table, condition, options)?;
+        self.capture_capacity(response.capacity);
+        Ok(StatementResult::Items(response.output))
     }
 
     fn select(
@@ -295,12 +436,11 @@ impl InMemoryEngine {
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
         self.record("query", table);
-        let table_data = self
-            .tables
-            .get(table)
-            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
-        let items = apply_read_options(table_data.items.iter(), condition, options);
-        Ok(StatementResult::Items(items))
+        let response = self
+            .backend
+            .read(ReadOperation::Query, table, condition, options)?;
+        self.capture_capacity(response.capacity);
+        Ok(StatementResult::Items(response.output))
     }
 
     fn dump_schema(&mut self, tables: Option<&[String]>) -> Result<StatementResult, EngineError> {
@@ -312,10 +452,10 @@ impl InMemoryEngine {
         let mut lines = Vec::new();
         for name in names {
             let table = self
-                .tables
-                .get(&name)
+                .backend
+                .describe_table(&name)
                 .ok_or_else(|| EngineError::Runtime(format!("Table '{name}' not found")))?;
-            lines.push(schema_to_dql(&table.schema));
+            lines.push(schema_to_dql(&table));
         }
         Ok(StatementResult::Schema(lines.join("\n")))
     }
@@ -337,6 +477,22 @@ impl InMemoryEngine {
     fn record(&mut self, operation: &str, target: &str) {
         if self.explain {
             self.explain_log.push(format!("{operation} {target}"));
+        }
+    }
+
+    fn analyze(&mut self, inner: &Statement) -> Result<StatementResult, EngineError> {
+        let previous = self.analyzing;
+        self.analyzing = true;
+        let result = self.run(inner);
+        self.analyzing = previous;
+        result
+    }
+
+    fn capture_capacity(&mut self, capacity: Option<CapacityRecord>) {
+        if self.analyzing {
+            if let Some(capacity) = capacity {
+                self.consumed_capacities.push(capacity);
+            }
         }
     }
 }
@@ -412,20 +568,36 @@ fn compare_order(left: &Value, right: &Value) -> Option<std::cmp::Ordering> {
     }
 }
 
-fn schema_to_dql(schema: &TableSchema) -> String {
-    let attrs = schema
-        .attributes
-        .iter()
-        .map(attribute_to_dql)
-        .collect::<Vec<_>>()
-        .join(", ");
-    format!("CREATE TABLE {} ({})", schema.name, attrs)
+fn schema_to_dql(meta: &TableMeta) -> String {
+    let mut ordered = Vec::new();
+    if let Some(field) = meta.attrs.get(&meta.hash_key) {
+        ordered.push(table_field_to_dql(field));
+    }
+    if let Some(range_key) = &meta.range_key {
+        if let Some(field) = meta.attrs.get(range_key) {
+            ordered.push(table_field_to_dql(field));
+        }
+    }
+    ordered.extend(
+        meta.attrs
+            .iter()
+            .filter(|(name, _)| {
+                *name != &meta.hash_key
+                    && meta
+                        .range_key
+                        .as_ref()
+                        .is_none_or(|range_key| *name != range_key)
+            })
+            .map(|(_, field)| table_field_to_dql(field)),
+    );
+    let attrs = ordered.join(", ");
+    format!("CREATE TABLE {} ({})", meta.name, attrs)
 }
 
-fn attribute_to_dql(attribute: &Attribute) -> String {
+fn table_field_to_dql(attribute: &dql_models::TableField) -> String {
     let mut parts = vec![
         attribute.name.clone(),
-        match &attribute.attr_type {
+        match &attribute.data_type {
             AttributeType::String => "STRING".to_string(),
             AttributeType::Number => "NUMBER".to_string(),
             AttributeType::Binary => "BINARY".to_string(),
@@ -618,5 +790,31 @@ mod tests {
             result.to_json_lines(),
             "{\n    \"bin\": \"YQ==\",\n    \"id\": \"x\"\n}\n"
         );
+    }
+
+    #[test]
+    fn analyze_records_backend_capacity() {
+        let mut engine = InMemoryEngine::new();
+        engine
+            .execute(
+                "CREATE TABLE t (id STRING HASH KEY);
+                 ANALYZE INSERT INTO t (id) VALUES ('a')",
+            )
+            .unwrap();
+        assert_eq!(engine.consumed_capacities().len(), 1);
+        assert_eq!(
+            engine.consumed_capacities()[0].operation,
+            "batch_write_item"
+        );
+    }
+
+    #[test]
+    fn backend_describes_created_table_metadata() {
+        let mut backend = MemoryBackend::default();
+        let statement = dql_parser::parse_statement("CREATE TABLE t (id STRING HASH KEY)").unwrap();
+        let meta = TableMeta::from_create_statement(&statement).unwrap();
+        backend.create_table(meta, false).unwrap();
+        let desc = backend.describe_table("t").unwrap();
+        assert_eq!(desc.hash_key, "id");
     }
 }
