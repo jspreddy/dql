@@ -418,6 +418,38 @@ impl<B: DynamoBackend> Engine<B> {
                         .push(json_value_to_item(&value).map_err(|err| EngineError::Runtime(err))?);
                 }
             }
+            "csv" => {
+                let mut lines = reader.lines();
+                let header = lines
+                    .next()
+                    .transpose()
+                    .map_err(|err| EngineError::Runtime(err.to_string()))?
+                    .ok_or_else(|| {
+                        EngineError::Runtime("CSV file is missing a header row".to_string())
+                    })?;
+                let headers = header
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|field| !field.is_empty())
+                    .map(str::to_string)
+                    .collect::<Vec<_>>();
+                for line in lines {
+                    let line = line.map_err(|err| EngineError::Runtime(err.to_string()))?;
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    let fields = line
+                        .split(',')
+                        .map(str::trim)
+                        .map(str::to_string)
+                        .collect::<Vec<_>>();
+                    let mut item = Item::new();
+                    for (column, value) in headers.iter().zip(fields.iter()) {
+                        item.insert(column.clone(), csv_field_to_value(value));
+                    }
+                    items.push(item);
+                }
+            }
             other => {
                 return Err(EngineError::Runtime(format!(
                     "unsupported LOAD file format '{other}'"
@@ -703,6 +735,14 @@ fn normalize_insert_value(value: Value) -> Value {
     }
 }
 
+fn csv_field_to_value(field: &str) -> Value {
+    if field.parse::<f64>().is_ok() {
+        Value::Number(field.to_string())
+    } else {
+        Value::String(field.to_string())
+    }
+}
+
 fn apply_projection(items: &mut [Item], selection: &Selection) {
     let Selection::Items(projections) = selection else {
         return;
@@ -891,6 +931,35 @@ mod tests {
             }
             other => panic!("unexpected result: {other:?}"),
         }
+    }
+
+    #[test]
+    fn load_csv_writes_items() {
+        let dir = std::env::temp_dir().join("dql_engine_load_csv");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("items.csv");
+        std::fs::write(&path, "id,foo\na,1\nb,2\n").unwrap();
+
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE destination (id STRING HASH KEY)")
+            .unwrap();
+        engine
+            .execute(&format!("LOAD '{}' INTO destination", path.display()))
+            .unwrap();
+        let result = engine.execute("SCAN * FROM destination").unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 2);
+                let a = items
+                    .iter()
+                    .find(|item| item.get("id") == Some(&Value::String("a".to_string())))
+                    .unwrap();
+                assert_eq!(a.get("foo"), Some(&Value::Number("1".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
