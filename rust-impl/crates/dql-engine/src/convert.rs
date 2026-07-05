@@ -93,6 +93,7 @@ pub fn table_meta_from_description(table: &TableDescription) -> Result<TableMeta
                 is_global: false,
                 hash_key: hash_key.clone(),
                 range_key: index_range_key.clone(),
+                projection: aws_projection_to_model(index.projection()),
                 projected_attributes: projection_to_attributes(
                     index.projection(),
                     &hash_key,
@@ -469,35 +470,7 @@ fn model_projection_to_aws(projection: &ModelProjectionType) -> Projection {
 }
 
 fn projection_from_query_index(index: &QueryIndex) -> Projection {
-    match &index.projected_attributes {
-        None => Projection::builder()
-            .projection_type(ProjectionType::All)
-            .build(),
-        Some(values) => {
-            let mut key_attrs = BTreeSet::from([index.hash_key.clone()]);
-            if let Some(range_key) = &index.range_key {
-                key_attrs.insert(range_key.clone());
-            }
-            if values.len() == key_attrs.len()
-                && values.iter().all(|value| key_attrs.contains(value))
-            {
-                Projection::builder()
-                    .projection_type(ProjectionType::KeysOnly)
-                    .build()
-            } else {
-                Projection::builder()
-                    .projection_type(ProjectionType::Include)
-                    .set_non_key_attributes(Some(
-                        values
-                            .iter()
-                            .filter(|value| !key_attrs.contains(*value))
-                            .cloned()
-                            .collect(),
-                    ))
-                    .build()
-            }
-        }
-    }
+    model_projection_to_aws(&index.projection)
 }
 
 fn projection_to_attributes(

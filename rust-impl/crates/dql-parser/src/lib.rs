@@ -65,7 +65,9 @@ pub struct GlobalIndex {
     pub name: String,
     pub projection: ProjectionKind,
     pub hash_key: String,
+    pub hash_key_type: Option<AttributeType>,
     pub range_key: Option<String>,
+    pub range_key_type: Option<AttributeType>,
     pub includes: Vec<String>,
     pub throughput: Option<Throughput>,
 }
@@ -657,6 +659,7 @@ impl Parser {
             } else if self.accept_keyword("INCLUDE") {
                 ProjectionKind::Include
             } else {
+                let _ = self.accept_keyword("ALL");
                 ProjectionKind::All
             };
             self.expect_keyword("INDEX")?;
@@ -673,8 +676,9 @@ impl Parser {
         let name = self.expect_string_or_ident()?;
         self.expect_symbol(',')?;
         let hash_key = self.expect_ident()?;
-        let _ = self.accept_type_name();
+        let hash_key_type = self.parse_optional_attribute_type();
         let mut range_key = None;
+        let mut range_key_type = None;
         let mut includes = Vec::new();
         let mut throughput = None;
         while self.accept_symbol(',') {
@@ -684,10 +688,11 @@ impl Parser {
                 includes = self.parse_string_list()?;
             } else {
                 let part = self.expect_ident()?;
-                let _ = self.accept_type_name();
+                let key_type = self.parse_optional_attribute_type();
                 if range_key.replace(part).is_some() {
                     return Err(self.error("too many global index key fields"));
                 }
+                range_key_type = key_type;
             }
         }
         self.expect_symbol(')')?;
@@ -695,7 +700,9 @@ impl Parser {
             name,
             projection,
             hash_key,
+            hash_key_type,
             range_key,
+            range_key_type,
             includes,
             throughput,
         })
@@ -1484,6 +1491,32 @@ impl Parser {
             }
             None => Err(self.error("expected string or identifier")),
         }
+    }
+
+    fn parse_optional_attribute_type(&mut self) -> Option<AttributeType> {
+        if !self.accept_type_name() {
+            return None;
+        }
+        let ident = self.previous_ident()?;
+        Some(match ident.to_ascii_uppercase().as_str() {
+            "STRING" => AttributeType::String,
+            "NUMBER" => AttributeType::Number,
+            "BINARY" => AttributeType::Binary,
+            "BOOL" | "BOOLEAN" => AttributeType::Bool,
+            _ => AttributeType::Other(ident),
+        })
+    }
+
+    fn previous_ident(&self) -> Option<String> {
+        self.tokens
+            .get(self.pos.saturating_sub(1))
+            .and_then(|token| {
+                if let Token::Ident(value) = token {
+                    Some(value.clone())
+                } else {
+                    None
+                }
+            })
     }
 
     fn accept_type_name(&mut self) -> bool {

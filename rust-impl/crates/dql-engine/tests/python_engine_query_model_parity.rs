@@ -797,22 +797,50 @@ mod test_select_scan {
 
 mod test_create {
     use super::*;
+    use dql_engine::DynamoBackend;
+    use dql_models::{ProjectionType, TableMeta};
+    use dql_parser::AttributeType;
+
+    fn describe_table(engine: &InMemoryEngine, name: &str) -> TableMeta {
+        engine
+            .backend()
+            .describe_table(name)
+            .unwrap()
+            .expect("table should exist")
+    }
+
+    fn dump_schema(engine: &mut InMemoryEngine) -> String {
+        match engine.execute("DUMP SCHEMA").unwrap() {
+            StatementResult::Schema(schema) => schema,
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
 
     #[test]
     fn test_create() {
         let mut engine = InMemoryEngine::default();
         engine
-            .execute("CREATE TABLE foobar (id STRING HASH KEY, range NUMBER RANGE KEY)")
+            .execute(
+                "CREATE TABLE foobar (owner STRING HASH KEY, id BINARY RANGE KEY, ts NUMBER INDEX('ts-index'))",
+            )
             .unwrap();
-        assert_eq!(engine.table_names().unwrap(), vec!["foobar".to_string()]);
+        let desc = describe_table(&engine, "foobar");
+        assert_eq!(desc.hash_key, "owner");
+        assert_eq!(desc.range_key.as_deref(), Some("id"));
+        assert!(desc.local_indexes.contains_key("ts-index"));
     }
 
     #[test]
     fn test_create_throughput() {
         let mut engine = InMemoryEngine::default();
         engine
-            .execute("CREATE TABLE foobar (id STRING HASH KEY, THROUGHPUT (1, 1))")
+            .execute("CREATE TABLE foobar (id STRING HASH KEY, THROUGHPUT (1, 2))")
             .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        assert_eq!(
+            desc.throughput.as_ref().map(|tp| tp.read.clone()),
+            Some(Value::Number("1".to_string()))
+        );
     }
 
     #[test]
@@ -826,27 +854,130 @@ mod test_create {
             .unwrap();
     }
 
-    macro_rules! ignored_create {
-        ($($name:ident => $reason:expr),+ $(,)?) => {
-            $(
-                #[test]
-                #[ignore = $reason]
-                fn $name() {
-                    pending(concat!("tests/test_queries.py::TestCreate::", stringify!($name)), $reason);
-                }
-            )+
-        };
+    #[test]
+    fn test_create_keys_index() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (owner STRING HASH KEY, id BINARY RANGE KEY, ts NUMBER KEYS INDEX('ts-index'))",
+            )
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        let index = desc.local_indexes.get("ts-index").unwrap();
+        assert_eq!(index.projection, ProjectionType::KeysOnly);
     }
 
-    ignored_create!(
-        test_create_keys_index => "needs LSI metadata",
-        test_create_include_index => "needs LSI projection metadata",
-        test_create_global_indexes => "needs GSI metadata",
-        test_create_global_index_types => "needs GSI key type metadata",
-        test_create_global_index_no_range => "needs GSI metadata",
-        test_create_global_keys_index => "needs GSI projection metadata",
-        test_create_global_include_index => "needs GSI projection metadata",
-    );
+    #[test]
+    fn test_create_include_index() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (owner STRING HASH KEY, id BINARY RANGE KEY, ts NUMBER INCLUDE INDEX('ts-index', ['foo', 'bar']))",
+            )
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        let index = desc.local_indexes.get("ts-index").unwrap();
+        assert!(matches!(index.projection, ProjectionType::Include(_)));
+    }
+
+    #[test]
+    fn test_create_global_indexes() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, foo NUMBER RANGE KEY, THROUGHPUT (1, 1)) \
+                 GLOBAL INDEX ('myindex', foo, id, THROUGHPUT (1, 2))",
+            )
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        let index = desc.global_indexes.get("myindex").unwrap();
+        assert_eq!(index.hash_key.name, "foo");
+        assert_eq!(
+            index.range_key.as_ref().map(|field| field.name.as_str()),
+            Some("id")
+        );
+    }
+
+    #[test]
+    fn test_create_global_index_types() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, foo NUMBER RANGE KEY, THROUGHPUT (1, 1)) \
+                 GLOBAL INDEX ('myindex', foo number, baz string, THROUGHPUT (1, 2))",
+            )
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        let index = desc.global_indexes.get("myindex").unwrap();
+        assert_eq!(index.hash_key.data_type, AttributeType::Number);
+        assert_eq!(
+            index
+                .range_key
+                .as_ref()
+                .map(|field| field.data_type.clone()),
+            Some(AttributeType::String)
+        );
+        assert!(desc.attrs.contains_key("baz"));
+    }
+
+    #[test]
+    fn test_create_global_index_no_range() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, foo NUMBER, THROUGHPUT (1, 1)) \
+                 GLOBAL ALL INDEX ('myindex', foo, THROUGHPUT (1, 2))",
+            )
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        let index = desc.global_indexes.get("myindex").unwrap();
+        assert_eq!(index.hash_key.name, "foo");
+        assert!(index.range_key.is_none());
+    }
+
+    #[test]
+    fn test_create_global_keys_index() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, foo NUMBER, THROUGHPUT (1, 1)) \
+                 GLOBAL KEYS INDEX ('myindex', foo, THROUGHPUT (1, 2))",
+            )
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        let index = desc.global_indexes.get("myindex").unwrap();
+        assert_eq!(index.projection, ProjectionType::KeysOnly);
+    }
+
+    #[test]
+    fn test_create_global_include_index() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, foo NUMBER, THROUGHPUT (1, 1)) \
+                 GLOBAL INCLUDE INDEX ('myindex', foo, ['bar', 'baz'], THROUGHPUT (1, 2))",
+            )
+            .unwrap();
+        let desc = describe_table(&engine, "foobar");
+        let index = desc.global_indexes.get("myindex").unwrap();
+        assert!(matches!(index.projection, ProjectionType::Include(_)));
+    }
+
+    #[test]
+    fn test_create_lsi_dump_round_trip() {
+        let mut engine = InMemoryEngine::default();
+        let create = "CREATE TABLE foobar (owner STRING HASH KEY, id BINARY RANGE KEY, ts NUMBER KEYS INDEX('ts-index'))";
+        engine.execute(create).unwrap();
+        let dumped = dump_schema(&mut engine);
+        assert!(dumped.contains("KEYS INDEX('ts-index')"), "{dumped}");
+        engine.execute("DROP TABLE foobar").unwrap();
+        engine.execute(&dumped).unwrap();
+        let desc = describe_table(&engine, "foobar");
+        assert_eq!(
+            desc.local_indexes.get("ts-index").unwrap().projection,
+            ProjectionType::KeysOnly
+        );
+    }
 
     #[test]
     fn test_create_explain() {
