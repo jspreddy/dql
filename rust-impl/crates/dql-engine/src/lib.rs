@@ -1,6 +1,6 @@
 use dql_parser::{
-    parse_script, Attribute, AttributeType, CompareOp, Condition, KeyType, ParseError, Statement,
-    Value,
+    parse_script, Attribute, AttributeType, CompareOp, Condition, KeyType, ParseError,
+    QueryOptions, Statement, Value,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
@@ -136,8 +136,16 @@ impl InMemoryEngine {
                 columns,
                 rows,
             } => self.insert(table, columns, rows),
-            Statement::Scan { table } => self.scan(table),
-            Statement::Select { table, condition } => self.select(table, condition.as_ref()),
+            Statement::Scan {
+                table,
+                condition,
+                options,
+            } => self.scan(table, condition.as_ref(), options),
+            Statement::Select {
+                table,
+                condition,
+                options,
+            } => self.select(table, condition.as_ref(), options),
             Statement::DumpSchema { tables } => self.dump_schema(tables.as_deref()),
             Statement::Explain(inner) => self.explain(inner),
             Statement::Analyze(inner) => self.run(inner),
@@ -231,31 +239,33 @@ impl InMemoryEngine {
         Ok(StatementResult::Affected(rows.len()))
     }
 
-    fn scan(&mut self, table: &str) -> Result<StatementResult, EngineError> {
+    fn scan(
+        &mut self,
+        table: &str,
+        condition: Option<&Condition>,
+        options: &QueryOptions,
+    ) -> Result<StatementResult, EngineError> {
         self.record("scan", table);
         let table_data = self
             .tables
             .get(table)
             .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
-        Ok(StatementResult::Items(table_data.items.clone()))
+        let items = apply_read_options(table_data.items.iter(), condition, options);
+        Ok(StatementResult::Items(items))
     }
 
     fn select(
         &mut self,
         table: &str,
         condition: Option<&Condition>,
+        options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
         self.record("query", table);
         let table_data = self
             .tables
             .get(table)
             .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
-        let items = table_data
-            .items
-            .iter()
-            .filter(|item| condition.is_none_or(|condition| matches_condition(item, condition)))
-            .cloned()
-            .collect();
+        let items = apply_read_options(table_data.items.iter(), condition, options);
         Ok(StatementResult::Items(items))
     }
 
@@ -306,6 +316,20 @@ fn matches_condition(item: &Item, condition: &Condition) -> bool {
             .iter()
             .all(|condition| matches_condition(item, condition)),
     }
+}
+
+fn apply_read_options<'a>(
+    items: impl Iterator<Item = &'a Item>,
+    condition: Option<&Condition>,
+    options: &QueryOptions,
+) -> Vec<Item> {
+    let scanned = items.take(options.scan_limit.unwrap_or(usize::MAX));
+    let filtered =
+        scanned.filter(|item| condition.is_none_or(|condition| matches_condition(item, condition)));
+    filtered
+        .take(options.limit.unwrap_or(usize::MAX))
+        .cloned()
+        .collect()
 }
 
 fn compare_values(left: &Value, op: &CompareOp, right: &Value) -> bool {

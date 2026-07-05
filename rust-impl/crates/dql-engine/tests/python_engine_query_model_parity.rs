@@ -365,12 +365,20 @@ mod test_select {
         test_hash_index => "needs index planner",
         test_smart_index => "needs index planner",
         test_smart_global_index => "needs GSI planner",
-        test_limit => "needs LIMIT support",
         test_scan_item_limit => "needs SCAN LIMIT support",
         test_attrs => "needs projection support",
         test_begins_with => "needs function constraints",
         test_between => "needs BETWEEN constraints",
     );
+
+    #[test]
+    fn test_limit() {
+        let mut engine = seeded_table();
+        let result = engine
+            .execute("SELECT * FROM foobar WHERE id = 'a' LIMIT 1")
+            .unwrap();
+        assert_items_len(result, 1);
+    }
 
     #[test]
     fn test_filter() {
@@ -453,10 +461,37 @@ mod test_select_scan {
         };
     }
 
+    #[test]
+    fn test_filter() {
+        let mut engine = seeded_scan_table();
+        let result = engine.execute("SCAN * FROM foobar WHERE bar = 2").unwrap();
+        assert_items_len(result, 1);
+    }
+
+    #[test]
+    fn test_limit() {
+        let mut engine = seeded_scan_table();
+        let result = engine.execute("SCAN * FROM foobar LIMIT 1").unwrap();
+        assert_items_len(result, 1);
+    }
+
+    #[test]
+    fn test_scan_limit() {
+        let mut engine = seeded_scan_table();
+        let result = engine.execute("SCAN * FROM foobar SCAN LIMIT 1").unwrap();
+        assert_items_len(result, 1);
+    }
+
+    #[test]
+    fn test_filter_and() {
+        let mut engine = seeded_scan_table();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE id = 'b' AND bar = 2")
+            .unwrap();
+        assert_items_len(result, 1);
+    }
+
     ignored_scan!(
-        test_filter => "needs SCAN WHERE filtering",
-        test_limit => "needs LIMIT support",
-        test_scan_limit => "needs SCAN LIMIT support",
         test_begins_with => "needs begins_with constraints",
         test_between => "needs BETWEEN constraints",
         test_null => "needs NULL constraints",
@@ -465,7 +500,6 @@ mod test_select_scan {
         test_attribute_exists_quoted => "needs attribute_exists constraints",
         test_in => "needs IN constraints",
         test_contains => "needs contains constraints",
-        test_filter_and => "needs SCAN WHERE filtering",
         test_filter_or => "needs OR constraints",
         test_filter_nested => "needs grouped constraints",
         test_scan_global => "needs GSI scan support",
@@ -486,6 +520,17 @@ mod test_select_scan {
         test_select_now => "needs now() selection",
         test_select_timedelta => "needs interval arithmetic",
     );
+
+    fn seeded_scan_table() -> InMemoryEngine {
+        let mut engine = InMemoryEngine::new();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 1), ('b', 2)",
+            )
+            .unwrap();
+        engine
+    }
 }
 
 mod test_create {

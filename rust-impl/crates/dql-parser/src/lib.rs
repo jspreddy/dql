@@ -83,6 +83,12 @@ pub enum Condition {
     And(Vec<Condition>),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct QueryOptions {
+    pub limit: Option<usize>,
+    pub scan_limit: Option<usize>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
     CreateTable {
@@ -102,10 +108,13 @@ pub enum Statement {
     },
     Scan {
         table: String,
+        condition: Option<Condition>,
+        options: QueryOptions,
     },
     Select {
         table: String,
         condition: Option<Condition>,
+        options: QueryOptions,
     },
     DumpSchema {
         tables: Option<Vec<String>>,
@@ -450,20 +459,43 @@ impl Parser {
     fn parse_scan(&mut self) -> Result<Statement, ParseError> {
         self.skip_until_keyword("FROM")?;
         let table = self.expect_ident()?;
-        self.skip_statement_tail();
-        Ok(Statement::Scan { table })
+        let (condition, options) = self.parse_query_tail()?;
+        Ok(Statement::Scan {
+            table,
+            condition,
+            options,
+        })
     }
 
     fn parse_select(&mut self) -> Result<Statement, ParseError> {
         self.skip_until_keyword("FROM")?;
         let table = self.expect_ident()?;
+        let (condition, options) = self.parse_query_tail()?;
+        Ok(Statement::Select {
+            table,
+            condition,
+            options,
+        })
+    }
+
+    fn parse_query_tail(&mut self) -> Result<(Option<Condition>, QueryOptions), ParseError> {
         let condition = if self.accept_keyword("WHERE") {
             Some(self.parse_condition()?)
         } else {
             None
         };
-        self.skip_statement_tail();
-        Ok(Statement::Select { table, condition })
+        let mut options = QueryOptions::default();
+        while !self.is_eof() && !self.peek_symbol(';') {
+            if self.accept_keyword("LIMIT") {
+                options.limit = Some(self.expect_usize()?);
+            } else if self.accept_keyword("SCAN") {
+                self.expect_keyword("LIMIT")?;
+                options.scan_limit = Some(self.expect_usize()?);
+            } else {
+                self.pos += 1;
+            }
+        }
+        Ok((condition, options))
     }
 
     fn parse_dump(&mut self) -> Result<Statement, ParseError> {
@@ -695,6 +727,16 @@ impl Parser {
         }
     }
 
+    fn expect_usize(&mut self) -> Result<usize, ParseError> {
+        match self.next().cloned() {
+            Some(Token::Number(value)) => value
+                .parse()
+                .map_err(|_| self.error_at_previous(format!("expected integer, got {value}"))),
+            Some(token) => Err(self.error_at_previous(format!("expected integer, got {token:?}"))),
+            None => Err(self.error("expected integer")),
+        }
+    }
+
     fn expect_symbol(&mut self, symbol: char) -> Result<(), ParseError> {
         if self.accept_symbol(symbol) {
             Ok(())
@@ -822,9 +864,28 @@ mod tests {
             Statement::Select {
                 table,
                 condition: Some(Condition::And(parts)),
+                ..
             } => {
                 assert_eq!(table, "t");
                 assert_eq!(parts.len(), 2);
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_query_limits() {
+        let statement =
+            parse_statement("SCAN * FROM t WHERE score >= 2 LIMIT 3 SCAN LIMIT 4").unwrap();
+        match statement {
+            Statement::Scan {
+                table,
+                condition: Some(_),
+                options,
+            } => {
+                assert_eq!(table, "t");
+                assert_eq!(options.limit, Some(3));
+                assert_eq!(options.scan_limit, Some(4));
             }
             other => panic!("unexpected statement: {other:?}"),
         }
