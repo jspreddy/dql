@@ -673,6 +673,46 @@ mod test_update {
 mod test_delete {
     use super::*;
 
+    #[test]
+    fn test_delete() {
+        let mut engine = seeded_delete_table();
+        let result = engine.execute("DELETE FROM foobar").unwrap();
+        assert_eq!(result, StatementResult::Affected(2));
+        let result = engine.execute("SCAN * FROM foobar").unwrap();
+        assert_items_len(result, 0);
+    }
+
+    #[test]
+    fn test_delete_where() {
+        let mut engine = seeded_delete_table();
+        let result = engine.execute("DELETE FROM foobar WHERE id = 'a'").unwrap();
+        assert_eq!(result, StatementResult::Affected(1));
+        let result = engine.execute("SCAN * FROM foobar").unwrap();
+        assert_items_len(result, 1);
+    }
+
+    #[test]
+    fn test_explain_delete_query() {
+        let mut engine = seeded_delete_table();
+        let result = engine
+            .execute("EXPLAIN DELETE FROM foobar WHERE id = 'a'")
+            .unwrap();
+        assert_eq!(
+            result,
+            StatementResult::Schema("query foobar\ndelete_item foobar".to_string())
+        );
+    }
+
+    #[test]
+    fn test_explain_delete_scan() {
+        let mut engine = seeded_delete_table();
+        let result = engine.execute("EXPLAIN DELETE FROM foobar").unwrap();
+        assert_eq!(
+            result,
+            StatementResult::Schema("scan foobar\ndelete_item foobar".to_string())
+        );
+    }
+
     macro_rules! ignored_delete {
         ($($name:ident => $reason:expr),+ $(,)?) => {
             $(
@@ -686,16 +726,23 @@ mod test_delete {
     }
 
     ignored_delete!(
-        test_delete => "needs DELETE implementation",
-        test_delete_where => "needs DELETE WHERE implementation",
         test_delete_in => "needs DELETE KEYS IN implementation",
         test_delete_in_filter => "needs DELETE IN constraints",
         test_delete_smart_index => "needs DELETE index planner",
         test_delete_using => "needs DELETE USING support",
-        test_explain_delete_query => "needs DELETE explain query support",
         test_explain_delete_get => "needs DELETE explain get support",
-        test_explain_delete_scan => "needs DELETE explain scan support",
     );
+
+    fn seeded_delete_table() -> InMemoryEngine {
+        let mut engine = InMemoryEngine::new();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 1), ('b', 2)",
+            )
+            .unwrap();
+        engine
+    }
 }
 
 mod test_regressions {

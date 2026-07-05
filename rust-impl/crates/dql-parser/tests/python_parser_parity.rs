@@ -285,3 +285,14 @@ mod test_expressions {
         );
     }
 }
+
+mod test_delete {
+    use super::*;
+
+    #[test]
+    fn parses_delete_from_table() {
+        assert_parse_ok("DELETE FROM foobars");
+        assert_parse_ok("DELETE FROM foobars WHERE id = 'a'");
+        assert_parse_err("DELETE foobars");
+    }
+}

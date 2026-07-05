@@ -108,6 +108,10 @@ pub enum Statement {
         columns: Vec<String>,
         rows: Vec<Vec<Value>>,
     },
+    Delete {
+        table: String,
+        condition: Option<Condition>,
+    },
     Scan {
         table: String,
         condition: Option<Condition>,
@@ -309,6 +313,8 @@ impl Parser {
             self.parse_drop()
         } else if self.accept_keyword("INSERT") {
             self.parse_insert()
+        } else if self.accept_keyword("DELETE") {
+            self.parse_delete()
         } else if self.accept_keyword("SCAN") {
             self.parse_scan()
         } else if self.accept_keyword("SELECT") {
@@ -456,6 +462,18 @@ impl Parser {
             columns,
             rows,
         })
+    }
+
+    fn parse_delete(&mut self) -> Result<Statement, ParseError> {
+        self.expect_keyword("FROM")?;
+        let table = self.expect_ident()?;
+        let condition = if self.accept_keyword("WHERE") {
+            Some(self.parse_condition()?)
+        } else {
+            None
+        };
+        self.skip_statement_tail();
+        Ok(Statement::Delete { table, condition })
     }
 
     fn parse_scan(&mut self) -> Result<Statement, ParseError> {

@@ -136,6 +136,7 @@ impl InMemoryEngine {
                 columns,
                 rows,
             } => self.insert(table, columns, rows),
+            Statement::Delete { table, condition } => self.delete(table, condition.as_ref()),
             Statement::Scan {
                 table,
                 condition,
@@ -237,6 +238,28 @@ impl InMemoryEngine {
             table_data.items.push(item);
         }
         Ok(StatementResult::Affected(rows.len()))
+    }
+
+    fn delete(
+        &mut self,
+        table: &str,
+        condition: Option<&Condition>,
+    ) -> Result<StatementResult, EngineError> {
+        if condition.is_some() {
+            self.record("query", table);
+        } else {
+            self.record("scan", table);
+        }
+        self.record("delete_item", table);
+        let table_data = self
+            .tables
+            .get_mut(table)
+            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let before = table_data.items.len();
+        table_data
+            .items
+            .retain(|item| !condition.is_none_or(|condition| matches_condition(item, condition)));
+        Ok(StatementResult::Affected(before - table_data.items.len()))
     }
 
     fn scan(
