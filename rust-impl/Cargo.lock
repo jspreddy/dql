@@ -13,6 +13,7 @@ dependencies = [
 name = "dql-engine"
 version = "0.6.4-dev12"
 dependencies = [
+ "dql-expr",
  "dql-models",
  "dql-parser",
 ]

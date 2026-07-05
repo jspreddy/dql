@@ -299,7 +299,7 @@ pub enum ReadKind {
     Scan,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Operation {
     Query,
     Scan,

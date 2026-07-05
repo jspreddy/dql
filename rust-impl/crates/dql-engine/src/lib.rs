@@ -1,4 +1,6 @@
+use dql_expr::{render_condition, render_projection};
 use dql_models::TableMeta;
+use dql_models::{plan_read, Operation, PlanInput, ReadKind};
 use dql_parser::{
     parse_script, AttributeType, CompareOp, Condition, ConditionOperand, KeyType, ParseError,
     QueryOptions, Statement, Value,
@@ -324,16 +326,18 @@ impl InMemoryEngine {
             )),
             Statement::Scan {
                 table,
+                selection,
                 condition,
                 options,
                 ..
-            } => self.scan(table, condition.as_ref(), options),
+            } => self.scan(table, selection, condition.as_ref(), options),
             Statement::Select {
                 table,
+                selection,
                 condition,
                 options,
                 ..
-            } => self.select(table, condition.as_ref(), options),
+            } => self.select(table, selection, condition.as_ref(), options),
             Statement::AlterTable { .. } => Err(EngineError::Runtime(
                 "ALTER execution is not implemented in the in-memory scaffold".to_string(),
             )),
@@ -418,13 +422,16 @@ impl InMemoryEngine {
     fn scan(
         &mut self,
         table: &str,
+        selection: &dql_parser::Selection,
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
-        self.record("scan", table);
-        let response = self
-            .backend
-            .read(ReadOperation::Scan, table, condition, options)?;
+        let operation =
+            self.plan_read_operation(table, ReadKind::Scan, selection, condition, true)?;
+        self.record_read_operation(operation, table);
+        let response =
+            self.backend
+                .read(operation_to_backend(operation), table, condition, options)?;
         self.capture_capacity(response.capacity);
         Ok(StatementResult::Items(response.output))
     }
@@ -432,13 +439,16 @@ impl InMemoryEngine {
     fn select(
         &mut self,
         table: &str,
+        selection: &dql_parser::Selection,
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
-        self.record("query", table);
-        let response = self
-            .backend
-            .read(ReadOperation::Query, table, condition, options)?;
+        let operation =
+            self.plan_read_operation(table, ReadKind::Select, selection, condition, true)?;
+        self.record_read_operation(operation, table);
+        let response =
+            self.backend
+                .read(operation_to_backend(operation), table, condition, options)?;
         self.capture_capacity(response.capacity);
         Ok(StatementResult::Items(response.output))
     }
@@ -480,6 +490,44 @@ impl InMemoryEngine {
         }
     }
 
+    fn record_read_operation(&mut self, operation: Operation, table: &str) {
+        let operation = match operation {
+            Operation::Query => "query",
+            Operation::Scan => "scan",
+            Operation::BatchGetKeys => "batch_get_item",
+        };
+        self.record(operation, table);
+    }
+
+    fn plan_read_operation(
+        &self,
+        table: &str,
+        kind: ReadKind,
+        selection: &dql_parser::Selection,
+        condition: Option<&Condition>,
+        allow_select_scan: bool,
+    ) -> Result<Operation, EngineError> {
+        let meta = self
+            .backend
+            .describe_table(table)
+            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        if let Some(condition) = condition {
+            let _ =
+                render_condition(condition).map_err(|err| EngineError::Runtime(err.to_string()))?;
+        }
+        let _ = render_projection(selection);
+        let plan = plan_read(PlanInput {
+            table: &meta,
+            kind,
+            condition,
+            selection: Some(selection),
+            using_index: None,
+            allow_select_scan,
+        })
+        .map_err(|err| EngineError::Runtime(format!("query planning failed: {err:?}")))?;
+        Ok(plan.operation)
+    }
+
     fn analyze(&mut self, inner: &Statement) -> Result<StatementResult, EngineError> {
         let previous = self.analyzing;
         self.analyzing = true;
@@ -519,6 +567,13 @@ fn matches_condition(item: &Item, condition: &Condition) -> bool {
             .iter()
             .any(|condition| matches_condition(item, condition)),
         Condition::Not(condition) => !matches_condition(item, condition),
+    }
+}
+
+fn operation_to_backend(operation: Operation) -> ReadOperation {
+    match operation {
+        Operation::Query | Operation::BatchGetKeys => ReadOperation::Query,
+        Operation::Scan => ReadOperation::Scan,
     }
 }
 
