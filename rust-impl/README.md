@@ -10,12 +10,13 @@ around the parallel workstreams identified in `rust-plans/`:
 
 ## Implemented slice
 
-- Statement parsing for `CREATE TABLE`, `DROP TABLE`, `INSERT`, `SCAN`,
-  `SELECT`, `DUMP SCHEMA`, `EXPLAIN`, and `ANALYZE`.
+- Statement parsing for `CREATE TABLE`, `DROP TABLE`, `INSERT`, `DELETE`,
+  `SCAN`, `SELECT`, `DUMP SCHEMA`, `EXPLAIN`, and `ANALYZE`.
 - Literal parsing for strings, numbers, booleans, nulls, binary values, lists,
   sets, and maps.
 - In-memory table creation, insertion, scanning, simple `SELECT ... WHERE`
-  filtering, schema dumping, and explain operation recording.
+  filtering, `SCAN ... WHERE` filtering, `LIMIT`, `SCAN LIMIT`, boolean
+  `WHERE` groups, deletion, schema dumping, and explain operation recording.
 - CLI flags compatible with the Python entrypoint for `-c`, `--command`,
   `-r`, `--region`, `-H`, `--host`, `-p`, `--port`, `--json`, and
   `--version`.
@@ -29,7 +30,7 @@ around the parallel workstreams identified in `rust-plans/`:
 - DynamoDB Local and AWS SDK backends.
 - Full expression grammar and DynamoDB expression rendering.
 - Index planning, throughput, throttling, `ALTER`, `LOAD`, `UPDATE`, and
-  `DELETE`.
+  `KEYS IN` paths.
 - Rich terminal formatting, completion, persistent history, and full
   meta-command parity.
 
