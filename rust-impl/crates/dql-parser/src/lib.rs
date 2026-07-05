@@ -1225,12 +1225,19 @@ impl Parser {
 
     fn parse_field_path(&mut self) -> Result<String, ParseError> {
         let mut field = self.expect_ident()?;
-        while self.accept_symbol('[') {
-            let index = self.expect_string_or_ident()?;
-            self.expect_symbol(']')?;
-            field.push('[');
-            field.push_str(&index);
-            field.push(']');
+        loop {
+            if self.accept_symbol('[') {
+                let index = self.expect_string_or_ident()?;
+                self.expect_symbol(']')?;
+                field.push('[');
+                field.push_str(&index);
+                field.push(']');
+            } else if self.accept_symbol('.') {
+                field.push('.');
+                field.push_str(&self.expect_ident()?);
+            } else {
+                break;
+            }
         }
         Ok(field)
     }

@@ -381,16 +381,16 @@ impl DynamoBackend for MemoryBackend {
 
 pub fn matches_condition(item: &Item, condition: &Condition) -> bool {
     match condition {
-        Condition::Compare { field, op, rhs } => item
-            .get(field)
-            .is_some_and(|item_value| compare_operand(item, item_value, op, rhs)),
-        Condition::Between { field, low, high } => item.get(field).is_some_and(|item_value| {
-            compare_values(item_value, &CompareOp::Ge, low)
-                && compare_values(item_value, &CompareOp::Le, high)
-        }),
-        Condition::In { field, values } => item
-            .get(field)
-            .is_some_and(|item_value| values.iter().any(|value| item_value == value)),
+        Condition::Compare { field, op, rhs } => resolve_field_value(item, field)
+            .is_some_and(|left| compare_operand(item, &left, op, rhs)),
+        Condition::Between { field, low, high } => {
+            resolve_field_value(item, field).is_some_and(|item_value| {
+                compare_values(&item_value, &CompareOp::Ge, low)
+                    && compare_values(&item_value, &CompareOp::Le, high)
+            })
+        }
+        Condition::In { field, values } => resolve_field_value(item, field)
+            .is_some_and(|item_value| values.iter().any(|value| item_value == *value)),
         Condition::Function { name, args } => evaluate_function_condition(item, name, args),
         Condition::Size { .. } | Condition::AttributeType { .. } => false,
         Condition::And(conditions) => conditions
@@ -404,17 +404,126 @@ pub fn matches_condition(item: &Item, condition: &Condition) -> bool {
 }
 
 fn evaluate_function_condition(item: &Item, name: &str, args: &[ConditionOperand]) -> bool {
-    if name.eq_ignore_ascii_case("begins_with") {
-        let (field, prefix) = match args {
-            [ConditionOperand::Field(field), ConditionOperand::Value(prefix)] => (field, prefix),
-            _ => return false,
-        };
-        return item.get(field).is_some_and(|value| match (value, prefix) {
-            (Value::String(value), Value::String(prefix)) => value.starts_with(prefix),
-            _ => false,
-        });
+    match name.to_ascii_lowercase().as_str() {
+        "begins_with" => {
+            let (field, prefix) = match args {
+                [ConditionOperand::Field(field), ConditionOperand::Value(prefix)] => {
+                    (field, prefix)
+                }
+                _ => return false,
+            };
+            return resolve_field_value(item, field).is_some_and(|value| match (value, prefix) {
+                (Value::String(value), Value::String(prefix)) => value.starts_with(prefix),
+                _ => false,
+            });
+        }
+        "attribute_exists" => {
+            let field = function_field_arg(args);
+            return field.is_some_and(|field| field_exists(item, &field));
+        }
+        "attribute_not_exists" => {
+            let field = function_field_arg(args);
+            return field.is_some_and(|field| !field_exists(item, &field));
+        }
+        "contains" => {
+            let (field, needle) = match args {
+                [ConditionOperand::Field(field), ConditionOperand::Value(needle)] => {
+                    (field, needle)
+                }
+                _ => return false,
+            };
+            return resolve_field_value(item, field).is_some_and(|value| match value {
+                Value::String(value) => needle
+                    .as_string()
+                    .is_some_and(|needle| value.contains(needle)),
+                Value::Set(values) => values.contains(needle),
+                Value::List(values) => values.contains(needle),
+                _ => false,
+            });
+        }
+        _ => false,
     }
-    false
+}
+
+fn function_field_arg(args: &[ConditionOperand]) -> Option<String> {
+    match args.first()? {
+        ConditionOperand::Field(field) => Some(field.clone()),
+        ConditionOperand::Value(Value::String(field)) => Some(field.clone()),
+        _ => None,
+    }
+}
+
+fn field_exists(item: &Item, path: &str) -> bool {
+    resolve_field_value(item, path).is_some()
+}
+
+fn resolve_field_value(item: &Item, path: &str) -> Option<Value> {
+    if let Some(index) = path.find('[') {
+        let head = &path[..index];
+        let rest = &path[index..];
+        let end = rest.find(']')?;
+        let list = resolve_field_value(item, head)?;
+        let Value::List(values) = list else {
+            return None;
+        };
+        let idx = parse_list_index(&rest[1..end], values.len())?;
+        return values.get(idx).cloned();
+    }
+    if let Some(index) = path.find('.') {
+        let head = &path[..index];
+        let tail = &path[index + 1..];
+        let map = resolve_field_value(item, head)?;
+        let Value::Map(values) = map else {
+            return None;
+        };
+        return resolve_field_value_map(&values, tail);
+    }
+    item.get(path).cloned()
+}
+
+fn resolve_field_value_map(values: &BTreeMap<String, Value>, path: &str) -> Option<Value> {
+    if let Some(index) = path.find('[') {
+        let head = &path[..index];
+        let rest = &path[index..];
+        let end = rest.find(']')?;
+        let list = values.get(head)?.clone();
+        let Value::List(values) = list else {
+            return None;
+        };
+        let idx = parse_list_index(&rest[1..end], values.len())?;
+        return values.get(idx).cloned();
+    }
+    if let Some(index) = path.find('.') {
+        let head = &path[..index];
+        let tail = &path[index + 1..];
+        let Value::Map(values) = values.get(head)? else {
+            return None;
+        };
+        return resolve_field_value_map(values, tail);
+    }
+    values.get(path).cloned()
+}
+
+fn parse_list_index(index: &str, len: usize) -> Option<usize> {
+    index.parse::<usize>().ok().or_else(|| {
+        index
+            .parse::<isize>()
+            .ok()
+            .and_then(|index| len.checked_sub(index.unsigned_abs() as usize))
+    })
+}
+
+trait ValueExt {
+    fn as_string(&self) -> Option<&str>;
+}
+
+impl ValueExt for Value {
+    fn as_string(&self) -> Option<&str> {
+        match self {
+            Value::String(value) => Some(value),
+            _ => None,
+        }
+    }
 }
 
 fn apply_read_options<'a>(

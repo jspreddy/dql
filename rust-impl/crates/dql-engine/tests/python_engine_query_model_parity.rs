@@ -872,20 +872,6 @@ mod test_select_scan {
     }
 
     ignored_scan!(
-        test_begins_with => "needs begins_with constraints",
-        test_between => "needs BETWEEN constraints",
-        test_null => "needs NULL constraints",
-        test_attribute_not_exists_quoted => "needs attribute_not_exists constraints",
-        test_not_null => "needs NOT constraints",
-        test_attribute_exists_quoted => "needs attribute_exists constraints",
-        test_in => "needs IN constraints",
-        test_contains => "needs contains constraints",
-        test_scan_global => "needs GSI scan support",
-        test_scan_global_with_constraints => "needs GSI scan constraints",
-        test_filter_list => "needs list path constraints",
-        test_filter_map => "needs map path constraints",
-        test_explain_scan => "needs scan explain parity",
-        test_field_ne_field => "needs field-to-field constraints",
         test_select_filter_timestamp => "needs timestamp constraints",
         test_select_alias => "needs selection aliases",
         test_select_operation => "needs selection arithmetic",
@@ -898,6 +884,278 @@ mod test_select_scan {
         test_select_now => "needs now() selection",
         test_select_timedelta => "needs interval arithmetic",
     );
+
+    fn seeded_scan_table_no_range() -> InMemoryEngine {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY)")
+            .unwrap();
+        engine
+    }
+
+    #[test]
+    fn test_begins_with() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id NUMBER HASH KEY, bar STRING RANGE KEY);
+                 INSERT INTO foobar (id, bar) VALUES (1, 'abc'), (1, 'def')",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE begins_with(bar, 'a')")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => assert_eq!(items.len(), 1),
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_between() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 5), ('a', 10);
+                 SCAN * FROM foobar WHERE bar BETWEEN 1 AND 8",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE bar BETWEEN 1 AND 8")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => assert_eq!(items.len(), 1),
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_null() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 5);
+                 INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1);
+                 SCAN * FROM foobar WHERE attribute_not_exists(baz)",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE attribute_not_exists(baz)")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("bar"), Some(&Value::Number("5".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_attribute_not_exists_quoted() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 5);
+                 INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1);
+                 SCAN * FROM foobar WHERE attribute_not_exists('baz')",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE attribute_not_exists('baz')")
+            .unwrap();
+        assert_items_len(result, 1);
+    }
+
+    #[test]
+    fn test_not_null() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 5);
+                 INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1);
+                 SCAN * FROM foobar WHERE attribute_exists(baz)",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE attribute_exists(baz)")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("baz"), Some(&Value::Number("1".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_attribute_exists_quoted() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 5);
+                 INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1);
+                 SCAN * FROM foobar WHERE attribute_exists('baz')",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE attribute_exists('baz')")
+            .unwrap();
+        assert_items_len(result, 1);
+    }
+
+    #[test]
+    fn test_in() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 5), ('a', 2);
+                 SCAN * FROM foobar WHERE bar IN (1, 3, 5)",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE bar IN (1, 3, 5)")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("bar"), Some(&Value::Number("5".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_contains() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar, baz) VALUES ('a', 5, (1, 2, 3)), ('a', 1, (4, 5, 6));
+                 SCAN * FROM foobar WHERE contains(baz, 2)",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE contains(baz, 2)")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("bar"), Some(&Value::Number("5".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_scan_global() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, foo STRING) \
+                 GLOBAL KEYS INDEX ('gindex', foo);
+                 INSERT INTO foobar (id, foo) VALUES ('a', 'a');
+                 SCAN * FROM foobar USING gindex",
+            )
+            .unwrap();
+        assert_items_len(
+            engine.execute("SCAN * FROM foobar USING gindex").unwrap(),
+            1,
+        );
+    }
+
+    #[test]
+    fn test_scan_global_with_constraints() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, foo STRING) \
+                 GLOBAL KEYS INDEX ('gindex', foo);
+                 INSERT INTO foobar (id, foo) VALUES ('a', 'a'), ('b', 'b');
+                 SCAN * FROM foobar WHERE id = 'a' USING gindex",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE id = 'a' USING gindex")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("id"), Some(&Value::String("a".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_filter_list() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', [1, 2]), ('b', [2, 3])")
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE bar[0] = 2")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("id"), Some(&Value::String("b".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_filter_map() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute("INSERT INTO foobar (id, bar) VALUES ('a', {'b': 1}), ('b', {'b': 2})")
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE bar.b = 2")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("id"), Some(&Value::String("b".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_explain_scan() {
+        let mut engine = seeded_scan_table_no_range();
+        let result = engine
+            .execute("EXPLAIN SCAN * FROM foobar WHERE bar = 1")
+            .unwrap();
+        assert_eq!(result, StatementResult::Schema("scan foobar".to_string()));
+    }
+
+    #[test]
+    fn test_field_ne_field() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute("INSERT INTO foobar (id, bar, baz) VALUES ('a', 1, 1), ('b', 2, 3)")
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE bar <> baz")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("id"), Some(&Value::String("b".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
 
     #[test]
     fn test_filter_or() {
