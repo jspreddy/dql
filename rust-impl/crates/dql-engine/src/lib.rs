@@ -8,6 +8,18 @@ use std::fmt;
 
 pub type Item = BTreeMap<String, Value>;
 
+pub fn format_throughput(available: Option<f64>, used: Option<f64>) -> String {
+    match (available, used) {
+        (Some(0.0), Some(used)) | (None, Some(used)) => format!("{used:.0}/∞"),
+        (Some(0.0), None) | (None, None) => "N/A".to_string(),
+        (Some(available), None) => format!("{available:.0}"),
+        (Some(available), Some(used)) => {
+            let percent = used / available * 100.0;
+            format!("{used:.0}/{available:.0} ({percent:.0}%)")
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum StatementResult {
     None,
@@ -271,7 +283,11 @@ impl InMemoryEngine {
         let result = self.run(inner);
         self.explain = previous;
         let log = std::mem::replace(&mut self.explain_log, previous_log).join("\n");
-        result.map(|_| StatementResult::Schema(log))
+        if log.is_empty() {
+            result.map(|_| StatementResult::Schema(log))
+        } else {
+            Ok(StatementResult::Schema(log))
+        }
     }
 
     fn record(&mut self, operation: &str, target: &str) {

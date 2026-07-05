@@ -19,6 +19,10 @@ around the parallel workstreams identified in `rust-plans/`:
 - CLI flags compatible with the Python entrypoint for `-c`, `--command`,
   `-r`, `--region`, `-H`, `--host`, `-p`, `--port`, `--json`, and
   `--version`.
+- Rust parity tests mirror the Python suite by name. Tests for implemented
+  behavior run normally; tests for deferred parser, DynamoDB, REPL, history,
+  and output behavior are checked in as `#[ignore]` placeholders with source
+  references.
 
 ## Deferred compatibility work
 
