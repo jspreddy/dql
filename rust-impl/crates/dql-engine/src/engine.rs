@@ -4,7 +4,7 @@ use crate::{
     StatementResult,
 };
 use dql_expr::{render_condition, render_projection};
-use dql_models::{plan_read, Operation, PlanInput, QueryPlan, ReadKind, TableMeta};
+use dql_models::{plan_read, Operation, PlanError, PlanInput, QueryPlan, ReadKind, TableMeta};
 use dql_parser::{
     parse_script, Condition, InsertForm, QueryOptions, Selection, Statement, UpdateExpr, Value,
 };
@@ -29,7 +29,7 @@ impl<B: DynamoBackend> Engine<B> {
             explain_log: Vec::new(),
             analyzing: false,
             consumed_capacities: Vec::new(),
-            allow_select_scan: true,
+            allow_select_scan: false,
         }
     }
 
@@ -206,7 +206,8 @@ impl<B: DynamoBackend> Engine<B> {
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
-        let plan = self.plan_read_operation(table, ReadKind::Scan, selection, condition, true)?;
+        let plan =
+            self.plan_read_operation(table, ReadKind::Scan, selection, condition, options)?;
         self.execute_read(table, &plan, selection, condition, options)
     }
 
@@ -217,13 +218,8 @@ impl<B: DynamoBackend> Engine<B> {
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
-        let plan = self.plan_read_operation(
-            table,
-            ReadKind::Select,
-            selection,
-            condition,
-            self.allow_select_scan,
-        )?;
+        let plan =
+            self.plan_read_operation(table, ReadKind::Select, selection, condition, options)?;
         self.execute_read(table, &plan, selection, condition, options)
     }
 
@@ -254,6 +250,8 @@ impl<B: DynamoBackend> Engine<B> {
             condition,
             selection,
             options,
+            consistent: options.consistent,
+            order_by: options.order_by.as_ref(),
             follow_up_batch_get: plan.follow_up_batch_get,
         };
         let response = self.backend.execute_read(table, &request)?;
@@ -361,7 +359,7 @@ impl<B: DynamoBackend> Engine<B> {
         kind: ReadKind,
         selection: &Selection,
         condition: Option<&Condition>,
-        allow_select_scan: bool,
+        options: &QueryOptions,
     ) -> Result<QueryPlan, EngineError> {
         let meta = self
             .backend
@@ -372,15 +370,19 @@ impl<B: DynamoBackend> Engine<B> {
                 render_condition(condition).map_err(|err| EngineError::Runtime(err.to_string()))?;
         }
         let _ = render_projection(selection);
+        let allow_select_scan = match kind {
+            ReadKind::Select => self.allow_select_scan,
+            ReadKind::Scan => true,
+        };
         plan_read(PlanInput {
             table: &meta,
             kind,
             condition,
             selection: Some(selection),
-            using_index: None,
+            using_index: options.using_index.as_deref(),
             allow_select_scan,
         })
-        .map_err(|err| EngineError::Runtime(format!("query planning failed: {err:?}")))
+        .map_err(plan_error_to_engine_error)
     }
 
     fn analyze(&mut self, inner: &Statement) -> Result<StatementResult, EngineError> {
@@ -397,6 +399,22 @@ impl<B: DynamoBackend> Engine<B> {
                 self.consumed_capacities.push(capacity);
             }
         }
+    }
+}
+
+fn plan_error_to_engine_error(err: PlanError) -> EngineError {
+    match err {
+        PlanError::SelectScanRejected => EngineError::Runtime(
+            "Cannot perform SELECT without an indexed WHERE clause. Use SCAN or specify USING -"
+                .to_string(),
+        ),
+        PlanError::AmbiguousIndex(names) => {
+            EngineError::Runtime(format!("Ambiguous index selection: {}", names.join(", ")))
+        }
+        PlanError::CannotScanLocalIndex(name) => {
+            EngineError::Runtime(format!("Cannot scan local index '{name}'"))
+        }
+        PlanError::UnknownIndex(name) => EngineError::Runtime(format!("Unknown index '{name}'")),
     }
 }
 

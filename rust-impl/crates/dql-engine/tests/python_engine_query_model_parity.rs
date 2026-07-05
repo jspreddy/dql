@@ -384,7 +384,7 @@ mod test_select {
     fn test_filter() {
         let mut engine = seeded_table();
         let result = engine
-            .execute("SELECT * FROM foobar WHERE foo = 2")
+            .execute("SELECT * FROM foobar WHERE id = 'b' AND foo = 2")
             .unwrap();
         assert_items_len(result, 1);
     }

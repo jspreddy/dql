@@ -10,7 +10,7 @@ pub use engine::Engine;
 pub use memory::MemoryBackend;
 
 use crate::json_util::{item_to_json, string_to_json};
-use dql_parser::{AlterAction, Condition, QueryOptions, Selection, UpdateExpr};
+use dql_parser::{AlterAction, Condition, OrderBy, QueryOptions, Selection, UpdateExpr};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
@@ -79,6 +79,8 @@ pub struct ReadRequest<'a> {
     pub condition: Option<&'a Condition>,
     pub selection: &'a Selection,
     pub options: &'a QueryOptions,
+    pub consistent: bool,
+    pub order_by: Option<&'a OrderBy>,
     pub follow_up_batch_get: bool,
 }
 

@@ -134,12 +134,7 @@ impl DynamoBackend for SdkBackend {
             return Ok(Some(meta.clone()));
         }
         self.block_on(async {
-            let response = self
-                .client
-                .describe_table()
-                .table_name(table)
-                .send()
-                .await;
+            let response = self.client.describe_table().table_name(table).send().await;
             match response {
                 Ok(output) => {
                     let description = output.table().ok_or_else(|| {
@@ -186,9 +181,8 @@ impl DynamoBackend for SdkBackend {
         table: &str,
         if_exists: bool,
     ) -> Result<BackendResponse<String>, EngineError> {
-        let result = self.block_on(async {
-            self.client.delete_table().table_name(table).send().await
-        });
+        let result =
+            self.block_on(async { self.client.delete_table().table_name(table).send().await });
         match result {
             Ok(_) => {
                 self.invalidate_cache(table);
@@ -250,10 +244,7 @@ impl DynamoBackend for SdkBackend {
                     read_units += capacity.capacity_units().unwrap_or(0.0);
                     write_units += capacity.write_capacity_units().unwrap_or(0.0);
                 }
-                pending = response
-                    .unprocessed_items()
-                    .cloned()
-                    .unwrap_or_default();
+                pending = response.unprocessed_items().cloned().unwrap_or_default();
                 if !pending.is_empty() {
                     std::thread::sleep(Duration::from_millis(100));
                 }
@@ -434,11 +425,12 @@ impl DynamoBackend for SdkBackend {
                     request = request.global_secondary_index_updates(
                         GlobalSecondaryIndexUpdate::builder()
                             .update(
-                                aws_sdk_dynamodb::types::UpdateGlobalSecondaryIndexAction::builder()
-                                    .index_name(index_name)
-                                    .provisioned_throughput(throughput)
-                                    .build()
-                                    .map_err(|err| EngineError::Runtime(err.to_string()))?,
+                                aws_sdk_dynamodb::types::UpdateGlobalSecondaryIndexAction::builder(
+                                )
+                                .index_name(index_name)
+                                .provisioned_throughput(throughput)
+                                .build()
+                                .map_err(|err| EngineError::Runtime(err.to_string()))?,
                             )
                             .build(),
                     );
@@ -457,9 +449,7 @@ impl DynamoBackend for SdkBackend {
                     .index_name(name)
                     .build()
                     .map_err(|err| EngineError::Runtime(err.to_string()))?;
-                let update = GlobalSecondaryIndexUpdate::builder()
-                    .delete(delete)
-                    .build();
+                let update = GlobalSecondaryIndexUpdate::builder().delete(delete).build();
                 let result = self.block_on(async {
                     self.client
                         .update_table()
@@ -496,13 +486,11 @@ impl DynamoBackend for SdkBackend {
                         .set_non_key_attributes(Some(index.includes.clone()))
                         .build(),
                 };
-                let mut key_schema = vec![
-                    KeySchemaElement::builder()
-                        .attribute_name(index.hash_key.clone())
-                        .key_type(AwsKeyType::Hash)
-                        .build()
-                        .map_err(|err| EngineError::Runtime(err.to_string()))?,
-                ];
+                let mut key_schema = vec![KeySchemaElement::builder()
+                    .attribute_name(index.hash_key.clone())
+                    .key_type(AwsKeyType::Hash)
+                    .build()
+                    .map_err(|err| EngineError::Runtime(err.to_string()))?];
                 if let Some(range_key) = &index.range_key {
                     key_schema.push(
                         KeySchemaElement::builder()
@@ -523,9 +511,7 @@ impl DynamoBackend for SdkBackend {
                             .parse::<i64>()
                             .map_err(|err| EngineError::Runtime(err.to_string()))?,
                         _ => {
-                            return Err(EngineError::Runtime(
-                                "invalid read throughput".to_string(),
-                            ))
+                            return Err(EngineError::Runtime("invalid read throughput".to_string()))
                         }
                     };
                     let write = match &throughput.write {
@@ -560,9 +546,7 @@ impl DynamoBackend for SdkBackend {
                 });
                 match result {
                     Ok(_) => format!("Created global index '{}' on '{table}'", index.name),
-                    Err(err)
-                        if *if_not_exists && err.to_string().contains("already exists") =>
-                    {
+                    Err(err) if *if_not_exists && err.to_string().contains("already exists") => {
                         format!("Index '{}' already exists on '{table}'", index.name)
                     }
                     Err(err) => return Err(Self::aws_error(err)),
@@ -588,6 +572,8 @@ impl SdkBackend {
             condition,
             selection: &Selection::All,
             options: &QueryOptions::default(),
+            consistent: false,
+            order_by: None,
             follow_up_batch_get: false,
         };
         let items = self.execute_read(table, &request)?.output;
@@ -730,7 +716,11 @@ impl SdkBackend {
         Ok(items)
     }
 
-    fn batch_get_items(&self, table: &str, partial_items: &[Item]) -> Result<Vec<Item>, EngineError> {
+    fn batch_get_items(
+        &self,
+        table: &str,
+        partial_items: &[Item],
+    ) -> Result<Vec<Item>, EngineError> {
         let meta = self
             .describe_table(table)?
             .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
@@ -754,7 +744,10 @@ impl SdkBackend {
                         .await
                 })
                 .map_err(Self::aws_error)?;
-            if let Some(items) = response.responses().and_then(|responses| responses.get(table)) {
+            if let Some(items) = response
+                .responses()
+                .and_then(|responses| responses.get(table))
+            {
                 for item in items {
                     results.push(attributes_to_item(item)?);
                 }
@@ -769,11 +762,7 @@ async fn build_client(config: SdkConfig) -> Result<Client, String> {
         .region(aws_config::Region::new(config.region.clone()));
     if let (Some(access_key), Some(secret_key)) = (&config.access_key, &config.secret_key) {
         loader = loader.credentials_provider(aws_credential_types::Credentials::new(
-            access_key,
-            secret_key,
-            None,
-            None,
-            "dql",
+            access_key, secret_key, None, None, "dql",
         ));
     }
     let shared = loader.load().await;
@@ -804,28 +793,20 @@ fn primary_key_from_meta(
     let hash = item
         .get(&meta.hash_key)
         .ok_or_else(|| EngineError::Runtime(format!("missing hash key '{}'", meta.hash_key)))?;
-    key.insert(
-        meta.hash_key.clone(),
-        {
-            let mut single = Item::new();
-            single.insert(meta.hash_key.clone(), hash.clone());
-            item_to_attributes(&single)?
-                .remove(&meta.hash_key)
-                .unwrap()
-        },
-    );
+    key.insert(meta.hash_key.clone(), {
+        let mut single = Item::new();
+        single.insert(meta.hash_key.clone(), hash.clone());
+        item_to_attributes(&single)?.remove(&meta.hash_key).unwrap()
+    });
     if let Some(range_key) = &meta.range_key {
         let value = item
             .get(range_key)
             .ok_or_else(|| EngineError::Runtime(format!("missing range key '{range_key}'")))?;
-        key.insert(
-            range_key.clone(),
-            {
-                let mut single = Item::new();
-                single.insert(range_key.clone(), value.clone());
-                item_to_attributes(&single)?.remove(range_key).unwrap()
-            },
-        );
+        key.insert(range_key.clone(), {
+            let mut single = Item::new();
+            single.insert(range_key.clone(), value.clone());
+            item_to_attributes(&single)?.remove(range_key).unwrap()
+        });
     }
     Ok(key)
 }
