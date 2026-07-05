@@ -81,7 +81,7 @@ Primary risks:
 - Index matching is subtle and affects both correctness and cost.
 - Partial index projections require a second read path for full item attributes.
 
-## Phase 4: DynamoDB execution engine
+## Phase 4: DynamoDB execution engine [IN PROGRESS]
 
 Connect the typed statement executor to DynamoDB Local and then to AWS.
 

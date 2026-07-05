@@ -27,6 +27,9 @@ around the parallel workstreams identified in `rust-plans/`:
 - Phase 3 metadata/query planning for table fields, LSIs, GSIs, projection
   checks, throughput totals, index matching, scan rejection, key/filter splits,
   and follow-up batch-get detection.
+- Phase 4 execution groundwork with a backend abstraction, in-memory backend
+  implementation, explain/analyze call and capacity scaffolding, and read
+  execution routed through planner/expression rendering.
 - In-memory table creation, insertion, scanning, simple `SELECT ... WHERE`
   filtering, `SCAN ... WHERE` filtering, `LIMIT`, `SCAN LIMIT`, boolean
   `WHERE` groups, deletion, schema dumping, and explain operation recording.
@@ -41,6 +44,8 @@ around the parallel workstreams identified in `rust-plans/`:
 ## Deferred compatibility work
 
 - DynamoDB Local and AWS SDK backends.
+- Full Phase 4 completion: DynamoDB Local/AWS adapter, batch retry/pagination,
+  update/alter/load execution, and Local integration test waves.
 - Full expression grammar and DynamoDB expression rendering.
 - Index planning, throughput, throttling, `ALTER`, `LOAD`, `UPDATE`, and
   `KEYS IN` paths.
