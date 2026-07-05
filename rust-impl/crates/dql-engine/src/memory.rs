@@ -96,7 +96,17 @@ impl DynamoBackend for MemoryBackend {
             .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
         let count = items.len();
         table_data.items.extend(items);
-        Ok(BackendResponse::new("batch_write_item", table, count))
+        Ok(BackendResponse {
+            output: count,
+            capacity: Some(CapacityRecord {
+                operation: "batch_write_item".to_string(),
+                table: table.to_string(),
+                read_units: 0.0,
+                write_units: count as f64,
+            }),
+            count: None,
+            updated_items: None,
+        })
     }
 
     fn execute_read(

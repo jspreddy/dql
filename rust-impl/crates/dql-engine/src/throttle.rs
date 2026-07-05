@@ -22,8 +22,8 @@ impl RateLimit {
 
     pub fn on_capacity(&mut self, read_units: f64, write_units: f64) -> Duration {
         self.refill();
-        self.read_tokens = (self.read_tokens - read_units).max(0.0);
-        self.write_tokens = (self.write_tokens - write_units).max(0.0);
+        self.read_tokens -= read_units;
+        self.write_tokens -= write_units;
         let read_wait = if self.read_tokens < 0.0 && self.read_per_second > 0.0 {
             Duration::from_secs_f64((-self.read_tokens) / self.read_per_second)
         } else {
@@ -42,10 +42,10 @@ impl RateLimit {
         if elapsed <= 0.0 {
             return;
         }
-        self.read_tokens = (self.read_tokens + elapsed * self.read_per_second)
-            .min(self.read_per_second);
-        self.write_tokens = (self.write_tokens + elapsed * self.write_per_second)
-            .min(self.write_per_second);
+        self.read_tokens =
+            (self.read_tokens + elapsed * self.read_per_second).min(self.read_per_second);
+        self.write_tokens =
+            (self.write_tokens + elapsed * self.write_per_second).min(self.write_per_second);
         self.last_refill = Instant::now();
     }
 }

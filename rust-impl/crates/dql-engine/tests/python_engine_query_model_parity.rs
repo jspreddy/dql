@@ -816,7 +816,13 @@ mod test_select {
         let result = engine
             .execute("EXPLAIN SELECT * FROM foobar WHERE id = 'a'")
             .unwrap();
-        assert_eq!(result, StatementResult::Schema("query foobar".to_string()));
+        match result {
+            StatementResult::Schema(schema) => {
+                assert!(schema.contains("query foobar"));
+                assert!(schema.contains("key_condition"));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 
     #[test]
@@ -1332,7 +1338,13 @@ mod test_select_scan {
         let result = engine
             .execute("EXPLAIN SCAN * FROM foobar WHERE bar = 1")
             .unwrap();
-        assert_eq!(result, StatementResult::Schema("scan foobar".to_string()));
+        match result {
+            StatementResult::Schema(schema) => {
+                assert!(schema.contains("scan foobar"));
+                assert!(schema.contains("filter"));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 
     #[test]

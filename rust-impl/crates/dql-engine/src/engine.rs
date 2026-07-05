@@ -1,5 +1,6 @@
 use crate::convert::keys_in_to_items;
 use crate::json_util::json_value_to_item;
+use crate::throttle::RateLimit;
 use crate::{
     BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
     StatementResult,
@@ -7,9 +8,10 @@ use crate::{
 use dql_expr::{project_selection, render_condition, render_projection, resolve_timestamp};
 use dql_models::{plan_read, Operation, PlanError, PlanInput, QueryPlan, ReadKind, TableMeta};
 use dql_parser::{
-    parse_script, Condition, InsertForm, OrderBy, QueryOptions, Selection, Statement, UpdateExpr,
-    Value,
+    parse_script, Condition, InsertForm, OrderBy, QueryOptions, Selection, Statement,
+    ThrottleConfig, UpdateExpr, Value,
 };
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -21,6 +23,7 @@ pub struct Engine<B: DynamoBackend> {
     analyzing: bool,
     consumed_capacities: Vec<CapacityRecord>,
     allow_select_scan: bool,
+    rate_limit: Option<RateLimit>,
 }
 
 impl<B: DynamoBackend> Engine<B> {
@@ -32,7 +35,12 @@ impl<B: DynamoBackend> Engine<B> {
             analyzing: false,
             consumed_capacities: Vec::new(),
             allow_select_scan: false,
+            rate_limit: None,
         }
+    }
+
+    pub fn set_rate_limit(&mut self, read_per_second: f64, write_per_second: f64) {
+        self.rate_limit = Some(RateLimit::new(read_per_second, write_per_second));
     }
 
     pub fn with_allow_select_scan(mut self, allow_select_scan: bool) -> Self {
@@ -64,12 +72,22 @@ impl<B: DynamoBackend> Engine<B> {
                 self.create_table(statement, *if_not_exists)
             }
             Statement::DropTable { if_exists, name } => self.drop_table(*if_exists, name),
-            Statement::Insert { table, form } => self.insert(table, form),
+            Statement::Insert {
+                table,
+                form,
+                throttle,
+            } => {
+                self.apply_throttle_config(throttle.as_ref());
+                self.insert(table, form)
+            }
             Statement::Delete {
                 table,
                 condition,
                 options,
-            } => self.delete(table, condition.as_ref(), options),
+            } => {
+                self.apply_throttle_config(options.throttle.as_ref());
+                self.delete(table, condition.as_ref(), options)
+            }
             Statement::Update {
                 table,
                 update,
@@ -77,27 +95,36 @@ impl<B: DynamoBackend> Engine<B> {
                 options,
                 returns,
                 ..
-            } => self.update(
-                table,
-                update,
-                condition.as_ref(),
-                options,
-                returns.as_deref(),
-            ),
+            } => {
+                self.apply_throttle_config(options.throttle.as_ref());
+                self.update(
+                    table,
+                    update,
+                    condition.as_ref(),
+                    options,
+                    returns.as_deref(),
+                )
+            }
             Statement::Scan {
                 table,
                 selection,
                 condition,
                 options,
                 ..
-            } => self.scan(table, selection, condition.as_ref(), options),
+            } => {
+                self.apply_throttle_config(options.throttle.as_ref());
+                self.scan(table, selection, condition.as_ref(), options)
+            }
             Statement::Select {
                 table,
                 selection,
                 condition,
                 options,
                 ..
-            } => self.select(table, selection, condition.as_ref(), options),
+            } => {
+                self.apply_throttle_config(options.throttle.as_ref());
+                self.select(table, selection, condition.as_ref(), options)
+            }
             Statement::AlterTable { table, action } => self.alter_table(table, action),
             Statement::DumpSchema { tables } => self.dump_schema(tables.as_deref()),
             Statement::Load { file, table } => self.load(file, table),
@@ -319,7 +346,13 @@ impl<B: DynamoBackend> Engine<B> {
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
-        self.record_read_operation(plan.operation, table);
+        let kwargs = explain_kwargs_for_plan(plan, condition, options);
+        let operation = match plan.operation {
+            Operation::Query => "query",
+            Operation::Scan => "scan",
+            Operation::BatchGetKeys => "batch_get_item",
+        };
+        self.record_with_kwargs(operation, table, &kwargs);
         if plan.follow_up_batch_get {
             self.record("batch_get_item", table);
         }
@@ -428,9 +461,30 @@ impl<B: DynamoBackend> Engine<B> {
     }
 
     fn record(&mut self, operation: &str, target: &str) {
+        self.record_with_kwargs(operation, target, &BTreeMap::new());
+    }
+
+    fn record_with_kwargs(
+        &mut self,
+        operation: &str,
+        target: &str,
+        kwargs: &BTreeMap<String, String>,
+    ) {
         if self.explain {
-            self.explain_log.push(format!("{operation} {target}"));
+            if kwargs.is_empty() {
+                self.explain_log.push(format!("{operation} {target}"));
+            } else {
+                self.explain_log.push(format!(
+                    "{operation} {target} {}",
+                    format_explain_kwargs(kwargs)
+                ));
+            }
         }
+    }
+
+    fn apply_throttle_config(&mut self, throttle: Option<&ThrottleConfig>) {
+        self.rate_limit =
+            throttle.map(|config| RateLimit::new(config.read_per_second, config.write_per_second));
     }
 
     fn record_read_operation(&mut self, operation: Operation, table: &str) {
@@ -500,11 +554,60 @@ impl<B: DynamoBackend> Engine<B> {
 
     fn capture_capacity(&mut self, capacity: Option<CapacityRecord>) {
         if self.analyzing {
-            if let Some(capacity) = capacity {
+            if let Some(capacity) = capacity.clone() {
                 self.consumed_capacities.push(capacity);
             }
         }
+        if let Some(rate_limit) = self.rate_limit.as_mut() {
+            if let Some(capacity) = capacity {
+                let wait = rate_limit.on_capacity(capacity.read_units, capacity.write_units);
+                if wait > std::time::Duration::ZERO {
+                    std::thread::sleep(wait);
+                }
+            }
+        }
     }
+}
+
+fn format_explain_kwargs(kwargs: &BTreeMap<String, String>) -> String {
+    let parts = kwargs
+        .iter()
+        .map(|(key, value)| format!("'{key}': {value:?}"))
+        .collect::<Vec<_>>();
+    format!("{{{}}}", parts.join(", "))
+}
+
+fn explain_kwargs_for_plan(
+    plan: &QueryPlan,
+    condition: Option<&Condition>,
+    options: &QueryOptions,
+) -> BTreeMap<String, String> {
+    let mut kwargs = BTreeMap::new();
+    if let Some(index) = &plan.index {
+        kwargs.insert("index".to_string(), index.name.clone());
+    }
+    if let Some(key_condition) = &plan.key_condition {
+        if let Ok(rendered) = render_condition(key_condition) {
+            kwargs.insert("key_condition".to_string(), rendered.expression);
+        }
+    }
+    let filter = plan
+        .filter_condition
+        .as_ref()
+        .or(if plan.key_condition.is_some() {
+            condition
+        } else {
+            None
+        });
+    if let Some(filter) = filter {
+        if let Ok(rendered) = render_condition(filter) {
+            kwargs.insert("filter".to_string(), rendered.expression);
+        }
+    }
+    if options.consistent {
+        kwargs.insert("consistent".to_string(), "true".to_string());
+    }
+    kwargs
 }
 
 fn plan_error_to_engine_error(err: PlanError) -> EngineError {
@@ -755,6 +858,39 @@ mod tests {
             engine.consumed_capacities()[0].operation,
             "batch_write_item"
         );
+        assert!(engine.consumed_capacities()[0].write_units >= 0.0);
+    }
+
+    #[test]
+    fn throttle_clause_limits_capacity_consumption() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE t (id STRING HASH KEY)")
+            .unwrap();
+        let start = std::time::Instant::now();
+        engine
+            .execute("INSERT INTO t (id) VALUES ('a'), ('b') THROTTLE 1 1")
+            .unwrap();
+        assert!(start.elapsed() >= std::time::Duration::from_millis(900));
+    }
+
+    #[test]
+    fn explain_includes_query_kwargs() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE t (id STRING HASH KEY, ts NUMBER INDEX('ts-index'))")
+            .unwrap();
+        let result = engine
+            .execute("EXPLAIN SELECT * FROM t WHERE id = 'a' AND ts < 150")
+            .unwrap();
+        match result {
+            StatementResult::Schema(schema) => {
+                assert!(schema.contains("query t"));
+                assert!(schema.contains("index"));
+                assert!(schema.contains("key_condition"));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 
     #[test]

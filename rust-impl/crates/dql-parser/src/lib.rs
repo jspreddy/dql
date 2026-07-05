@@ -200,6 +200,12 @@ pub struct OrderBy {
     pub descending: bool,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThrottleConfig {
+    pub read_per_second: f64,
+    pub write_per_second: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct QueryOptions {
     pub limit: Option<usize>,
@@ -208,6 +214,7 @@ pub struct QueryOptions {
     pub keys_in: Option<Vec<Vec<Value>>>,
     pub consistent: bool,
     pub order_by: Option<OrderBy>,
+    pub throttle: Option<ThrottleConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -237,6 +244,7 @@ pub enum Statement {
     Insert {
         table: String,
         form: InsertForm,
+        throttle: Option<ThrottleConfig>,
     },
     Delete {
         table: String,
@@ -732,12 +740,10 @@ impl Parser {
     fn parse_insert(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword("INTO")?;
         let table = self.expect_ident()?;
-        if self.peek_keyword_form() {
-            let rows = self.parse_keyword_insert_rows()?;
-            Ok(Statement::Insert {
-                table,
-                form: InsertForm::Keyword { rows },
-            })
+        let form = if self.peek_keyword_form() {
+            InsertForm::Keyword {
+                rows: self.parse_keyword_insert_rows()?,
+            }
         } else {
             self.expect_symbol('(')?;
             let columns = self.parse_ident_list(')')?;
@@ -761,11 +767,18 @@ impl Parser {
                     break;
                 }
             }
-            Ok(Statement::Insert {
-                table,
-                form: InsertForm::Values { columns, rows },
-            })
-        }
+            InsertForm::Values { columns, rows }
+        };
+        let throttle = if self.accept_keyword("THROTTLE") {
+            Some(self.parse_throttle_clause()?)
+        } else {
+            None
+        };
+        Ok(Statement::Insert {
+            table,
+            form,
+            throttle,
+        })
     }
 
     fn peek_keyword_form(&self) -> bool {
@@ -837,7 +850,7 @@ impl Parser {
             None
         };
         if self.accept_keyword("THROTTLE") {
-            self.skip_throttle_clause();
+            options.throttle = Some(self.parse_throttle_clause()?);
         }
         if !self.is_eof() && !self.peek_symbol(';') {
             return Err(self.error("unexpected token after UPDATE"));
@@ -901,7 +914,7 @@ impl Parser {
             if self.accept_keyword("USING") {
                 options.using_index = Some(self.parse_index_name()?);
             } else if self.accept_keyword("THROTTLE") {
-                self.skip_throttle_clause();
+                options.throttle = Some(self.parse_throttle_clause()?);
             } else {
                 return Err(self.error("unexpected token in DELETE/UPDATE"));
             }
@@ -944,7 +957,7 @@ impl Parser {
                 };
                 options.order_by = Some(OrderBy { field, descending });
             } else if self.accept_keyword("THROTTLE") {
-                self.skip_throttle_clause();
+                options.throttle = Some(self.parse_throttle_clause()?);
             } else {
                 return Err(self.error("unexpected token in query options"));
             }
@@ -981,9 +994,36 @@ impl Parser {
         }
     }
 
+    fn parse_throttle_clause(&mut self) -> Result<ThrottleConfig, ParseError> {
+        Ok(ThrottleConfig {
+            read_per_second: self.parse_throttle_rate()?,
+            write_per_second: self.parse_throttle_rate()?,
+        })
+    }
+
+    fn parse_throttle_rate(&mut self) -> Result<f64, ParseError> {
+        if self.accept_symbol('*') {
+            return Ok(f64::MAX);
+        }
+        let value = if let Some(Token::Number(value)) = self.tokens.get(self.pos).cloned() {
+            self.pos += 1;
+            value
+        } else {
+            self.expect_usize()?.to_string()
+        };
+        if self.accept_symbol('%') {
+            return Ok(value
+                .parse::<f64>()
+                .map_err(|_| self.error("invalid throttle rate"))?
+                / 100.0);
+        }
+        value
+            .parse::<f64>()
+            .map_err(|_| self.error("invalid throttle rate"))
+    }
+
     fn skip_throttle_clause(&mut self) {
-        let _ = self.expect_usize();
-        let _ = self.expect_usize();
+        let _ = self.parse_throttle_clause();
     }
 
     fn parse_alter(&mut self) -> Result<Statement, ParseError> {
@@ -1845,10 +1885,12 @@ mod tests {
             Statement::Insert {
                 table,
                 form: InsertForm::Values { columns, rows },
+                throttle,
             } => {
                 assert_eq!(table, "t");
                 assert_eq!(columns, vec!["id", "payload"]);
                 assert_eq!(rows.len(), 2);
+                assert!(throttle.is_none());
             }
             other => panic!("unexpected statement: {other:?}"),
         }

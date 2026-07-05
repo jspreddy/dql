@@ -5,6 +5,8 @@ mod json_util;
 mod memory;
 mod throttle;
 
+pub use throttle::RateLimit;
+
 pub use aws::{SdkBackend, SdkConfig};
 pub use engine::Engine;
 pub use memory::MemoryBackend;
