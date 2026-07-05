@@ -8,7 +8,7 @@ around the parallel workstreams identified in `rust-plans/`:
   JSON-safe serialization helpers.
 - `crates/dql-models`: table/index metadata, throughput helpers, and pure query
   planning.
-- `crates/dql-engine`: in-memory execution scaffold over the parser AST.
+- `crates/dql-engine`: statement execution over in-memory and AWS SDK backends.
 - `crates/dql-cli`: binary entrypoint for version, one-shot commands, JSON
   output, and a minimal multiline REPL.
 
@@ -27,30 +27,32 @@ around the parallel workstreams identified in `rust-plans/`:
 - Phase 3 metadata/query planning for table fields, LSIs, GSIs, projection
   checks, throughput totals, index matching, scan rejection, key/filter splits,
   and follow-up batch-get detection.
-- Phase 4 execution groundwork with a backend abstraction, in-memory backend
-  implementation, explain/analyze call and capacity scaffolding, and read
-  execution routed through planner/expression rendering.
-- In-memory table creation, insertion, scanning, simple `SELECT ... WHERE`
-  filtering, `SCAN ... WHERE` filtering, `LIMIT`, `SCAN LIMIT`, boolean
-  `WHERE` groups, deletion, schema dumping, and explain operation recording.
-- CLI flags compatible with the Python entrypoint for `-c`, `--command`,
-  `-r`, `--region`, `-H`, `--host`, `-p`, `--port`, `--json`, and
-  `--version`.
-- Rust parity tests mirror the Python suite by name. Tests for implemented
-  behavior run normally; tests for deferred parser, DynamoDB, REPL, history,
-  and output behavior are checked in as `#[ignore]` placeholders with source
-  references.
+- Phase 4 execution (in progress): `SdkBackend` over `aws-sdk-dynamodb` with
+  DynamoDB Local endpoint support, batch write chunking, paginated query/scan,
+  UPDATE/ALTER/LOAD, explain/analyze capacity hooks, and token-bucket throttling.
+- In-memory backend for fast unit tests; CLI connects to Local when `-H` is set.
+- Rust parity tests mirror the Python suite by name. Implemented behavior runs
+  normally; deferred tests are `#[ignore]` placeholders with source references.
+
+## DynamoDB Local
+
+Start DynamoDB Local on port 8000, then:
+
+```bash
+cargo run -p dql-cli -- -H localhost -p 8000 -c "CREATE TABLE t (id STRING HASH KEY); SCAN * FROM t"
+cargo test -p dql-engine --test dynamodb_local_smoke -- --ignored
+```
+
+Integration tests use `tests/support/mod.rs` (`LocalHarness`) to connect, run
+statements, and tear down tables.
 
 ## Deferred compatibility work
 
-- DynamoDB Local and AWS SDK backends.
-- Full Phase 4 completion: DynamoDB Local/AWS adapter, batch retry/pagination,
-  update/alter/load execution, and Local integration test waves.
-- Full expression grammar and DynamoDB expression rendering.
-- Index planning, throughput, throttling, `ALTER`, `LOAD`, `UPDATE`, and
-  `KEYS IN` paths.
-- Rich terminal formatting, completion, persistent history, and full
-  meta-command parity.
+- Parser options: `USING`, `KEYS IN`, `CONSISTENT`, `ORDER BY` on reads/writes.
+- Full parity with `tests/test_queries.py` (index planner, FilterExpression,
+  selection arithmetic, KEYS IN batch get).
+- FragmentEngine and REPL meta-commands (Phase 5).
+- Rich terminal formatting, completion, persistent history, and output modes.
 
 ## Local checks
 
