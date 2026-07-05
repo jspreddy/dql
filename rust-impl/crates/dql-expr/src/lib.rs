@@ -424,7 +424,7 @@ where
     let mut chars = field.chars().peekable();
     while let Some(ch) = chars.peek().copied() {
         if ch == '[' {
-            while let Some(index_ch) = chars.next() {
+            for index_ch in chars.by_ref() {
                 output.push(index_ch);
                 if index_ch == ']' {
                     break;
