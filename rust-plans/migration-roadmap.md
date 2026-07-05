@@ -56,7 +56,7 @@ Primary risks:
 - Python `Decimal`, binary, set, timestamp, and interval handling needs precise
   Rust equivalents.
 
-## Phase 3: Metadata and query planning
+## Phase 3: Metadata and query planning [DONE]
 
 Port table/index models and the logic that decides which DynamoDB operation to
 run.
