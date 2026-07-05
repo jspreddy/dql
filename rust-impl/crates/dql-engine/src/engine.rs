@@ -4,7 +4,7 @@ use crate::{
     BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
     StatementResult,
 };
-use dql_expr::{project_selection, render_condition, render_projection};
+use dql_expr::{project_selection, render_condition, render_projection, resolve_timestamp};
 use dql_models::{plan_read, Operation, PlanError, PlanInput, QueryPlan, ReadKind, TableMeta};
 use dql_parser::{
     parse_script, Condition, InsertForm, OrderBy, QueryOptions, Selection, Statement, UpdateExpr,
@@ -151,7 +151,7 @@ impl<B: DynamoBackend> Engine<B> {
             }
             let mut item = Item::new();
             for (column, value) in columns.iter().zip(row.iter()) {
-                item.insert(column.clone(), value.clone());
+                item.insert(column.clone(), normalize_insert_value(value.clone()));
             }
             items.push(item);
         }
@@ -169,7 +169,7 @@ impl<B: DynamoBackend> Engine<B> {
         for row in rows {
             let mut item = Item::new();
             for (column, value) in row {
-                item.insert(column.clone(), value.clone());
+                item.insert(column.clone(), normalize_insert_value(value.clone()));
             }
             items.push(item);
         }
@@ -192,13 +192,28 @@ impl<B: DynamoBackend> Engine<B> {
             self.capture_capacity(response.capacity);
             return Ok(StatementResult::Affected(response.output));
         }
-        if condition.is_some() {
+        let plan = if condition.is_some() || options.using_index.is_some() {
+            Some(self.plan_read_operation(
+                table,
+                ReadKind::Scan,
+                &Selection::All,
+                condition,
+                options,
+            )?)
+        } else {
+            None
+        };
+        if let Some(plan) = &plan {
+            self.record_read_operation(plan.operation, table);
+        } else if condition.is_some() {
             self.record("query", table);
         } else {
             self.record("scan", table);
         }
         self.record("delete_item", table);
-        let response = self.backend.delete_matching(table, condition)?;
+        let response = self
+            .backend
+            .delete_matching(table, condition, plan.as_ref(), options)?;
         self.capture_capacity(response.capacity);
         Ok(StatementResult::Affected(response.output))
     }
@@ -576,6 +591,13 @@ fn finalize_read_result(
     }
     apply_projection(&mut response.output, selection);
     Ok(StatementResult::Items(response.output))
+}
+
+fn normalize_insert_value(value: Value) -> Value {
+    match value {
+        Value::Timestamp(expr) => Value::Number(resolve_timestamp(&expr).to_string()),
+        other => other,
+    }
 }
 
 fn apply_projection(items: &mut [Item], selection: &Selection) {

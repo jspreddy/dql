@@ -136,6 +136,8 @@ pub trait DynamoBackend {
         &mut self,
         table: &str,
         condition: Option<&Condition>,
+        plan: Option<&dql_models::QueryPlan>,
+        options: &QueryOptions,
     ) -> Result<BackendResponse<usize>, EngineError>;
     fn update_matching(
         &mut self,

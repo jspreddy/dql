@@ -458,21 +458,60 @@ mod test_insert {
     }
 
     #[test]
-    #[ignore = "needs keyword-style INSERT syntax"]
     fn test_insert_keywords() {
-        pending(
-            "tests/test_queries.py::TestInsert::test_insert_keywords",
-            "INSERT map/keyword syntax is deferred",
-        );
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY)")
+            .unwrap();
+        engine
+            .execute("INSERT INTO foobar (id='a', bar=1), (id='b', baz=4)")
+            .unwrap();
+        let result = engine.execute("SCAN * FROM foobar").unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 2);
+                let a = items
+                    .iter()
+                    .find(|item| item.get("id") == Some(&Value::String("a".to_string())))
+                    .unwrap();
+                let b = items
+                    .iter()
+                    .find(|item| item.get("id") == Some(&Value::String("b".to_string())))
+                    .unwrap();
+                assert_eq!(a.get("bar"), Some(&Value::Number("1".to_string())));
+                assert_eq!(b.get("baz"), Some(&Value::Number("4".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 
     #[test]
-    #[ignore = "needs timestamp value evaluation"]
     fn test_insert_timestamps() {
-        pending(
-            "tests/test_queries.py::TestInsert::test_insert_timestamps",
-            "timestamp literals are deferred",
-        );
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY)")
+            .unwrap();
+        engine
+            .execute("INSERT INTO foobar (id='a', bar=NOW() + INTERVAL '1 hour')")
+            .unwrap();
+        let result = engine.execute("SCAN * FROM foobar").unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                let bar = items[0]
+                    .get("bar")
+                    .and_then(|value| match value {
+                        Value::Number(number) => number.parse::<f64>().ok(),
+                        _ => None,
+                    })
+                    .expect("bar should be numeric timestamp");
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs_f64();
+                assert!((bar - (now + 3600.0)).abs() <= 2.0);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 
     #[test]
@@ -1966,18 +2005,6 @@ mod test_delete {
         );
     }
 
-    macro_rules! ignored_delete {
-        ($($name:ident => $reason:expr),+ $(,)?) => {
-            $(
-                #[test]
-                #[ignore = $reason]
-                fn $name() {
-                    pending(concat!("tests/test_queries.py::TestDelete::", stringify!($name)), $reason);
-                }
-            )+
-        };
-    }
-
     #[test]
     fn test_delete_in() {
         let mut engine = InMemoryEngine::default();
@@ -1998,12 +2025,74 @@ mod test_delete {
         }
     }
 
-    ignored_delete!(
-        test_delete_in_filter => "needs DELETE IN constraints",
-        test_delete_smart_index => "needs DELETE index planner",
-        test_delete_using => "needs DELETE USING support",
-        test_explain_delete_get => "needs DELETE explain get support",
-    );
+    #[test]
+    fn test_delete_in_filter() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 1), ('b', 2);
+                 DELETE FROM foobar KEYS IN 'a', 'b' WHERE bar = 1",
+            )
+            .unwrap();
+        let result = engine.execute("SCAN * FROM foobar").unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("id"), Some(&Value::String("b".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_delete_smart_index() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY, ts NUMBER INDEX('ts-index'));
+                 INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 100), ('a', 2, 200);
+                 DELETE FROM foobar WHERE id = 'a' AND ts > 150",
+            )
+            .unwrap();
+        let result = engine.execute("SCAN * FROM foobar").unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("ts"), Some(&Value::Number("100".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_delete_using() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY, ts NUMBER INDEX('ts-index'));
+                 INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 0), ('a', 2, 5);
+                 DELETE FROM foobar WHERE id = 'a' AND ts < 8 USING ts-index",
+            )
+            .unwrap();
+        let result = engine.execute("SCAN * FROM foobar").unwrap();
+        assert_items_len(result, 0);
+    }
+
+    #[test]
+    fn test_explain_delete_get() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY)")
+            .unwrap();
+        let result = engine
+            .execute("EXPLAIN DELETE FROM foobar KEYS IN 'a', 'b'")
+            .unwrap();
+        assert_eq!(
+            result,
+            StatementResult::Schema("delete_item foobar".to_string())
+        );
+    }
 
     fn seeded_delete_table() -> InMemoryEngine {
         let mut engine = InMemoryEngine::default();

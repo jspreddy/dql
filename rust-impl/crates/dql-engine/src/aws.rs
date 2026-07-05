@@ -317,6 +317,8 @@ impl DynamoBackend for SdkBackend {
         &mut self,
         table: &str,
         condition: Option<&Condition>,
+        _plan: Option<&dql_models::QueryPlan>,
+        _options: &QueryOptions,
     ) -> Result<BackendResponse<usize>, EngineError> {
         let keys = self.keys_for_condition(table, condition)?;
         let mut deleted = 0usize;

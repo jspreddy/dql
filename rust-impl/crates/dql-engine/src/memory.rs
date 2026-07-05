@@ -3,8 +3,7 @@ use crate::{
     BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
 };
 use dql_expr::{render_update, resolve_timestamp};
-use dql_models::BillingMode;
-use dql_models::TableMeta;
+use dql_models::{BillingMode, QueryPlan, TableMeta};
 use dql_parser::{
     parse_value, AlterAction, AttributeType, CompareOp, Condition, ConditionOperand, KeyType,
     QueryOptions, Selection, Throughput, UpdateClauseKind, UpdateExpr, Value,
@@ -232,15 +231,41 @@ impl DynamoBackend for MemoryBackend {
         &mut self,
         table: &str,
         condition: Option<&Condition>,
+        plan: Option<&QueryPlan>,
+        options: &QueryOptions,
     ) -> Result<BackendResponse<usize>, EngineError> {
         let table_data = self
             .tables
             .get_mut(table)
             .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
         let before = table_data.items.len();
-        table_data
-            .items
-            .retain(|item| !condition.is_none_or(|condition| matches_condition(item, condition)));
+        if condition.is_none() && plan.is_none() {
+            let count = table_data.items.len();
+            table_data.items.clear();
+            return Ok(BackendResponse::new("delete_item", table, count));
+        }
+        let key_condition = plan.and_then(|plan| plan.key_condition.as_ref());
+        let filter_condition =
+            plan.and_then(|plan| plan.filter_condition.as_ref())
+                .or(if key_condition.is_none() {
+                    condition
+                } else {
+                    None
+                });
+        table_data.items.retain(|item| {
+            apply_read_options(
+                std::iter::once(item),
+                key_condition,
+                filter_condition,
+                if key_condition.is_none() {
+                    condition
+                } else {
+                    None
+                },
+                options,
+            )
+            .is_empty()
+        });
         Ok(BackendResponse::new(
             "delete_item",
             table,
