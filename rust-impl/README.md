@@ -27,9 +27,10 @@ around the parallel workstreams identified in `rust-plans/`:
 - Phase 3 metadata/query planning for table fields, LSIs, GSIs, projection
   checks, throughput totals, index matching, scan rejection, key/filter splits,
   and follow-up batch-get detection.
-- Phase 4 execution (in progress): `SdkBackend` over `aws-sdk-dynamodb` with
-  DynamoDB Local endpoint support, batch write chunking, paginated query/scan,
-  UPDATE/ALTER/LOAD, explain/analyze capacity hooks, and token-bucket throttling.
+- Phase 4 execution: `SdkBackend` over `aws-sdk-dynamodb` with DynamoDB Local
+  endpoint support, batch write chunking, paginated query/scan, UPDATE/ALTER/LOAD
+  (JSON lines and CSV), explain kwargs, analyze capacity hooks, and token-bucket
+  throttling on memory and SDK backends.
 - In-memory backend for fast unit tests; CLI connects to Local when `-H` is set.
 - Rust parity tests mirror the Python suite by name. Implemented behavior runs
   normally; deferred tests are `#[ignore]` placeholders with source references.
@@ -41,6 +42,7 @@ Start DynamoDB Local on port 8000, then:
 ```bash
 cargo run -p dql-cli -- -H localhost -p 8000 -c "CREATE TABLE t (id STRING HASH KEY); SCAN * FROM t"
 cargo test -p dql-engine --test dynamodb_local_smoke -- --ignored
+cargo test -p dql-engine --test dynamodb_local_parity -- --ignored
 ```
 
 Integration tests use `tests/support/mod.rs` (`LocalHarness`) to connect, run
@@ -48,10 +50,9 @@ statements, and tear down tables.
 
 ## Deferred compatibility work
 
-- Parser options: `USING`, `KEYS IN`, `CONSISTENT`, `ORDER BY` on reads/writes.
-- Full parity with `tests/test_queries.py` (index planner, FilterExpression,
-  selection arithmetic, KEYS IN batch get).
 - FragmentEngine and REPL meta-commands (Phase 5).
+- SAVE file formats, gzip/pickle LOAD, and rich terminal formatting.
+- Regression tests for reserved-word field escaping and dashed field paths.
 - Rich terminal formatting, completion, persistent history, and output modes.
 
 ## Local checks
