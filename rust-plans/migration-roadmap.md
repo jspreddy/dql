@@ -87,12 +87,22 @@ Connect the typed statement executor to DynamoDB Local and then to AWS.
 
 Deliverables:
 
-- DynamoDB Local endpoint support
+- DynamoDB Local endpoint support via `SdkBackend` / `SdkConfig` and CLI `-H/-p` wiring
 - Table lifecycle statements: `CREATE`, `DROP`, `ALTER`, `DUMP`
-- Data statements: `INSERT`, `SELECT`, `SCAN`, `UPDATE`, `DELETE`, `LOAD`
+- Data statements: `INSERT`, `SELECT`, `SCAN`, `UPDATE`, `DELETE`, `LOAD` (JSON lines)
 - Explain/analyze hooks for calls and consumed capacity
-- Batch read/write helpers and pagination
-- Throttling primitives compatible with statement and session limits
+- Batch write chunking (25 items) with unprocessed-item retry; paginated query/scan
+- Throttling primitives via token-bucket `RateLimit` on the SDK backend
+
+Status:
+
+- `dql-engine` is split into `memory`, `aws`, `convert`, `engine`, `json_util`, and
+  `throttle` modules with a generic `Engine<B: DynamoBackend>` dispatcher
+- `SdkBackend` implements create/drop/describe/list, batch write, query/scan pagination,
+  update/delete by key, and basic ALTER TABLE operations against `aws-sdk-dynamodb`
+- `MemoryBackend` remains the default for unit/parity tests; UPDATE and ALTER work in memory
+- CLI connects to DynamoDB Local when `-H` is provided
+- Integration test `dynamodb_local_smoke` is present but ignored unless Local is running
 
 Compatibility gate:
 

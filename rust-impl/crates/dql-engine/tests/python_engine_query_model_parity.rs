@@ -6,7 +6,7 @@ fn pending(source: &str, reason: &str) {
 }
 
 fn scan_after_insert(value: &str) -> Item {
-    let mut engine = InMemoryEngine::new();
+    let mut engine = InMemoryEngine::default();
     let result = engine
         .execute(&format!(
             "CREATE TABLE foobar (id STRING HASH KEY);
@@ -158,7 +158,7 @@ mod test_queries {
 
     #[test]
     fn test_drop() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         engine
             .execute("CREATE TABLE foobar (id STRING HASH KEY); DROP TABLE foobar")
             .unwrap();
@@ -167,7 +167,7 @@ mod test_queries {
 
     #[test]
     fn test_drop_if_exists() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         engine
             .execute(
                 "CREATE TABLE foobar (id STRING HASH KEY);
@@ -179,7 +179,7 @@ mod test_queries {
 
     #[test]
     fn test_explain_drop() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         let result = engine.execute("EXPLAIN DROP TABLE foobar").unwrap();
         assert_eq!(
             result,
@@ -189,7 +189,7 @@ mod test_queries {
 
     #[test]
     fn test_dump() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         let schema = engine
             .execute("CREATE TABLE test (id STRING HASH KEY, bar NUMBER RANGE KEY); DUMP SCHEMA")
             .unwrap();
@@ -203,7 +203,7 @@ mod test_queries {
 
     #[test]
     fn test_dump_tables() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         let result = engine
             .execute(
                 "CREATE TABLE test (id STRING HASH KEY);
@@ -219,7 +219,7 @@ mod test_queries {
 
     #[test]
     fn test_multiple_statements() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         let result = engine
             .execute(
                 "CREATE TABLE test (id STRING HASH KEY);
@@ -266,7 +266,7 @@ mod test_insert {
 
     #[test]
     fn test_insert() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         let result = engine
             .execute(
                 "CREATE TABLE foobar (id STRING HASH KEY);
@@ -303,7 +303,7 @@ mod test_insert {
 
     #[test]
     fn test_explain() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         engine
             .execute("CREATE TABLE foobar (id STRING HASH KEY)")
             .unwrap();
@@ -400,7 +400,7 @@ mod test_select {
 
     #[test]
     fn test_filter_or() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         let result = engine
             .execute(
                 "CREATE TABLE foobar (id STRING HASH KEY, foo NUMBER, bar NUMBER, baz NUMBER);
@@ -434,7 +434,7 @@ mod test_select {
     );
 
     fn seeded_table() -> InMemoryEngine {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         engine
             .execute(
                 "CREATE TABLE foobar (id STRING HASH KEY, range NUMBER RANGE KEY, foo NUMBER);
@@ -450,7 +450,7 @@ mod test_select_scan {
 
     #[test]
     fn test_scan() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         let result = engine
             .execute(
                 "CREATE TABLE foobar (id STRING HASH KEY);
@@ -542,7 +542,7 @@ mod test_select_scan {
 
     #[test]
     fn test_filter_nested() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         let result = engine
             .execute(
                 "CREATE TABLE foobar (id STRING HASH KEY, foo NUMBER, bar NUMBER);
@@ -554,7 +554,7 @@ mod test_select_scan {
     }
 
     fn seeded_scan_table() -> InMemoryEngine {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         engine
             .execute(
                 "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER);
@@ -570,16 +570,16 @@ mod test_create {
 
     #[test]
     fn test_create() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         engine
             .execute("CREATE TABLE foobar (id STRING HASH KEY, range NUMBER RANGE KEY)")
             .unwrap();
-        assert_eq!(engine.table_names(), vec!["foobar".to_string()]);
+        assert_eq!(engine.table_names().unwrap(), vec!["foobar".to_string()]);
     }
 
     #[test]
     fn test_create_throughput() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         engine
             .execute("CREATE TABLE foobar (id STRING HASH KEY, THROUGHPUT (1, 1))")
             .unwrap();
@@ -587,7 +587,7 @@ mod test_create {
 
     #[test]
     fn test_create_if_not_exists() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         engine
             .execute(
                 "CREATE TABLE foobar (id STRING HASH KEY);
@@ -620,7 +620,7 @@ mod test_create {
 
     #[test]
     fn test_create_explain() {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         let result = engine
             .execute("EXPLAIN CREATE TABLE foobar (id STRING HASH KEY)")
             .unwrap();
@@ -734,7 +734,7 @@ mod test_delete {
     );
 
     fn seeded_delete_table() -> InMemoryEngine {
-        let mut engine = InMemoryEngine::new();
+        let mut engine = InMemoryEngine::default();
         engine
             .execute(
                 "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER);

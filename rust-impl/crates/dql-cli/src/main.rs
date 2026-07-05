@@ -1,4 +1,4 @@
-use dql_engine::{InMemoryEngine, StatementResult};
+use dql_engine::{Engine, InMemoryEngine, SdkBackend, SdkConfig, StatementResult, EngineError};
 use std::env;
 use std::error::Error;
 use std::io::{self, Write};
@@ -15,6 +15,20 @@ struct Args {
     version: bool,
 }
 
+enum RuntimeEngine {
+    Memory(InMemoryEngine),
+    Remote(Engine<SdkBackend>),
+}
+
+impl RuntimeEngine {
+    fn execute(&mut self, input: &str) -> Result<StatementResult, EngineError> {
+        match self {
+            Self::Memory(engine) => engine.execute(input),
+            Self::Remote(engine) => engine.execute(input),
+        }
+    }
+}
+
 fn main() {
     if let Err(err) = run() {
         eprintln!("{err}");
@@ -28,7 +42,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    let mut engine = InMemoryEngine::new();
+    let mut engine = build_engine(&args)?;
     if let Some(command) = args.command {
         let result = engine.execute(command.trim())?;
         write_result(&result, args.json)?;
@@ -36,6 +50,15 @@ fn run() -> Result<(), Box<dyn Error>> {
         repl(&mut engine, &args)?;
     }
     Ok(())
+}
+
+fn build_engine(args: &Args) -> Result<RuntimeEngine, EngineError> {
+    if let Some(host) = args.host.clone() {
+        let backend = SdkBackend::connect(SdkConfig::local(args.region.clone(), host, args.port))?;
+        Ok(RuntimeEngine::Remote(Engine::new(backend)))
+    } else {
+        Ok(RuntimeEngine::Memory(InMemoryEngine::default()))
+    }
 }
 
 fn parse_args<I, S>(args: I) -> Result<Args, String>
@@ -96,7 +119,7 @@ fn write_result(result: &StatementResult, json: bool) -> io::Result<()> {
     io::stdout().flush()
 }
 
-fn repl(engine: &mut InMemoryEngine, args: &Args) -> Result<(), Box<dyn Error>> {
+fn repl(engine: &mut RuntimeEngine, args: &Args) -> Result<(), Box<dyn Error>> {
     let stdin = io::stdin();
     let mut buffer = String::new();
     loop {

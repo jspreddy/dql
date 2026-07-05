@@ -260,6 +260,45 @@ pub fn render_projection(selection: &Selection) -> RenderedExpression {
     }
 }
 
+pub fn dynamo_to_value(value: &DynamoValue) -> Result<Value, ExprError> {
+    match value {
+        DynamoValue::Null(true) => Ok(Value::Null),
+        DynamoValue::Null(false) => Ok(Value::Null),
+        DynamoValue::Bool(value) => Ok(Value::Bool(*value)),
+        DynamoValue::Number(value) => Ok(Value::Number(value.clone())),
+        DynamoValue::String(value) => Ok(Value::String(value.clone())),
+        DynamoValue::Binary(value) => Ok(Value::Binary(decode_base64(value)?)),
+        DynamoValue::NumberSet(values) => Ok(Value::Set(
+            values
+                .iter()
+                .map(|value| Value::Number(value.clone()))
+                .collect(),
+        )),
+        DynamoValue::StringSet(values) => Ok(Value::Set(
+            values
+                .iter()
+                .map(|value| Value::String(value.clone()))
+                .collect(),
+        )),
+        DynamoValue::BinarySet(values) => Ok(Value::Set(
+            values
+                .iter()
+                .map(|value| Ok(Value::Binary(decode_base64(value)?)))
+                .collect::<Result<Vec<_>, _>>()?,
+        )),
+        DynamoValue::List(values) => values
+            .iter()
+            .map(dynamo_to_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map(Value::List),
+        DynamoValue::Map(values) => values
+            .iter()
+            .map(|(key, value)| Ok((key.clone(), dynamo_to_value(value)?)))
+            .collect::<Result<BTreeMap<_, _>, _>>()
+            .map(Value::Map),
+    }
+}
+
 pub fn value_to_dynamo(value: &Value) -> Result<DynamoValue, ExprError> {
     match value {
         Value::Null => Ok(DynamoValue::Null(true)),
@@ -555,6 +594,34 @@ fn is_number(value: &str) -> bool {
 fn is_quoted(value: &str) -> bool {
     (value.starts_with('"') && value.ends_with('"'))
         || (value.starts_with('\'') && value.ends_with('\''))
+}
+
+fn decode_base64(input: &str) -> Result<Vec<u8>, ExprError> {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut decode = [0u8; 256];
+    for (index, ch) in ALPHABET.iter().enumerate() {
+        decode[*ch as usize] = index as u8;
+    }
+    let input = input.trim_end_matches('=');
+    let mut output = Vec::with_capacity(input.len() * 3 / 4);
+    let mut buffer = 0u32;
+    let mut bits = 0u32;
+    for ch in input.bytes() {
+        if ch == b'=' {
+            break;
+        }
+        let value = decode.get(ch as usize).copied().ok_or_else(|| {
+            ExprError::new(format!("invalid base64 character '{ch}'"))
+        })?;
+        buffer = (buffer << 6) | u32::from(value);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            output.push((buffer >> bits) as u8);
+            buffer &= (1 << bits) - 1;
+        }
+    }
+    Ok(output)
 }
 
 fn base64(input: &[u8]) -> String {

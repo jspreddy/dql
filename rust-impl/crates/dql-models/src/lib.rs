@@ -291,6 +291,45 @@ impl TableMeta {
     fn throughput_value(&self, read: bool) -> Option<f64> {
         throughput_number(self.throughput.as_ref(), read)
     }
+
+    pub fn schema_dql(&self) -> String {
+        let mut attrs = self.attrs.clone();
+        let mut field_parts = Vec::new();
+        field_parts.push(field_schema(
+            attrs.get(&self.hash_key).expect("hash key"),
+        ));
+        attrs.remove(&self.hash_key);
+        if let Some(range_key) = &self.range_key {
+            field_parts.push(field_schema(attrs.get(range_key).expect("range key")));
+            attrs.remove(range_key);
+        }
+        field_parts.extend(attrs.values().map(field_schema));
+        let mut body = field_parts.join(", ");
+        if let Some(throughput) = &self.throughput {
+            body.push_str(&format!(
+                ", THROUGHPUT ({}, {})",
+                throughput_literal(&throughput.read),
+                throughput_literal(&throughput.write)
+            ));
+        }
+        let mut output = format!("CREATE TABLE {} ({})", self.name, body);
+        for gsi in self.global_indexes.values() {
+            let schema = global_index_schema(gsi);
+            if !schema.is_empty() {
+                output.push(' ');
+                output.push_str(&schema);
+            }
+        }
+        format!("{output};")
+    }
+
+    pub fn primary_key_attributes(&self) -> Vec<String> {
+        let mut attrs = vec![self.hash_key.clone()];
+        if let Some(range_key) = &self.range_key {
+            attrs.push(range_key.clone());
+        }
+        attrs
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -585,6 +624,66 @@ fn throughput_number(throughput: Option<&Throughput>, read: bool) -> Option<f64>
 fn is_on_demand(throughput: &Option<Throughput>) -> bool {
     throughput_number(throughput.as_ref(), true) == Some(0.0)
         && throughput_number(throughput.as_ref(), false) == Some(0.0)
+}
+
+fn field_schema(field: &TableField) -> String {
+    let type_name = match &field.data_type {
+        AttributeType::String => "STRING",
+        AttributeType::Number => "NUMBER",
+        AttributeType::Binary => "BINARY",
+        AttributeType::Bool => "BOOL",
+        AttributeType::Other(value) => value.as_str(),
+    };
+    match field.key_type {
+        Some(KeyType::Hash) => format!("{} {type_name} HASH KEY", field.name),
+        Some(KeyType::Range) => format!("{} {type_name} RANGE KEY", field.name),
+        None => format!("{} {type_name}", field.name),
+    }
+}
+
+fn throughput_literal(value: &Value) -> String {
+    match value {
+        Value::Number(value) => value.clone(),
+        Value::String(value) => value.clone(),
+        _ => "0".to_string(),
+    }
+}
+
+fn global_index_schema(index: &GlobalIndexMeta) -> String {
+    if matches!(index.status, TableStatus::Deleting) {
+        return String::new();
+    }
+    let projection = match &index.projection {
+        ProjectionType::All => "ALL".to_string(),
+        ProjectionType::KeysOnly => "KEYS".to_string(),
+        ProjectionType::Include(values) => format!(
+            "INCLUDE({})",
+            values
+                .iter()
+                .map(|value| format!("'{value}'"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    };
+    let mut parts = vec![
+        "GLOBAL".to_string(),
+        projection,
+        "INDEX".to_string(),
+        format!("('{}', {}", index.name, index.hash_key.name),
+    ];
+    if let Some(range_key) = &index.range_key {
+        parts.push(format!("{},", range_key.name));
+    }
+    if let Some(throughput) = &index.throughput {
+        parts.push(format!(
+            "THROUGHPUT ({}, {}))",
+            throughput_literal(&throughput.read),
+            throughput_literal(&throughput.write)
+        ));
+    } else {
+        parts.push(")".to_string());
+    }
+    parts.join(" ")
 }
 
 #[cfg(test)]
