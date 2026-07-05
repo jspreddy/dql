@@ -1,6 +1,6 @@
 use dql_parser::{
-    parse_script, Attribute, AttributeType, CompareOp, Condition, KeyType, ParseError,
-    QueryOptions, Statement, Value,
+    parse_script, Attribute, AttributeType, CompareOp, Condition, ConditionOperand, KeyType,
+    ParseError, QueryOptions, Statement, Value,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
@@ -137,17 +137,28 @@ impl InMemoryEngine {
                 rows,
             } => self.insert(table, columns, rows),
             Statement::Delete { table, condition } => self.delete(table, condition.as_ref()),
+            Statement::Update { .. } => Err(EngineError::Runtime(
+                "UPDATE execution is not implemented in the in-memory scaffold".to_string(),
+            )),
             Statement::Scan {
                 table,
                 condition,
                 options,
+                ..
             } => self.scan(table, condition.as_ref(), options),
             Statement::Select {
                 table,
                 condition,
                 options,
+                ..
             } => self.select(table, condition.as_ref(), options),
+            Statement::AlterTable { .. } => Err(EngineError::Runtime(
+                "ALTER execution is not implemented in the in-memory scaffold".to_string(),
+            )),
             Statement::DumpSchema { tables } => self.dump_schema(tables.as_deref()),
+            Statement::Load { .. } => Err(EngineError::Runtime(
+                "LOAD execution is not implemented in the in-memory scaffold".to_string(),
+            )),
             Statement::Explain(inner) => self.explain(inner),
             Statement::Analyze(inner) => self.run(inner),
         }
@@ -332,9 +343,19 @@ impl InMemoryEngine {
 
 fn matches_condition(item: &Item, condition: &Condition) -> bool {
     match condition {
-        Condition::Compare { field, op, value } => item
+        Condition::Compare { field, op, rhs } => item
             .get(field)
-            .is_some_and(|item_value| compare_values(item_value, op, value)),
+            .is_some_and(|item_value| compare_operand(item, item_value, op, rhs)),
+        Condition::Between { field, low, high } => item.get(field).is_some_and(|item_value| {
+            compare_values(item_value, &CompareOp::Ge, low)
+                && compare_values(item_value, &CompareOp::Le, high)
+        }),
+        Condition::In { field, values } => item
+            .get(field)
+            .is_some_and(|item_value| values.iter().any(|value| item_value == value)),
+        Condition::Function { .. } | Condition::Size { .. } | Condition::AttributeType { .. } => {
+            false
+        }
         Condition::And(conditions) => conditions
             .iter()
             .all(|condition| matches_condition(item, condition)),
@@ -342,6 +363,15 @@ fn matches_condition(item: &Item, condition: &Condition) -> bool {
             .iter()
             .any(|condition| matches_condition(item, condition)),
         Condition::Not(condition) => !matches_condition(item, condition),
+    }
+}
+
+fn compare_operand(item: &Item, left: &Value, op: &CompareOp, rhs: &ConditionOperand) -> bool {
+    match rhs {
+        ConditionOperand::Value(value) => compare_values(left, op, value),
+        ConditionOperand::Field(field) => item
+            .get(field)
+            .is_some_and(|right| compare_values(left, op, right)),
     }
 }
 
@@ -442,6 +472,8 @@ fn value_to_json(value: &Value, indent: usize) -> String {
         Value::Number(value) => value.clone(),
         Value::String(value) => string_to_json(value),
         Value::Binary(value) => string_to_json(&base64(value)),
+        Value::Timestamp(value) => string_to_json(&format!("{value:?}")),
+        Value::Interval(value) => string_to_json(value),
         Value::List(values) | Value::Set(values) => {
             if values.is_empty() {
                 return "[]".to_string();

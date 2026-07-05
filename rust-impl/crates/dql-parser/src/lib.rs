@@ -43,6 +43,31 @@ pub struct Attribute {
     pub name: String,
     pub attr_type: AttributeType,
     pub key_type: Option<KeyType>,
+    pub local_index: Option<LocalIndex>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProjectionKind {
+    All,
+    Keys,
+    Include,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalIndex {
+    pub name: String,
+    pub projection: ProjectionKind,
+    pub includes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GlobalIndex {
+    pub name: String,
+    pub projection: ProjectionKind,
+    pub hash_key: String,
+    pub range_key: Option<String>,
+    pub includes: Vec<String>,
+    pub throughput: Option<Throughput>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -61,6 +86,27 @@ pub enum Value {
     List(Vec<Value>),
     Set(Vec<Value>),
     Map(BTreeMap<String, Value>),
+    Timestamp(TimestampExpr),
+    Interval(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TimestampExpr {
+    Now,
+    UtcNow,
+    Parse {
+        function: String,
+        value: String,
+    },
+    Ms(Box<TimestampExpr>),
+    AddInterval {
+        base: Box<TimestampExpr>,
+        interval: String,
+    },
+    SubInterval {
+        base: Box<TimestampExpr>,
+        interval: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,11 +124,72 @@ pub enum Condition {
     Compare {
         field: String,
         op: CompareOp,
+        rhs: ConditionOperand,
+    },
+    Between {
+        field: String,
+        low: Value,
+        high: Value,
+    },
+    In {
+        field: String,
+        values: Vec<Value>,
+    },
+    Function {
+        name: String,
+        args: Vec<ConditionOperand>,
+    },
+    Size {
+        field: String,
+        op: CompareOp,
         value: Value,
+    },
+    AttributeType {
+        field: String,
+        ty: String,
     },
     And(Vec<Condition>),
     Or(Vec<Condition>),
     Not(Box<Condition>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConditionOperand {
+    Field(String),
+    Value(Value),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Selection {
+    All,
+    CountAll,
+    Items(Vec<SelectionItem>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectionItem {
+    pub expression: String,
+    pub alias: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateExpr {
+    pub clauses: Vec<UpdateClause>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateClause {
+    pub kind: UpdateClauseKind,
+    pub path: String,
+    pub expression: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UpdateClauseKind {
+    Set,
+    Add,
+    Delete,
+    Remove,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -98,6 +205,7 @@ pub enum Statement {
         name: String,
         attributes: Vec<Attribute>,
         throughput: Option<Throughput>,
+        global_indexes: Vec<GlobalIndex>,
     },
     DropTable {
         if_exists: bool,
@@ -112,21 +220,60 @@ pub enum Statement {
         table: String,
         condition: Option<Condition>,
     },
+    Update {
+        table: String,
+        update: UpdateExpr,
+        condition: Option<Condition>,
+        returns: Option<String>,
+    },
     Scan {
         table: String,
+        selection: Selection,
         condition: Option<Condition>,
         options: QueryOptions,
     },
     Select {
         table: String,
+        selection: Selection,
         condition: Option<Condition>,
         options: QueryOptions,
+    },
+    AlterTable {
+        table: String,
+        action: AlterAction,
     },
     DumpSchema {
         tables: Option<Vec<String>>,
     },
+    Load {
+        file: String,
+        table: String,
+    },
     Explain(Box<Statement>),
     Analyze(Box<Statement>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AlterAction {
+    SetThroughput {
+        index: Option<String>,
+        throughput: Throughput,
+    },
+    DropIndex {
+        name: String,
+        if_exists: bool,
+    },
+    CreateGlobalIndex {
+        index: GlobalIndex,
+        if_not_exists: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum FragmentStatus {
+    Incomplete,
+    Complete(Vec<Statement>),
+    Error(ParseError),
 }
 
 pub fn parse_script(input: &str) -> Result<Vec<Statement>, ParseError> {
@@ -162,6 +309,38 @@ pub fn parse_value(input: &str) -> Result<Value, ParseError> {
         Ok(value)
     } else {
         Err(parser.error("unexpected trailing input"))
+    }
+}
+
+pub fn parse_selection(input: &str) -> Result<Selection, ParseError> {
+    let tokens = tokenize(input)?;
+    let mut parser = Parser::new(tokens);
+    let selection = parser.parse_selection_until(|parser| parser.is_eof())?;
+    if parser.is_eof() {
+        Ok(selection)
+    } else {
+        Err(parser.error("unexpected trailing input"))
+    }
+}
+
+pub fn parse_update_expr(input: &str) -> Result<UpdateExpr, ParseError> {
+    let tokens = tokenize(input)?;
+    let mut parser = Parser::new(tokens);
+    let update = parser.parse_update_expr_until(|parser| parser.is_eof())?;
+    if parser.is_eof() {
+        Ok(update)
+    } else {
+        Err(parser.error("unexpected trailing input"))
+    }
+}
+
+pub fn parse_fragment(input: &str) -> FragmentStatus {
+    if !input.contains(';') {
+        return FragmentStatus::Incomplete;
+    }
+    match parse_script(input) {
+        Ok(statements) => FragmentStatus::Complete(statements),
+        Err(err) => FragmentStatus::Error(err),
     }
 }
 
@@ -219,7 +398,8 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 chars.next();
                 tokens.push(Token::Star);
             }
-            '(' | ')' | '[' | ']' | '{' | '}' | ',' | ':' | ';' | '=' | '<' | '>' | '!' => {
+            '(' | ')' | '[' | ']' | '{' | '}' | ',' | ':' | ';' | '=' | '<' | '>' | '!' | '+'
+            | '/' => {
                 chars.next();
                 tokens.push(Token::Symbol(ch));
             }
@@ -315,12 +495,18 @@ impl Parser {
             self.parse_insert()
         } else if self.accept_keyword("DELETE") {
             self.parse_delete()
+        } else if self.accept_keyword("UPDATE") {
+            self.parse_update()
         } else if self.accept_keyword("SCAN") {
             self.parse_scan()
         } else if self.accept_keyword("SELECT") {
             self.parse_select()
+        } else if self.accept_keyword("ALTER") {
+            self.parse_alter()
         } else if self.accept_keyword("DUMP") {
             self.parse_dump()
+        } else if self.accept_keyword("LOAD") {
+            self.parse_load()
         } else {
             Err(self.error("expected a DQL statement"))
         }
@@ -351,18 +537,20 @@ impl Parser {
             self.expect_symbol(')')?;
             break;
         }
-        self.skip_global_indexes()?;
+        let global_indexes = self.parse_global_indexes()?;
         Ok(Statement::CreateTable {
             if_not_exists,
             name,
             attributes,
             throughput,
+            global_indexes,
         })
     }
 
     fn parse_attribute(&mut self) -> Result<Attribute, ParseError> {
         let name = self.expect_ident()?;
         let attr_type = self.parse_attribute_type()?;
+        let mut local_index = None;
         let key_type = if self.accept_keyword("HASH") {
             self.expect_keyword("KEY")?;
             Some(KeyType::Hash)
@@ -370,13 +558,14 @@ impl Parser {
             self.expect_keyword("KEY")?;
             Some(KeyType::Range)
         } else {
-            self.skip_local_index()?;
+            local_index = self.parse_local_index()?;
             None
         };
         Ok(Attribute {
             name,
             attr_type,
             key_type,
+            local_index,
         })
     }
 
@@ -391,24 +580,83 @@ impl Parser {
         })
     }
 
-    fn skip_local_index(&mut self) -> Result<(), ParseError> {
-        if self.accept_keyword("KEYS") || self.accept_keyword("INCLUDE") {
+    fn parse_local_index(&mut self) -> Result<Option<LocalIndex>, ParseError> {
+        let projection = if self.accept_keyword("KEYS") {
             self.expect_keyword("INDEX")?;
-            self.skip_parenthesized()
+            ProjectionKind::Keys
+        } else if self.accept_keyword("INCLUDE") {
+            self.expect_keyword("INDEX")?;
+            ProjectionKind::Include
         } else if self.accept_keyword("INDEX") {
-            self.skip_parenthesized()
+            ProjectionKind::All
         } else {
-            Ok(())
-        }
+            return Ok(None);
+        };
+        self.expect_symbol('(')?;
+        let name = self.expect_string_or_ident()?;
+        let includes = if self.accept_symbol(',') {
+            self.parse_string_list()?
+        } else {
+            Vec::new()
+        };
+        self.expect_symbol(')')?;
+        Ok(Some(LocalIndex {
+            name,
+            projection,
+            includes,
+        }))
     }
 
-    fn skip_global_indexes(&mut self) -> Result<(), ParseError> {
+    fn parse_global_indexes(&mut self) -> Result<Vec<GlobalIndex>, ParseError> {
+        let mut indexes = Vec::new();
         while self.accept_keyword("GLOBAL") {
-            let _ = self.accept_keyword("KEYS") || self.accept_keyword("INCLUDE");
+            let projection = if self.accept_keyword("KEYS") {
+                ProjectionKind::Keys
+            } else if self.accept_keyword("INCLUDE") {
+                ProjectionKind::Include
+            } else {
+                ProjectionKind::All
+            };
             self.expect_keyword("INDEX")?;
-            self.skip_parenthesized()?;
+            indexes.push(self.parse_global_index_body(projection)?);
         }
-        Ok(())
+        Ok(indexes)
+    }
+
+    fn parse_global_index_body(
+        &mut self,
+        projection: ProjectionKind,
+    ) -> Result<GlobalIndex, ParseError> {
+        self.expect_symbol('(')?;
+        let name = self.expect_string_or_ident()?;
+        self.expect_symbol(',')?;
+        let hash_key = self.expect_ident()?;
+        let _ = self.accept_type_name();
+        let mut range_key = None;
+        let mut includes = Vec::new();
+        let mut throughput = None;
+        while self.accept_symbol(',') {
+            if self.accept_keyword("THROUGHPUT") || self.accept_keyword("TP") {
+                throughput = Some(self.parse_throughput_after_keyword()?);
+            } else if self.peek_symbol('[') {
+                includes = self.parse_string_list()?;
+            } else {
+                let part = self.expect_ident()?;
+                let _ = self.accept_type_name();
+                if range_key.replace(part).is_some() {
+                    return Err(self.error("too many global index key fields"));
+                }
+            }
+        }
+        self.expect_symbol(')')?;
+        Ok(GlobalIndex {
+            name,
+            projection,
+            hash_key,
+            range_key,
+            includes,
+            throughput,
+        })
     }
 
     fn parse_throughput_after_keyword(&mut self) -> Result<Throughput, ParseError> {
@@ -476,23 +724,60 @@ impl Parser {
         Ok(Statement::Delete { table, condition })
     }
 
+    fn parse_update(&mut self) -> Result<Statement, ParseError> {
+        let table = self.expect_ident()?;
+        let update = self.parse_update_expr_until(|parser| {
+            parser.peek_keyword("WHERE")
+                || parser.peek_keyword("RETURNS")
+                || parser.peek_keyword("USING")
+                || parser.peek_keyword("THROTTLE")
+                || parser.peek_symbol(';')
+                || parser.is_eof()
+        })?;
+        let condition = if self.accept_keyword("WHERE") {
+            Some(self.parse_condition()?)
+        } else {
+            None
+        };
+        let mut returns = None;
+        while !self.is_eof() && !self.peek_symbol(';') {
+            if self.accept_keyword("RETURNS") {
+                returns = Some(self.collect_until(|parser| {
+                    parser.peek_keyword("THROTTLE") || parser.peek_symbol(';') || parser.is_eof()
+                }));
+            } else {
+                self.pos += 1;
+            }
+        }
+        Ok(Statement::Update {
+            table,
+            update,
+            condition,
+            returns,
+        })
+    }
+
     fn parse_scan(&mut self) -> Result<Statement, ParseError> {
-        self.skip_until_keyword("FROM")?;
+        let selection = self.parse_selection_until(|parser| parser.peek_keyword("FROM"))?;
+        self.expect_keyword("FROM")?;
         let table = self.expect_ident()?;
         let (condition, options) = self.parse_query_tail()?;
         Ok(Statement::Scan {
             table,
+            selection,
             condition,
             options,
         })
     }
 
     fn parse_select(&mut self) -> Result<Statement, ParseError> {
-        self.skip_until_keyword("FROM")?;
+        let selection = self.parse_selection_until(|parser| parser.peek_keyword("FROM"))?;
+        self.expect_keyword("FROM")?;
         let table = self.expect_ident()?;
         let (condition, options) = self.parse_query_tail()?;
         Ok(Statement::Select {
             table,
+            selection,
             condition,
             options,
         })
@@ -518,6 +803,59 @@ impl Parser {
         Ok((condition, options))
     }
 
+    fn parse_alter(&mut self) -> Result<Statement, ParseError> {
+        self.expect_keyword("TABLE")?;
+        let table = self.expect_ident()?;
+        let action = if self.accept_keyword("SET") {
+            let index = if self.accept_keyword("INDEX") {
+                Some(self.expect_ident()?)
+            } else {
+                None
+            };
+            self.expect_keyword("THROUGHPUT")
+                .or_else(|_| self.expect_keyword("TP"))?;
+            AlterAction::SetThroughput {
+                index,
+                throughput: self.parse_throughput_after_keyword()?,
+            }
+        } else if self.accept_keyword("DROP") {
+            self.expect_keyword("INDEX")?;
+            let name = self.expect_ident()?;
+            let if_exists = if self.accept_keyword("IF") {
+                self.expect_keyword("EXISTS")?;
+                true
+            } else {
+                false
+            };
+            AlterAction::DropIndex { name, if_exists }
+        } else if self.accept_keyword("CREATE") {
+            self.expect_keyword("GLOBAL")?;
+            let projection = if self.accept_keyword("KEYS") {
+                ProjectionKind::Keys
+            } else if self.accept_keyword("INCLUDE") {
+                ProjectionKind::Include
+            } else {
+                ProjectionKind::All
+            };
+            self.expect_keyword("INDEX")?;
+            let index = self.parse_global_index_body(projection)?;
+            let if_not_exists = if self.accept_keyword("IF") {
+                self.expect_keyword("NOT")?;
+                self.expect_keyword("EXISTS")?;
+                true
+            } else {
+                false
+            };
+            AlterAction::CreateGlobalIndex {
+                index,
+                if_not_exists,
+            }
+        } else {
+            return Err(self.error("expected ALTER action"));
+        };
+        Ok(Statement::AlterTable { table, action })
+    }
+
     fn parse_dump(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword("SCHEMA")?;
         let mut tables = Vec::new();
@@ -534,6 +872,55 @@ impl Parser {
                 Some(tables)
             },
         })
+    }
+
+    fn parse_load(&mut self) -> Result<Statement, ParseError> {
+        let file = self.expect_string_or_ident()?;
+        self.expect_keyword("INTO")?;
+        let table = self.expect_ident()?;
+        self.skip_statement_tail();
+        Ok(Statement::Load { file, table })
+    }
+
+    fn parse_selection_until<F>(&mut self, stop: F) -> Result<Selection, ParseError>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        let raw = self.collect_until(stop);
+        let raw = raw.trim();
+        if raw.is_empty() || raw == "*" {
+            return Ok(Selection::All);
+        }
+        if raw.eq_ignore_ascii_case("count ( * )") || raw.eq_ignore_ascii_case("count(*)") {
+            return Ok(Selection::CountAll);
+        }
+        let items = raw
+            .split(',')
+            .map(|item| {
+                let item = item.trim();
+                let upper = item.to_ascii_uppercase();
+                if let Some(index) = upper.rfind(" AS ") {
+                    SelectionItem {
+                        expression: normalize_ws(&item[..index]),
+                        alias: Some(item[index + 4..].trim().to_string()),
+                    }
+                } else {
+                    SelectionItem {
+                        expression: normalize_ws(item),
+                        alias: None,
+                    }
+                }
+            })
+            .collect();
+        Ok(Selection::Items(items))
+    }
+
+    fn parse_update_expr_until<F>(&mut self, stop: F) -> Result<UpdateExpr, ParseError>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        let raw = self.collect_until(stop);
+        parse_update_expr_raw(&raw)
     }
 
     fn parse_condition(&mut self) -> Result<Condition, ParseError> {
@@ -577,10 +964,107 @@ impl Parser {
     }
 
     fn parse_comparison(&mut self) -> Result<Condition, ParseError> {
-        let field = self.expect_ident()?;
+        if self.accept_keyword("SIZE") {
+            self.expect_symbol('(')?;
+            let field = self.parse_field_path()?;
+            self.expect_symbol(')')?;
+            let op = self.parse_compare_op()?;
+            let value = self.parse_value()?;
+            return Ok(Condition::Size { field, op, value });
+        }
+        if self.peek_function_condition() {
+            return self.parse_function_condition();
+        }
+        let field = self.parse_field_path()?;
+        if self.accept_keyword("BETWEEN") {
+            let low = self.parse_value()?;
+            self.expect_keyword("AND")?;
+            let high = self.parse_value()?;
+            return Ok(Condition::Between { field, low, high });
+        }
+        if self.accept_keyword("IN") {
+            self.expect_symbol('(')?;
+            let mut values = Vec::new();
+            if !self.accept_symbol(')') {
+                loop {
+                    values.push(self.parse_value()?);
+                    if self.accept_symbol(',') {
+                        continue;
+                    }
+                    self.expect_symbol(')')?;
+                    break;
+                }
+            }
+            return Ok(Condition::In { field, values });
+        }
         let op = self.parse_compare_op()?;
-        let value = self.parse_value()?;
-        Ok(Condition::Compare { field, op, value })
+        let rhs = self.parse_condition_operand()?;
+        Ok(Condition::Compare { field, op, rhs })
+    }
+
+    fn parse_function_condition(&mut self) -> Result<Condition, ParseError> {
+        let name = self.expect_ident()?.to_ascii_lowercase();
+        self.expect_symbol('(')?;
+        if name.eq_ignore_ascii_case("ATTRIBUTE_TYPE") {
+            let field = self.parse_field_path()?;
+            self.expect_symbol(',')?;
+            let ty = self.expect_string_or_ident()?;
+            self.expect_symbol(')')?;
+            return Ok(Condition::AttributeType { field, ty });
+        }
+        let mut args = Vec::new();
+        if !self.accept_symbol(')') {
+            loop {
+                args.push(self.parse_condition_operand()?);
+                if self.accept_symbol(',') {
+                    continue;
+                }
+                self.expect_symbol(')')?;
+                break;
+            }
+        }
+        Ok(Condition::Function { name, args })
+    }
+
+    fn parse_condition_operand(&mut self) -> Result<ConditionOperand, ParseError> {
+        match self.peek().cloned() {
+            Some(Token::Ident(value))
+                if !is_value_keyword(&value)
+                    && !is_timestamp_keyword(&value)
+                    && !value.eq_ignore_ascii_case("MS")
+                    && !value.eq_ignore_ascii_case("INTERVAL") =>
+            {
+                Ok(ConditionOperand::Field(self.parse_field_path()?))
+            }
+            _ => Ok(ConditionOperand::Value(self.parse_value()?)),
+        }
+    }
+
+    fn parse_field_path(&mut self) -> Result<String, ParseError> {
+        let mut field = self.expect_ident()?;
+        while self.accept_symbol('[') {
+            let index = self.expect_string_or_ident()?;
+            self.expect_symbol(']')?;
+            field.push('[');
+            field.push_str(&index);
+            field.push(']');
+        }
+        Ok(field)
+    }
+
+    fn peek_function_condition(&self) -> bool {
+        matches!(
+            self.peek(),
+            Some(Token::Ident(value))
+                if matches!(
+                    value.to_ascii_uppercase().as_str(),
+                    "BEGINS_WITH"
+                        | "ATTRIBUTE_EXISTS"
+                        | "ATTRIBUTE_NOT_EXISTS"
+                        | "ATTRIBUTE_TYPE"
+                        | "CONTAINS"
+                )
+        )
     }
 
     fn parse_compare_op(&mut self) -> Result<CompareOp, ParseError> {
@@ -621,6 +1105,18 @@ impl Parser {
             Some(Token::String(value)) => Ok(Value::String(value)),
             Some(Token::Binary(value)) => Ok(Value::Binary(value)),
             Some(Token::Number(value)) => Ok(Value::Number(value)),
+            Some(Token::Ident(value)) if is_timestamp_keyword(&value) => self
+                .parse_timestamp_after_keyword(value)
+                .map(Value::Timestamp),
+            Some(Token::Ident(value)) if value.eq_ignore_ascii_case("MS") => {
+                self.expect_symbol('(')?;
+                let expr = self.parse_timestamp_expr()?;
+                self.expect_symbol(')')?;
+                Ok(Value::Timestamp(TimestampExpr::Ms(Box::new(expr))))
+            }
+            Some(Token::Ident(value)) if value.eq_ignore_ascii_case("INTERVAL") => {
+                Ok(Value::Interval(self.expect_string_or_ident()?))
+            }
             Some(Token::Ident(value)) if value.eq_ignore_ascii_case("TRUE") => {
                 Ok(Value::Bool(true))
             }
@@ -633,6 +1129,71 @@ impl Parser {
             Some(Token::Symbol('{')) => self.parse_map(),
             Some(token) => Err(self.error_at_previous(format!("expected value, got {token:?}"))),
             None => Err(self.error("expected value")),
+        }
+    }
+
+    fn parse_timestamp_expr(&mut self) -> Result<TimestampExpr, ParseError> {
+        let base = match self.next().cloned() {
+            Some(Token::Ident(value)) if value.eq_ignore_ascii_case("MS") => {
+                self.expect_symbol('(')?;
+                let expr = self.parse_timestamp_expr()?;
+                self.expect_symbol(')')?;
+                TimestampExpr::Ms(Box::new(expr))
+            }
+            Some(Token::Ident(value)) if is_timestamp_keyword(&value) => {
+                self.parse_timestamp_after_keyword(value)?
+            }
+            Some(token) => {
+                return Err(
+                    self.error_at_previous(format!("expected timestamp expression, got {token:?}"))
+                )
+            }
+            None => return Err(self.error("expected timestamp expression")),
+        };
+        self.parse_timestamp_tail(base)
+    }
+
+    fn parse_timestamp_after_keyword(
+        &mut self,
+        keyword: String,
+    ) -> Result<TimestampExpr, ParseError> {
+        let expr = if keyword.eq_ignore_ascii_case("NOW") {
+            let _ = self.accept_symbol('(') && self.accept_symbol(')');
+            TimestampExpr::Now
+        } else if keyword.eq_ignore_ascii_case("UTCNOW") {
+            let _ = self.accept_symbol('(') && self.accept_symbol(')');
+            TimestampExpr::UtcNow
+        } else {
+            let value = if self.accept_symbol('(') {
+                let value = self.expect_string_or_ident()?;
+                self.expect_symbol(')')?;
+                value
+            } else {
+                self.expect_string_or_ident()?
+            };
+            TimestampExpr::Parse {
+                function: keyword.to_ascii_lowercase(),
+                value,
+            }
+        };
+        self.parse_timestamp_tail(expr)
+    }
+
+    fn parse_timestamp_tail(&mut self, base: TimestampExpr) -> Result<TimestampExpr, ParseError> {
+        if self.accept_symbol('+') {
+            self.expect_keyword("INTERVAL")?;
+            Ok(TimestampExpr::AddInterval {
+                base: Box::new(base),
+                interval: self.expect_string_or_ident()?,
+            })
+        } else if self.accept_symbol('-') {
+            self.expect_keyword("INTERVAL")?;
+            Ok(TimestampExpr::SubInterval {
+                base: Box::new(base),
+                interval: self.expect_string_or_ident()?,
+            })
+        } else {
+            Ok(base)
         }
     }
 
@@ -710,32 +1271,72 @@ impl Parser {
         Ok(values)
     }
 
-    fn skip_parenthesized(&mut self) -> Result<(), ParseError> {
-        self.expect_symbol('(')?;
-        let mut depth = 1usize;
-        while let Some(token) = self.next() {
+    fn parse_string_list(&mut self) -> Result<Vec<String>, ParseError> {
+        self.expect_symbol('[')?;
+        let mut values = Vec::new();
+        if self.accept_symbol(']') {
+            return Ok(values);
+        }
+        loop {
+            values.push(self.expect_string_or_ident()?);
+            if self.accept_symbol(',') {
+                continue;
+            }
+            self.expect_symbol(']')?;
+            break;
+        }
+        Ok(values)
+    }
+
+    fn expect_string_or_ident(&mut self) -> Result<String, ParseError> {
+        match self.next().cloned() {
+            Some(Token::String(value)) | Some(Token::Ident(value)) | Some(Token::Number(value)) => {
+                Ok(value)
+            }
+            Some(token) => {
+                Err(self.error_at_previous(format!("expected string or identifier, got {token:?}")))
+            }
+            None => Err(self.error("expected string or identifier")),
+        }
+    }
+
+    fn accept_type_name(&mut self) -> bool {
+        matches!(
+            self.peek(),
+            Some(Token::Ident(value))
+                if matches!(
+                    value.to_ascii_uppercase().as_str(),
+                    "STRING" | "NUMBER" | "BINARY" | "BOOL" | "BOOLEAN"
+                )
+        ) && {
+            self.pos += 1;
+            true
+        }
+    }
+
+    fn collect_until<F>(&mut self, stop: F) -> String
+    where
+        F: Fn(&Self) -> bool,
+    {
+        let mut tokens = Vec::new();
+        let mut depth = 0usize;
+        while !self.is_eof() {
+            if depth == 0 && stop(self) {
+                break;
+            }
+            let Some(token) = self.next().cloned() else {
+                break;
+            };
             match token {
-                Token::Symbol('(') => depth += 1,
-                Token::Symbol(')') => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return Ok(());
-                    }
+                Token::Symbol('(') | Token::Symbol('[') | Token::Symbol('{') => depth += 1,
+                Token::Symbol(')') | Token::Symbol(']') | Token::Symbol('}') => {
+                    depth = depth.saturating_sub(1)
                 }
                 _ => {}
             }
+            tokens.push(token_to_source(&token));
         }
-        Err(self.error("unterminated parenthesized expression"))
-    }
-
-    fn skip_until_keyword(&mut self, keyword: &str) -> Result<(), ParseError> {
-        while !self.is_eof() && !self.peek_symbol(';') {
-            if self.accept_keyword(keyword) {
-                return Ok(());
-            }
-            self.pos += 1;
-        }
-        Err(self.error(format!("expected {keyword}")))
+        normalize_ws(&tokens.join(" "))
     }
 
     fn skip_statement_tail(&mut self) {
@@ -763,6 +1364,10 @@ impl Parser {
         } else {
             false
         }
+    }
+
+    fn peek_keyword(&self, keyword: &str) -> bool {
+        matches!(self.peek(), Some(Token::Ident(value)) if value.eq_ignore_ascii_case(keyword))
     }
 
     fn expect_ident(&mut self) -> Result<String, ParseError> {
@@ -842,6 +1447,134 @@ impl Parser {
             self.pos.saturating_sub(1)
         ))
     }
+}
+
+fn is_value_keyword(value: &str) -> bool {
+    matches!(
+        value.to_ascii_uppercase().as_str(),
+        "TRUE" | "FALSE" | "NULL"
+    )
+}
+
+fn is_timestamp_keyword(value: &str) -> bool {
+    matches!(
+        value.to_ascii_uppercase().as_str(),
+        "TIMESTAMP" | "TS" | "UTCTIMESTAMP" | "UTCTS" | "NOW" | "UTCNOW"
+    )
+}
+
+fn normalize_ws(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn token_to_source(token: &Token) -> String {
+    match token {
+        Token::Ident(value) | Token::Number(value) => value.clone(),
+        Token::String(value) => format!("'{value}'"),
+        Token::Binary(value) => format!("b'{}'", String::from_utf8_lossy(value)),
+        Token::Symbol(value) => value.to_string(),
+        Token::Star => "*".to_string(),
+    }
+}
+
+fn parse_update_expr_raw(raw: &str) -> Result<UpdateExpr, ParseError> {
+    let mut clauses = Vec::new();
+    let mut current_kind = None;
+    let mut current = String::new();
+    for part in raw.split_whitespace() {
+        let upper = part.to_ascii_uppercase();
+        if matches!(upper.as_str(), "SET" | "ADD" | "DELETE" | "REMOVE") {
+            flush_update_clause(current_kind.take(), &current, &mut clauses)?;
+            current.clear();
+            current_kind = Some(match upper.as_str() {
+                "SET" => UpdateClauseKind::Set,
+                "ADD" => UpdateClauseKind::Add,
+                "DELETE" => UpdateClauseKind::Delete,
+                "REMOVE" => UpdateClauseKind::Remove,
+                _ => unreachable!(),
+            });
+        } else {
+            if !current.is_empty() {
+                current.push(' ');
+            }
+            current.push_str(part);
+        }
+    }
+    flush_update_clause(current_kind, &current, &mut clauses)?;
+    if clauses.is_empty() {
+        return Err(ParseError::new("expected update expression"));
+    }
+    Ok(UpdateExpr { clauses })
+}
+
+fn flush_update_clause(
+    kind: Option<UpdateClauseKind>,
+    raw: &str,
+    clauses: &mut Vec<UpdateClause>,
+) -> Result<(), ParseError> {
+    let Some(kind) = kind else {
+        if raw.trim().is_empty() {
+            return Ok(());
+        }
+        return Err(ParseError::new("expected update clause"));
+    };
+    for part in split_top_level_commas(raw) {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        let (path, expression) = match kind {
+            UpdateClauseKind::Set => {
+                let Some((path, expr)) = part.split_once('=') else {
+                    return Err(ParseError::new("SET update requires '='"));
+                };
+                (path.trim().to_string(), Some(normalize_ws(expr)))
+            }
+            UpdateClauseKind::Remove => (part.to_string(), None),
+            UpdateClauseKind::Add | UpdateClauseKind::Delete => {
+                let mut pieces = part.splitn(2, char::is_whitespace);
+                let path = pieces.next().unwrap_or_default().trim().to_string();
+                let expr = pieces.next().unwrap_or_default().trim();
+                if path.is_empty() || expr.is_empty() {
+                    return Err(ParseError::new("ADD/DELETE update requires path and value"));
+                }
+                (path, Some(normalize_ws(expr)))
+            }
+        };
+        clauses.push(UpdateClause {
+            kind: kind.clone(),
+            path,
+            expression,
+        });
+    }
+    Ok(())
+}
+
+fn split_top_level_commas(raw: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut current = String::new();
+    for ch in raw.chars() {
+        match ch {
+            '(' | '[' | '{' => {
+                depth += 1;
+                current.push(ch);
+            }
+            ')' | ']' | '}' => {
+                depth = depth.saturating_sub(1);
+                current.push(ch);
+            }
+            ',' if depth == 0 => {
+                parts.push(current.trim().to_string());
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.trim().is_empty() {
+        parts.push(current.trim().to_string());
+    }
+    parts
 }
 
 #[cfg(test)]
@@ -930,6 +1663,7 @@ mod tests {
                 table,
                 condition: Some(_),
                 options,
+                ..
             } => {
                 assert_eq!(table, "t");
                 assert_eq!(options.limit, Some(3));
