@@ -51,12 +51,7 @@ fn registry() -> HashMap<&'static str, ReplCommand> {
     let mut commands = HashMap::new();
     macro_rules! register {
         ($name:expr, $handler:expr) => {
-            commands.insert(
-                $name,
-                ReplCommand {
-                    handler: $handler,
-                },
-            );
+            commands.insert($name, ReplCommand { handler: $handler });
         };
     }
     register!("opt", crate::meta::opt::handle);

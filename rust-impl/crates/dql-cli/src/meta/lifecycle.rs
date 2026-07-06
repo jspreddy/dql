@@ -16,25 +16,44 @@ pub fn take_exit_request() -> bool {
     })
 }
 
-pub fn version(_session: &mut Session, _: &[String], _: &HashMap<String, String>) -> Result<(), String> {
+pub fn version(
+    _session: &mut Session,
+    _: &[String],
+    _: &HashMap<String, String>,
+) -> Result<(), String> {
     println!(env!("CARGO_PKG_VERSION"));
     Ok(())
 }
 
-pub fn exit(session: &mut Session, _: &[String], _: &HashMap<String, String>) -> Result<(), String> {
-    session.history.remove_items(1);
+pub fn exit(
+    session: &mut Session,
+    _: &[String],
+    _: &HashMap<String, String>,
+) -> Result<(), String> {
+    let _ = session.history.remove_items(1);
     SHOULD_EXIT.with(|flag| flag.set(true));
     Ok(())
 }
 
-pub fn clear(session: &mut Session, _: &[String], _: &HashMap<String, String>) -> Result<(), String> {
+pub fn clear(
+    session: &mut Session,
+    _: &[String],
+    _: &HashMap<String, String>,
+) -> Result<(), String> {
     let _ = session.history.remove_items(1);
-    crossterm::execute!(io::stdout(), crossterm::terminal::Clear(crossterm::terminal::ClearType::All))
-        .map_err(|err| err.to_string())?;
+    crossterm::execute!(
+        io::stdout(),
+        crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+    )
+    .map_err(|err| err.to_string())?;
     Ok(())
 }
 
-pub fn shell(_session: &mut Session, args: &[String], _: &HashMap<String, String>) -> Result<(), String> {
+pub fn shell(
+    _session: &mut Session,
+    args: &[String],
+    _: &HashMap<String, String>,
+) -> Result<(), String> {
     if args.is_empty() {
         return Err("shell requires a command".to_string());
     }
@@ -51,12 +70,20 @@ pub fn shell(_session: &mut Session, args: &[String], _: &HashMap<String, String
     Ok(())
 }
 
-pub fn whoami(session: &mut Session, _: &[String], _: &HashMap<String, String>) -> Result<(), String> {
+pub fn whoami(
+    session: &mut Session,
+    _: &[String],
+    _: &HashMap<String, String>,
+) -> Result<(), String> {
     println!("{}", session.engine.session_identity());
     Ok(())
 }
 
-pub fn help(session: &mut Session, args: &[String], _: &HashMap<String, String>) -> Result<(), String> {
+pub fn help(
+    session: &mut Session,
+    args: &[String],
+    _: &HashMap<String, String>,
+) -> Result<(), String> {
     if let Some(topic) = args.first() {
         if let Some(text) = help::statement_help(topic) {
             print!("{text}");
@@ -69,7 +96,11 @@ pub fn help(session: &mut Session, args: &[String], _: &HashMap<String, String>)
     Ok(())
 }
 
-pub fn watch_disabled(_session: &mut Session, _: &[String], _: &HashMap<String, String>) -> Result<(), String> {
+pub fn watch_disabled(
+    _session: &mut Session,
+    _: &[String],
+    _: &HashMap<String, String>,
+) -> Result<(), String> {
     println!("watch is not enabled in this build (rebuild with --features watch)");
     Ok(())
 }

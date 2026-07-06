@@ -1,0 +1,10 @@
+---
+source: crates/dql-cli/tests/python_cli_history_parity.rs
+expression: output
+---
+Table: foobar_ls_test
+Status: Active
+Items: 0
+Size: 0 B
+
+CREATE TABLE foobar_ls_test (id STRING HASH KEY, range NUMBER RANGE KEY, bar STRING HASH KEY, foo STRING INDEX('foo-index')) GLOBAL ALL INDEX ('bar-index', bar string);

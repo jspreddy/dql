@@ -38,7 +38,11 @@ pub fn handle(
         .map_err(|err| err.to_string())?;
     let filtered: Vec<_> = tables
         .into_iter()
-        .filter(|name| glob::Pattern::new(pattern).map(|p| p.matches(name)).unwrap_or(false))
+        .filter(|name| {
+            glob::Pattern::new(pattern)
+                .map(|p| p.matches(name))
+                .unwrap_or(false)
+        })
         .collect();
     match filtered.len() {
         0 => Err(format!("Table {pattern:?} not found")),

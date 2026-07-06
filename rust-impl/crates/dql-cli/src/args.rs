@@ -27,7 +27,12 @@ pub struct CliArgs {
     )]
     pub host: Option<String>,
 
-    #[arg(short = 'p', long = "port", default_value_t = 8000, help = "Port to connect to")]
+    #[arg(
+        short = 'p',
+        long = "port",
+        default_value_t = 8000,
+        help = "Port to connect to"
+    )]
     pub port: u16,
 
     #[arg(

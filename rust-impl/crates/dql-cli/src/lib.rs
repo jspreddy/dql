@@ -7,16 +7,26 @@ pub mod repl;
 pub mod session;
 pub mod throttle;
 
-use clap::Parser;
 use args::{help_text, CliArgs};
+use clap::Parser;
 use session::Session;
 use std::io::{self, Write};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 const KNOWN_FLAGS: &[&str] = &[
-    "-c", "--command", "-r", "--region", "-H", "--host", "-p", "--port", "--json", "--version",
-    "-h", "--help",
+    "-c",
+    "--command",
+    "-r",
+    "--region",
+    "-H",
+    "--host",
+    "-p",
+    "--port",
+    "--json",
+    "--version",
+    "-h",
+    "--help",
 ];
 
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {

@@ -1,7 +1,7 @@
 use crate::meta::lifecycle::take_exit_request;
 use crate::session::Session;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
-use dql_output::{render_result, OutputConfig};
+use dql_output::render_result;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
@@ -205,11 +205,8 @@ fn draw(frame: &mut Frame, app: &ReplApp<'_>) {
         .take(frame.area().height as usize)
         .map(|line| ListItem::new(line.as_str()))
         .collect();
-    let output = List::new(output_lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title("Output"),
-    );
+    let output =
+        List::new(output_lines).block(Block::default().borders(Borders::ALL).title("Output"));
     frame.render_widget(output, chunks[0]);
 
     let prompt = if app.partial {

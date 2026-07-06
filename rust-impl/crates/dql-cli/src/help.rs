@@ -195,10 +195,7 @@ mod tests {
             "alter", "analyze", "create", "delete", "drop", "dump", "explain", "insert", "load",
             "scan", "select", "update", "options",
         ] {
-            assert!(
-                statement_help(topic).is_some(),
-                "missing help for {topic}"
-            );
+            assert!(statement_help(topic).is_some(), "missing help for {topic}");
         }
     }
 }

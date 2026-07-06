@@ -35,7 +35,7 @@ impl HistoryManager {
         self.history_dir.clone().unwrap_or_else(default_history_dir)
     }
 
-    fn history_file(&self) -> PathBuf {
+    pub fn history_file(&self) -> PathBuf {
         self.history_dir().join(Self::HISTORY_FILE_NAME)
     }
 
@@ -43,10 +43,7 @@ impl HistoryManager {
         let dir = self.history_dir();
         fs::create_dir_all(&dir)?;
         let file = self.history_file();
-        OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&file)?;
+        OpenOptions::new().create(true).append(true).open(&file)?;
         Ok(file)
     }
 

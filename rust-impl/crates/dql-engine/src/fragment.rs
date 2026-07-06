@@ -50,7 +50,15 @@ impl<B: crate::DynamoBackend> FragmentEngine<B> {
         }
 
         match parse_fragment(&self.fragments) {
-            FragmentStatus::Incomplete | FragmentStatus::Error(_) => Ok(None),
+            FragmentStatus::Incomplete => Ok(None),
+            FragmentStatus::Error(err) => {
+                if looks_like_incomplete_fragment(&self.fragments) {
+                    Ok(None)
+                } else {
+                    self.last_query = self.fragments.trim().to_string();
+                    Err(EngineError::Parse(err))
+                }
+            }
             FragmentStatus::Complete(_) => {
                 self.last_query = self.fragments.trim().to_string();
                 self.fragments.clear();
@@ -66,11 +74,36 @@ impl<B: crate::DynamoBackend> FragmentEngine<B> {
         } else {
             &self.last_query
         };
-        let loc = err
-            .location()
-            .unwrap_or(query.len().saturating_sub(1));
+        let loc = err.location().unwrap_or(query.len().saturating_sub(1));
         let pre_nl = query[..loc].rfind('\n').map(|i| i + 1).unwrap_or(0);
-        let post_nl = query[loc..].find('\n').map(|i| loc + i).unwrap_or(query.len());
+        let post_nl = query[loc..]
+            .find('\n')
+            .map(|i| loc + i)
+            .unwrap_or(query.len());
         format!("{}\n{}", &query[..post_nl], " ".repeat(loc - pre_nl) + "^")
+    }
+}
+
+fn looks_like_incomplete_fragment(fragments: &str) -> bool {
+    !fragments.trim_end().ends_with(';')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::MemoryBackend;
+
+    #[test]
+    fn incomplete_fragment_without_terminator_stays_buffered() {
+        let mut engine = FragmentEngine::new(Engine::new(MemoryBackend::new()));
+        assert!(engine.execute("SELECT * FROM t WHERE").unwrap().is_none());
+        assert!(engine.execute("foo = 'bar'; DROP").unwrap().is_none());
+    }
+
+    #[test]
+    fn invalid_complete_fragment_returns_parse_error() {
+        let mut engine = FragmentEngine::new(Engine::new(MemoryBackend::new()));
+        let err = engine.execute("DROP nope;").unwrap_err();
+        assert!(matches!(err, EngineError::Parse(_)));
     }
 }

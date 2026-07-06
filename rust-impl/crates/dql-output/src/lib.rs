@@ -18,9 +18,7 @@ pub fn render_result(
 ) -> io::Result<()> {
     match result {
         StatementResult::None => Ok(()),
-        StatementResult::Status(status) if !config.silent => {
-            backend.write_line(status)
-        }
+        StatementResult::Status(status) if !config.silent => backend.write_line(status),
         StatementResult::Affected(count) if !config.silent => {
             backend.write_line(&format!("{count} item(s) affected"))
         }

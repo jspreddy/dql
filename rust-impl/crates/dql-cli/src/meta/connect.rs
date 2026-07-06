@@ -15,7 +15,11 @@ pub fn handle_use(
     session.region = region.clone();
     session
         .engine
-        .reconnect(&session.region, session.local_endpoint.clone(), session.config.allow_select_scan)
+        .reconnect(
+            &session.region,
+            session.local_endpoint.clone(),
+            session.config.allow_select_scan,
+        )
         .map_err(|err| err.to_string())?;
     Ok(())
 }
@@ -33,7 +37,11 @@ pub fn handle_local(
     let port = kwargs
         .get("port")
         .or_else(|| args.get(1))
-        .map(|value| value.parse::<u16>().map_err(|_| format!("invalid port {value}")))
+        .map(|value| {
+            value
+                .parse::<u16>()
+                .map_err(|_| format!("invalid port {value}"))
+        })
         .transpose()?
         .unwrap_or(8000);
     if host == "off" {

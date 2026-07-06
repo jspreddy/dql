@@ -31,9 +31,7 @@ pub struct LessDisplay {
 
 impl LessDisplay {
     pub fn new() -> Self {
-        Self {
-            buffer: Vec::new(),
-        }
+        Self { buffer: Vec::new() }
     }
 }
 

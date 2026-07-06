@@ -47,9 +47,7 @@ impl TableLimits {
             self.total.clear();
             return Ok(());
         }
-        if !read.chars().all(|c| c.is_ascii_digit())
-            || !write.chars().all(|c| c.is_ascii_digit())
-        {
+        if !read.chars().all(|c| c.is_ascii_digit()) || !write.chars().all(|c| c.is_ascii_digit()) {
             return Err("Total read/write limits must be a point value".to_string());
         }
         self.total.insert("read".to_string(), read.to_string());

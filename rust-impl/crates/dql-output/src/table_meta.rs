@@ -52,16 +52,10 @@ pub fn format_table_detail(meta: &TableMeta, stats: &TableStats) -> String {
     lines.push(format!("Items: {}", stats.item_count));
     lines.push(format!("Size: {}", format_size(stats.size_bytes, BINARY)));
     if let Some(read) = meta.total_read_throughput() {
-        lines.push(format!(
-            "Read: {}",
-            format_throughput(Some(read), None)
-        ));
+        lines.push(format!("Read: {}", format_throughput(Some(read), None)));
     }
     if let Some(write) = meta.total_write_throughput() {
-        lines.push(format!(
-            "Write: {}",
-            format_throughput(Some(write), None)
-        ));
+        lines.push(format!("Write: {}", format_throughput(Some(write), None)));
     }
     lines.push(String::new());
     lines.push(meta.schema_dql());

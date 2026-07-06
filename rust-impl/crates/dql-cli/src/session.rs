@@ -1,7 +1,5 @@
 use crate::config::CliConfig;
-use dql_engine::{
-    Engine, EngineError, FragmentEngine, SdkBackend, SdkConfig, StatementResult,
-};
+use dql_engine::{Engine, EngineError, FragmentEngine, SdkBackend, SdkConfig, StatementResult};
 use dql_output::{render_result, DisplayMode, OutputConfig};
 use std::io::{self, Write};
 
@@ -149,10 +147,7 @@ impl RuntimeEngine {
         }
     }
 
-    pub fn with_remote<R>(
-        &self,
-        f: impl FnOnce(&FragmentEngine<SdkBackend>) -> R,
-    ) -> Option<R> {
+    pub fn with_remote<R>(&self, f: impl FnOnce(&FragmentEngine<SdkBackend>) -> R) -> Option<R> {
         match self {
             Self::Remote(engine) => Some(f(engine)),
             Self::Memory(_) => None,
@@ -166,7 +161,10 @@ impl RuntimeEngine {
         }
     }
 
-    pub fn describe_all(&mut self, refresh: bool) -> Result<Vec<dql_models::TableMeta>, EngineError> {
+    pub fn describe_all(
+        &mut self,
+        refresh: bool,
+    ) -> Result<Vec<dql_models::TableMeta>, EngineError> {
         match self {
             Self::Memory(engine) => engine.inner_mut().describe_all(refresh),
             Self::Remote(engine) => engine.inner_mut().describe_all(refresh),
@@ -255,17 +253,21 @@ impl Session {
             self.dispatch_line(trimmed, &output_config, backend.as_mut())?;
         } else {
             self.apply_rate_limit()?;
-            let result = self.engine.execute_script(trimmed)?;
-            render_result(&result, &output_config, backend.as_mut())
-                .map_err(|err| EngineError::Runtime(err.to_string()))?;
-            if self.engine.partial() {
-                self.apply_rate_limit()?;
-                let result = self.engine.execute_script(";")?;
+            if let Some(result) = self.engine.execute_fragment(trimmed)? {
                 render_result(&result, &output_config, backend.as_mut())
                     .map_err(|err| EngineError::Runtime(err.to_string()))?;
             }
+            if self.engine.partial() {
+                self.apply_rate_limit()?;
+                if let Some(result) = self.engine.execute_fragment(";")? {
+                    render_result(&result, &output_config, backend.as_mut())
+                        .map_err(|err| EngineError::Runtime(err.to_string()))?;
+                }
+            }
         }
-        backend.finish().map_err(|err| EngineError::Runtime(err.to_string()))?;
+        backend
+            .finish()
+            .map_err(|err| EngineError::Runtime(err.to_string()))?;
         Ok(())
     }
 

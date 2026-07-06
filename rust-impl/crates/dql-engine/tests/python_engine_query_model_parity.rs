@@ -106,50 +106,55 @@ mod test_data_types {
 
 mod test_fragment_engine {
     use super::*;
+    use dql_engine::{Engine, FragmentEngine};
+
+    fn fragment_engine() -> FragmentEngine<dql_engine::MemoryBackend> {
+        FragmentEngine::new(Engine::new(dql_engine::MemoryBackend::new()))
+    }
 
     #[test]
-    #[ignore = "needs FragmentEngine equivalent"]
     fn test_no_run_fragment() {
-        pending(
-            "tests/test_engine.py::TestFragmentEngine::test_no_run_fragment",
-            "fragment buffering is deferred",
-        );
+        let mut engine = fragment_engine();
+        let result = engine.execute("SELECT * FROM table WHERE").unwrap();
+        assert!(result.is_none());
+        assert!(engine.partial());
     }
 
     #[test]
-    #[ignore = "needs FragmentEngine equivalent"]
     fn test_no_run_multi_fragment() {
-        pending(
-            "tests/test_engine.py::TestFragmentEngine::test_no_run_multi_fragment",
-            "fragment buffering is deferred",
-        );
+        let mut engine = fragment_engine();
+        engine.execute("SELECT * FROM table WHERE").unwrap();
+        let result = engine.execute("foo = 'bar'; DROP").unwrap();
+        assert!(result.is_none());
     }
 
     #[test]
-    #[ignore = "needs FragmentEngine equivalent"]
     fn test_run_query() {
-        pending(
-            "tests/test_engine.py::TestFragmentEngine::test_run_query",
-            "fragment buffering is deferred",
-        );
+        let mut engine = fragment_engine();
+        engine.execute("CREATE TABLE test ").unwrap();
+        engine.execute("(id STRING ").unwrap();
+        let result = engine.execute("HASH KEY);").unwrap();
+        assert!(result.is_some());
+        let desc = engine.inner_mut().describe("test", false).unwrap();
+        assert!(desc.is_some());
     }
 
     #[test]
-    #[ignore = "needs parse-error pretty formatter"]
+    #[ignore = "needs parse-error location in ParseError"]
     fn test_format_exc() {
         pending(
             "tests/test_engine.py::TestFragmentEngine::test_format_exc",
-            "Python pformat_exc caret output is deferred",
+            "ParseError offset tracking is deferred",
         );
     }
 
     #[test]
-    #[ignore = "needs FragmentEngine equivalent"]
     fn test_preserve_whitespace() {
-        pending(
-            "tests/test_engine.py::TestFragmentEngine::test_preserve_whitespace",
-            "fragment whitespace preservation is deferred",
-        );
+        let mut engine = fragment_engine();
+        for fragment in "DUMP\nSCHEMA\n\n;".split('\n') {
+            engine.execute(fragment).unwrap();
+        }
+        assert_eq!(engine.last_query, "DUMP\nSCHEMA\n\n;");
     }
 }
 
