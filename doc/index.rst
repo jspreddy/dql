@@ -15,6 +15,7 @@ User Guide
     topics/queries/index
     topics/data_types
     topics/options
+    topics/architecture
     topics/develop
 
     changes
