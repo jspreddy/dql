@@ -4,10 +4,10 @@ overview: "Implement Phase 5 by evolving the minimal `dql-cli` binary into a ful
 todos:
   - id: step-1-output-clap
     content: "Step 1: Create dql-output crate, clap args, CliConfig, JSON format — commit"
-    status: pending
+    status: completed
   - id: step-2-fragment-engine
     content: "Step 2: Add FragmentEngine to dql-engine, wire -c/REPL — commit"
-    status: pending
+    status: in_progress
   - id: step-3-config-opt
     content: "Step 3: Config persistence (~/.config/dql.json) and opt meta-command — commit"
     status: pending

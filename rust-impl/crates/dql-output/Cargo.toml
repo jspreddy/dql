@@ -1,0 +1,13 @@
+[package]
+name = "dql-output"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+crossterm.workspace = true
+dql-engine = { path = "../dql-engine" }
+dql-models = { path = "../dql-models" }
+dql-parser = { path = "../dql-parser" }
+humansize.workspace = true
+serde_json.workspace = true

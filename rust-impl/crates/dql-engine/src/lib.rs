@@ -1,9 +1,12 @@
 mod aws;
 mod convert;
 mod engine;
-mod json_util;
+pub mod fragment;
+pub mod json_util;
 mod memory;
 mod throttle;
+
+pub use fragment::FragmentEngine;
 
 pub use throttle::RateLimit;
 
@@ -153,6 +156,10 @@ pub trait DynamoBackend {
         table: &str,
         action: &AlterAction,
     ) -> Result<BackendResponse<String>, EngineError>;
+    fn table_item_count(&self, table: &str) -> usize {
+        let _ = table;
+        0
+    }
 }
 
 pub fn in_memory_engine() -> InMemoryEngine {

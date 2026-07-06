@@ -5,13 +5,19 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
     message: String,
+    offset: Option<usize>,
 }
 
 impl ParseError {
     fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            offset: None,
         }
+    }
+
+    pub fn location(&self) -> Option<usize> {
+        self.offset
     }
 }
 

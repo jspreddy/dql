@@ -11,7 +11,7 @@ use dql_parser::{
     parse_script, Condition, InsertForm, OrderBy, QueryOptions, Selection, Statement,
     ThrottleConfig, UpdateExpr, Value,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -24,6 +24,7 @@ pub struct Engine<B: DynamoBackend> {
     consumed_capacities: Vec<CapacityRecord>,
     allow_select_scan: bool,
     rate_limit: Option<RateLimit>,
+    pub cached_descriptions: HashMap<String, TableMeta>,
 }
 
 impl<B: DynamoBackend> Engine<B> {
@@ -36,6 +37,7 @@ impl<B: DynamoBackend> Engine<B> {
             consumed_capacities: Vec::new(),
             allow_select_scan: false,
             rate_limit: None,
+            cached_descriptions: HashMap::new(),
         }
     }
 
@@ -43,9 +45,60 @@ impl<B: DynamoBackend> Engine<B> {
         self.rate_limit = Some(RateLimit::new(read_per_second, write_per_second));
     }
 
+    pub fn clear_rate_limit(&mut self) {
+        self.rate_limit = None;
+    }
+
+    pub fn set_rate_limit_option(&mut self, limit: Option<RateLimit>) {
+        self.rate_limit = limit;
+    }
+
+    pub fn list_tables(&self) -> Result<Vec<String>, EngineError> {
+        self.backend.list_tables()
+    }
+
+    pub fn describe(
+        &mut self,
+        table: &str,
+        refresh: bool,
+    ) -> Result<Option<TableMeta>, EngineError> {
+        if !refresh {
+            if let Some(meta) = self.cached_descriptions.get(table) {
+                return Ok(Some(meta.clone()));
+            }
+        }
+        let desc = self.backend.describe_table(table)?;
+        if let Some(meta) = desc {
+            self.cached_descriptions
+                .insert(table.to_string(), meta.clone());
+            Ok(Some(meta))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn describe_all(&mut self, refresh: bool) -> Result<Vec<TableMeta>, EngineError> {
+        let tables = self.backend.list_tables()?;
+        let mut descs = Vec::new();
+        for table in tables {
+            if let Some(meta) = self.describe(&table, refresh)? {
+                descs.push(meta);
+            }
+        }
+        Ok(descs)
+    }
+
+    pub fn table_item_count(&self, table: &str) -> usize {
+        self.backend.table_item_count(table)
+    }
+
     pub fn with_allow_select_scan(mut self, allow_select_scan: bool) -> Self {
         self.allow_select_scan = allow_select_scan;
         self
+    }
+
+    pub fn set_allow_select_scan(&mut self, allow_select_scan: bool) {
+        self.allow_select_scan = allow_select_scan;
     }
 
     pub fn backend(&self) -> &B {

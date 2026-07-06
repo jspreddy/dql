@@ -8,6 +8,7 @@ version.workspace = true
 aws-config = "1.8.18"
 aws-credential-types = "1.2.14"
 aws-sdk-dynamodb = "1.116.0"
+aws-sdk-sts.workspace = true
 dql-expr = { path = "../dql-expr" }
 dql-models = { path = "../dql-models" }
 dql-parser = { path = "../dql-parser" }

@@ -38,6 +38,13 @@ impl DynamoBackend for MemoryBackend {
         Ok(self.tables.get(table).map(|table| table.meta.clone()))
     }
 
+    fn table_item_count(&self, table: &str) -> usize {
+        self.tables
+            .get(table)
+            .map(|table| table.items.len())
+            .unwrap_or(0)
+    }
+
     fn create_table(
         &mut self,
         meta: TableMeta,

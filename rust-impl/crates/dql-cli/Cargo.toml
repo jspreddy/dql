@@ -9,4 +9,18 @@ name = "dql"
 path = "src/main.rs"
 
 [dependencies]
+clap.workspace = true
+crossterm.workspace = true
 dql-engine = { path = "../dql-engine" }
+dql-models = { path = "../dql-models" }
+dql-output = { path = "../dql-output" }
+dql-parser = { path = "../dql-parser" }
+glob.workspace = true
+ratatui.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+shell-words.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+tempfile = "3.23.0"

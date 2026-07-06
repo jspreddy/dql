@@ -51,6 +51,8 @@ pub struct SdkBackend {
     runtime: Runtime,
     cache: HashMap<String, TableMeta>,
     rate_limit: Option<RateLimit>,
+    region: String,
+    config: SdkConfig,
 }
 
 impl SdkBackend {
@@ -59,15 +61,56 @@ impl SdkBackend {
             .enable_all()
             .build()
             .map_err(|err| EngineError::Runtime(err.to_string()))?;
+        let region = config.region.clone();
         let client = runtime
-            .block_on(async { build_client(config).await })
+            .block_on(async { build_client(config.clone()).await })
             .map_err(|err| EngineError::Runtime(err))?;
         Ok(Self {
             client,
             runtime,
             cache: HashMap::new(),
             rate_limit: None,
+            region,
+            config,
         })
+    }
+
+    pub fn region(&self) -> &str {
+        &self.region
+    }
+
+    pub fn reconnect(&mut self, config: SdkConfig) -> Result<(), EngineError> {
+        let client = self
+            .runtime
+            .block_on(async { build_client(config.clone()).await })
+            .map_err(|err| EngineError::Runtime(err))?;
+        self.client = client;
+        self.region = config.region.clone();
+        self.config = config;
+        self.cache.clear();
+        Ok(())
+    }
+
+    pub fn session_identity(&self) -> Result<String, EngineError> {
+        if self.config.host.is_some() {
+            return Ok("local".to_string());
+        }
+        let output = self
+            .runtime
+            .block_on(async {
+                let sts_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                    .region(aws_config::Region::new(self.region.clone()))
+                    .load()
+                    .await;
+                let sts = aws_sdk_sts::Client::new(&sts_config);
+                sts.get_caller_identity().send().await
+            })
+            .map_err(|err| EngineError::Runtime(err.to_string()))?;
+        Ok(output
+            .arn()
+            .or(output.user_id())
+            .unwrap_or("unknown")
+            .to_string())
     }
 
     pub fn set_rate_limit(&mut self, read_per_second: f64, write_per_second: f64) {
