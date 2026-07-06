@@ -7,34 +7,34 @@ todos:
     status: completed
   - id: step-2-fragment-engine
     content: "Step 2: Add FragmentEngine to dql-engine, wire -c/REPL — commit"
-    status: in_progress
+    status: completed
   - id: step-3-config-opt
     content: "Step 3: Config persistence (~/.config/dql.json) and opt meta-command — commit"
-    status: pending
+    status: completed
   - id: step-4-meta-lifecycle
     content: "Step 4: Meta-command router + version/exit/clear/shell/whoami — commit"
-    status: pending
+    status: completed
   - id: step-5-connect-file
     content: "Step 5: use, local, file meta-commands — commit"
-    status: pending
+    status: completed
   - id: step-6-ls-metadata
     content: "Step 6: Engine describe helpers and ls command — commit"
-    status: pending
+    status: completed
   - id: step-7-throttle
     content: "Step 7: TableLimits + throttle/unthrottle — commit"
-    status: pending
+    status: completed
   - id: step-8-output-formats
     content: "Step 8: smart/column/expanded formats and less pager — commit"
-    status: pending
+    status: completed
   - id: step-9-history-help
     content: "Step 9: HistoryManager and help text — commit"
-    status: pending
+    status: completed
   - id: step-10-ratatui-repl
     content: "Step 10: ratatui interactive REPL with completion — commit"
-    status: pending
+    status: completed
   - id: step-11-parity-snapshots
     content: "Step 11: Enable parity tests, insta snapshots, optional watch/rich — commit"
-    status: pending
+    status: completed
 isProject: false
 ---
 
