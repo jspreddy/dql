@@ -1,0 +1,90 @@
+name: Rust release
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+-*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux
+          - os: macos-latest
+            target: macos
+    defaults:
+      run:
+        working-directory: rust-impl
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-impl
+
+      - name: Install Java
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/setup-java@v5
+        with:
+          distribution: corretto
+          java-version: "21"
+
+      - name: Install and start DynamoDB Local
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: .
+        run: ./scripts/install_dynamodb_local.sh background
+
+      - name: Build release binary
+        run: cargo build --release -p dql-cli
+
+      - name: Run package smoke test
+        env:
+          DQL_REQUIRE_LOCAL: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
+        run: ./scripts/smoke_test.sh
+
+      - name: Package release archive
+        id: package
+        working-directory: .
+        run: |
+          version="${GITHUB_REF_NAME}"
+          arch="$(uname -m)"
+          asset="dql-${version}-${{ matrix.target }}-${arch}.tar.gz"
+          mkdir -p "dist/${version}"
+          cp rust-impl/target/release/dql "dist/${version}/dql"
+          cp LICENSE "dist/${version}/LICENSE"
+          tar -czf "$asset" -C "dist/${version}" dql LICENSE
+          echo "asset=${asset}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dql-${{ matrix.target }}-${{ runner.arch }}
+          path: dql-*.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**
+          generate_release_notes: true
