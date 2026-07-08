@@ -55,6 +55,14 @@ cargo test --workspace
 Integration tests use `tests/support/mod.rs` (`LocalHarness`) to connect, run
 statements, and tear down tables.
 
+## Remaining parity gaps
+
+See [migration-from-python.md](../rust-plans/migration-from-python.md) for
+install and behavior differences versus the Python CLI.
+
+Deferred engine work includes SAVE exports, gzip/pickle LOAD, and a handful of
+`#[ignore]` parity tests in `crates/dql-engine/tests/python_engine_query_model_parity.rs`.
+
 ## Local checks
 
 Run from this directory:

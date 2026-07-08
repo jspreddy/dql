@@ -91,3 +91,25 @@ Each bump updates ``pyproject.toml``, ``doc/conf.py``, ``dql/cli.py``, and ``uv.
 ``uv.lock`` stores PEP 440-normalized versions (for example ``0.6.4.dev10``), so it is not listed in ``.bumpversion.cfg``; ``uv lock`` regenerates it from ``pyproject.toml``.
 
 Also update ``CHANGES.rst`` with release notes for the new version before committing or tagging a release.
+
+Rust implementation
+-------------------
+The Rust rewrite lives in ``rust-impl/`` on the ``v-rust`` branch.
+
+Local checks::
+
+    cd rust-impl
+    cargo fmt --check
+    cargo clippy --workspace --all-targets -- -D warnings
+    cargo test --workspace
+    cargo build --release -p dql-cli
+    ./scripts/smoke_test.sh
+
+Release checklist for Rust binaries:
+
+1. Bump the shared version with ``uv run task bump --tag release``.
+2. Merge to ``v-rust``.
+3. Push the release tag; GitHub Actions builds Linux and macOS archives.
+4. Verify the uploaded release assets with ``rust-impl/scripts/smoke_test.sh``.
+
+See ``rust-plans/migration-from-python.md`` for user-facing migration notes.

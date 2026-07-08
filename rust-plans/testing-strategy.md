@@ -126,13 +126,13 @@ runtime.
 
 ## CI gates
 
-Minimum CI before replacing the Python package:
+Implemented in GitHub Actions (``.github/workflows/rust-workflows.yml``):
 
 - `cargo fmt --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo test --workspace`
 - DynamoDB Local integration suite
-- Binary smoke tests for `--version`, `-c`, `--json`, and local endpoint flags
+- Binary smoke tests for `--version`, `-c`, `--json`, and local endpoint flags (`rust-impl/scripts/smoke_test.sh`)
 
 ## Manual validation checklist
 

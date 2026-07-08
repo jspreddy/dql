@@ -33,6 +33,7 @@ these major surfaces:
 
 - `architecture.md` describes the proposed Rust crate and module boundaries.
 - `migration-roadmap.md` breaks the rewrite into compatibility-focused phases.
+- `migration-from-python.md` documents install and behavior differences for users moving from Python to Rust.
 - `testing-strategy.md` defines the parity gates and test migration approach.
 
 ## Non-goals for the first rewrite pass

@@ -1,10 +1,17 @@
 Getting Started
 ===============
-Install DQL with pip::
+Install DQL with a prebuilt Rust binary from `GitHub releases
+<https://github.com/stevearc/dql/releases>`__ (``v-rust`` branch) or with pip
+for the legacy Python package::
+
+    curl -fsSL https://raw.githubusercontent.com/stevearc/dql/v-rust/bin/install-rust.sh | sh
 
     pip install dql
 
-Since DQL uses :mod:`botocore` under the hood, the authentication mechanism is
+See ``rust-plans/migration-from-python.md`` for differences between the Python
+and Rust clients.
+
+Since DQL uses AWS credentials under the hood, the authentication mechanism is
 the same. You can use the ``$HOME/.aws/credentials`` file or set the environment
 variables ``AWS_ACCESS_KEY_ID`` and ``AWS_SECRET_ACCESS_KEY``.
 
