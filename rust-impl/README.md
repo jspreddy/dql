@@ -67,25 +67,34 @@ Deferred engine work includes SAVE exports, gzip/pickle LOAD, and a handful of
 
 Run from this directory:
 
-- `cargo fmt --check`
-- `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo test --workspace`
-- `cargo build --release -p dql-cli`
-- `./scripts/smoke_test.sh`
-- `cargo run -p dql-cli -- --version`
-- `cargo run -p dql-cli -- --json -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"`
+```bash
+cargo fmt --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo build --release -p dql-cli
+./scripts/smoke_test.sh
+cargo run -p dql-cli -- --version
+cargo run -p dql-cli -- --json -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"
+
+```
 
 ## Install from this workspace
 
-Build a release binary locally::
+### Build a release binary locally
 
+```bash
     cargo build --release -p dql-cli
     install -m 0755 target/release/dql ~/.local/bin/dql
+```
 
-Install from a git tag with Cargo::
+### Install from a git tag with Cargo
 
+```bash
     cargo install --git https://github.com/jspreddy/dql.git --tag <version> --locked -p dql-cli --root ~/.local
+```
 
-Download a published binary with the install script from the repository root::
+### Download a published binary with the install script from the repository root
 
+```bash
     curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/v-rust/bin/install-rust.sh | sh
+```
