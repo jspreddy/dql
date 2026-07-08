@@ -5,7 +5,6 @@ use std::io::{self, Write};
 
 pub struct ColumnFormat<'a> {
     items: &'a [Item],
-    width: usize,
     pagesize: usize,
     columns: Vec<String>,
     col_width: BTreeMap<String, usize>,
@@ -23,7 +22,6 @@ impl<'a> ColumnFormat<'a> {
         }
         let columns: Vec<_> = col_width.keys().cloned().collect();
         let width_requested = 3 + columns.len() + col_width.values().sum::<usize>();
-        let mut col_width = col_width;
         if width_requested > width && !columns.is_empty() {
             let even_width = ((width.saturating_sub(1)) / columns.len()).saturating_sub(3);
             for key in &columns {
@@ -39,7 +37,6 @@ impl<'a> ColumnFormat<'a> {
         }
         Self {
             items,
-            width,
             pagesize,
             columns,
             col_width,

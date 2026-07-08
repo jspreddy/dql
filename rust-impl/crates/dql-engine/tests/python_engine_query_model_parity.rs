@@ -879,18 +879,6 @@ mod test_select_scan {
         assert_items_len(result, 2);
     }
 
-    macro_rules! ignored_scan {
-        ($($name:ident => $reason:expr),+ $(,)?) => {
-            $(
-                #[test]
-                #[ignore = $reason]
-                fn $name() {
-                    pending(concat!("tests/test_queries.py::TestSelectScan::", stringify!($name)), $reason);
-                }
-            )+
-        };
-    }
-
     #[test]
     fn test_filter() {
         let mut engine = seeded_scan_table();

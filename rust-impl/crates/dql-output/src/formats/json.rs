@@ -31,6 +31,7 @@ impl Format for JsonFormat<'_> {
     }
 }
 
+#[allow(dead_code)]
 pub fn schema_to_json(schema: &str) -> String {
     string_to_json(schema)
 }

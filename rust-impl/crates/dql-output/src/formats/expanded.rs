@@ -5,17 +5,12 @@ use std::io::{self, Write};
 pub struct ExpandedFormat<'a> {
     items: &'a [Item],
     width: usize,
-    pagesize: usize,
 }
 
 impl<'a> ExpandedFormat<'a> {
     pub fn new(items: &'a [Item], width: usize, pagesize: usize) -> Self {
-        let pagesize = if pagesize == 0 { 1 } else { pagesize };
-        Self {
-            items,
-            width,
-            pagesize,
-        }
+        let _pagesize = if pagesize == 0 { 1 } else { pagesize };
+        Self { items, width }
     }
 }
 

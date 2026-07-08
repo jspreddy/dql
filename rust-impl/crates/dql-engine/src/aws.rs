@@ -64,7 +64,7 @@ impl SdkBackend {
         let region = config.region.clone();
         let client = runtime
             .block_on(async { build_client(config.clone()).await })
-            .map_err(|err| EngineError::Runtime(err))?;
+            .map_err(EngineError::Runtime)?;
         Ok(Self {
             client,
             runtime,
@@ -83,7 +83,7 @@ impl SdkBackend {
         let client = self
             .runtime
             .block_on(async { build_client(config.clone()).await })
-            .map_err(|err| EngineError::Runtime(err))?;
+            .map_err(EngineError::Runtime)?;
         self.client = client;
         self.region = config.region.clone();
         self.config = config;

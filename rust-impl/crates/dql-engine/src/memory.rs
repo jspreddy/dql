@@ -138,7 +138,7 @@ impl DynamoBackend for MemoryBackend {
             request.key_condition,
             request.filter_condition,
             request.condition,
-            &request.options,
+            request.options,
         );
         let count = matches!(request.selection, Selection::CountAll).then_some(items.len());
         let op_name = match request.operation {
@@ -432,7 +432,7 @@ pub fn matches_condition(item: &Item, condition: &Condition) -> bool {
             })
         }
         Condition::In { field, values } => resolve_field_value(item, field)
-            .is_some_and(|item_value| values.iter().any(|value| item_value == *value)),
+            .is_some_and(|item_value| values.contains(&item_value)),
         Condition::Function { name, args } => evaluate_function_condition(item, name, args),
         Condition::Size { .. } | Condition::AttributeType { .. } => false,
         Condition::And(conditions) => conditions
@@ -454,18 +454,18 @@ fn evaluate_function_condition(item: &Item, name: &str, args: &[ConditionOperand
                 }
                 _ => return false,
             };
-            return resolve_field_value(item, field).is_some_and(|value| match (value, prefix) {
+            resolve_field_value(item, field).is_some_and(|value| match (value, prefix) {
                 (Value::String(value), Value::String(prefix)) => value.starts_with(prefix),
                 _ => false,
-            });
+            })
         }
         "attribute_exists" => {
             let field = function_field_arg(args);
-            return field.is_some_and(|field| field_exists(item, &field));
+            field.is_some_and(|field| field_exists(item, &field))
         }
         "attribute_not_exists" => {
             let field = function_field_arg(args);
-            return field.is_some_and(|field| !field_exists(item, &field));
+            field.is_some_and(|field| !field_exists(item, &field))
         }
         "contains" => {
             let (field, needle) = match args {
@@ -474,14 +474,14 @@ fn evaluate_function_condition(item: &Item, name: &str, args: &[ConditionOperand
                 }
                 _ => return false,
             };
-            return resolve_field_value(item, field).is_some_and(|value| match value {
+            resolve_field_value(item, field).is_some_and(|value| match value {
                 Value::String(value) => needle
                     .as_string()
                     .is_some_and(|needle| value.contains(needle)),
                 Value::Set(values) => values.contains(needle),
                 Value::List(values) => values.contains(needle),
                 _ => false,
-            });
+            })
         }
         _ => false,
     }
@@ -551,7 +551,7 @@ fn parse_list_index(index: &str, len: usize) -> Option<usize> {
         index
             .parse::<isize>()
             .ok()
-            .and_then(|index| len.checked_sub(index.unsigned_abs() as usize))
+            .and_then(|index| len.checked_sub(index.unsigned_abs()))
     })
 }
 
@@ -682,7 +682,7 @@ fn apply_update(item: &mut Item, update: &UpdateExpr) -> Result<(), EngineError>
 fn eval_set_expression(item: &Item, raw: &str) -> Result<Value, EngineError> {
     let trimmed = normalize_update_expression(raw);
     if let Some(args) = function_args(&trimmed, "if_not_exists") {
-        let (field, value_raw) = split_two_args(&args)?;
+        let (field, value_raw) = split_two_args(args)?;
         let field = field.trim();
         if item.get(field).is_none_or(|value| *value == Value::Null) {
             return parse_update_value(value_raw.trim());
@@ -690,7 +690,7 @@ fn eval_set_expression(item: &Item, raw: &str) -> Result<Value, EngineError> {
         return Ok(item.get(field).cloned().unwrap_or(Value::Null));
     }
     if let Some(args) = function_args(&trimmed, "list_append") {
-        let (left_raw, right_raw) = split_two_args(&args)?;
+        let (left_raw, right_raw) = split_two_args(args)?;
         let left = eval_set_operand(item, left_raw.trim())?;
         let right = eval_set_operand(item, right_raw.trim())?;
         return append_lists(left, right);

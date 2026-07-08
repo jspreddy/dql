@@ -474,7 +474,7 @@ impl<B: DynamoBackend> Engine<B> {
                     let value: serde_json::Value = serde_json::from_str(&line)
                         .map_err(|err| EngineError::Runtime(err.to_string()))?;
                     items
-                        .push(json_value_to_item(&value).map_err(|err| EngineError::Runtime(err))?);
+                        .push(json_value_to_item(&value).map_err(EngineError::Runtime)?);
                 }
             }
             "csv" => {

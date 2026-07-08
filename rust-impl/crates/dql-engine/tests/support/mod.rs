@@ -25,7 +25,7 @@ pub fn skip_if_no_local() -> bool {
 }
 
 pub fn local_engine() -> Result<Engine<SdkBackend>, EngineError> {
-    let backend = SdkBackend::connect(local_config()).map_err(|err| err)?;
+    let backend = SdkBackend::connect(local_config())?;
     Ok(Engine::new(backend))
 }
 

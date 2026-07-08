@@ -9,8 +9,10 @@ use crate::session::Session;
 use dql_engine::StatementResult;
 use std::collections::HashMap;
 
+type ReplHandler = fn(&mut Session, &[String], &HashMap<String, String>) -> Result<(), String>;
+
 pub struct ReplCommand {
-    pub handler: fn(&mut Session, &[String], &HashMap<String, String>) -> Result<(), String>,
+    pub handler: ReplHandler,
 }
 
 pub fn parse_repl_args(arglist: &str) -> (Vec<String>, HashMap<String, String>) {

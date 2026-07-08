@@ -49,5 +49,6 @@ pub fn handle_local(
     } else {
         session.local_endpoint = Some((host, port));
     }
-    handle_use(session, &[session.region.clone()], &HashMap::new())
+    let region = session.region.clone();
+    handle_use(session, std::slice::from_ref(&region), &HashMap::new())
 }

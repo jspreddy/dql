@@ -1028,10 +1028,6 @@ impl Parser {
             .map_err(|_| self.error("invalid throttle rate"))
     }
 
-    fn skip_throttle_clause(&mut self) {
-        let _ = self.parse_throttle_clause();
-    }
-
     fn parse_alter(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword("TABLE")?;
         let table = self.expect_ident()?;

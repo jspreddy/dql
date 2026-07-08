@@ -15,6 +15,7 @@ pub const REGIONS: &[&str] = &[
     "sa-east-1",
 ];
 
+#[allow(clippy::large_enum_variant)]
 pub enum RuntimeEngine {
     Memory(FragmentEngine<dql_engine::MemoryBackend>),
     Remote(FragmentEngine<SdkBackend>),

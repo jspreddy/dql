@@ -224,27 +224,25 @@ pub fn build_create_table_input(
             .values()
             .filter_map(|index| {
                 let range_key = index.range_key.as_ref()?;
-                Some(
-                    LocalSecondaryIndex::builder()
-                        .index_name(index.name.clone())
-                        .key_schema(
-                            KeySchemaElement::builder()
-                                .attribute_name(index.hash_key.clone())
-                                .key_type(AwsKeyType::Hash)
-                                .build()
-                                .ok()?,
-                        )
-                        .key_schema(
-                            KeySchemaElement::builder()
-                                .attribute_name(range_key.clone())
-                                .key_type(AwsKeyType::Range)
-                                .build()
-                                .ok()?,
-                        )
-                        .projection(projection_from_query_index(index))
-                        .build()
-                        .ok()?,
-                )
+                LocalSecondaryIndex::builder()
+                    .index_name(index.name.clone())
+                    .key_schema(
+                        KeySchemaElement::builder()
+                            .attribute_name(index.hash_key.clone())
+                            .key_type(AwsKeyType::Hash)
+                            .build()
+                            .ok()?,
+                    )
+                    .key_schema(
+                        KeySchemaElement::builder()
+                            .attribute_name(range_key.clone())
+                            .key_type(AwsKeyType::Range)
+                            .build()
+                            .ok()?,
+                    )
+                    .projection(projection_from_query_index(index))
+                    .build()
+                    .ok()
             })
             .collect::<Vec<_>>();
         if !indexes.is_empty() {
@@ -421,13 +419,6 @@ fn throughput_from_description(
     })
 }
 
-fn throughput_from_aws(throughput: &ProvisionedThroughput) -> Option<Throughput> {
-    Some(Throughput {
-        read: Value::Number(throughput.read_capacity_units().to_string()),
-        write: Value::Number(throughput.write_capacity_units().to_string()),
-    })
-}
-
 fn throughput_to_aws(throughput: Option<&Throughput>) -> Option<ProvisionedThroughput> {
     let throughput = throughput?;
     let read = match &throughput.read {
@@ -474,7 +465,7 @@ fn aws_projection_to_model(projection: Option<&Projection>) -> ModelProjectionTy
     match projection.projection_type() {
         Some(ProjectionType::KeysOnly) => ModelProjectionType::KeysOnly,
         Some(ProjectionType::Include) => {
-            ModelProjectionType::Include(projection.non_key_attributes().iter().cloned().collect())
+            ModelProjectionType::Include(projection.non_key_attributes().to_vec())
         }
         _ => ModelProjectionType::All,
     }

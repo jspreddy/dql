@@ -1,7 +1,6 @@
 use dql_parser::{
     parse_fragment, parse_script, parse_selection, parse_statement, parse_update_expr, parse_value,
-    AttributeType, CompareOp, Condition, FragmentStatus, InsertForm, KeyType, OrderBy,
-    QueryOptions, Statement, Value,
+    AttributeType, CompareOp, Condition, FragmentStatus, KeyType, OrderBy, Statement, Value,
 };
 
 fn assert_parse_ok(input: &str) {

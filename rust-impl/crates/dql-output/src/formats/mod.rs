@@ -38,6 +38,7 @@ pub fn format_field(value: &dql_parser::Value) -> String {
     }
 }
 
+#[allow(dead_code)]
 pub fn write_paged(
     writer: &mut dyn Write,
     pagesize: usize,

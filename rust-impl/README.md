@@ -1,5 +1,7 @@
 # DQL Rust Implementation
 
+[![Rust CI](https://github.com/stevearc/dql/actions/workflows/rust-workflows.yml/badge.svg)](https://github.com/stevearc/dql/actions/workflows/rust-workflows.yml)
+
 This workspace is the first Rust implementation slice for DQL. It is organized
 around the parallel workstreams identified in `rust-plans/`:
 
