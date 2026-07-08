@@ -3,6 +3,7 @@ name = "dql-expr"
 edition.workspace = true
 license.workspace = true
 version.workspace = true
+publish = false
 
 [dependencies]
 dql-parser = { path = "../dql-parser" }
