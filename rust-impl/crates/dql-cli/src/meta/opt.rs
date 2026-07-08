@@ -40,18 +40,24 @@ pub fn handle(
 
 fn print_option(session: &Session, option: &str, out: &mut dyn Write) -> Result<(), String> {
     match option {
-        "width" => writeln!(out, "width: {}", session.config.width)
-            .map_err(|err| err.to_string())?,
-        "pagesize" => writeln!(out, "pagesize: {}", session.config.pagesize)
-            .map_err(|err| err.to_string())?,
-        "display" => writeln!(out, "display: {}", session.config.display)
-            .map_err(|err| err.to_string())?,
-        "format" => writeln!(out, "format: {}", session.config.format)
-            .map_err(|err| err.to_string())?,
-        "allow_select_scan" => {
-            writeln!(out, "allow_select_scan: {}", session.config.allow_select_scan)
-                .map_err(|err| err.to_string())?
+        "width" => {
+            writeln!(out, "width: {}", session.config.width).map_err(|err| err.to_string())?
         }
+        "pagesize" => {
+            writeln!(out, "pagesize: {}", session.config.pagesize).map_err(|err| err.to_string())?
+        }
+        "display" => {
+            writeln!(out, "display: {}", session.config.display).map_err(|err| err.to_string())?
+        }
+        "format" => {
+            writeln!(out, "format: {}", session.config.format).map_err(|err| err.to_string())?
+        }
+        "allow_select_scan" => writeln!(
+            out,
+            "allow_select_scan: {}",
+            session.config.allow_select_scan
+        )
+        .map_err(|err| err.to_string())?,
         "lossy_json_float" => {
             writeln!(out, "lossy_json_float: {}", session.config.lossy_json_float)
                 .map_err(|err| err.to_string())?

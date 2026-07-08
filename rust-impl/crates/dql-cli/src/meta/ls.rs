@@ -31,12 +31,7 @@ pub fn handle(
                 )
             })
             .collect::<Vec<_>>();
-        writeln!(
-            out,
-            "{}",
-            format_table_summary_table(&rows)
-        )
-        .map_err(|err| err.to_string())?;
+        writeln!(out, "{}", format_table_summary_table(&rows)).map_err(|err| err.to_string())?;
         return Ok(());
     }
     let pattern = args[0].trim_end_matches(';');
@@ -93,12 +88,8 @@ pub fn handle(
                     },
                 ));
             }
-            writeln!(
-                out,
-                "{}",
-                format_table_summary_table(&rows)
-            )
-            .map_err(|err| err.to_string())?;
+            writeln!(out, "{}", format_table_summary_table(&rows))
+                .map_err(|err| err.to_string())?;
             Ok(())
         }
     }

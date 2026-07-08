@@ -123,8 +123,7 @@ impl<'a> ReplApp<'a> {
         let mut backend = BufferBackend::default();
         {
             let mut writer = backend.writer();
-            if let Some(result) =
-                crate::meta::dispatch(self.session, &line, writer.as_mut(), true)?
+            if let Some(result) = crate::meta::dispatch(self.session, &line, writer.as_mut(), true)?
             {
                 drop(writer);
                 render_result(&result, &output_config, &mut backend)?;

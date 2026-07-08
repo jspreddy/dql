@@ -85,10 +85,8 @@ mod tests {
     #[test]
     fn summary_table_shows_full_long_names() {
         let name = "parity_explain_1783478299253891557";
-        let statement = parse_statement(&format!(
-            "CREATE TABLE {name} (id STRING HASH KEY)"
-        ))
-        .unwrap();
+        let statement =
+            parse_statement(&format!("CREATE TABLE {name} (id STRING HASH KEY)")).unwrap();
         let meta = TableMeta::from_create_statement(&statement).unwrap();
         let rows = [(
             meta,

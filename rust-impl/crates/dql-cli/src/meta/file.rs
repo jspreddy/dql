@@ -71,6 +71,5 @@ fn render_to_buffer(
     }
 
     let mut backend = BufferBackend(buffer);
-    dql_output::render_result(result, output_config, &mut backend)
-        .map_err(|err| err.to_string())
+    dql_output::render_result(result, output_config, &mut backend).map_err(|err| err.to_string())
 }
