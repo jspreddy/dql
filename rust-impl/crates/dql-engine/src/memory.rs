@@ -431,8 +431,9 @@ pub fn matches_condition(item: &Item, condition: &Condition) -> bool {
                     && compare_values(&item_value, &CompareOp::Le, high)
             })
         }
-        Condition::In { field, values } => resolve_field_value(item, field)
-            .is_some_and(|item_value| values.contains(&item_value)),
+        Condition::In { field, values } => {
+            resolve_field_value(item, field).is_some_and(|item_value| values.contains(&item_value))
+        }
         Condition::Function { name, args } => evaluate_function_condition(item, name, args),
         Condition::Size { .. } | Condition::AttributeType { .. } => false,
         Condition::And(conditions) => conditions

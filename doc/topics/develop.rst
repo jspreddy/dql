@@ -86,9 +86,9 @@ Run bump2version through the project environment (``scripts/bump-version.sh`` ru
     uv run task bump build             # increment dev build (x.x.x-dev0 -> x.x.x-dev1)
     uv run task bump --tag release     # release as x.x.x (creates git tag)
 
-Each bump updates ``pyproject.toml``, ``doc/conf.py``, ``dql/cli.py``, and ``uv.lock``, and creates a git commit (``tag = False`` in config unless releasing with ``--tag release``).
+Each bump updates ``pyproject.toml``, ``doc/conf.py``, ``dql/cli.py``, ``rust-impl/Cargo.toml``, ``uv.lock``, and ``rust-impl/Cargo.lock``, and creates a git commit (``tag = False`` in config unless releasing with ``--tag release``).
 
-``uv.lock`` stores PEP 440-normalized versions (for example ``0.6.4.dev10``), so it is not listed in ``.bumpversion.cfg``; ``uv lock`` regenerates it from ``pyproject.toml``.
+``uv.lock`` stores PEP 440-normalized versions (for example ``0.6.4.dev10``), so it is not listed in ``.bumpversion.cfg``; ``uv lock`` regenerates it from ``pyproject.toml``. ``rust-impl/Cargo.lock`` is regenerated with ``cargo generate-lockfile`` after each bump.
 
 Also update ``CHANGES.rst`` with release notes for the new version before committing or tagging a release.
 
