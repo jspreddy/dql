@@ -4,25 +4,25 @@ overview: "Replace the Python pip/pex distribution path with Rust-native packagi
 todos:
   - id: step-1-release-profile
     content: "Step 1: Add release profile, workspace metadata, rust-toolchain.toml"
-    status: pending
+    status: completed
   - id: step-2-rust-ci
     content: "Step 2: Add rust-workflows.yml (fmt, clippy, test, DynamoDB Local on ubuntu)"
-    status: pending
+    status: completed
   - id: step-3-smoke-test
     content: "Step 3: Add package_smoke integration test and smoke_test.sh script"
-    status: pending
+    status: completed
   - id: step-4-release-workflow
     content: "Step 4: Add rust-release.yml for Linux + macOS binary builds on tag push"
-    status: pending
+    status: completed
   - id: step-5-install-docs
     content: "Step 5: Add bin/install-rust.sh and update README with GitHub + cargo install paths"
-    status: pending
+    status: completed
   - id: step-6-migration-docs
     content: "Step 6: Write migration-from-python.md and refresh rust-impl/README.md"
-    status: pending
+    status: completed
   - id: step-7-version-bump
     content: "Step 7: Extend bump2version/bump-version.sh for Rust Cargo.toml and Cargo.lock sync"
-    status: pending
+    status: completed
 isProject: false
 ---
 

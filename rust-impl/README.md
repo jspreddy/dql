@@ -1,6 +1,6 @@
 # DQL Rust Implementation
 
-[![Rust CI](https://github.com/stevearc/dql/actions/workflows/rust-workflows.yml/badge.svg)](https://github.com/stevearc/dql/actions/workflows/rust-workflows.yml)
+[![Rust CI](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml)
 
 This workspace is the first Rust implementation slice for DQL. It is organized
 around the parallel workstreams identified in `rust-plans/`:
@@ -84,8 +84,8 @@ Build a release binary locally::
 
 Install from a git tag with Cargo::
 
-    cargo install --git https://github.com/stevearc/dql.git --tag <version> --locked -p dql-cli --root ~/.local
+    cargo install --git https://github.com/jspreddy/dql.git --tag <version> --locked -p dql-cli --root ~/.local
 
 Download a published binary with the install script from the repository root::
 
-    curl -fsSL https://raw.githubusercontent.com/stevearc/dql/v-rust/bin/install-rust.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/v-rust/bin/install-rust.sh | sh
