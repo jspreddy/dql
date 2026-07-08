@@ -214,11 +214,10 @@ fn draw(frame: &mut Frame, app: &ReplApp<'_>) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(3), Constraint::Length(3)])
         .split(frame.area());
-    let output_lines: Vec<ListItem> = app
-        .output
+    let visible_height = chunks[0].height.saturating_sub(2) as usize;
+    let start = app.output.len().saturating_sub(visible_height);
+    let output_lines: Vec<ListItem> = app.output[start..]
         .iter()
-        .rev()
-        .take(frame.area().height as usize)
         .map(|line| ListItem::new(line.as_str()))
         .collect();
     let output =

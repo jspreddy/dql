@@ -1,5 +1,5 @@
 use crate::session::Session;
-use dql_output::{format_table_detail, format_table_summary_table_with_width, TableStats};
+use dql_output::{format_table_detail, format_table_summary_table, TableStats};
 use std::collections::HashMap;
 use std::io::Write;
 
@@ -13,7 +13,6 @@ pub fn handle(
     let refresh = parse_bool(kwargs.get("refresh"), false);
     let metrics = parse_bool(kwargs.get("metrics"), false);
     let _ = metrics;
-    let terminal_width = session.config.output_config().width.resolve();
     if args.is_empty() {
         let tables = session
             .engine
@@ -35,7 +34,7 @@ pub fn handle(
         writeln!(
             out,
             "{}",
-            format_table_summary_table_with_width(&rows, terminal_width)
+            format_table_summary_table(&rows)
         )
         .map_err(|err| err.to_string())?;
         return Ok(());
@@ -97,7 +96,7 @@ pub fn handle(
             writeln!(
                 out,
                 "{}",
-                format_table_summary_table_with_width(&rows, terminal_width)
+                format_table_summary_table(&rows)
             )
             .map_err(|err| err.to_string())?;
             Ok(())
