@@ -1,15 +1,19 @@
 use crate::session::Session;
-use dql_output::{format_table_detail, format_table_summary_table, TableStats};
+use dql_output::{format_table_detail, format_table_summary_table_with_width, TableStats};
 use std::collections::HashMap;
+use std::io::Write;
 
 pub fn handle(
     session: &mut Session,
     args: &[String],
     kwargs: &HashMap<String, String>,
+    out: &mut dyn Write,
+    _repl: bool,
 ) -> Result<(), String> {
     let refresh = parse_bool(kwargs.get("refresh"), false);
     let metrics = parse_bool(kwargs.get("metrics"), false);
     let _ = metrics;
+    let terminal_width = session.config.output_config().width.resolve();
     if args.is_empty() {
         let tables = session
             .engine
@@ -28,7 +32,12 @@ pub fn handle(
                 )
             })
             .collect::<Vec<_>>();
-        println!("{}", format_table_summary_table(&rows));
+        writeln!(
+            out,
+            "{}",
+            format_table_summary_table_with_width(&rows, terminal_width)
+        )
+        .map_err(|err| err.to_string())?;
         return Ok(());
     }
     let pattern = args[0].trim_end_matches(';');
@@ -54,7 +63,8 @@ pub fn handle(
                 .map_err(|err| err.to_string())?
                 .ok_or_else(|| format!("Table {name:?} not found"))?;
             let count = session.engine.table_item_count(name);
-            println!(
+            writeln!(
+                out,
                 "{}",
                 format_table_detail(
                     &meta,
@@ -63,7 +73,8 @@ pub fn handle(
                         size_bytes: 0,
                     }
                 )
-            );
+            )
+            .map_err(|err| err.to_string())?;
             Ok(())
         }
         _ => {
@@ -83,7 +94,12 @@ pub fn handle(
                     },
                 ));
             }
-            println!("{}", format_table_summary_table(&rows));
+            writeln!(
+                out,
+                "{}",
+                format_table_summary_table_with_width(&rows, terminal_width)
+            )
+            .map_err(|err| err.to_string())?;
             Ok(())
         }
     }

@@ -6,7 +6,10 @@ mod table_meta;
 pub use config::{OutputConfig, OutputFormat, PageSize, WidthSetting};
 pub use display::{less_display, stdout_display, DisplayBackend, DisplayMode};
 pub use formats::{ColumnFormat, ExpandedFormat, Format, JsonFormat, SmartFormat};
-pub use table_meta::{format_table_detail, format_table_summary_table, TableStats};
+pub use table_meta::{
+    format_table_detail, format_table_summary_table, format_table_summary_table_with_width,
+    TableStats,
+};
 
 use dql_engine::{Item, StatementResult};
 use std::io;

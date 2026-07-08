@@ -20,15 +20,18 @@ pub fn version(
     _session: &mut Session,
     _: &[String],
     _: &HashMap<String, String>,
+    out: &mut dyn Write,
+    _repl: bool,
 ) -> Result<(), String> {
-    println!(env!("CARGO_PKG_VERSION"));
-    Ok(())
+    writeln!(out, "{}", env!("CARGO_PKG_VERSION")).map_err(|err| err.to_string())
 }
 
 pub fn exit(
     session: &mut Session,
     _: &[String],
     _: &HashMap<String, String>,
+    _out: &mut dyn Write,
+    _repl: bool,
 ) -> Result<(), String> {
     let _ = session.history.remove_items(1);
     SHOULD_EXIT.with(|flag| flag.set(true));
@@ -39,13 +42,17 @@ pub fn clear(
     session: &mut Session,
     _: &[String],
     _: &HashMap<String, String>,
+    _out: &mut dyn Write,
+    repl: bool,
 ) -> Result<(), String> {
     let _ = session.history.remove_items(1);
-    crossterm::execute!(
-        io::stdout(),
-        crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
-    )
-    .map_err(|err| err.to_string())?;
+    if !repl {
+        crossterm::execute!(
+            io::stdout(),
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+        )
+        .map_err(|err| err.to_string())?;
+    }
     Ok(())
 }
 
@@ -53,6 +60,8 @@ pub fn shell(
     _session: &mut Session,
     args: &[String],
     _: &HashMap<String, String>,
+    out: &mut dyn Write,
+    _repl: bool,
 ) -> Result<(), String> {
     if args.is_empty() {
         return Err("shell requires a command".to_string());
@@ -61,8 +70,7 @@ pub fn shell(
         .args(&args[1..])
         .output()
         .map_err(|err| err.to_string())?;
-    io::stdout()
-        .write_all(&output.stdout)
+    out.write_all(&output.stdout)
         .map_err(|err| err.to_string())?;
     io::stderr()
         .write_all(&output.stderr)
@@ -74,24 +82,27 @@ pub fn whoami(
     session: &mut Session,
     _: &[String],
     _: &HashMap<String, String>,
+    out: &mut dyn Write,
+    _repl: bool,
 ) -> Result<(), String> {
-    println!("{}", session.engine.session_identity());
-    Ok(())
+    writeln!(out, "{}", session.engine.session_identity()).map_err(|err| err.to_string())
 }
 
 pub fn help(
     session: &mut Session,
     args: &[String],
     _: &HashMap<String, String>,
+    out: &mut dyn Write,
+    _repl: bool,
 ) -> Result<(), String> {
     if let Some(topic) = args.first() {
         if let Some(text) = help::statement_help(topic) {
-            print!("{text}");
+            write!(out, "{text}").map_err(|err| err.to_string())?;
             return Ok(());
         }
         return Err(format!("No help available for {topic}"));
     }
-    println!("{}", help::GENERAL);
+    writeln!(out, "{}", help::GENERAL).map_err(|err| err.to_string())?;
     let _ = session;
     Ok(())
 }
@@ -100,7 +111,12 @@ pub fn watch_disabled(
     _session: &mut Session,
     _: &[String],
     _: &HashMap<String, String>,
+    out: &mut dyn Write,
+    _repl: bool,
 ) -> Result<(), String> {
-    println!("watch is not enabled in this build (rebuild with --features watch)");
-    Ok(())
+    writeln!(
+        out,
+        "watch is not enabled in this build (rebuild with --features watch)"
+    )
+    .map_err(|err| err.to_string())
 }

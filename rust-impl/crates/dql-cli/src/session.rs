@@ -282,7 +282,9 @@ impl Session {
         if trimmed.is_empty() {
             return Ok(());
         }
-        if let Some(result) = crate::meta::dispatch(self, trimmed)? {
+        let mut writer = backend.writer();
+        if let Some(result) = crate::meta::dispatch(self, trimmed, writer.as_mut(), false)? {
+            drop(writer);
             render_result(&result, output_config, backend)
                 .map_err(|err| EngineError::Runtime(err.to_string()))?;
         }

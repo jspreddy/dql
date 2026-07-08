@@ -1,10 +1,13 @@
 use crate::session::Session;
 use std::collections::HashMap;
+use std::io::Write;
 
 pub fn handle(
     session: &mut Session,
     args: &[String],
     kwargs: &HashMap<String, String>,
+    out: &mut dyn Write,
+    _repl: bool,
 ) -> Result<(), String> {
     if args.is_empty() && kwargs.is_empty() {
         let keys: Vec<_> = session
@@ -16,7 +19,8 @@ pub fn handle(
         let largest = keys.iter().map(|key| key.len()).max().unwrap_or(0);
         for key in keys {
             let value = session.config.get_value(&key);
-            println!("{:>width$} : {}", key, value, width = largest);
+            writeln!(out, "{:>width$} : {}", key, value, width = largest)
+                .map_err(|err| err.to_string())?;
         }
         return Ok(());
     }
@@ -26,22 +30,32 @@ pub fn handle(
     let option = &args[0];
     let rest = &args[1..];
     if rest.is_empty() && kwargs.is_empty() {
-        print_option(session, option)?;
+        print_option(session, option, out)?;
     } else {
-        set_option(session, option, rest, kwargs)?;
+        set_option(session, option, rest, kwargs, out)?;
         session.config.save().map_err(|err| err.to_string())?;
     }
     Ok(())
 }
 
-fn print_option(session: &Session, option: &str) -> Result<(), String> {
+fn print_option(session: &Session, option: &str, out: &mut dyn Write) -> Result<(), String> {
     match option {
-        "width" => println!("width: {}", session.config.width),
-        "pagesize" => println!("pagesize: {}", session.config.pagesize),
-        "display" => println!("display: {}", session.config.display),
-        "format" => println!("format: {}", session.config.format),
-        "allow_select_scan" => println!("allow_select_scan: {}", session.config.allow_select_scan),
-        "lossy_json_float" => println!("lossy_json_float: {}", session.config.lossy_json_float),
+        "width" => writeln!(out, "width: {}", session.config.width)
+            .map_err(|err| err.to_string())?,
+        "pagesize" => writeln!(out, "pagesize: {}", session.config.pagesize)
+            .map_err(|err| err.to_string())?,
+        "display" => writeln!(out, "display: {}", session.config.display)
+            .map_err(|err| err.to_string())?,
+        "format" => writeln!(out, "format: {}", session.config.format)
+            .map_err(|err| err.to_string())?,
+        "allow_select_scan" => {
+            writeln!(out, "allow_select_scan: {}", session.config.allow_select_scan)
+                .map_err(|err| err.to_string())?
+        }
+        "lossy_json_float" => {
+            writeln!(out, "lossy_json_float: {}", session.config.lossy_json_float)
+                .map_err(|err| err.to_string())?
+        }
         other => return Err(format!("Unrecognized option {other:?}")),
     }
     Ok(())
@@ -52,6 +66,7 @@ fn set_option(
     option: &str,
     args: &[String],
     kwargs: &HashMap<String, String>,
+    out: &mut dyn Write,
 ) -> Result<(), String> {
     match option {
         "width" => {
@@ -84,7 +99,7 @@ fn set_option(
             let value = args.first().map(String::as_str).unwrap_or_default();
             if dql_output::DisplayMode::from_name(value).is_some() {
                 session.config.display = value.to_string();
-                println!("Set display {value:?}");
+                writeln!(out, "Set display {value:?}").map_err(|err| err.to_string())?;
             } else {
                 return Err(format!("Unknown display {value:?}"));
             }
@@ -93,7 +108,7 @@ fn set_option(
             let value = args.first().map(String::as_str).unwrap_or_default();
             if dql_output::OutputFormat::from_name(value).is_some() {
                 session.config.format = value.to_string();
-                println!("Set format {value:?}");
+                writeln!(out, "Set format {value:?}").map_err(|err| err.to_string())?;
             } else {
                 return Err(format!("Unknown format {value:?}"));
             }

@@ -1,7 +1,7 @@
 use crate::meta::lifecycle::take_exit_request;
 use crate::session::Session;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
-use dql_output::render_result;
+use dql_output::{render_result, DisplayBackend};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
@@ -114,10 +114,26 @@ impl<'a> ReplApp<'a> {
     }
 
     fn handle_submit(&mut self, line: String) -> Result<(), Box<dyn std::error::Error>> {
+        let cmd = line
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
         let output_config = self.session.config.output_config();
         let mut backend = BufferBackend::default();
-        if let Some(result) = crate::meta::dispatch(self.session, &line)? {
-            render_result(&result, &output_config, &mut backend)?;
+        {
+            let mut writer = backend.writer();
+            if let Some(result) =
+                crate::meta::dispatch(self.session, &line, writer.as_mut(), true)?
+            {
+                drop(writer);
+                render_result(&result, &output_config, &mut backend)?;
+            }
+        }
+        if matches!(cmd.as_str(), "clear" | "cls" | "c") {
+            self.output.clear();
+            self.partial = false;
+            return Ok(());
         }
         if let Ok(text) = String::from_utf8(backend.buffer) {
             for line in text.lines() {

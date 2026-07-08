@@ -1,14 +1,17 @@
 use crate::session::Session;
 use crate::throttle::TableLimits;
 use std::collections::HashMap;
+use std::io::Write;
 
 pub fn handle_throttle(
     session: &mut Session,
     args: &[String],
     _: &HashMap<String, String>,
+    out: &mut dyn Write,
+    _repl: bool,
 ) -> Result<(), String> {
     if args.is_empty() {
-        println!("{}", session.throttle);
+        writeln!(out, "{}", session.throttle).map_err(|err| err.to_string())?;
         return Ok(());
     }
     if args.len() < 2 {
@@ -35,9 +38,11 @@ pub fn handle_unthrottle(
     session: &mut Session,
     args: &[String],
     _: &HashMap<String, String>,
+    _out: &mut dyn Write,
+    repl: bool,
 ) -> Result<(), String> {
     if args.is_empty() {
-        if promptyn("Remove all throttle limits?", false)? {
+        if promptyn("Remove all throttle limits?", false, repl)? {
             session.throttle = TableLimits::default();
             session.config.throttle = session.throttle.save();
             session.config.save().map_err(|err| err.to_string())?;
@@ -56,8 +61,11 @@ pub fn handle_unthrottle(
     Ok(())
 }
 
-fn promptyn(message: &str, default: bool) -> Result<bool, String> {
+fn promptyn(message: &str, default: bool, repl: bool) -> Result<bool, String> {
     use std::io::{self, Write};
+    if repl {
+        return Err("unthrottle confirmation is not supported in the REPL".to_string());
+    }
     let yes = if default { "Y" } else { "y" };
     let no = if default { "n" } else { "N" };
     print!("{message} [{yes}/{no}] ");
@@ -72,6 +80,6 @@ fn promptyn(message: &str, default: bool) -> Result<bool, String> {
         "n" | "no" => Ok(false),
         "" if default => Ok(true),
         "" if !default => Ok(false),
-        _ => promptyn(message, default),
+        _ => promptyn(message, default, repl),
     }
 }

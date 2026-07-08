@@ -8,8 +8,15 @@ pub mod throttle;
 use crate::session::Session;
 use dql_engine::StatementResult;
 use std::collections::HashMap;
+use std::io::Write;
 
-type ReplHandler = fn(&mut Session, &[String], &HashMap<String, String>) -> Result<(), String>;
+type ReplHandler = fn(
+    &mut Session,
+    &[String],
+    &HashMap<String, String>,
+    &mut dyn Write,
+    bool,
+) -> Result<(), String>;
 
 pub struct ReplCommand {
     pub handler: ReplHandler,
@@ -34,6 +41,8 @@ pub fn parse_repl_args(arglist: &str) -> (Vec<String>, HashMap<String, String>) 
 pub fn dispatch(
     session: &mut Session,
     line: &str,
+    out: &mut dyn Write,
+    repl: bool,
 ) -> Result<Option<StatementResult>, dql_engine::EngineError> {
     let (command, arglist) = match line.split_once(char::is_whitespace) {
         Some((command, rest)) => (command, rest.trim()),
@@ -42,7 +51,8 @@ pub fn dispatch(
     let name = command.to_ascii_lowercase();
     if let Some(entry) = COMMANDS.get(name.as_str()) {
         let (args, kwargs) = parse_repl_args(arglist);
-        (entry.handler)(session, &args, &kwargs).map_err(dql_engine::EngineError::Runtime)?;
+        (entry.handler)(session, &args, &kwargs, out, repl)
+            .map_err(dql_engine::EngineError::Runtime)?;
         return Ok(None);
     }
     session.apply_rate_limit()?;

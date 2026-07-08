@@ -1,10 +1,13 @@
 use crate::session::{Session, REGIONS};
 use std::collections::HashMap;
+use std::io::Write;
 
 pub fn handle_use(
     session: &mut Session,
     args: &[String],
     _: &HashMap<String, String>,
+    _out: &mut dyn Write,
+    _repl: bool,
 ) -> Result<(), String> {
     let region = args
         .first()
@@ -28,6 +31,8 @@ pub fn handle_local(
     session: &mut Session,
     args: &[String],
     kwargs: &HashMap<String, String>,
+    out: &mut dyn Write,
+    repl: bool,
 ) -> Result<(), String> {
     let host = kwargs
         .get("host")
@@ -50,5 +55,5 @@ pub fn handle_local(
         session.local_endpoint = Some((host, port));
     }
     let region = session.region.clone();
-    handle_use(session, std::slice::from_ref(&region), &HashMap::new())
+    handle_use(session, std::slice::from_ref(&region), &HashMap::new(), out, repl)
 }
