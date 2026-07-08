@@ -55,18 +55,29 @@ cargo test --workspace
 Integration tests use `tests/support/mod.rs` (`LocalHarness`) to connect, run
 statements, and tear down tables.
 
-## Deferred compatibility work
-
-- FragmentEngine and REPL meta-commands (Phase 5).
-- SAVE file formats, gzip/pickle LOAD, and rich terminal formatting.
-- Regression tests for reserved-word field escaping and dashed field paths.
-- Rich terminal formatting, completion, persistent history, and output modes.
-
 ## Local checks
 
 Run from this directory:
 
 - `cargo fmt --check`
+- `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo test --workspace`
+- `cargo build --release -p dql-cli`
+- `./scripts/smoke_test.sh`
 - `cargo run -p dql-cli -- --version`
 - `cargo run -p dql-cli -- --json -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"`
+
+## Install from this workspace
+
+Build a release binary locally::
+
+    cargo build --release -p dql-cli
+    install -m 0755 target/release/dql ~/.local/bin/dql
+
+Install from a git tag with Cargo::
+
+    cargo install --git https://github.com/stevearc/dql.git --tag <version> --locked -p dql-cli --root ~/.local
+
+Download a published binary with the install script from the repository root::
+
+    curl -fsSL https://raw.githubusercontent.com/stevearc/dql/v-rust/bin/install-rust.sh | sh

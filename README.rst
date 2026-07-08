@@ -19,14 +19,34 @@ needs.
 
 Getting Started
 ---------------
-Installation can be done in a variety of ways
+Installation can be done in a variety of ways.
+
+Rust binary (recommended on the ``v-rust`` branch)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Download a prebuilt binary from `GitHub releases <https://github.com/stevearc/dql/releases>`__::
+
+    curl -fsSL https://raw.githubusercontent.com/stevearc/dql/v-rust/bin/install-rust.sh | sh
+
+Or build and install from a release tag with Cargo::
+
+    cargo install --git https://github.com/stevearc/dql.git --tag 0.6.4 --locked -p dql-cli --root ~/.local
+
+The binary is installed as ``~/.local/bin/dql``. Add that directory to your ``PATH`` if needed.
+
+For local development of the Rust implementation, see ``rust-impl/README.md``.
+
+Legacy Python installation
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The Python implementation remains available while the Rust rewrite completes.
 
 * An executable `pex <https://github.com/pantsbuild/pex>`__ file is available on `the release page <https://github.com/stevearc/dql/releases>`__.
-* You can run a script to generate the pex file yourself: ``curl -o- install.py https://raw.githubusercontent.com/stevearc/dql/master/bin/install.py | python``
+* You can run a script to generate the pex file yourself: ``curl -fsSL https://raw.githubusercontent.com/stevearc/dql/master/bin/install.py | sh``
 * With pip: ``pip install dql`` (To get the official version)
-* If you want my development version, see branch `v-next`_
+* If you want the Python development version, see branch `v-next`_
 
-Prerequisites for development version: ``uv``
+Prerequisites for Python development version: ``uv``
 
 Installing from remote source code::
 
