@@ -3,13 +3,16 @@ use crate::meta::lifecycle::take_exit_request;
 use crate::meta::watch::take_watch_request;
 use crate::session::Session;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
-use dql_output::{render_result, DisplayBackend};
+use dql_engine::StatementResult;
+use dql_output::{build_rich_layout, render_result, DisplayBackend, OutputFormat};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 use std::io::{self, Write};
 use std::time::Duration;
+
+use super::rich_table::rich_layout_to_lines;
 
 #[derive(Default)]
 struct BufferBackend {
@@ -51,6 +54,13 @@ fn enable_mouse_capture() -> io::Result<()> {
 
 fn disable_mouse_capture() -> io::Result<()> {
     crossterm::execute!(io::stdout(), event::DisableMouseCapture)
+}
+
+fn terminal_width() -> usize {
+    crossterm::terminal::size()
+        .map(|(width, _)| width as usize)
+        .unwrap_or(80)
+        .max(40)
 }
 
 fn terminal_height() -> usize {
@@ -222,12 +232,43 @@ impl<'a> ReplApp<'a> {
 
         let output_config = self.session.config.output_config();
         let mut backend = BufferBackend::default();
-        {
+        let rich_context = self.session.engine.rich_context();
+        if output_config.format == OutputFormat::Rich && cmd == "ls" {
+            let arglist = line
+                .split_once(char::is_whitespace)
+                .map(|(_, rest)| rest.trim())
+                .unwrap_or("");
+            let (args, kwargs) = crate::meta::parse_repl_args(arglist);
+            match crate::meta::ls::render_rich_lines(
+                self.session,
+                &args,
+                &kwargs,
+                terminal_width() as u16,
+            ) {
+                Ok(lines) => self.transcript.extend(lines),
+                Err(err) => self.transcript.push(Line::from(err)),
+            }
+        } else {
             let mut writer = backend.writer();
             if let Some(result) = crate::meta::dispatch(self.session, &line, writer.as_mut(), true)?
             {
                 drop(writer);
-                render_result(&result, &output_config, &mut backend)?;
+                if output_config.format == OutputFormat::Rich {
+                    if let StatementResult::Items(items) = &result {
+                        let layout = build_rich_layout(items, rich_context.as_ref());
+                        self.transcript
+                            .extend(rich_layout_to_lines(&layout, terminal_width() as u16));
+                    } else {
+                        render_result(
+                            &result,
+                            &output_config,
+                            &mut backend,
+                            rich_context.as_ref(),
+                        )?;
+                    }
+                } else {
+                    render_result(&result, &output_config, &mut backend, rich_context.as_ref())?;
+                }
             }
         }
         if matches!(cmd.as_str(), "clear" | "cls" | "c") {

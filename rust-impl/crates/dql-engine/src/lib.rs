@@ -7,6 +7,7 @@ mod file_io;
 pub mod fragment;
 pub mod json_util;
 mod memory;
+mod query_context;
 mod throttle;
 
 pub use fragment::FragmentEngine;
@@ -16,6 +17,7 @@ pub use throttle::RateLimit;
 pub use aws::{SdkBackend, SdkConfig};
 pub use engine::Engine;
 pub use memory::MemoryBackend;
+pub use query_context::{query_context_from_read, LastQueryContext};
 
 use crate::json_util::{item_to_json, string_to_json};
 use dql_parser::{AlterAction, Condition, OrderBy, QueryOptions, Selection, UpdateExpr};

@@ -80,6 +80,17 @@ impl DisplayMode {
         }
     }
 
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Stdout => "stdout",
+            Self::Less => "less",
+        }
+    }
+
+    pub fn all_names() -> &'static [&'static str] {
+        &["stdout", "less"]
+    }
+
     pub fn backend(&self) -> Box<dyn DisplayBackend> {
         match self {
             Self::Stdout => Box::new(stdout_display()),

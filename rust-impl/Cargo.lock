@@ -987,6 +987,7 @@ dependencies = [
  "dql-output",
  "dql-parser",
  "glob",
+ "humansize",
  "insta",
  "ratatui",
  "serde",

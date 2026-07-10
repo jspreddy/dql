@@ -187,7 +187,7 @@ pub const OPTIONS: &str = r"
                 width : int, The number of characters wide to format the display
              pagesize : int, The number of results to get per page for queries
               display : (less|stdout), The reader used to view query results
-               format : (smart|column|expanded|json), Display format for query results
+               format : (smart|column|expanded|json|rich), Display format for query results
     allow_select_scan : bool, If True, SELECT statements can perform table scans
 ";
 
@@ -203,5 +203,6 @@ mod tests {
         ] {
             assert!(statement_help(topic).is_some(), "missing help for {topic}");
         }
+        assert!(OPTIONS.contains("rich"));
     }
 }

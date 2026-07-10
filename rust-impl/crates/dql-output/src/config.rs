@@ -1,4 +1,6 @@
-use crate::formats::{ColumnFormat, ExpandedFormat, Format, JsonFormat, SmartFormat};
+use crate::formats::{
+    ColumnFormat, ExpandedFormat, Format, JsonFormat, RichContext, RichFormat, SmartFormat,
+};
 use dql_engine::Item;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -37,6 +39,7 @@ pub enum OutputFormat {
     Column,
     Expanded,
     Json,
+    Rich,
 }
 
 impl OutputFormat {
@@ -46,6 +49,7 @@ impl OutputFormat {
             "column" => Some(Self::Column),
             "expanded" => Some(Self::Expanded),
             "json" => Some(Self::Json),
+            "rich" => Some(Self::Rich),
             _ => None,
         }
     }
@@ -56,7 +60,12 @@ impl OutputFormat {
             Self::Column => "column",
             Self::Expanded => "expanded",
             Self::Json => "json",
+            Self::Rich => "rich",
         }
+    }
+
+    pub fn all_names() -> &'static [&'static str] {
+        &["smart", "column", "expanded", "json", "rich"]
     }
 }
 
@@ -121,7 +130,11 @@ impl OutputConfig {
         }
     }
 
-    pub fn formatter<'a>(&self, items: &'a [Item]) -> Box<dyn Format + 'a> {
+    pub fn formatter<'a>(
+        &self,
+        items: &'a [Item],
+        rich_context: Option<&'a RichContext>,
+    ) -> Box<dyn Format + 'a> {
         match self.format {
             OutputFormat::Json => Box::new(JsonFormat::new(items, self.lossy_json_float)),
             OutputFormat::Column => Box::new(ColumnFormat::new(
@@ -134,6 +147,9 @@ impl OutputConfig {
                 self.width.resolve(),
                 self.pagesize.resolve(),
             )),
+            OutputFormat::Rich => {
+                Box::new(RichFormat::new(items, self.width.resolve(), rich_context))
+            }
             OutputFormat::Smart => Box::new(SmartFormat::new(
                 items,
                 self.width.resolve(),

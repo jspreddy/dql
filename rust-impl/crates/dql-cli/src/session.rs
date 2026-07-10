@@ -1,6 +1,8 @@
 use crate::config::CliConfig;
-use dql_engine::{Engine, EngineError, FragmentEngine, SdkBackend, SdkConfig, StatementResult};
-use dql_output::{render_result, DisplayMode, OutputConfig};
+use dql_engine::{
+    Engine, EngineError, FragmentEngine, LastQueryContext, SdkBackend, SdkConfig, StatementResult,
+};
+use dql_output::{render_result, DisplayMode, OutputConfig, RichContext};
 use std::env;
 use std::io::{self, Write};
 
@@ -118,6 +120,17 @@ impl RuntimeEngine {
             Self::Memory(engine) => engine.inner_mut().execute(input),
             Self::Remote(engine) => engine.inner_mut().execute(input),
         }
+    }
+
+    pub fn last_query_context(&self) -> Option<&LastQueryContext> {
+        match self {
+            Self::Memory(engine) => engine.inner().last_query_context(),
+            Self::Remote(engine) => engine.inner().last_query_context(),
+        }
+    }
+
+    pub fn rich_context(&self) -> Option<RichContext> {
+        self.last_query_context().map(rich_context_from_engine)
     }
 
     pub fn region(&self) -> &str {
@@ -279,6 +292,13 @@ impl RuntimeEngine {
     }
 }
 
+pub fn rich_context_from_engine(context: &LastQueryContext) -> RichContext {
+    RichContext {
+        important_columns: context.important_columns(),
+        preserve_column_order: context.preserve_column_order(),
+    }
+}
+
 pub struct Session {
     pub config: CliConfig,
     pub engine: RuntimeEngine,
@@ -353,15 +373,27 @@ impl Session {
             self.dispatch_line(trimmed, &output_config, backend.as_mut())?;
         } else {
             self.apply_rate_limit()?;
+            let rich_context = self.engine.rich_context();
             if let Some(result) = self.engine.execute_fragment(trimmed)? {
-                render_result(&result, &output_config, backend.as_mut())
-                    .map_err(|err| EngineError::Runtime(err.to_string()))?;
+                render_result(
+                    &result,
+                    &output_config,
+                    backend.as_mut(),
+                    rich_context.as_ref(),
+                )
+                .map_err(|err| EngineError::Runtime(err.to_string()))?;
             }
             if self.engine.partial() {
                 self.apply_rate_limit()?;
+                let rich_context = self.engine.rich_context();
                 if let Some(result) = self.engine.execute_fragment(";")? {
-                    render_result(&result, &output_config, backend.as_mut())
-                        .map_err(|err| EngineError::Runtime(err.to_string()))?;
+                    render_result(
+                        &result,
+                        &output_config,
+                        backend.as_mut(),
+                        rich_context.as_ref(),
+                    )
+                    .map_err(|err| EngineError::Runtime(err.to_string()))?;
                 }
             }
         }
@@ -384,8 +416,13 @@ impl Session {
         let mut writer = backend.writer();
         if let Some(result) = crate::meta::dispatch(self, trimmed, writer.as_mut(), false)? {
             drop(writer);
-            render_result(&result, output_config, backend)
-                .map_err(|err| EngineError::Runtime(err.to_string()))?;
+            render_result(
+                &result,
+                output_config,
+                backend,
+                self.engine.rich_context().as_ref(),
+            )
+            .map_err(|err| EngineError::Runtime(err.to_string()))?;
         }
         Ok(())
     }

@@ -5,7 +5,10 @@ mod table_meta;
 
 pub use config::{OutputConfig, OutputFormat, PageSize, WidthSetting};
 pub use display::{less_display, stdout_display, DisplayBackend, DisplayMode};
-pub use formats::{ColumnFormat, ExpandedFormat, Format, JsonFormat, SmartFormat};
+pub use formats::{
+    build_rich_layout, rich_layout_to_text, ColumnFormat, ExpandedFormat, Format, JsonFormat,
+    RichColumn, RichContext, RichFormat, RichLayout, SmartFormat,
+};
 pub use table_meta::{format_table_detail, format_table_summary_table, TableStats};
 
 use dql_engine::{Item, StatementResult};
@@ -15,6 +18,7 @@ pub fn render_result(
     result: &StatementResult,
     config: &OutputConfig,
     backend: &mut dyn DisplayBackend,
+    rich_context: Option<&RichContext>,
 ) -> io::Result<()> {
     match result {
         StatementResult::None => Ok(()),
@@ -25,16 +29,20 @@ pub fn render_result(
         StatementResult::Schema(schema) => backend.write_line(schema),
         StatementResult::Items(items) => {
             let mut writer = backend.writer();
-            let formatter = config.formatter(items);
+            let formatter = config.formatter(items, rich_context);
             formatter.display(&mut writer)
         }
         StatementResult::Status(_) | StatementResult::Affected(_) => Ok(()),
     }
 }
 
-pub fn format_items(items: &[Item], config: &OutputConfig) -> String {
+pub fn format_items(
+    items: &[Item],
+    config: &OutputConfig,
+    rich_context: Option<&RichContext>,
+) -> String {
     let mut output = Vec::new();
-    let formatter = config.formatter(items);
+    let formatter = config.formatter(items, rich_context);
     formatter.display(&mut output).unwrap();
     String::from_utf8(output).unwrap_or_default()
 }

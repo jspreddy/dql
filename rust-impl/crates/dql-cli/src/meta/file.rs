@@ -23,7 +23,12 @@ pub fn handle(
                 .execute_fragment(line)
                 .map_err(|err| err.to_string())?
             {
-                render_to_buffer(&result, &output_config, &mut buffer)?;
+                render_to_buffer(
+                    &result,
+                    &output_config,
+                    session.engine.rich_context().as_ref(),
+                    &mut buffer,
+                )?;
             }
         }
         out.write_all(&buffer).map_err(|err| err.to_string())?;
@@ -43,8 +48,13 @@ pub fn handle(
             .execute_fragment(line)
             .map_err(|err| err.to_string())?
         {
-            dql_output::render_result(&result, &output_config, backend.as_mut())
-                .map_err(|err| err.to_string())?;
+            dql_output::render_result(
+                &result,
+                &output_config,
+                backend.as_mut(),
+                session.engine.rich_context().as_ref(),
+            )
+            .map_err(|err| err.to_string())?;
         }
     }
     backend.finish().map_err(|err| err.to_string())?;
@@ -54,6 +64,7 @@ pub fn handle(
 fn render_to_buffer(
     result: &dql_engine::StatementResult,
     output_config: &dql_output::OutputConfig,
+    rich_context: Option<&dql_output::RichContext>,
     buffer: &mut Vec<u8>,
 ) -> Result<(), String> {
     struct BufferBackend<'a>(&'a mut Vec<u8>);
@@ -76,5 +87,6 @@ fn render_to_buffer(
     }
 
     let mut backend = BufferBackend(buffer);
-    dql_output::render_result(result, output_config, &mut backend).map_err(|err| err.to_string())
+    dql_output::render_result(result, output_config, &mut backend, rich_context)
+        .map_err(|err| err.to_string())
 }

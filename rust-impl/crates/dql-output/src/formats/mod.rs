@@ -1,11 +1,15 @@
 mod column;
 mod expanded;
 mod json;
+mod rich;
 mod smart;
 
 pub use column::ColumnFormat;
 pub use expanded::ExpandedFormat;
 pub use json::JsonFormat;
+pub use rich::{
+    build_rich_layout, rich_layout_to_text, RichColumn, RichContext, RichFormat, RichLayout,
+};
 pub use smart::SmartFormat;
 
 use std::io::{self, Write};

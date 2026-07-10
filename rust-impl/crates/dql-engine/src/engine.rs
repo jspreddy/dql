@@ -1,5 +1,6 @@
 use crate::convert::keys_in_to_items;
 use crate::file_io::{load_items as load_items_from_file, save_items};
+use crate::query_context::{query_context_from_read, LastQueryContext};
 use crate::throttle::RateLimit;
 use crate::{
     BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
@@ -23,6 +24,7 @@ pub struct Engine<B: DynamoBackend> {
     allow_select_scan: bool,
     rate_limit: Option<RateLimit>,
     pub cached_descriptions: HashMap<String, TableMeta>,
+    last_query_context: Option<LastQueryContext>,
 }
 
 impl<B: DynamoBackend> Engine<B> {
@@ -36,6 +38,7 @@ impl<B: DynamoBackend> Engine<B> {
             allow_select_scan: false,
             rate_limit: None,
             cached_descriptions: HashMap::new(),
+            last_query_context: None,
         }
     }
 
@@ -105,6 +108,10 @@ impl<B: DynamoBackend> Engine<B> {
 
     pub fn backend_mut(&mut self) -> &mut B {
         &mut self.backend
+    }
+
+    pub fn last_query_context(&self) -> Option<&LastQueryContext> {
+        self.last_query_context.as_ref()
     }
 
     pub fn execute(&mut self, input: &str) -> Result<StatementResult, EngineError> {
@@ -340,10 +347,12 @@ impl<B: DynamoBackend> Engine<B> {
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
         let result = if options.keys_in.is_some() {
+            self.capture_query_context(table, selection, options, None)?;
             self.execute_keys_in_read(table, selection, condition, options)?
         } else {
             let plan =
                 self.plan_read_operation(table, ReadKind::Scan, selection, condition, options)?;
+            self.capture_query_context(table, selection, options, Some(&plan))?;
             self.execute_read(table, &plan, selection, condition, options)?
         };
         self.maybe_save(options, result)
@@ -357,13 +366,44 @@ impl<B: DynamoBackend> Engine<B> {
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
         let result = if options.keys_in.is_some() {
+            self.capture_query_context(table, selection, options, None)?;
             self.execute_keys_in_read(table, selection, condition, options)?
         } else {
             let plan =
                 self.plan_read_operation(table, ReadKind::Select, selection, condition, options)?;
+            self.capture_query_context(table, selection, options, Some(&plan))?;
             self.execute_read(table, &plan, selection, condition, options)?
         };
         self.maybe_save(options, result)
+    }
+
+    fn capture_query_context(
+        &mut self,
+        table: &str,
+        selection: &Selection,
+        options: &QueryOptions,
+        plan: Option<&QueryPlan>,
+    ) -> Result<(), EngineError> {
+        let meta = self
+            .describe(table, false)?
+            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let index = plan.and_then(|plan| plan.index.clone()).or_else(|| {
+            options.using_index.as_ref().and_then(|name| {
+                if name == "-" {
+                    None
+                } else {
+                    meta.get_index(name).ok()
+                }
+            })
+        });
+        let follow_up_batch_get = plan.is_some_and(|plan| plan.follow_up_batch_get);
+        self.last_query_context = Some(query_context_from_read(
+            meta,
+            selection,
+            index,
+            follow_up_batch_get,
+        ));
+        Ok(())
     }
 
     fn maybe_save(
@@ -923,6 +963,24 @@ mod tests {
             }
             other => panic!("unexpected result: {other:?}"),
         }
+    }
+
+    #[test]
+    fn scan_populates_last_query_context() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute(
+                "CREATE TABLE t (id STRING HASH KEY, score NUMBER);
+                 INSERT INTO t (id, score) VALUES ('a', 1);
+                 SCAN id, score FROM t",
+            )
+            .unwrap();
+        let context = engine
+            .last_query_context()
+            .expect("scan should populate query context");
+        assert_eq!(context.table.name, "t");
+        assert_eq!(context.important_columns(), vec!["id"]);
+        assert!(context.preserve_column_order());
     }
 
     #[test]
