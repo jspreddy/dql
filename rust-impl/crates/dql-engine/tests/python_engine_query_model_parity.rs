@@ -154,12 +154,23 @@ mod test_fragment_engine {
     }
 
     #[test]
-    #[ignore = "needs parse-error location in ParseError"]
     fn test_format_exc() {
-        pending(
-            "tests/test_engine.py::TestFragmentEngine::test_format_exc",
-            "ParseError offset tracking is deferred",
-        );
+        let mut engine = fragment_engine();
+        let query = "SELECT * FROM\n\ntable\nWHERE;";
+        let mut err = None;
+        for fragment in query.split('\n') {
+            match engine.execute(fragment) {
+                Ok(_) => {}
+                Err(dql_engine::EngineError::Parse(parse_err)) => {
+                    err = Some(parse_err);
+                    break;
+                }
+                Err(other) => panic!("unexpected error: {other}"),
+            }
+        }
+        let parse_err = err.expect("Engine should raise exception if parsing fails");
+        let pretty = engine.pformat_exc(&parse_err);
+        assert_eq!(pretty, format!("{query}\n^"));
     }
 
     #[test]

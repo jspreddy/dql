@@ -16,6 +16,13 @@ impl ParseError {
         }
     }
 
+    fn at(message: impl Into<String>, offset: usize) -> Self {
+        Self {
+            message: message.into(),
+            offset: Some(offset),
+        }
+    }
+
     pub fn location(&self) -> Option<usize> {
         self.offset
     }
@@ -320,8 +327,8 @@ pub enum FragmentStatus {
 }
 
 pub fn parse_script(input: &str) -> Result<Vec<Statement>, ParseError> {
-    let tokens = tokenize(input)?;
-    let mut parser = Parser::new(tokens);
+    let (tokens, offsets) = tokenize(input)?;
+    let mut parser = Parser::new(tokens, offsets, input.len());
     let mut statements = Vec::new();
     parser.consume_semicolons();
     while !parser.is_eof() {
@@ -345,8 +352,8 @@ pub fn parse_statement(input: &str) -> Result<Statement, ParseError> {
 }
 
 pub fn parse_value(input: &str) -> Result<Value, ParseError> {
-    let tokens = tokenize(input)?;
-    let mut parser = Parser::new(tokens);
+    let (tokens, offsets) = tokenize(input)?;
+    let mut parser = Parser::new(tokens, offsets, input.len());
     let value = parser.parse_value()?;
     if parser.is_eof() {
         Ok(value)
@@ -356,8 +363,8 @@ pub fn parse_value(input: &str) -> Result<Value, ParseError> {
 }
 
 pub fn parse_selection(input: &str) -> Result<Selection, ParseError> {
-    let tokens = tokenize(input)?;
-    let mut parser = Parser::new(tokens);
+    let (tokens, offsets) = tokenize(input)?;
+    let mut parser = Parser::new(tokens, offsets, input.len());
     let selection = parser.parse_selection_until(|parser| parser.is_eof())?;
     if parser.is_eof() {
         Ok(selection)
@@ -367,8 +374,8 @@ pub fn parse_selection(input: &str) -> Result<Selection, ParseError> {
 }
 
 pub fn parse_update_expr(input: &str) -> Result<UpdateExpr, ParseError> {
-    let tokens = tokenize(input)?;
-    let mut parser = Parser::new(tokens);
+    let (tokens, offsets) = tokenize(input)?;
+    let mut parser = Parser::new(tokens, offsets, input.len());
     let update = parser.parse_update_expr_until(|parser| parser.is_eof())?;
     if parser.is_eof() {
         Ok(update)
@@ -397,53 +404,66 @@ enum Token {
     Star,
 }
 
-fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
-    let mut chars = input.chars().peekable();
+fn tokenize(input: &str) -> Result<(Vec<Token>, Vec<usize>), ParseError> {
+    let mut chars = input.char_indices().peekable();
     let mut tokens = Vec::new();
-    while let Some(ch) = chars.peek().copied() {
+    let mut offsets = Vec::new();
+    while let Some(&(start, ch)) = chars.peek() {
         match ch {
             c if c.is_whitespace() => {
                 chars.next();
             }
             '-' => {
                 chars.next();
-                if chars.peek() == Some(&'-') {
-                    for c in chars.by_ref() {
+                if chars.peek().is_some_and(|(_, c)| *c == '-') {
+                    for (_, c) in chars.by_ref() {
                         if c == '\n' {
                             break;
                         }
                     }
-                } else if chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+                } else if chars.peek().is_some_and(|(_, c)| c.is_ascii_digit()) {
                     let mut number = String::from("-");
                     read_number(&mut chars, &mut number);
+                    offsets.push(start);
                     tokens.push(Token::Number(number));
                 } else {
+                    offsets.push(start);
                     tokens.push(Token::Symbol('-'));
                 }
             }
-            '\'' | '"' => tokens.push(Token::String(read_quoted(&mut chars)?)),
+            '\'' | '"' => {
+                offsets.push(start);
+                tokens.push(Token::String(read_quoted(&mut chars, start)?));
+            }
             'b' | 'B' => {
                 chars.next();
-                if matches!(chars.peek(), Some('"') | Some('\'')) {
-                    tokens.push(Token::Binary(read_quoted(&mut chars)?.into_bytes()));
+                if matches!(chars.peek().map(|(_, c)| *c), Some('"') | Some('\'')) {
+                    offsets.push(start);
+                    tokens.push(Token::Binary(
+                        read_quoted(&mut chars, start)?.into_bytes(),
+                    ));
                 } else {
                     let mut ident = String::from(ch);
                     read_ident(&mut chars, &mut ident);
+                    offsets.push(start);
                     tokens.push(Token::Ident(ident));
                 }
             }
             c if c.is_ascii_digit() => {
                 let mut number = String::new();
                 read_number(&mut chars, &mut number);
+                offsets.push(start);
                 tokens.push(Token::Number(number));
             }
             '*' => {
                 chars.next();
+                offsets.push(start);
                 tokens.push(Token::Star);
             }
             '(' | ')' | '[' | ']' | '{' | '}' | ',' | ':' | ';' | '=' | '<' | '>' | '!' | '+'
             | '/' => {
                 chars.next();
+                offsets.push(start);
                 tokens.push(Token::Symbol(ch));
             }
             c if is_ident_start(c) => {
@@ -451,40 +471,45 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ParseError> {
                 chars.next();
                 ident.push(c);
                 read_ident(&mut chars, &mut ident);
+                offsets.push(start);
                 tokens.push(Token::Ident(ident));
             }
             _ => {
-                return Err(ParseError::new(format!(
-                    "unexpected character '{ch}' while lexing"
-                )))
+                return Err(ParseError::at(
+                    format!("unexpected character '{ch}' while lexing"),
+                    start,
+                ))
             }
         }
     }
-    Ok(tokens)
+    Ok((tokens, offsets))
 }
 
-fn read_quoted(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Result<String, ParseError> {
-    let quote = chars
+fn read_quoted(
+    chars: &mut std::iter::Peekable<std::str::CharIndices<'_>>,
+    start: usize,
+) -> Result<String, ParseError> {
+    let (_, quote) = chars
         .next()
-        .ok_or_else(|| ParseError::new("expected quote"))?;
+        .ok_or_else(|| ParseError::at("expected quote", start))?;
     let mut value = String::new();
-    while let Some(ch) = chars.next() {
+    while let Some((_, ch)) = chars.next() {
         if ch == quote {
             return Ok(value);
         }
         if ch == '\\' {
-            if let Some(escaped) = chars.next() {
+            if let Some((_, escaped)) = chars.next() {
                 value.push(escaped);
             }
         } else {
             value.push(ch);
         }
     }
-    Err(ParseError::new("unterminated string literal"))
+    Err(ParseError::at("unterminated string literal", start))
 }
 
-fn read_number(chars: &mut std::iter::Peekable<std::str::Chars<'_>>, number: &mut String) {
-    while let Some(ch) = chars.peek().copied() {
+fn read_number(chars: &mut std::iter::Peekable<std::str::CharIndices<'_>>, number: &mut String) {
+    while let Some(&(_, ch)) = chars.peek() {
         if ch.is_ascii_digit() || ch == '.' {
             number.push(ch);
             chars.next();
@@ -494,8 +519,8 @@ fn read_number(chars: &mut std::iter::Peekable<std::str::Chars<'_>>, number: &mu
     }
 }
 
-fn read_ident(chars: &mut std::iter::Peekable<std::str::Chars<'_>>, ident: &mut String) {
-    while let Some(ch) = chars.peek().copied() {
+fn read_ident(chars: &mut std::iter::Peekable<std::str::CharIndices<'_>>, ident: &mut String) {
+    while let Some(&(_, ch)) = chars.peek() {
         if is_ident_part(ch) {
             ident.push(ch);
             chars.next();
@@ -544,12 +569,19 @@ fn merge_query_options(mut base: QueryOptions, tail: QueryOptions) -> QueryOptio
 
 struct Parser {
     tokens: Vec<Token>,
+    offsets: Vec<usize>,
+    input_len: usize,
     pos: usize,
 }
 
 impl Parser {
-    fn new(tokens: Vec<Token>) -> Self {
-        Self { tokens, pos: 0 }
+    fn new(tokens: Vec<Token>, offsets: Vec<usize>, input_len: usize) -> Self {
+        Self {
+            tokens,
+            offsets,
+            input_len,
+            pos: 0,
+        }
     }
 
     fn parse_statement(&mut self) -> Result<Statement, ParseError> {
@@ -960,8 +992,18 @@ impl Parser {
             self.expect_keyword("IN")?;
             options.keys_in = Some(self.parse_keys_in_list()?);
         }
-        if self.accept_keyword("WHERE") {
-            Ok(Some(self.parse_condition()?))
+        // Match pyparsing Optional(WHERE + condition): on failure, backtrack so
+        // the statement-level parser reports the error at WHERE.
+        if self.peek_keyword("WHERE") {
+            let saved = self.pos;
+            self.pos += 1;
+            match self.parse_condition() {
+                Ok(condition) => Ok(Some(condition)),
+                Err(_) => {
+                    self.pos = saved;
+                    Ok(None)
+                }
+            }
         } else {
             Ok(None)
         }
@@ -1791,15 +1833,25 @@ impl Parser {
     }
 
     fn error(&self, message: impl Into<String>) -> ParseError {
-        ParseError::new(format!("{} at token {}", message.into(), self.pos))
+        ParseError::at(
+            format!("{} at token {}", message.into(), self.pos),
+            self.offset_at(self.pos),
+        )
     }
 
     fn error_at_previous(&self, message: impl Into<String>) -> ParseError {
-        ParseError::new(format!(
-            "{} at token {}",
-            message.into(),
-            self.pos.saturating_sub(1)
-        ))
+        let token_pos = self.pos.saturating_sub(1);
+        ParseError::at(
+            format!("{} at token {}", message.into(), token_pos),
+            self.offset_at(token_pos),
+        )
+    }
+
+    fn offset_at(&self, token_pos: usize) -> usize {
+        self.offsets
+            .get(token_pos)
+            .copied()
+            .unwrap_or(self.input_len)
     }
 }
 
