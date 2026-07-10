@@ -796,6 +796,8 @@ impl SdkBackend {
             options: &QueryOptions::default(),
             consistent: false,
             order_by: None,
+            scan_index_forward: None,
+            range_key: None,
             follow_up_batch_get: false,
         };
         let items = self.execute_read(table, &request)?.output;
@@ -833,6 +835,9 @@ impl SdkBackend {
             }
             if let Some(index_name) = index_name {
                 query = query.index_name(index_name);
+            }
+            if let Some(forward) = request.scan_index_forward {
+                query = query.scan_index_forward(forward);
             }
             if let Some(key_condition) = key_condition {
                 query = query

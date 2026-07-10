@@ -5,6 +5,20 @@ fn pending(source: &str, reason: &str) {
     panic!("pending Python parity for {source}: {reason}");
 }
 
+fn item(fields: &[(&str, &str)]) -> Item {
+    fields
+        .iter()
+        .map(|(key, value)| {
+            let parsed = if value.parse::<f64>().is_ok() {
+                Value::Number(value.to_string())
+            } else {
+                Value::String(value.to_string())
+            };
+            ((*key).to_string(), parsed)
+        })
+        .collect()
+}
+
 fn scan_after_insert(value: &str) -> Item {
     let mut engine = InMemoryEngine::default();
     let result = engine
@@ -577,9 +591,32 @@ mod test_select {
         };
     }
 
-    ignored_select!(
-        test_reverse => "needs ORDER BY DESC support",
-    );
+    #[test]
+    fn test_reverse() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 1), ('a', 2)",
+            )
+            .unwrap();
+        let results = match engine
+            .execute("SELECT * FROM foobar WHERE id = 'a' ASC")
+            .unwrap()
+        {
+            StatementResult::Items(items) => items,
+            other => panic!("unexpected result: {other:?}"),
+        };
+        let rev_results = match engine
+            .execute("SELECT * FROM foobar WHERE id = 'a' DESC")
+            .unwrap()
+        {
+            StatementResult::Items(items) => items,
+            other => panic!("unexpected result: {other:?}"),
+        };
+        let rev_results: Vec<_> = rev_results.into_iter().rev().collect();
+        assert_eq!(results, rev_results);
+    }
 
     fn make_indexed_table(engine: &mut InMemoryEngine) {
         engine
@@ -845,9 +882,82 @@ mod test_select {
         );
     }
 
+    #[test]
+    fn test_order_by_index() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar) VALUES ('a', 1), ('a', 3), ('a', 2)",
+            )
+            .unwrap();
+        let ret = match engine
+            .execute("SELECT * FROM foobar WHERE id = 'a' ORDER BY bar")
+            .unwrap()
+        {
+            StatementResult::Items(items) => items,
+            other => panic!("unexpected result: {other:?}"),
+        };
+        let expected = vec![
+            item(&[("id", "a"), ("bar", "1")]),
+            item(&[("id", "a"), ("bar", "2")]),
+            item(&[("id", "a"), ("bar", "3")]),
+        ];
+        assert_eq!(ret, expected);
+        let ret = match engine
+            .execute("SELECT * FROM foobar WHERE id = 'a' ORDER BY bar DESC")
+            .unwrap()
+        {
+            StatementResult::Items(items) => items,
+            other => panic!("unexpected result: {other:?}"),
+        };
+        let expected = vec![
+            item(&[("id", "a"), ("bar", "3")]),
+            item(&[("id", "a"), ("bar", "2")]),
+            item(&[("id", "a"), ("bar", "1")]),
+        ];
+        assert_eq!(ret, expected);
+    }
+
+    #[test]
+    fn test_order_by() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY);
+                 INSERT INTO foobar (id, bar, baz) VALUES \
+                 ('a', 1, 20), ('a', 2, 30), ('a', 3, 10)",
+            )
+            .unwrap();
+        let ret = match engine
+            .execute("SELECT * FROM foobar WHERE id = 'a' ORDER BY baz")
+            .unwrap()
+        {
+            StatementResult::Items(items) => items,
+            other => panic!("unexpected result: {other:?}"),
+        };
+        let expected = vec![
+            item(&[("id", "a"), ("bar", "3"), ("baz", "10")]),
+            item(&[("id", "a"), ("bar", "1"), ("baz", "20")]),
+            item(&[("id", "a"), ("bar", "2"), ("baz", "30")]),
+        ];
+        assert_eq!(ret, expected);
+        let ret = match engine
+            .execute("SELECT * FROM foobar WHERE id = 'a' ORDER BY baz DESC")
+            .unwrap()
+        {
+            StatementResult::Items(items) => items,
+            other => panic!("unexpected result: {other:?}"),
+        };
+        let expected = vec![
+            item(&[("id", "a"), ("bar", "2"), ("baz", "30")]),
+            item(&[("id", "a"), ("bar", "1"), ("baz", "20")]),
+            item(&[("id", "a"), ("bar", "3"), ("baz", "10")]),
+        ];
+        assert_eq!(ret, expected);
+    }
+
     ignored_select!(
-        test_order_by_index => "needs ORDER BY with index support",
-        test_order_by => "needs ORDER BY support",
         test_select_non_projected => "needs projection and index follow-up support",
     );
 

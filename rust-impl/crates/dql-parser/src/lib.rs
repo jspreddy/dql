@@ -220,6 +220,9 @@ pub struct QueryOptions {
     pub keys_in: Option<Vec<Vec<Value>>>,
     pub consistent: bool,
     pub order_by: Option<OrderBy>,
+    /// Bare `ASC` / `DESC` (Python `ordering`), or direction from `ORDER BY … ASC|DESC`.
+    /// `None` means no explicit direction clause was present.
+    pub descending: Option<bool>,
     pub throttle: Option<ThrottleConfig>,
 }
 
@@ -523,6 +526,9 @@ fn merge_query_options(mut base: QueryOptions, tail: QueryOptions) -> QueryOptio
     }
     if tail.order_by.is_some() {
         base.order_by = tail.order_by;
+    }
+    if tail.descending.is_some() {
+        base.descending = tail.descending;
     }
     base.consistent |= tail.consistent;
     base
@@ -955,13 +961,21 @@ impl Parser {
             } else if self.accept_keyword("ORDER") {
                 self.expect_keyword("BY")?;
                 let field = self.expect_ident()?;
+                // Optional ASC/DESC after ORDER BY mirrors Python's separate `ordering` clause.
                 let descending = if self.accept_keyword("DESC") {
+                    options.descending = Some(true);
                     true
+                } else if self.accept_keyword("ASC") {
+                    options.descending = Some(false);
+                    false
                 } else {
-                    self.accept_keyword("ASC");
                     false
                 };
                 options.order_by = Some(OrderBy { field, descending });
+            } else if self.accept_keyword("DESC") {
+                options.descending = Some(true);
+            } else if self.accept_keyword("ASC") {
+                options.descending = Some(false);
             } else if self.accept_keyword("THROTTLE") {
                 options.throttle = Some(self.parse_throttle_clause()?);
             } else {

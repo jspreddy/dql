@@ -91,6 +91,10 @@ pub struct ReadRequest<'a> {
     pub options: &'a QueryOptions,
     pub consistent: bool,
     pub order_by: Option<&'a OrderBy>,
+    /// When set, Query should use this as DynamoDB `ScanIndexForward` (`true` = ASC).
+    pub scan_index_forward: Option<bool>,
+    /// Range key of the planned index/table, used by memory backend for query ordering.
+    pub range_key: Option<&'a str>,
     pub follow_up_batch_get: bool,
 }
 

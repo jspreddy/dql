@@ -399,7 +399,12 @@ impl<B: DynamoBackend> Engine<B> {
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
-        let kwargs = explain_kwargs_for_plan(plan, condition, options);
+        let ordering = resolve_ordering(plan, options)?;
+        let mut kwargs = explain_kwargs_for_plan(plan, condition, options);
+        if let Some(forward) = ordering.scan_index_forward {
+            kwargs.insert("desc".to_string(), (!forward).to_string());
+            kwargs.insert("scan_index_forward".to_string(), forward.to_string());
+        }
         let operation = match plan.operation {
             Operation::Query => "query",
             Operation::Scan => "scan",
@@ -409,6 +414,10 @@ impl<B: DynamoBackend> Engine<B> {
         if plan.follow_up_batch_get {
             self.record("batch_get_item", table);
         }
+        let range_key = plan
+            .index
+            .as_ref()
+            .and_then(|index| index.range_key.as_deref());
         let request = ReadRequest {
             operation: operation_to_backend(plan.operation),
             index_name: plan.index.as_ref().and_then(|index| {
@@ -432,12 +441,14 @@ impl<B: DynamoBackend> Engine<B> {
             options,
             consistent: options.consistent,
             order_by: options.order_by.as_ref(),
+            scan_index_forward: ordering.scan_index_forward,
+            range_key,
             follow_up_batch_get: plan.follow_up_batch_get,
         };
         let response = self.backend.execute_read(table, &request)?;
         let capacity = response.capacity.clone();
         self.capture_capacity(capacity);
-        finalize_read_result(response, selection, options.order_by.as_ref())
+        finalize_read_result(response, selection, ordering.client_order_by.as_ref())
     }
 
     fn alter_table(
@@ -760,6 +771,61 @@ fn validate_mutation_keys_in(options: &QueryOptions) -> Result<(), EngineError> 
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OrderingPolicy {
+    /// `Some(true)` → ScanIndexForward true (ASC); `Some(false)` → DESC.
+    scan_index_forward: Option<bool>,
+    client_order_by: Option<OrderBy>,
+}
+
+/// Mirror Python `order()` / `_select` ASC/DESC and ORDER BY handling.
+fn resolve_ordering(
+    plan: &QueryPlan,
+    options: &QueryOptions,
+) -> Result<OrderingPolicy, EngineError> {
+    // Bare ASC/DESC (or ORDER BY … ASC|DESC) sets `options.descending`.
+    if options.descending.is_some()
+        && options.order_by.is_none()
+        && plan.operation == Operation::Scan
+    {
+        return Err(EngineError::Runtime(
+            "No index found for query, cannot use ASC or DESC without ORDER BY <field>".to_string(),
+        ));
+    }
+
+    let reverse = options.descending == Some(true);
+    let range_key = plan
+        .index
+        .as_ref()
+        .and_then(|index| index.range_key.as_deref());
+    let order_field = options.order_by.as_ref().map(|order| order.field.as_str());
+
+    let scan_index_forward = if plan.operation == Operation::Query && options.descending.is_some() {
+        if order_field.is_none() || order_field == range_key {
+            Some(!reverse)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let client_order_by = match &options.order_by {
+        Some(order_by) if plan.index.is_none() || range_key != Some(order_by.field.as_str()) => {
+            Some(OrderBy {
+                field: order_by.field.clone(),
+                descending: reverse || order_by.descending,
+            })
+        }
+        _ => None,
+    };
+
+    Ok(OrderingPolicy {
+        scan_index_forward,
+        client_order_by,
+    })
+}
+
 fn finalize_update_result(
     response: BackendResponse<usize>,
 ) -> Result<StatementResult, EngineError> {
@@ -1037,5 +1103,106 @@ mod tests {
             }
             other => panic!("unexpected result: {other:?}"),
         }
+    }
+
+    #[test]
+    fn bare_desc_on_scan_without_order_by_errors() {
+        let mut engine = Engine::new(MemoryBackend::new()).with_allow_select_scan(true);
+        engine
+            .execute("CREATE TABLE t (id STRING HASH KEY, score NUMBER)")
+            .unwrap();
+        let err = engine.execute("SCAN * FROM t DESC").unwrap_err();
+        assert!(
+            err.to_string().contains("ORDER BY"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn query_desc_uses_range_key_order() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        let result = engine
+            .execute(
+                "CREATE TABLE t (id STRING HASH KEY, score NUMBER RANGE KEY);
+                 INSERT INTO t (id, score) VALUES ('a', 1), ('a', 3), ('a', 2);
+                 SELECT * FROM t WHERE id = 'a' DESC",
+            )
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                let scores: Vec<_> = items
+                    .iter()
+                    .map(|item| item.get("score").cloned())
+                    .collect();
+                assert_eq!(
+                    scores,
+                    vec![
+                        Some(Value::Number("3".to_string())),
+                        Some(Value::Number("2".to_string())),
+                        Some(Value::Number("1".to_string())),
+                    ]
+                );
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_ordering_server_vs_client() {
+        use dql_models::{Operation, ProjectionType, QueryIndex, QueryPlan};
+
+        let index = QueryIndex {
+            name: "TABLE".to_string(),
+            is_global: true,
+            hash_key: "id".to_string(),
+            range_key: Some("bar".to_string()),
+            projection: ProjectionType::All,
+            projected_attributes: None,
+        };
+        let plan = QueryPlan {
+            operation: Operation::Query,
+            index: Some(index),
+            key_condition: None,
+            filter_condition: None,
+            follow_up_batch_get: false,
+        };
+
+        let bare_desc = QueryOptions {
+            descending: Some(true),
+            ..QueryOptions::default()
+        };
+        let policy = resolve_ordering(&plan, &bare_desc).unwrap();
+        assert_eq!(policy.scan_index_forward, Some(false));
+        assert!(policy.client_order_by.is_none());
+
+        let order_non_range = QueryOptions {
+            order_by: Some(OrderBy {
+                field: "baz".to_string(),
+                descending: true,
+            }),
+            descending: Some(true),
+            ..QueryOptions::default()
+        };
+        let policy = resolve_ordering(&plan, &order_non_range).unwrap();
+        assert_eq!(policy.scan_index_forward, None);
+        assert_eq!(
+            policy.client_order_by,
+            Some(OrderBy {
+                field: "baz".to_string(),
+                descending: true,
+            })
+        );
+
+        let order_range = QueryOptions {
+            order_by: Some(OrderBy {
+                field: "bar".to_string(),
+                descending: true,
+            }),
+            descending: Some(true),
+            ..QueryOptions::default()
+        };
+        let policy = resolve_ordering(&plan, &order_range).unwrap();
+        assert_eq!(policy.scan_index_forward, Some(false));
+        assert!(policy.client_order_by.is_none());
     }
 }

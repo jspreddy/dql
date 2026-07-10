@@ -4,19 +4,19 @@ overview: "Complete ORDER BY / ASC / DESC parity with Python: wire ScanIndexForw
 todos:
   - id: step-1-parser-bare-order
     content: "Step 1: Parse bare ASC/DESC into QueryOptions (Python ordering clause)"
-    status: pending
+    status: completed
   - id: step-2-engine-policy
     content: "Step 2: Engine policy — ScanIndexForward vs client sort_items"
-    status: pending
+    status: completed
   - id: step-3-aws-scan-index-forward
     content: "Step 3: SdkBackend query sets scan_index_forward from plan"
-    status: pending
+    status: completed
   - id: step-4-memory-range-order
     content: "Step 4: MemoryBackend sorts by range key for query plans"
-    status: pending
+    status: completed
   - id: step-5-unignore-tests
     content: "Step 5: Implement and un-ignore test_order_by, test_order_by_index, test_reverse"
-    status: pending
+    status: completed
 isProject: false
 ---
 

@@ -133,13 +133,7 @@ impl DynamoBackend for MemoryBackend {
             let keys = keys_in_to_items(&table_data.meta, keys_in)?;
             return self.batch_get_keys(table, &keys, request.consistent);
         }
-        let items = apply_read_options(
-            table_data.items.iter(),
-            request.key_condition,
-            request.filter_condition,
-            request.condition,
-            request.options,
-        );
+        let items = apply_read_options(table_data.items.iter(), request);
         let count = matches!(request.selection, Selection::CountAll).then_some(items.len());
         let op_name = match request.operation {
             ReadOperation::Query => "query",
@@ -270,18 +264,25 @@ impl DynamoBackend for MemoryBackend {
                     None
                 });
         table_data.items.retain(|item| {
-            apply_read_options(
-                std::iter::once(item),
+            let filter_request = ReadRequest {
+                operation: ReadOperation::Scan,
+                index_name: None,
                 key_condition,
                 filter_condition,
-                if key_condition.is_none() {
+                condition: if key_condition.is_none() {
                     condition
                 } else {
                     None
                 },
+                selection: &Selection::All,
                 options,
-            )
-            .is_empty()
+                consistent: false,
+                order_by: None,
+                scan_index_forward: None,
+                range_key: None,
+                follow_up_batch_get: false,
+            };
+            apply_read_options(std::iter::once(item), &filter_request).is_empty()
         });
         Ok(BackendResponse::new(
             "delete_item",
@@ -571,22 +572,47 @@ impl ValueExt for Value {
 
 fn apply_read_options<'a>(
     items: impl Iterator<Item = &'a Item>,
-    key_condition: Option<&Condition>,
-    filter_condition: Option<&Condition>,
-    fallback_condition: Option<&Condition>,
-    options: &QueryOptions,
+    request: &ReadRequest<'_>,
 ) -> Vec<Item> {
-    let scanned = items.take(options.scan_limit.unwrap_or(usize::MAX));
-    let filtered = scanned.filter(|item| {
-        let key_ok = match key_condition {
-            Some(condition) => matches_condition(item, condition),
-            None => fallback_condition.is_none_or(|condition| matches_condition(item, condition)),
-        };
-        filter_condition.is_none_or(|condition| matches_condition(item, condition)) && key_ok
-    });
-    filtered
-        .take(options.limit.unwrap_or(usize::MAX))
+    let scanned = items.take(request.options.scan_limit.unwrap_or(usize::MAX));
+    let mut filtered: Vec<Item> = scanned
+        .filter(|item| {
+            let key_ok = match request.key_condition {
+                Some(condition) => matches_condition(item, condition),
+                None => request
+                    .condition
+                    .is_none_or(|condition| matches_condition(item, condition)),
+            };
+            request
+                .filter_condition
+                .is_none_or(|condition| matches_condition(item, condition))
+                && key_ok
+        })
         .cloned()
+        .collect();
+
+    // DynamoDB Query returns items in range-key order; emulate that for memory.
+    if request.operation == ReadOperation::Query {
+        if let Some(range_key) = request.range_key {
+            let descending = request.scan_index_forward == Some(false);
+            filtered.sort_by(|left, right| {
+                let ordering = compare_order(
+                    left.get(range_key).unwrap_or(&Value::Null),
+                    right.get(range_key).unwrap_or(&Value::Null),
+                )
+                .unwrap_or(std::cmp::Ordering::Equal);
+                if descending {
+                    ordering.reverse()
+                } else {
+                    ordering
+                }
+            });
+        }
+    }
+
+    filtered
+        .into_iter()
+        .take(request.options.limit.unwrap_or(usize::MAX))
         .collect()
 }
 

@@ -378,7 +378,28 @@ mod test_query_options {
                         descending: true
                     })
                 );
+                assert_eq!(options.descending, Some(true));
                 assert_eq!(options.limit, Some(5));
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_bare_asc_desc() {
+        let statement = parse_statement("SELECT * FROM foobars WHERE id = 'a' DESC").unwrap();
+        match statement {
+            Statement::Select { options, .. } => {
+                assert!(options.order_by.is_none());
+                assert_eq!(options.descending, Some(true));
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+        let statement = parse_statement("SELECT * FROM foobars WHERE id = 'a' ASC").unwrap();
+        match statement {
+            Statement::Select { options, .. } => {
+                assert!(options.order_by.is_none());
+                assert_eq!(options.descending, Some(false));
             }
             other => panic!("unexpected statement: {other:?}"),
         }
@@ -414,6 +435,7 @@ mod test_query_options {
                         descending: false
                     })
                 );
+                assert_eq!(options.descending, Some(false));
             }
             other => panic!("unexpected statement: {other:?}"),
         }
