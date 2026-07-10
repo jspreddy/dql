@@ -13,5 +13,6 @@ aws-sdk-sts.workspace = true
 dql-expr = { path = "../dql-expr" }
 dql-models = { path = "../dql-models" }
 dql-parser = { path = "../dql-parser" }
+flate2 = "1"
 serde_json = "1"
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros"] }

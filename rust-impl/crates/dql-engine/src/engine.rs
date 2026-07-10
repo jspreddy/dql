@@ -1,5 +1,5 @@
 use crate::convert::keys_in_to_items;
-use crate::json_util::json_value_to_item;
+use crate::file_io::{load_items as load_items_from_file, save_items};
 use crate::throttle::RateLimit;
 use crate::{
     BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
@@ -12,8 +12,6 @@ use dql_parser::{
     ThrottleConfig, UpdateExpr, Value,
 };
 use std::collections::{BTreeMap, HashMap};
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 pub struct Engine<B: DynamoBackend> {
@@ -341,12 +339,14 @@ impl<B: DynamoBackend> Engine<B> {
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
-        if options.keys_in.is_some() {
-            return self.execute_keys_in_read(table, selection, condition, options);
-        }
-        let plan =
-            self.plan_read_operation(table, ReadKind::Scan, selection, condition, options)?;
-        self.execute_read(table, &plan, selection, condition, options)
+        let result = if options.keys_in.is_some() {
+            self.execute_keys_in_read(table, selection, condition, options)?
+        } else {
+            let plan =
+                self.plan_read_operation(table, ReadKind::Scan, selection, condition, options)?;
+            self.execute_read(table, &plan, selection, condition, options)?
+        };
+        self.maybe_save(options, result)
     }
 
     fn select(
@@ -356,12 +356,33 @@ impl<B: DynamoBackend> Engine<B> {
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
-        if options.keys_in.is_some() {
-            return self.execute_keys_in_read(table, selection, condition, options);
-        }
-        let plan =
-            self.plan_read_operation(table, ReadKind::Select, selection, condition, options)?;
-        self.execute_read(table, &plan, selection, condition, options)
+        let result = if options.keys_in.is_some() {
+            self.execute_keys_in_read(table, selection, condition, options)?
+        } else {
+            let plan =
+                self.plan_read_operation(table, ReadKind::Select, selection, condition, options)?;
+            self.execute_read(table, &plan, selection, condition, options)?
+        };
+        self.maybe_save(options, result)
+    }
+
+    fn maybe_save(
+        &self,
+        options: &QueryOptions,
+        result: StatementResult,
+    ) -> Result<StatementResult, EngineError> {
+        let Some(filename) = options.save_file.as_deref() else {
+            return Ok(result);
+        };
+        let StatementResult::Items(items) = result else {
+            return Err(EngineError::Runtime(
+                "Cannot use count(*) with SAVE".to_string(),
+            ));
+        };
+        let path = Path::new(filename.trim_matches('"').trim_matches('\''));
+        let count =
+            save_items(path, &items).map_err(|err| EngineError::Runtime(err.to_string()))?;
+        Ok(StatementResult::Affected(count))
     }
 
     fn execute_keys_in_read(
@@ -465,66 +486,8 @@ impl<B: DynamoBackend> Engine<B> {
     fn load(&mut self, file: &str, table: &str) -> Result<StatementResult, EngineError> {
         self.record("batch_write_item", table);
         let path = Path::new(file.trim_matches('"').trim_matches('\''));
-        let extension = path
-            .extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        let reader = BufReader::new(
-            File::open(path)
-                .map_err(|err| EngineError::Runtime(format!("failed to open '{file}': {err}")))?,
-        );
-        let mut items = Vec::new();
-        match extension.as_str() {
-            "json" => {
-                for line in reader.lines() {
-                    let line = line.map_err(|err| EngineError::Runtime(err.to_string()))?;
-                    if line.trim().is_empty() {
-                        continue;
-                    }
-                    let value: serde_json::Value = serde_json::from_str(&line)
-                        .map_err(|err| EngineError::Runtime(err.to_string()))?;
-                    items.push(json_value_to_item(&value).map_err(EngineError::Runtime)?);
-                }
-            }
-            "csv" => {
-                let mut lines = reader.lines();
-                let header = lines
-                    .next()
-                    .transpose()
-                    .map_err(|err| EngineError::Runtime(err.to_string()))?
-                    .ok_or_else(|| {
-                        EngineError::Runtime("CSV file is missing a header row".to_string())
-                    })?;
-                let headers = header
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|field| !field.is_empty())
-                    .map(str::to_string)
-                    .collect::<Vec<_>>();
-                for line in lines {
-                    let line = line.map_err(|err| EngineError::Runtime(err.to_string()))?;
-                    if line.trim().is_empty() {
-                        continue;
-                    }
-                    let fields = line
-                        .split(',')
-                        .map(str::trim)
-                        .map(str::to_string)
-                        .collect::<Vec<_>>();
-                    let mut item = Item::new();
-                    for (column, value) in headers.iter().zip(fields.iter()) {
-                        item.insert(column.clone(), csv_field_to_value(value));
-                    }
-                    items.push(item);
-                }
-            }
-            other => {
-                return Err(EngineError::Runtime(format!(
-                    "unsupported LOAD file format '{other}'"
-                )));
-            }
-        }
+        let items =
+            load_items_from_file(path).map_err(|err| EngineError::Runtime(err.to_string()))?;
         let response = self.backend.batch_write(table, items)?;
         self.capture_capacity(response.capacity);
         Ok(StatementResult::Affected(response.output))
@@ -859,14 +822,6 @@ fn normalize_insert_value(value: Value) -> Value {
     }
 }
 
-fn csv_field_to_value(field: &str) -> Value {
-    if field.parse::<f64>().is_ok() {
-        Value::Number(field.to_string())
-    } else {
-        Value::String(field.to_string())
-    }
-}
-
 fn apply_projection(items: &mut [Item], selection: &Selection) {
     let Selection::Items(projections) = selection else {
         return;
@@ -1084,6 +1039,49 @@ mod tests {
             other => panic!("unexpected result: {other:?}"),
         }
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn save_and_load_json_csv_gzip_round_trip() {
+        let dir = std::env::temp_dir().join("dql_engine_save_load");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY);
+                 INSERT INTO foobar (id, foo) VALUES ('a', 1), ('b', 2);
+                 CREATE TABLE destination (id STRING HASH KEY)",
+            )
+            .unwrap();
+
+        for name in ["out.json", "out.json.gz", "out.csv", "out.csv.gz"] {
+            let path = dir.join(name);
+            let saved = engine
+                .execute(&format!("SCAN * FROM foobar SAVE '{}'", path.display()))
+                .unwrap();
+            assert_eq!(saved, StatementResult::Affected(2), "{name}");
+
+            engine.execute("DELETE FROM destination").ok();
+            engine
+                .execute(&format!("LOAD '{}' INTO destination", path.display()))
+                .unwrap();
+            let source = engine.execute("SCAN * FROM foobar").unwrap();
+            let dest = engine.execute("SCAN * FROM destination").unwrap();
+            match (source, dest) {
+                (StatementResult::Items(mut left), StatementResult::Items(mut right)) => {
+                    left.sort_by(|a, b| {
+                        format!("{:?}", a.get("id")).cmp(&format!("{:?}", b.get("id")))
+                    });
+                    right.sort_by(|a, b| {
+                        format!("{:?}", a.get("id")).cmp(&format!("{:?}", b.get("id")))
+                    });
+                    assert_eq!(left, right, "{name}");
+                }
+                other => panic!("unexpected results for {name}: {other:?}"),
+            }
+        }
     }
 
     #[test]

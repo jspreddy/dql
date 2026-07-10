@@ -1,6 +1,7 @@
 mod aws;
 mod convert;
 mod engine;
+mod file_io;
 pub mod fragment;
 pub mod json_util;
 mod memory;
