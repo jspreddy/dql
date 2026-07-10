@@ -61,9 +61,7 @@ const KEYWORDS: &[&str] = &[
 ];
 
 fn is_keyword(word: &str) -> bool {
-    KEYWORDS
-        .iter()
-        .any(|kw| kw.eq_ignore_ascii_case(word))
+    KEYWORDS.iter().any(|kw| kw.eq_ignore_ascii_case(word))
 }
 
 fn keyword_style() -> Style {
@@ -168,7 +166,21 @@ pub fn highlight_line(text: &str) -> Line<'static> {
         // Punctuation / operators
         if matches!(
             ch,
-            '=' | '<' | '>' | '!' | ',' | '(' | ')' | '*' | '+' | '-' | '/' | '%' | ';' | '.' | '[' | ']'
+            '=' | '<'
+                | '>'
+                | '!'
+                | ','
+                | '('
+                | ')'
+                | '*'
+                | '+'
+                | '-'
+                | '/'
+                | '%'
+                | ';'
+                | '.'
+                | '['
+                | ']'
         ) {
             spans.push(Span::styled(ch.to_string(), punct_style()));
             i += 1;
@@ -200,8 +212,9 @@ mod tests {
         let line = highlight_line("SELECT * FROM users");
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert_eq!(text, "SELECT * FROM users");
-        assert!(line.spans.iter().any(|s| {
-            s.content.as_ref() == "SELECT" && s.style.fg == Some(Color::Magenta)
-        }));
+        assert!(line
+            .spans
+            .iter()
+            .any(|s| { s.content.as_ref() == "SELECT" && s.style.fg == Some(Color::Magenta) }));
     }
 }
