@@ -1,5 +1,6 @@
 pub mod connect;
 pub mod file;
+pub mod history_cmd;
 pub mod lifecycle;
 pub mod ls;
 pub mod opt;
@@ -79,6 +80,7 @@ fn registry() -> HashMap<&'static str, ReplCommand> {
     register!("whoami", crate::meta::lifecycle::whoami);
     register!("iam", crate::meta::lifecycle::whoami);
     register!("help", crate::meta::lifecycle::help);
+    register!("history", crate::meta::history_cmd::handle);
     register!("use", crate::meta::connect::handle_use);
     register!("local", crate::meta::connect::handle_local);
     register!("file", crate::meta::file::handle);

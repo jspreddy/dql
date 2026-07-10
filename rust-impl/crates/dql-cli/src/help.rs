@@ -1,5 +1,5 @@
 pub const GENERAL: &str = "Type 'help <statement>' for help on DQL statements.\n\
-Meta-commands: opt, version, exit, clear, shell, whoami, use, local, file, ls, throttle, unthrottle, help\n";
+Meta-commands: opt, version, exit, clear, shell, whoami, use, local, file, ls, history, throttle, unthrottle, help\n";
 
 pub fn statement_help(topic: &str) -> Option<&'static str> {
     match topic.to_ascii_lowercase().as_str() {

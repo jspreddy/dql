@@ -130,6 +130,65 @@ impl HistoryManager {
         }
         Ok(())
     }
+
+    /// Persist any pending session entries, then return decoded history entries
+    /// in chronological order (oldest first).
+    pub fn snapshot(&mut self) -> Vec<String> {
+        self.try_to_write_history();
+        self.in_memory.iter().cloned().collect()
+    }
+
+    /// Drop skippable commands and duplicate entries, keeping the most recent
+    /// occurrence of each unique command. Rewrites the history file.
+    /// Returns `(kept, removed)`.
+    pub fn dedupe(&mut self) -> Result<(usize, usize), String> {
+        self.try_to_write_history();
+        let before = self.in_memory.len();
+        let mut kept_rev = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for entry in self.in_memory.iter().rev() {
+            if !should_record_history(entry) {
+                continue;
+            }
+            if seen.insert(entry.clone()) {
+                kept_rev.push(entry.clone());
+            }
+        }
+        kept_rev.reverse();
+        let kept = kept_rev.len();
+        let removed = before.saturating_sub(kept);
+        self.replace_all(kept_rev)
+            .map_err(|err| format!("Failed to rewrite history file: {err}"))?;
+        Ok((kept, removed))
+    }
+
+    /// Remove every history entry that exactly equals `exact`. Rewrites the file.
+    /// Returns the number of removed entries.
+    pub fn remove_exact(&mut self, exact: &str) -> Result<usize, String> {
+        self.try_to_write_history();
+        let before = self.in_memory.len();
+        let kept: Vec<String> = self
+            .in_memory
+            .iter()
+            .filter(|entry| entry.as_str() != exact)
+            .cloned()
+            .collect();
+        let removed = before.saturating_sub(kept.len());
+        self.replace_all(kept)
+            .map_err(|err| format!("Failed to rewrite history file: {err}"))?;
+        Ok(removed)
+    }
+
+    fn replace_all(&mut self, entries: Vec<String>) -> io::Result<()> {
+        let file = self.prep_history_file()?;
+        let mut handle = fs::File::create(file)?;
+        for entry in &entries {
+            writeln!(handle, "{}", encode_history_line(entry))?;
+        }
+        self.in_memory = entries.into();
+        self.initial_history_length = self.in_memory.len();
+        Ok(())
+    }
 }
 
 fn default_history_dir() -> PathBuf {
@@ -137,6 +196,22 @@ fn default_history_dir() -> PathBuf {
         return PathBuf::from(home).join(".dql");
     }
     PathBuf::from(".dql")
+}
+
+/// Whether a completed command should be stored in Up/Down history.
+pub fn should_record_history(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let mut parts = trimmed.split_whitespace();
+    let cmd = parts.next().unwrap_or("").to_ascii_lowercase();
+    match cmd.as_str() {
+        "clear" | "cls" | "c" | "exit" | "quit" | "help" | "history" => false,
+        // Bare `ls` is omitted; `ls <tablename>` (or any args) is kept.
+        "ls" => parts.next().is_some(),
+        _ => true,
+    }
 }
 
 /// Encode embedded newlines so each history entry stays on one physical file line.
@@ -175,7 +250,7 @@ fn decode_history_line(line: &str) -> String {
 
 #[cfg(test)]
 mod encode_tests {
-    use super::{decode_history_line, encode_history_line};
+    use super::{decode_history_line, encode_history_line, should_record_history};
 
     #[test]
     fn roundtrips_multiline_commands() {
@@ -183,6 +258,19 @@ mod encode_tests {
         let encoded = encode_history_line(entry);
         assert!(!encoded.contains('\n'));
         assert_eq!(decode_history_line(&encoded), entry);
+    }
+
+    #[test]
+    fn filters_meta_and_bare_ls() {
+        assert!(!should_record_history("ls"));
+        assert!(!should_record_history("clear"));
+        assert!(!should_record_history("exit"));
+        assert!(!should_record_history("c"));
+        assert!(!should_record_history("help"));
+        assert!(!should_record_history("history"));
+        assert!(!should_record_history("history dedupe"));
+        assert!(should_record_history("ls mytable"));
+        assert!(should_record_history("scan * from t;"));
     }
 }
 
@@ -259,5 +347,40 @@ mod tests {
         let mut history = HistoryManager::new().with_dir(dir.path().to_path_buf());
         history.add_entry("this is a simulated cli input");
         assert!(history.remove_items(1).is_ok());
+    }
+
+    #[test]
+    fn test_dedupe_keeps_most_recent_and_drops_skippable() {
+        let dir = tempdir().unwrap();
+        let mut history = HistoryManager::new().with_dir(dir.path().to_path_buf());
+        history.add_entry("scan * from a;");
+        history.add_entry("ls");
+        history.add_entry("scan * from b;");
+        history.add_entry("scan * from a;");
+        history.add_entry("clear");
+        history.add_entry("history");
+        let (kept, removed) = history.dedupe().unwrap();
+        assert_eq!(kept, 2);
+        assert_eq!(removed, 4);
+        assert_eq!(
+            history.snapshot(),
+            vec!["scan * from b;".to_string(), "scan * from a;".to_string()]
+        );
+        let contents = fs::read_to_string(history.history_file()).unwrap();
+        assert_eq!(contents, "scan * from b;\nscan * from a;\n");
+    }
+
+    #[test]
+    fn test_remove_exact_drops_matching_entries() {
+        let dir = tempdir().unwrap();
+        let mut history = HistoryManager::new().with_dir(dir.path().to_path_buf());
+        history.add_entry("scan * from a;");
+        history.add_entry("scan * from b;");
+        history.add_entry("scan * from a;");
+        let removed = history.remove_exact("scan * from a;").unwrap();
+        assert_eq!(removed, 2);
+        assert_eq!(history.snapshot(), vec!["scan * from b;".to_string()]);
+        let contents = fs::read_to_string(history.history_file()).unwrap();
+        assert_eq!(contents, "scan * from b;\n");
     }
 }

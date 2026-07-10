@@ -2,10 +2,17 @@ use crate::help;
 use crate::session::Session;
 use std::collections::HashMap;
 use std::io::{self, Write};
+use std::path::PathBuf;
 use std::process::Command;
 
 thread_local! {
     static SHOULD_EXIT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static HISTORY_EDIT: std::cell::RefCell<Option<(String, PathBuf)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+pub fn request_exit() {
+    SHOULD_EXIT.with(|flag| flag.set(true));
 }
 
 pub fn take_exit_request() -> bool {
@@ -14,6 +21,19 @@ pub fn take_exit_request() -> bool {
         flag.set(false);
         value
     })
+}
+
+/// Queue opening the history file in an external editor after the REPL restores
+/// the terminal, then exits.
+pub fn request_history_edit(editor: String, path: PathBuf) {
+    HISTORY_EDIT.with(|cell| {
+        *cell.borrow_mut() = Some((editor, path));
+    });
+    request_exit();
+}
+
+pub fn take_history_edit_request() -> Option<(String, PathBuf)> {
+    HISTORY_EDIT.with(|cell| cell.borrow_mut().take())
 }
 
 pub fn version(
@@ -33,7 +53,7 @@ pub fn exit(
     _out: &mut dyn Write,
     _repl: bool,
 ) -> Result<(), String> {
-    SHOULD_EXIT.with(|flag| flag.set(true));
+    request_exit();
     Ok(())
 }
 

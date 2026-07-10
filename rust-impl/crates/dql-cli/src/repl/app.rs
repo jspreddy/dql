@@ -1,4 +1,4 @@
-use crate::meta::lifecycle::take_exit_request;
+use crate::meta::lifecycle::{take_exit_request, take_history_edit_request};
 #[cfg(feature = "watch")]
 use crate::meta::watch::take_watch_request;
 use crate::session::Session;
@@ -56,6 +56,19 @@ pub fn run_repl(session: &mut Session) -> Result<(), Box<dyn std::error::Error>>
     let result = repl_loop(session, &mut terminal, &mut inline_height);
     ratatui::restore();
     session.history.try_to_write_history();
+    if let Some((editor, path)) = take_history_edit_request() {
+        let status = std::process::Command::new(&editor)
+            .arg(&path)
+            .status()
+            .map_err(|err| format!("Failed to open history with {editor:?}: {err}"))?;
+        if !status.success() {
+            return Err(format!(
+                "Editor {editor:?} exited with status {status} while editing {}",
+                path.display()
+            )
+            .into());
+        }
+    }
     result
 }
 
@@ -584,7 +597,7 @@ impl<'a> ReplApp<'a> {
     fn record_history_if_complete(&mut self) {
         let lines = self.trimmed_command_lines();
         let full = lines.join("\n");
-        if should_record_history(&full) {
+        if crate::history::should_record_history(&full) {
             self.session.history.add_entry(full);
         }
     }
@@ -763,38 +776,6 @@ fn full_prompt(session: &Session) -> String {
         format!("({host}:{port}) {}", session.region)
     } else {
         session.region.clone()
-    }
-}
-
-/// Meta commands that should not pollute Up/Down history.
-fn should_record_history(text: &str) -> bool {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
-    let mut parts = trimmed.split_whitespace();
-    let cmd = parts.next().unwrap_or("").to_ascii_lowercase();
-    match cmd.as_str() {
-        "clear" | "cls" | "c" | "exit" | "quit" | "help" => false,
-        // Bare `ls` is omitted; `ls <tablename>` (or any args) is kept.
-        "ls" => parts.next().is_some(),
-        _ => true,
-    }
-}
-
-#[cfg(test)]
-mod history_filter_tests {
-    use super::should_record_history;
-
-    #[test]
-    fn filters_meta_and_bare_ls() {
-        assert!(!should_record_history("ls"));
-        assert!(!should_record_history("clear"));
-        assert!(!should_record_history("exit"));
-        assert!(!should_record_history("c"));
-        assert!(!should_record_history("help"));
-        assert!(should_record_history("ls mytable"));
-        assert!(should_record_history("scan * from t;"));
     }
 }
 
