@@ -2,12 +2,11 @@ use crate::meta::lifecycle::take_exit_request;
 #[cfg(feature = "watch")]
 use crate::meta::watch::take_watch_request;
 use crate::session::Session;
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
 use dql_output::{render_result, DisplayBackend};
-use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 use std::io::{self, Write};
 use std::time::Duration;
@@ -38,10 +37,26 @@ impl dql_output::DisplayBackend for BufferBackend {
 
 pub fn run_repl(session: &mut Session) -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = ratatui::init();
+    enable_mouse_capture()?;
     let result = repl_loop(session, &mut terminal);
+    let _ = disable_mouse_capture();
     ratatui::restore();
     session.history.try_to_write_history();
     result
+}
+
+fn enable_mouse_capture() -> io::Result<()> {
+    crossterm::execute!(io::stdout(), event::EnableMouseCapture)
+}
+
+fn disable_mouse_capture() -> io::Result<()> {
+    crossterm::execute!(io::stdout(), event::DisableMouseCapture)
+}
+
+fn terminal_height() -> usize {
+    crossterm::terminal::size()
+        .map(|(_, height)| height as usize)
+        .unwrap_or(24)
 }
 
 fn repl_loop(
@@ -52,12 +67,14 @@ fn repl_loop(
     loop {
         terminal.draw(|frame| draw(frame, &app))?;
         if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
+            match event::read()? {
+                Event::Key(key) => match key.code {
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         app.session.engine.reset_fragment();
+                        app.transcript.truncate(app.command_start);
                         app.input.clear();
                         app.partial = false;
+                        app.scroll_offset = 0;
                     }
                     KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         let _ = app.session.history.remove_items(1);
@@ -65,37 +82,56 @@ fn repl_loop(
                     }
                     KeyCode::Enter => {
                         let line = app.input.clone();
+                        let continuation = app.partial;
                         app.history_index = None;
                         if !line.trim().is_empty() {
                             app.session.history.add_entry(line.clone());
                         }
-                        app.handle_submit(line)?;
+                        app.handle_submit(line, continuation)?;
                         app.input.clear();
+                        app.scroll_offset = 0;
                         if take_exit_request() {
                             break;
                         }
                         #[cfg(feature = "watch")]
                         if let Some(tables) = take_watch_request() {
+                            let _ = disable_mouse_capture();
                             ratatui::restore();
                             let watch_result = crate::meta::watch::run_monitor(app.session, &tables);
                             *terminal = ratatui::init();
+                            enable_mouse_capture()?;
                             if let Err(err) = watch_result {
-                                app.output.push(format!("watch error: {err}"));
+                                app.transcript
+                                    .push(Line::from(format!("watch error: {err}")));
                             }
+                            app.clamp_scroll(terminal_height());
                         }
+                    }
+                    KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                        app.scroll_up(3, terminal_height());
+                    }
+                    KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                        app.scroll_down(3);
                     }
                     KeyCode::Up => app.history_up(),
                     KeyCode::Down => app.history_down(),
                     KeyCode::Tab => app.complete(),
                     KeyCode::Backspace => {
                         app.input.pop();
-                        if app.input.is_empty() {
-                            app.partial = false;
-                        }
                     }
-                    KeyCode::Char(ch) => app.input.push(ch),
+                    KeyCode::Char(ch) => {
+                        app.input.push(ch);
+                        app.scroll_offset = 0;
+                    }
                     _ => {}
-                }
+                },
+                Event::Mouse(mouse) => match mouse.kind {
+                    MouseEventKind::ScrollUp => app.scroll_up(3, terminal_height()),
+                    MouseEventKind::ScrollDown => app.scroll_down(3),
+                    _ => {}
+                },
+                Event::Resize(_, _) => app.clamp_scroll(terminal_height()),
+                _ => {}
             }
         }
         if take_exit_request() {
@@ -107,32 +143,87 @@ fn repl_loop(
 
 struct ReplApp<'a> {
     session: &'a mut Session,
+    /// Scrollback of prior prompts, command lines, and results in order.
+    transcript: Vec<Line<'static>>,
+    /// Index in `transcript` where the in-progress command began (for Ctrl-C).
+    command_start: usize,
     input: String,
-    output: Vec<String>,
     partial: bool,
     history_index: Option<usize>,
+    /// Lines scrolled up from the bottom of the transcript (0 = follow latest).
+    scroll_offset: usize,
 }
 
 impl<'a> ReplApp<'a> {
     fn new(session: &'a mut Session) -> Self {
         Self {
             session,
+            transcript: Vec::new(),
+            command_start: 0,
             input: String::new(),
-            output: Vec::new(),
             partial: false,
             history_index: None,
+            scroll_offset: 0,
         }
     }
 
-    fn handle_submit(&mut self, line: String) -> Result<(), Box<dyn std::error::Error>> {
+    fn max_scroll_offset(&self, visible_height: usize) -> usize {
+        display_lines(self)
+            .len()
+            .saturating_sub(visible_height)
+    }
+
+    fn clamp_scroll(&mut self, visible_height: usize) {
+        let max = self.max_scroll_offset(visible_height);
+        self.scroll_offset = self.scroll_offset.min(max);
+    }
+
+    fn scroll_up(&mut self, amount: usize, visible_height: usize) {
+        let max = self.max_scroll_offset(visible_height);
+        if max == 0 {
+            return;
+        }
+        self.scroll_offset = (self.scroll_offset + amount).min(max);
+    }
+
+    fn scroll_down(&mut self, amount: usize) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(amount);
+    }
+
+    fn push_command_line(&mut self, text: String, continuation: bool) {
+        if continuation {
+            self.transcript.push(Line::from(vec![
+                Span::raw("   | "),
+                Span::raw(text),
+            ]));
+        } else {
+            let prompt = full_prompt(self.session);
+            self.transcript.push(Line::from(vec![
+                Span::styled(format!("{prompt} ===> "), Style::default().fg(Color::Cyan)),
+                Span::raw(text),
+            ]));
+        }
+    }
+
+    fn handle_submit(
+        &mut self,
+        line: String,
+        continuation: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let cmd = line
             .split_whitespace()
             .next()
             .unwrap_or("")
             .to_ascii_lowercase();
+
+        if !continuation {
+            self.command_start = self.transcript.len();
+        }
+        if !line.is_empty() {
+            self.push_command_line(line.clone(), continuation);
+        }
+
         let output_config = self.session.config.output_config();
-        // TUI REPL always buffers into the output pane. `display=less` is honored
-        // by non-TUI paths (`-c`, `file`) so less does not fight the alternate screen.
         let mut backend = BufferBackend::default();
         {
             let mut writer = backend.writer();
@@ -143,13 +234,15 @@ impl<'a> ReplApp<'a> {
             }
         }
         if matches!(cmd.as_str(), "clear" | "cls" | "c") {
-            self.output.clear();
+            self.transcript.clear();
+            self.command_start = 0;
             self.partial = false;
+            self.scroll_offset = 0;
             return Ok(());
         }
         if let Ok(text) = String::from_utf8(backend.buffer) {
             for line in text.lines() {
-                self.output.push(line.to_string());
+                self.transcript.push(Line::from(line.to_string()));
             }
         }
         self.partial = self.session.engine.partial();
@@ -221,32 +314,40 @@ fn with_tables(session: &Session) -> Vec<String> {
     tables
 }
 
-fn draw(frame: &mut Frame, app: &ReplApp<'_>) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(3), Constraint::Length(3)])
-        .split(frame.area());
-    let visible_height = chunks[0].height.saturating_sub(2) as usize;
-    let start = app.output.len().saturating_sub(visible_height);
-    let output_lines: Vec<ListItem> = app.output[start..]
-        .iter()
-        .map(|line| ListItem::new(line.as_str()))
-        .collect();
-    let output =
-        List::new(output_lines).block(Block::default().borders(Borders::ALL).title("Output"));
-    frame.render_widget(output, chunks[0]);
-
-    let prompt = if app.partial {
-        "   | ".to_string()
-    } else if let Some((host, port)) = &app.session.local_endpoint {
-        format!("({host}:{port}) {}", app.session.region)
+fn full_prompt(session: &Session) -> String {
+    if let Some((host, port)) = &session.local_endpoint {
+        format!("({host}:{port}) {}", session.region)
     } else {
-        app.session.region.clone()
-    };
-    let input = Paragraph::new(Line::from(vec![
-        Span::styled(format!("{prompt} ===> "), Style::default().fg(Color::Cyan)),
-        Span::raw(app.input.as_str()),
-    ]))
-    .block(Block::default().borders(Borders::ALL).title("Input"));
-    frame.render_widget(input, chunks[1]);
+        session.region.clone()
+    }
+}
+
+fn current_input_line(app: &ReplApp<'_>) -> Line<'static> {
+    if app.partial {
+        Line::from(vec![
+            Span::raw("   | "),
+            Span::raw(app.input.clone()),
+        ])
+    } else {
+        let prompt = full_prompt(app.session);
+        Line::from(vec![
+            Span::styled(format!("{prompt} ===> "), Style::default().fg(Color::Cyan)),
+            Span::raw(app.input.clone()),
+        ])
+    }
+}
+
+fn display_lines(app: &ReplApp<'_>) -> Vec<Line<'static>> {
+    let mut lines = app.transcript.clone();
+    lines.push(current_input_line(app));
+    lines
+}
+
+fn draw(frame: &mut Frame, app: &ReplApp<'_>) {
+    let lines = display_lines(app);
+    let visible_height = frame.area().height as usize;
+    let max_start = lines.len().saturating_sub(visible_height);
+    let start = max_start.saturating_sub(app.scroll_offset);
+    let visible = lines[start..].to_vec();
+    frame.render_widget(Paragraph::new(visible), frame.area());
 }
