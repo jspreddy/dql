@@ -4,22 +4,22 @@ overview: "Close remaining CLI/UX gaps versus Python: wire display=less, ParseEr
 todos:
   - id: step-1-display-less
     content: "Step 1: Honor opt display=less in -c and REPL result paths"
-    status: pending
+    status: completed
   - id: step-2-parse-offset
     content: "Step 2: Populate ParseError.offset and un-ignore test_format_exc"
-    status: pending
+    status: completed
   - id: step-3-throughput-test
     content: "Step 3: Un-ignore test_total_throughput (likely already implemented)"
-    status: pending
+    status: completed
   - id: step-4-ls-metrics
     content: "Step 4: ls metrics=True via CloudWatch get_metric_statistics"
-    status: pending
+    status: completed
   - id: step-5-rich-detail
     content: "Step 5: Richer ls table detail formatting"
-    status: pending
+    status: completed
   - id: step-6-watch
     content: "Step 6: watch meta-command behind Cargo feature (ratatui + CloudWatch)"
-    status: pending
+    status: completed
 isProject: false
 ---
 
