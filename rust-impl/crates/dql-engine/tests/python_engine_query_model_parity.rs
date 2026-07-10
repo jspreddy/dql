@@ -2334,13 +2334,72 @@ mod test_models {
 
 mod test_save {
     use super::*;
+    use std::fs;
 
     #[test]
-    #[ignore = "needs SAVE and LOAD file format implementation"]
     fn test_file_formats() {
-        pending(
-            "tests/test_save.py::TestSave::test_file_formats",
-            "SAVE/LOAD CSV, JSON, gz, and pickle formats are deferred",
+        let dir = std::env::temp_dir().join("dql_parity_test_file_formats");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY);
+                 INSERT INTO foobar (id, foo) VALUES ('a', 1), ('b', 2);
+                 CREATE TABLE destination (id STRING HASH KEY)",
+            )
+            .unwrap();
+
+        // Python uses pickle (`.p`); Rust uses MessagePack instead.
+        let formats = [
+            "msgpack",
+            "csv",
+            "json",
+            "msgpack.gz",
+            "csv.gz",
+            "json.gz",
+        ];
+        for fmt in formats {
+            let path = dir.join(format!("out.{fmt}"));
+            let saved = engine
+                .execute(&format!("SCAN * FROM foobar SAVE '{}'", path.display()))
+                .unwrap();
+            assert_eq!(saved, StatementResult::Affected(2), "{fmt}");
+
+            engine.execute("DELETE FROM destination").unwrap();
+            engine
+                .execute(&format!("LOAD '{}' INTO destination", path.display()))
+                .unwrap();
+
+            let source = match engine.execute("SCAN * FROM foobar").unwrap() {
+                StatementResult::Items(items) => items,
+                other => panic!("unexpected source for {fmt}: {other:?}"),
+            };
+            let dest = match engine.execute("SCAN * FROM destination").unwrap() {
+                StatementResult::Items(items) => items,
+                other => panic!("unexpected dest for {fmt}: {other:?}"),
+            };
+            assert_eq!(
+                sorted_by_id(dest),
+                sorted_by_id(source),
+                "round-trip mismatch for {fmt}"
+            );
+        }
+
+        let pickle_path = dir.join("legacy.p");
+        fs::write(&pickle_path, b"").unwrap();
+        let err = engine
+            .execute(&format!("LOAD '{}' INTO destination", pickle_path.display()))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("pickle") || err.to_string().contains("MessagePack"),
+            "unexpected error: {err}"
         );
+    }
+
+    fn sorted_by_id(mut items: Vec<Item>) -> Vec<Item> {
+        items.sort_by(|a, b| format!("{:?}", a.get("id")).cmp(&format!("{:?}", b.get("id"))));
+        items
     }
 }
