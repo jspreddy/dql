@@ -1,10 +1,6 @@
 use dql_engine::{format_throughput, InMemoryEngine, Item, StatementResult};
 use dql_parser::Value;
 
-fn pending(source: &str, reason: &str) {
-    panic!("pending Python parity for {source}: {reason}");
-}
-
 fn item(fields: &[(&str, &str)]) -> Item {
     fields
         .iter()
