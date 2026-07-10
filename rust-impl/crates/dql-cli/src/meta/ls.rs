@@ -7,7 +7,7 @@ use std::io::Write;
 
 pub enum LsView {
     Summary(Vec<(TableMeta, TableStats)>),
-    Detail(TableMeta, TableStats),
+    Detail(Box<TableMeta>, TableStats),
 }
 
 pub fn handle(
@@ -95,7 +95,7 @@ pub fn collect_view(
                 .describe_with_metrics(name, refresh, metrics)
                 .map_err(|err| err.to_string())?
                 .ok_or_else(|| format!("Table {name:?} not found"))?;
-            Ok(LsView::Detail(meta, table_stats(session, name)))
+            Ok(LsView::Detail(Box::new(meta), table_stats(session, name)))
         }
         _ => {
             let mut rows = Vec::new();

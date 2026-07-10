@@ -179,9 +179,7 @@ fn projection_label(projection: &ProjectionType) -> String {
 }
 
 fn throughput_number(throughput: Option<&dql_parser::Throughput>, read: bool) -> Option<f64> {
-    let Some(throughput) = throughput else {
-        return None;
-    };
+    let throughput = throughput?;
     let value = if read {
         &throughput.read
     } else {

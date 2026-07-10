@@ -115,7 +115,6 @@ mod test_data_types {
 }
 
 mod test_fragment_engine {
-    use super::*;
     use dql_engine::{Engine, FragmentEngine};
 
     fn fragment_engine() -> FragmentEngine<dql_engine::MemoryBackend> {

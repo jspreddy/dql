@@ -14,7 +14,7 @@ const REFRESH_SECS: u64 = 30;
 
 thread_local! {
     static PENDING_WATCH: std::cell::RefCell<Option<Vec<String>>> =
-        std::cell::RefCell::new(None);
+        const { std::cell::RefCell::new(None) };
 }
 
 pub fn take_watch_request() -> Option<Vec<String>> {

@@ -132,7 +132,7 @@ impl SdkBackend {
     pub fn attach_cloudwatch_metrics(&self, meta: &mut TableMeta) -> Result<(), EngineError> {
         #[cfg(feature = "cloudwatch")]
         {
-            return self.block_on(crate::cloudwatch::attach_metrics(&self.config, meta));
+            self.block_on(crate::cloudwatch::attach_metrics(&self.config, meta))
         }
         #[cfg(not(feature = "cloudwatch"))]
         {
