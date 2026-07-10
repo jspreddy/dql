@@ -1,4 +1,3 @@
-use dql_cli::args::CliArgs;
 use dql_cli::help;
 use dql_cli::history::HistoryManager;
 use dql_cli::meta::parse_repl_args;
@@ -7,21 +6,15 @@ use dql_output::{format_table_detail, format_table_summary_table, TableStats};
 use std::process::Command;
 use tempfile::tempdir;
 
-fn dql() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_dql"))
+fn test_session() -> Session {
+    Session::new_memory("us-west-1")
 }
 
-fn test_session() -> Session {
-    Session::new(&CliArgs {
-        command: None,
-        region: "us-west-1".to_string(),
-        host: None,
-        port: 8000,
-        json: false,
-        version: false,
-        help: false,
-    })
-    .unwrap()
+fn dql() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_dql"));
+    // Offline smoke paths must not hit live AWS.
+    cmd.env("DQL_BACKEND", "memory");
+    cmd
 }
 
 mod test_cli {

@@ -1,6 +1,7 @@
 use crate::config::CliConfig;
 use dql_engine::{Engine, EngineError, FragmentEngine, SdkBackend, SdkConfig, StatementResult};
 use dql_output::{render_result, DisplayMode, OutputConfig};
+use std::env;
 use std::io::{self, Write};
 
 pub const REGIONS: &[&str] = &[
@@ -15,6 +16,13 @@ pub const REGIONS: &[&str] = &[
     "sa-east-1",
 ];
 
+/// Returns true when `DQL_BACKEND=memory` requests the offline in-memory backend.
+pub fn memory_backend_requested() -> bool {
+    env::var("DQL_BACKEND")
+        .map(|value| value.eq_ignore_ascii_case("memory"))
+        .unwrap_or(false)
+}
+
 #[allow(clippy::large_enum_variant)]
 pub enum RuntimeEngine {
     Memory(FragmentEngine<dql_engine::MemoryBackend>),
@@ -22,23 +30,63 @@ pub enum RuntimeEngine {
 }
 
 impl RuntimeEngine {
+    /// In-memory backend for tests and `DQL_BACKEND=memory`.
+    pub fn in_memory(allow_select_scan: bool) -> Self {
+        Self::Memory(FragmentEngine::new(
+            Engine::new(dql_engine::MemoryBackend::new()).with_allow_select_scan(allow_select_scan),
+        ))
+    }
+
+    fn connect_sdk(config: SdkConfig, allow_select_scan: bool) -> Result<Self, EngineError> {
+        let backend = SdkBackend::connect(config)?;
+        Ok(Self::Remote(FragmentEngine::new(
+            Engine::new(backend).with_allow_select_scan(allow_select_scan),
+        )))
+    }
+
+    /// Build the runtime engine for CLI startup.
+    ///
+    /// - `-H` / host set → DynamoDB Local (`SdkBackend`)
+    /// - `DQL_BACKEND=memory` and no host → in-memory backend
+    /// - otherwise → live AWS (`SdkBackend` + default credential chain)
     pub fn build(
         region: &str,
         host: Option<&str>,
         port: u16,
         allow_select_scan: bool,
     ) -> Result<Self, EngineError> {
+        Self::build_with_preference(
+            region,
+            host,
+            port,
+            allow_select_scan,
+            memory_backend_requested(),
+        )
+    }
+
+    /// Like [`build`](Self::build) but with an explicit memory preference (for tests).
+    pub fn build_with_preference(
+        region: &str,
+        host: Option<&str>,
+        port: u16,
+        allow_select_scan: bool,
+        prefer_memory: bool,
+    ) -> Result<Self, EngineError> {
         if let Some(host) = host {
-            let backend = SdkBackend::connect(SdkConfig::local(region, host, port))?;
-            Ok(Self::Remote(FragmentEngine::new(
-                Engine::new(backend).with_allow_select_scan(allow_select_scan),
-            )))
+            Self::connect_sdk(SdkConfig::local(region, host, port), allow_select_scan)
+        } else if prefer_memory {
+            Ok(Self::in_memory(allow_select_scan))
         } else {
-            Ok(Self::Memory(FragmentEngine::new(
-                Engine::new(dql_engine::MemoryBackend::new())
-                    .with_allow_select_scan(allow_select_scan),
-            )))
+            Self::connect_sdk(SdkConfig::aws(region), allow_select_scan)
         }
+    }
+
+    pub fn is_memory(&self) -> bool {
+        matches!(self, Self::Memory(_))
+    }
+
+    pub fn is_remote(&self) -> bool {
+        matches!(self, Self::Remote(_))
     }
 
     pub fn partial(&self) -> bool {
@@ -79,32 +127,22 @@ impl RuntimeEngine {
         }
     }
 
+    /// Rebuild the engine for a new region and optional Local endpoint.
+    ///
+    /// Without a local endpoint this always connects to live AWS, which promotes
+    /// an in-memory session to `Remote` (e.g. after `local off` or `use`).
     pub fn reconnect(
         &mut self,
         region: &str,
         local: Option<(String, u16)>,
         allow_select_scan: bool,
     ) -> Result<(), EngineError> {
-        let _ = allow_select_scan;
-        match self {
-            Self::Memory(_) => Ok(()),
-            Self::Remote(engine) => {
-                let config = if let Some((host, port)) = local {
-                    SdkConfig::local(region, host, port)
-                } else {
-                    SdkConfig {
-                        region: region.to_string(),
-                        host: None,
-                        port: None,
-                        access_key: None,
-                        secret_key: None,
-                    }
-                };
-                engine.inner_mut().backend_mut().reconnect(config)?;
-                engine.inner_mut().cached_descriptions.clear();
-                Ok(())
-            }
-        }
+        *self = if let Some((host, port)) = local {
+            Self::connect_sdk(SdkConfig::local(region, host, port), allow_select_scan)?
+        } else {
+            Self::connect_sdk(SdkConfig::aws(region), allow_select_scan)?
+        };
+        Ok(())
     }
 
     pub fn session_identity(&self) -> String {
@@ -237,6 +275,23 @@ impl Session {
         })
     }
 
+    /// Build a session that always uses the in-memory backend (for unit tests).
+    pub fn new_memory(region: &str) -> Self {
+        let config = CliConfig::load();
+        let mut throttle = crate::throttle::TableLimits::default();
+        throttle.load(&config.throttle);
+        let mut history = crate::history::HistoryManager::new();
+        history.try_to_load_history();
+        Self {
+            engine: RuntimeEngine::in_memory(config.allow_select_scan),
+            config,
+            local_endpoint: None,
+            region: region.to_string(),
+            history,
+            throttle,
+        }
+    }
+
     pub fn run_command(&mut self, command: &str, use_json: bool) -> Result<(), EngineError> {
         let mut output_config = if use_json {
             OutputConfig::for_json_command()
@@ -315,5 +370,70 @@ impl Session {
             write!(out, "{}\n   ===> ", self.region)?;
         }
         out.flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_defaults_to_remote_without_host() {
+        let engine =
+            RuntimeEngine::build_with_preference("us-west-1", None, 8000, false, false).unwrap();
+        assert!(engine.is_remote());
+        assert!(!engine.is_memory());
+        assert_eq!(engine.region(), "us-west-1");
+    }
+
+    #[test]
+    fn build_prefers_memory_when_requested() {
+        let engine =
+            RuntimeEngine::build_with_preference("us-west-1", None, 8000, false, true).unwrap();
+        assert!(engine.is_memory());
+        assert_eq!(engine.region(), "memory");
+    }
+
+    #[test]
+    fn build_local_host_uses_remote_backend() {
+        let engine =
+            RuntimeEngine::build_with_preference("us-west-1", Some("localhost"), 8000, false, true)
+                .unwrap();
+        assert!(engine.is_remote());
+        assert_eq!(engine.session_identity(), "local");
+    }
+
+    #[test]
+    fn reconnect_promotes_memory_to_aws() {
+        let mut engine = RuntimeEngine::in_memory(false);
+        assert!(engine.is_memory());
+        engine.reconnect("eu-west-1", None, false).unwrap();
+        assert!(engine.is_remote());
+        assert_eq!(engine.region(), "eu-west-1");
+        assert_ne!(engine.session_identity(), "memory");
+    }
+
+    #[test]
+    fn reconnect_switches_local_and_aws() {
+        let mut engine =
+            RuntimeEngine::build_with_preference("us-west-1", None, 8000, false, false).unwrap();
+        engine
+            .reconnect("us-west-1", Some(("localhost".to_string(), 8000)), false)
+            .unwrap();
+        assert!(engine.is_remote());
+        assert_eq!(engine.session_identity(), "local");
+
+        engine.reconnect("us-east-1", None, false).unwrap();
+        assert!(engine.is_remote());
+        assert_eq!(engine.region(), "us-east-1");
+        assert_ne!(engine.session_identity(), "local");
+    }
+
+    #[test]
+    fn session_new_memory_stays_offline() {
+        let session = Session::new_memory("us-west-1");
+        assert!(session.engine.is_memory());
+        assert!(session.local_endpoint.is_none());
+        assert_eq!(session.region, "us-west-1");
     }
 }

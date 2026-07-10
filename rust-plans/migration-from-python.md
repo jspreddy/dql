@@ -38,6 +38,17 @@ work.
 
 Default region remains `us-west-1` unless `AWS_REGION` or `-r` overrides it.
 
+### Connection defaults
+
+| Mode | Behavior |
+| --- | --- |
+| `dql` (no `-H`) | Live AWS DynamoDB (SDK default credential chain) |
+| `dql -H localhost -p 8000` | DynamoDB Local |
+| `DQL_BACKEND=memory dql …` | In-memory backend (offline demos / CI smoke tests) |
+
+`use <region>` switches the AWS region. `local` / `local off` toggles DynamoDB
+Local; `local off` reconnects to live AWS.
+
 ## REPL and output
 
 | Topic | Python | Rust |
@@ -83,8 +94,11 @@ phase; pip/pex are documented as legacy install paths in `README.rst`.
 
 ```bash
 dql --version
-dql -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"
-dql --json -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"
+# Live AWS (requires credentials):
+dql -c "ls"
+# Offline in-memory (no AWS credentials):
+DQL_BACKEND=memory dql -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"
+DQL_BACKEND=memory dql --json -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"
 dql -H localhost -p 8000   # when using DynamoDB Local
 ```
 

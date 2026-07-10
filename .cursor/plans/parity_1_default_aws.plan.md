@@ -1,22 +1,22 @@
 ---
 name: Parity 1 Default AWS Connection
-overview: "Make the Rust CLI default to a live AWS DynamoDB connection (SDK credential chain) when -H is not set, matching Python. Keep MemoryBackend for unit tests and an explicit offline path."
+overview: Make the Rust CLI default to a live AWS DynamoDB connection (SDK credential chain) when -H is not set, matching Python. Keep MemoryBackend for unit tests and an explicit offline path.
 todos:
   - id: step-1-build-remote-default
     content: "Step 1: RuntimeEngine::build connects SdkBackend when host is None"
-    status: pending
+    status: completed
   - id: step-2-reconnect-promote
     content: "Step 2: reconnect can promote Memory→Remote and Local↔AWS"
-    status: pending
+    status: completed
   - id: step-3-local-roundtrip
     content: "Step 3: local / local off / use region round-trip on live sessions"
-    status: pending
+    status: completed
   - id: step-4-offline-escape
     content: "Step 4: Document or add explicit memory/offline mode for tests and demos"
-    status: pending
+    status: completed
   - id: step-5-acceptance
     content: "Step 5: Manual + CLI tests for default AWS, use, local off"
-    status: pending
+    status: completed
 isProject: false
 ---
 

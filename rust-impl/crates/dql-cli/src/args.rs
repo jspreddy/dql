@@ -60,7 +60,10 @@ pub fn help_text() -> String {
        -H, --host <host>        Host to connect to if using a local instance\n\
        -p, --port <port>        Port to connect to\n\
            --json               When used with --command, format results as JSON\n\
-           --version            Print the version and exit"
+           --version            Print the version and exit\n\n\
+     Environment:\n\
+       AWS_REGION               Default region (else us-west-1)\n\
+       DQL_BACKEND=memory       Use in-memory backend instead of live AWS"
         .to_string()
 }
 

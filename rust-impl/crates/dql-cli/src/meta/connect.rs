@@ -16,6 +16,7 @@ pub fn handle_use(
         // Allow unknown regions for parity with flexible connect
     }
     session.region = region.clone();
+    session.engine.reset_fragment();
     session
         .engine
         .reconnect(
@@ -50,6 +51,7 @@ pub fn handle_local(
         .transpose()?
         .unwrap_or(8000);
     if host == "off" {
+        // Clear Local endpoint and reconnect to live AWS (promotes memory → remote).
         session.local_endpoint = None;
     } else {
         session.local_endpoint = Some((host, port));

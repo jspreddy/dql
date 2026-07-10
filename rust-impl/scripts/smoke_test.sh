@@ -46,6 +46,9 @@ unique_table() {
 echo "Smoke testing: $DQL_BIN"
 run "$DQL_BIN" --version
 
+# Offline one-shot paths use the in-memory backend (no AWS credentials required).
+export DQL_BACKEND=memory
+
 TABLE="$(unique_table mem)"
 run "$DQL_BIN" -c "CREATE TABLE ${TABLE} (id STRING HASH KEY); INSERT INTO ${TABLE} (id) VALUES ('a'); SCAN * FROM ${TABLE}; DROP TABLE ${TABLE};"
 
@@ -57,6 +60,9 @@ if [[ "$JSON_OUT" != *'"id"'* ]]; then
   echo "error: json output missing expected field" >&2
   exit 1
 fi
+
+# DynamoDB Local uses -H and does not need DQL_BACKEND=memory.
+unset DQL_BACKEND
 
 if local_available; then
   HOST="${DQL_LOCAL_HOST:-localhost}"

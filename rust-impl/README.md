@@ -33,7 +33,9 @@ around the parallel workstreams identified in `rust-plans/`:
   endpoint support, batch write chunking, paginated query/scan, UPDATE/ALTER/LOAD
   (JSON lines and CSV), explain kwargs, analyze capacity hooks, and token-bucket
   throttling on memory and SDK backends.
-- In-memory backend for fast unit tests; CLI connects to Local when `-H` is set.
+- CLI defaults to live AWS when `-H` is unset (Python parity). Use
+  `DQL_BACKEND=memory` for offline demos and CI smoke tests; `-H` still selects
+  DynamoDB Local. `MemoryBackend` remains available to engine unit tests.
 - Rust parity tests mirror the Python suite by name. Implemented behavior runs
   normally; deferred tests are `#[ignore]` placeholders with source references.
 
@@ -74,7 +76,7 @@ cargo test --workspace
 cargo build --release -p dql-cli
 ./scripts/smoke_test.sh
 cargo run -p dql-cli -- --version
-cargo run -p dql-cli -- --json -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"
+DQL_BACKEND=memory cargo run -p dql-cli -- --json -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"
 
 ```
 

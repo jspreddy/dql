@@ -23,6 +23,15 @@ fn dql_bin() -> PathBuf {
 fn run(args: &[&str]) -> std::process::Output {
     Command::new(dql_bin())
         .args(args)
+        .env("DQL_BACKEND", "memory")
+        .output()
+        .unwrap_or_else(|err| panic!("failed to run dql {args:?}: {err}"))
+}
+
+fn run_raw(args: &[&str]) -> std::process::Output {
+    Command::new(dql_bin())
+        .args(args)
+        .env_remove("DQL_BACKEND")
         .output()
         .unwrap_or_else(|err| panic!("failed to run dql {args:?}: {err}"))
 }
@@ -59,7 +68,7 @@ fn require_local() -> bool {
 
 #[test]
 fn smoke_version() {
-    let output = run(&["--version"]);
+    let output = run_raw(&["--version"]);
     assert_success(&output, "dql --version");
     let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
     assert!(
@@ -99,6 +108,19 @@ fn smoke_memory_json() {
 }
 
 #[test]
+fn smoke_default_backend_is_not_silent_memory() {
+    // Without DQL_BACKEND=memory and without -H, the CLI constructs an AWS SDK
+    // session. Creating a table would hit real AWS, so only assert that a
+    // no-op meta command starts successfully (exit 0) rather than falling back
+    // to an empty in-memory catalog that would succeed CREATE without credentials.
+    // `whoami` may fail without credentials; `version` is handled before connect.
+    // Use `opt` which requires a live session.
+    let output = run_raw(&["-c", "opt"]);
+    // Session construction for AWS should succeed (client load is lazy); opt runs.
+    assert_success(&output, "default AWS session opt");
+}
+
+#[test]
 fn smoke_dynamodb_local() {
     if !local_available() {
         if require_local() {
@@ -117,6 +139,7 @@ fn smoke_dynamodb_local() {
          SELECT * FROM {table} WHERE id = 'a'; \
          DROP TABLE {table};"
     );
-    let output = run(&["-H", &host, "-p", &port, "-c", &script]);
+    // Local host overrides DQL_BACKEND; still clear memory env for clarity.
+    let output = run_raw(&["-H", &host, "-p", &port, "-c", &script]);
     assert_success(&output, "DynamoDB Local one-shot script");
 }

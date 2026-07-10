@@ -44,6 +44,17 @@ impl SdkConfig {
             secret_key: Some("test".to_string()),
         }
     }
+
+    /// Live AWS endpoint using the default credential chain.
+    pub fn aws(region: impl Into<String>) -> Self {
+        Self {
+            region: region.into(),
+            host: None,
+            port: None,
+            access_key: None,
+            secret_key: None,
+        }
+    }
 }
 
 pub struct SdkBackend {
