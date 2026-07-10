@@ -33,7 +33,7 @@ pub enum BillingMode {
     OnDemand,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TableStatus {
     Active,
     Creating,
