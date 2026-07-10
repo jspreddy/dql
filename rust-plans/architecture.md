@@ -4,37 +4,58 @@ The Rust rewrite should keep DQL split by responsibility. The current Python
 code mixes some parser, execution, formatting, and REPL concerns, so the Rust
 structure should make those boundaries explicit from the start.
 
-## Proposed workspace layout
+## Workspace layout (implemented)
 
 ```text
-crates/
+rust-impl/crates/
   dql-cli/       # clap arguments, ratatui TUI shell, config, meta-commands
-  dql-parser/    # grammar, lexer/parser, typed AST
-  dql-expr/      # expressions, visitors, placeholders, value coercion
+  dql-parser/    # lexer/parser, typed statement AST
+  dql-expr/      # expression rendering, placeholders, value coercion
   dql-models/    # table/index metadata and query-planning helpers
-  dql-engine/    # statement execution, DynamoDB SDK integration
-  dql-output/    # table, JSON, expanded, smart, and pager output
+  dql-engine/    # statement execution, DynamoDB SDK + memory backends
+  dql-output/    # smart, column, expanded, JSON, rich, pager, table meta
 ```
 
-The public binary should be a thin shell around `dql-cli`. Library users should
-be able to depend on `dql-engine` and `dql-parser` without pulling in the REPL.
+The public binary is a thin shell around `dql-cli`. Library users can depend on
+`dql-engine` and `dql-parser` without pulling in the REPL.
 
-## Current-to-target mapping
+### Known boundary gaps (tracked as todos)
 
-| Python area | Rust target | Notes |
-| --- | --- | --- |
-| `dql/__init__.py` | `dql-cli/src/main.rs` | Use `clap` for `-c`, `--json`, region, host, port, and version flags. |
-| `dql/cli.py` | `dql-cli` | Use `ratatui` for the interactive terminal UI, with a line-input/history layer for completion and multiline input. Keep meta-commands separate from DQL statements. |
-| `dql/grammar/` | `dql-parser` | Prefer a grammar-first parser such as `pest`, or a typed combinator parser if error recovery needs more control. |
-| `dql/expressions/` | `dql-expr` | Build typed constraint, selection, and update expressions; render DynamoDB expression strings and placeholders. |
-| `dql/models.py` | `dql-models` | Represent `TableMeta`, `QueryIndex`, fields, projections, throughput, and billing mode as Rust structs. |
-| `dql/engine.py` | `dql-engine` | Dispatch typed statements, plan queries, call `aws-sdk-dynamodb`, track capacity, and handle throttling. |
-| `dql/output.py` | `dql-output` | Use terminal-aware formatting crates while preserving JSON and tabular output semantics. |
-| `dql/history.py` | `dql-cli` | Store and append history with the same user-visible behavior where practical. |
-| `dql/help.py` | `dql-cli` | Embed or generate command help from markdown or RST source. |
-| `dql/monitor.py` | `dql-cli` or optional feature | Keep CloudWatch/watch support optional until the core engine is stable. |
+Code is ahead of the ideal boundaries in a few places; see `todo_*.md`:
+
+- Selection/update expressions are still partly opaque strings
+(`todo_typed_expression_ast.md`).
+- `dql-output` currently depends on `dql-engine` for result types
+(`todo_invert_output_dependencies.md`).
+- Several crates are large single-file modules
+(`todo_split_monolith_modules.md`).
+- CLI one-shot and REPL still have divergent execution paths
+(`todo_unify_cli_pipelines.md`).
+
+
+
+## Python-to-Rust mapping
+
+
+| Python area        | Rust target                   | Notes                                                                                                                                                               |
+| ------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dql/__init__.py`  | `dql-cli/src/main.rs`         | Use `clap` for `-c`, `--json`, region, host, port, and version flags.                                                                                               |
+| `dql/cli.py`       | `dql-cli`                     | Use `ratatui` for the interactive terminal UI, with a line-input/history layer for completion and multiline input. Keep meta-commands separate from DQL statements. |
+| `dql/grammar/`     | `dql-parser`                  | Prefer a grammar-first parser such as `pest`, or a typed combinator parser if error recovery needs more control.                                                    |
+| `dql/expressions/` | `dql-expr`                    | Build typed constraint, selection, and update expressions; render DynamoDB expression strings and placeholders.                                                     |
+| `dql/models.py`    | `dql-models`                  | Represent `TableMeta`, `QueryIndex`, fields, projections, throughput, and billing mode as Rust structs.                                                             |
+| `dql/engine.py`    | `dql-engine`                  | Dispatch typed statements, plan queries, call `aws-sdk-dynamodb`, track capacity, and handle throttling.                                                            |
+| `dql/output.py`    | `dql-output`                  | Use terminal-aware formatting crates while preserving JSON and tabular output semantics.                                                                            |
+| `dql/history.py`   | `dql-cli`                     | Store and append history with the same user-visible behavior where practical.                                                                                       |
+| `dql/help.py`      | `dql-cli`                     | Embed or generate command help from markdown or RST source.                                                                                                         |
+| `dql/monitor.py`   | `dql-cli` or optional feature | Keep CloudWatch/watch support optional until the core engine is stable.                                                                                             |
+
+
+
 
 ## Key design boundaries
+
+
 
 ### Parser and AST
 
@@ -53,6 +74,10 @@ Expression rendering should be its own service that produces:
 This module must preserve reserved-word escaping, dashed or underscored path
 handling, list indexing, nested map paths, and stable placeholder generation.
 
+**Current gap:** projections and update RHS are often stored/rendered as
+strings with ad hoc tokenization. Target state is a typed expression AST shared
+by parser, planner, and renderer (`todo_typed_expression_ast.md`).
+
 ### Query planning
 
 Index selection should live in `dql-models` or a small planner module consumed
@@ -63,6 +88,8 @@ by `dql-engine`. The planner should decide:
 - whether projected index attributes are enough
 - when a follow-up batch get is required
 - whether `SELECT` must reject a scan because `allow_select_scan` is false
+
+
 
 ### DynamoDB client layer
 
@@ -75,6 +102,8 @@ adapter over `aws-sdk-dynamodb` for:
 - retry and pagination behavior
 - DynamoDB Local endpoint configuration
 
+
+
 ### CLI and REPL
 
 The CLI should preserve both one-shot and interactive workflows. The REPL should
@@ -86,25 +115,29 @@ history, table browsing, help, query results, and watch/monitor views.
 
 ### Output
 
-Output should be treated as compatibility-sensitive. JSON output is easiest to
-compare mechanically and should be ported first. Smart, column, expanded, rich,
-and pager behavior can follow once the engine returns compatible values. The
-interactive output surface should use `ratatui` widgets where that improves
-navigation, while one-shot command output should remain pipe-friendly.
+Output lives in `dql-output` and is compatibility-sensitive. Implemented
+formats: JSON, smart, column, expanded, rich (text fallback + REPL ratatui
+lines), and pager/`less` for non-TUI paths. One-shot command output remains
+pipe-friendly.
+
+**Current gap:** presentation still depends on `dql-engine` types, and rich
+ratatui scraping lives partly under `dql-cli/repl`
+(`todo_invert_output_dependencies.md`).
 
 ## Initial dependency candidates
 
 - CLI parsing: `clap`
 - Interactive CLI/TUI: `ratatui` with a terminal backend such as `crossterm`
 - Line editing and history: integrate a line-input/history layer compatible
-  with the `ratatui` event loop
+with the `ratatui` event loop
 - AWS access: `aws-config`, `aws-sdk-dynamodb`, and optionally
-  `aws-sdk-cloudwatch`
+`aws-sdk-cloudwatch`
 - Numeric values: `rust_decimal`
 - Time parsing: `chrono` plus a small compatibility layer for current interval
-  syntax
+syntax
 - JSON: `serde`, `serde_json`
 - Table output: `ratatui` widgets for interactive views, plus custom
-  pipe-friendly formatting for non-interactive output if parity requires it
+pipe-friendly formatting for non-interactive output if parity requires it
 - Rate limiting: `governor` or a simple token bucket tailored to DynamoDB
-  capacity units
+capacity units
+

@@ -2,74 +2,127 @@
 
 [![Rust CI](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml)
 
-This workspace is the first Rust implementation slice for DQL. It is organized
-around the parallel workstreams identified in `rust-plans/`:
+Cargo workspace that builds the `dql` CLI and supporting libraries for DynamoDB
+Query Language.
 
-- `crates/dql-parser`: typed AST and parser for the first statement set.
-- `crates/dql-expr`: expression rendering, placeholders, value conversion, and
-  JSON-safe serialization helpers.
-- `crates/dql-models`: table/index metadata, throughput helpers, and pure query
-  planning.
-- `crates/dql-engine`: statement execution over in-memory and AWS SDK backends.
-- `crates/dql-cli`: binary entrypoint for version, one-shot commands, JSON
-  output, and a minimal multiline REPL.
+| Crate | Role |
+| --- | --- |
+| `dql-cli` | `dql` binary: clap flags, meta-commands, ratatui REPL |
+| `dql-parser` | Lexer/parser and typed statement AST |
+| `dql-expr` | Expression rendering, placeholders, value conversion |
+| `dql-models` | Table/index metadata and query planning |
+| `dql-engine` | Statement execution (AWS SDK + in-memory backends) |
+| `dql-output` | smart / column / expanded / json / rich formatters and display |
 
-## Implemented slice
+---
 
-- Phase 1 language-core parsing for `SELECT`, `SCAN`, `INSERT`, `UPDATE`,
-  `DELETE`, `CREATE`, `DROP`, `ALTER`, `DUMP`, `LOAD`, `EXPLAIN`, and
-  `ANALYZE`.
-- Literal parsing for strings, numbers, booleans, nulls, binary values, lists,
-  sets, maps, timestamps, and intervals.
-- Typed parser ASTs for constraints, selections, update expressions, indexes,
-  query options, and multiline fragment status.
-- Phase 2 expression/value compatibility for DynamoDB-style field and value
-  placeholders, condition/update/projection rendering, DQL value-to-attribute
-  conversion, and JSON-safe value serialization.
-- Phase 3 metadata/query planning for table fields, LSIs, GSIs, projection
-  checks, throughput totals, index matching, scan rejection, key/filter splits,
-  and follow-up batch-get detection.
-- Phase 4 execution: `SdkBackend` over `aws-sdk-dynamodb` with DynamoDB Local
-  endpoint support, batch write chunking, paginated query/scan, UPDATE/ALTER/LOAD
-  (JSON lines and CSV), explain kwargs, analyze capacity hooks, and token-bucket
-  throttling on memory and SDK backends.
-- CLI defaults to live AWS when `-H` is unset (Python parity). Use
-  `DQL_BACKEND=memory` for offline demos and CI smoke tests; `-H` still selects
-  DynamoDB Local. `MemoryBackend` remains available to engine unit tests.
-- Rust parity tests mirror the Python suite by name. Implemented behavior runs
-  normally; deferred tests are `#[ignore]` placeholders with source references.
+## For `dql` users
 
-## DynamoDB Local
+### Install
 
-Several integration tests require DynamoDB Local on port 8000 (override with
-`DQL_LOCAL_HOST` and `DQL_LOCAL_PORT`). They run as part of the normal test
-suite and fail if Local is not reachable.
-
-Start DynamoDB Local, then:
+**Release binary (local build):**
 
 ```bash
-cargo run -p dql-cli -- -H localhost -p 8000 -c "CREATE TABLE t (id STRING HASH KEY); SCAN * FROM t"
-cargo test -p dql-engine --test dynamodb_local_smoke
-cargo test -p dql-engine --test dynamodb_local_parity
-cargo test --workspace
+cd rust-impl
+cargo build --release -p dql-cli
+install -m 0755 target/release/dql ~/.local/bin/dql
 ```
 
-Integration tests use `tests/support/mod.rs` (`LocalHarness`) to connect, run
-statements, and tear down tables.
+**From a git tag:**
 
-## Remaining parity gaps
+```bash
+cargo install --git https://github.com/jspreddy/dql.git --tag <version> --locked -p dql-cli --root ~/.local
+```
 
-See [migration-from-python.md](../rust-plans/migration-from-python.md) for
-install and behavior differences versus the Python CLI.
+**Install script** (from the repository root):
 
-SAVE/LOAD supports JSON lines, CSV, gzip wrappers, and MessagePack (pickle
-replacement). Legacy `.p` / `.pkl` / `.pickle` files are rejected with a
-migration hint. A handful of other `#[ignore]` parity tests remain in
-`crates/dql-engine/tests/python_engine_query_model_parity.rs`.
+```bash
+curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/v-rust/bin/install-rust.sh | sh
+```
 
-## Local checks
+### Connect
 
-Run from this directory:
+| Mode | How |
+| --- | --- |
+| Live AWS | `dql` (default when `-H` is unset; uses the AWS SDK credential chain) |
+| DynamoDB Local | `dql -H localhost -p 8000` |
+| In-memory (offline) | `DQL_BACKEND=memory dql …` |
+
+Region defaults to `AWS_REGION`, else `us-west-1`. Override with `-r`.
+
+Config and history paths: `~/.config/dql.json` and `~/.dql/history`.
+
+### Flags
+
+```text
+-c, --command <command>  Run this command and exit
+-r, --region <region>    AWS region
+-H, --host <host>        Local DynamoDB host
+-p, --port <port>        Local DynamoDB port (default 8000)
+    --json               With -c, print results as JSON
+    --version            Print version and exit
+-h, --help               Print help
+```
+
+### Statements and meta-commands
+
+DQL statements: `SELECT`, `SCAN`, `INSERT`, `UPDATE`, `DELETE`, `CREATE`,
+`DROP`, `ALTER`, `DUMP`, `LOAD`, `EXPLAIN`, `ANALYZE`.
+
+In the REPL, type `help` or `help <statement>`. Meta-commands include `opt`,
+`ls`, `use`, `local`, `file`, `throttle`, `unthrottle`, `whoami`, `shell`,
+`clear`, `exit`, and `version`. Build with `--features watch` to enable the
+`watch` CloudWatch dashboard.
+
+Output formats (via `opt format`): `smart`, `column`, `expanded`, `json`,
+`rich`. Non-TUI paths can page with `opt display less`.
+
+### SAVE / LOAD
+
+| Format | Extensions |
+| --- | --- |
+| JSON lines | `.json`, `.json.gz` |
+| CSV | `.csv`, `.csv.gz` |
+| MessagePack | `.msgpack`, `.msgpack.gz` (default binary) |
+
+Legacy pickle (`.p` / `.pkl` / `.pickle`) is rejected; re-export from Python as
+JSON or CSV first if needed.
+
+### Quick examples
+
+```bash
+dql --version
+dql -c "ls"
+dql --json -c "SCAN * FROM mytable LIMIT 5"
+dql -H localhost -p 8000 -c "CREATE TABLE t (id STRING HASH KEY); SCAN * FROM t"
+DQL_BACKEND=memory dql -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"
+```
+
+---
+
+## For `rust-impl` maintainers
+
+Work from this directory (`rust-impl/`).
+
+### Workspace layout
+
+```text
+crates/
+  dql-cli/      # binary + REPL + meta-commands
+  dql-parser/   # grammar / AST
+  dql-expr/     # DynamoDB expression strings + value helpers
+  dql-models/   # TableMeta, QueryPlan, index matching
+  dql-engine/   # Engine<B>, MemoryBackend, SdkBackend, file I/O
+  dql-output/   # formatters, display backends, table-meta text
+scripts/
+  smoke_test.sh
+```
+
+Default CLI backend is live AWS. `DQL_BACKEND=memory` is for offline demos and
+smoke tests. Engine unit tests use `MemoryBackend` directly. DynamoDB Local is
+selected with `-H` / `-p`.
+
+### Local checks
 
 ```bash
 cargo fmt --check
@@ -77,28 +130,30 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo build --release -p dql-cli
 ./scripts/smoke_test.sh
-cargo run -p dql-cli -- --version
-DQL_BACKEND=memory cargo run -p dql-cli -- --json -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"
-
 ```
 
-## Install from this workspace
-
-### Build a release binary locally
+Optional CloudWatch/`watch` build:
 
 ```bash
-    cargo build --release -p dql-cli
-    install -m 0755 target/release/dql ~/.local/bin/dql
+cargo build -p dql-cli --features watch
 ```
 
-### Install from a git tag with Cargo
+### DynamoDB Local tests
+
+Integration tests expect Local on port 8000 (override with `DQL_LOCAL_HOST` /
+`DQL_LOCAL_PORT`). They run with the normal suite and fail if Local is down.
 
 ```bash
-    cargo install --git https://github.com/jspreddy/dql.git --tag <version> --locked -p dql-cli --root ~/.local
+# start DynamoDB Local, then:
+cargo test -p dql-engine --test dynamodb_local_smoke
+cargo test -p dql-engine --test dynamodb_local_parity
+cargo test --workspace
+cargo run -p dql-cli -- -H localhost -p 8000 -c "CREATE TABLE t (id STRING HASH KEY); SCAN * FROM t"
 ```
 
-### Download a published binary with the install script from the repository root
+Harness: `crates/dql-engine/tests/support/mod.rs` (`LocalHarness`).
 
-```bash
-    curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/v-rust/bin/install-rust.sh | sh
-```
+### Toolchain
+
+See `rust-toolchain.toml`. CI: `.github/workflows/rust-workflows.yml` (fmt,
+clippy, tests, smoke).

@@ -105,8 +105,9 @@ Status:
 - CLI connects to DynamoDB Local when `-H` is provided
 - Integration tests `dynamodb_local_smoke` and `dynamodb_local_parity` require
   DynamoDB Local and fail if it is not running
-- `python_engine_query_model_parity` mirrors `tests/test_queries.py` with 128 passing
-  tests; FragmentEngine and remaining regressions stay deferred to Phase 5
+- `python_engine_query_model_parity` mirrors `tests/test_queries.py`; one Local
+  GSI throughput case remains `#[ignore]`. Design debt for engine/backend
+  boundaries is tracked in `todo_engine_backend_boundaries.md`.
 
 Compatibility gate:
 
@@ -121,7 +122,7 @@ Primary risks:
   Rust SDK.
 - Capacity reporting, pagination, and batch retry behavior must be deliberate.
 
-## Phase 5: CLI, REPL, and output
+## Phase 5: CLI, REPL, and output [DONE]
 
 Build the user-facing binary around the stable parser and engine.
 
@@ -131,11 +132,17 @@ Deliverables:
 - Interactive `ratatui` terminal UI with multiline fragments, history,
   completion, and prompt behavior
 - Meta-commands: `use`, `local`, `ls`, `file`, `opt`, `throttle`,
-  `unthrottle`, `watch`, `whoami`, `shell`, `clear`, `cls`, `c`, `exit`, and
-  `version`
-- Output formats: JSON first, then smart, column, expanded, rich, and pager
-  display; use `ratatui` widgets for interactive result browsing where useful
+  `unthrottle`, `watch` (Cargo feature), `whoami`, `shell`, `clear`, `cls`,
+  `c`, `exit`, and `version`
+- Output formats in `dql-output`: JSON, smart, column, expanded, rich, and
+  pager/`less`; ratatui widgets for interactive rich results and `ls`
 - Help text for DQL statements and options
+
+Status:
+
+- Implemented under `dql-cli` + `dql-output`
+- Design follow-ups: unify `-c`/REPL pipelines and invert output dependencies
+  (`todo_unify_cli_pipelines.md`, `todo_invert_output_dependencies.md`)
 
 Compatibility gate:
 
@@ -149,7 +156,7 @@ Primary risks:
 - `watch` and CloudWatch metrics can be isolated behind optional features if
   they slow core parity work.
 
-## Phase 6: Packaging and release path
+## Phase 6: Packaging and release path [DONE]
 
 Replace the Python installation and pex story with Rust-native packaging.
 
@@ -159,6 +166,11 @@ Deliverables:
 - Release binary build configuration
 - Installation instructions for local development and published binaries
 - Migration notes for users relying on Python-specific behavior
+
+Status:
+
+- `rust-impl/` workspace, `scripts/smoke_test.sh`, and
+  `migration-from-python.md` are in place
 
 Compatibility gate:
 
@@ -171,10 +183,11 @@ Primary risks:
 - Platform-specific terminal and TLS behavior should be validated before a
   broad release.
 
-## Post–Phase 6: Remaining parity tracks
+## Post–Phase 6: Remaining tracks
 
-Phases 1–6 are implemented in `rust-impl/`. Remaining gaps versus Python are
-tracked as separate plans (one commit-series each) under `.cursor/plans/`:
+Phases 1–6 are implemented in `rust-impl/`.
+
+**Feature parity** (mostly done) — plans under `.cursor/plans/`:
 
 1. [Default AWS connection](../.cursor/plans/parity_1_default_aws.plan.md)
 2. [ORDER BY / ScanIndexForward](../.cursor/plans/parity_2_order_by.plan.md)
@@ -182,3 +195,6 @@ tracked as separate plans (one commit-series each) under `.cursor/plans/`:
 4. [Expression regressions](../.cursor/plans/parity_4_expression_regressions.plan.md)
 5. [SAVE/LOAD + MessagePack](../.cursor/plans/parity_5_save_load.plan.md) (pickle replaced by MessagePack)
 6. [CLI polish](../.cursor/plans/parity_6_cli_polish.plan.md)
+7. [Rich query format](../.cursor/plans/rich_format_ratatui_78c8339d.plan.md)
+
+**Design / SOLID debt** — `todo_*.md` in this folder (see `README.md`).

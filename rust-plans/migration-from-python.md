@@ -16,10 +16,13 @@ or remain incomplete.
 Rust install examples:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/stevearc/dql/v-rust/bin/install-rust.sh | sh
+curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/v-rust/bin/install-rust.sh | sh
 
-cargo install --git https://github.com/stevearc/dql.git --tag 0.6.4 --locked -p dql-cli --root ~/.local
+cargo install --git https://github.com/jspreddy/dql.git --tag <version> --locked -p dql-cli --root ~/.local
 ```
+
+Upstream `stevearc/dql` may also publish binaries; this fork’s docs and CI use
+`jspreddy/dql`. Override with `DQL_REPO=owner/repo` when using `bin/install-rust.sh`.
 
 ## Configuration and history
 
@@ -56,7 +59,7 @@ Local; `local off` reconnects to live AWS.
 | REPL | readline + Rich | ratatui TUI |
 | One-shot `-c` | stdout / JSON | stdout / JSON (pipe-friendly) |
 | Pager | `less` via Rich | `less` for non-TUI output |
-| `watch` | CloudWatch metrics | optional / limited |
+| `watch` | CloudWatch metrics | Cargo feature `watch` (ratatui + CloudWatch) |
 
 Interactive navigation differs because Rust uses a terminal UI instead of
 readline, but one-shot commands and shell scripting behavior are preserved.
@@ -100,15 +103,14 @@ or JSON/CSV re-export.
 
 ## Known parity gaps
 
-A small set of engine parity tests remain `#[ignore]` in
-`rust-impl/crates/dql-engine/tests/python_engine_query_model_parity.rs`:
+One engine parity test remains `#[ignore]` in
+`rust-impl/crates/dql-engine/tests/python_engine_query_model_parity.rs`
+(DynamoDB Local GSI throughput quirk). CLI history tests that only apply to
+Python readline stay ignored.
 
-- Parse-error caret display
-- DynamoDB Local GSI throughput edge case
-- GSI throughput metadata
-
-See `rust-impl/README.md` for the current implementation status and
-`rust-plans/migration-roadmap.md` for the overall rewrite plan.
+Design-debt follow-ups (not user-facing parity) are listed in
+`rust-plans/todo_*.md`. See `rust-impl/README.md` and
+`rust-plans/migration-roadmap.md` for overall status.
 
 ## Python package status
 
