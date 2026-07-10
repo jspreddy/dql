@@ -4,19 +4,19 @@ overview: "Add the missing `opt format rich` query-result formatter to rust-impl
 todos:
   - id: rich-layout
     content: Add OutputFormat::Rich, RichContext/RichLayout, RichFormat text fallback in dql-output
-    status: pending
+    status: completed
   - id: query-context
     content: Add Engine::last_query_context() populated from parsed statements for PK/index column ordering
-    status: pending
+    status: completed
   - id: repl-ratatui
     content: "Add dql-cli/repl/rich_table.rs: ratatui Table -> styled Lines; wire into repl/app.rs handle_submit"
-    status: pending
+    status: completed
   - id: wire-render
     content: Thread rich_context through render_result, session.rs, file.rs; update help.rs format docs
-    status: pending
+    status: completed
   - id: tests
     content: Unit tests for layout ordering, overflow cols, opt format rich, and REPL line rendering
-    status: pending
+    status: completed
 isProject: false
 ---
 
