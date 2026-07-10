@@ -4,6 +4,8 @@ pub mod lifecycle;
 pub mod ls;
 pub mod opt;
 pub mod throttle;
+#[cfg(feature = "watch")]
+pub mod watch;
 
 use crate::session::Session;
 use dql_engine::StatementResult;
@@ -83,6 +85,9 @@ fn registry() -> HashMap<&'static str, ReplCommand> {
     register!("ls", crate::meta::ls::handle);
     register!("throttle", crate::meta::throttle::handle_throttle);
     register!("unthrottle", crate::meta::throttle::handle_unthrottle);
+    #[cfg(feature = "watch")]
+    register!("watch", crate::meta::watch::handle);
+    #[cfg(not(feature = "watch"))]
     register!("watch", crate::meta::lifecycle::watch_disabled);
     commands
 }

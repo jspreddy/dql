@@ -1,10 +1,22 @@
 ---
 source: crates/dql-cli/tests/python_cli_history_parity.rs
+assertion_line: 95
 expression: output
 ---
-Table: foobar_ls_test
-Status: Active
+Name: foobar_ls_test
+Status: ACTIVE
 Items: 0
 Size: 0 B
+Read: N/A
+Write: N/A
+Hash Key: id (STRING)
+Range Key: range (NUMBER)
+
+Local Indexes:
+  foo-index  hash=id  range=foo  projection=ALL
+
+Global Indexes:
+  Name             Projection       Read    Write HashKey              RangeKey               Status
+  bar-index        ALL               N/A      N/A bar (STRING)         -                      ACTIVE
 
 CREATE TABLE foobar_ls_test (id STRING HASH KEY, range NUMBER RANGE KEY, bar STRING HASH KEY, foo STRING INDEX('foo-index')) GLOBAL ALL INDEX ('bar-index', bar string);

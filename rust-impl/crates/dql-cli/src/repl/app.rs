@@ -1,4 +1,6 @@
 use crate::meta::lifecycle::take_exit_request;
+#[cfg(feature = "watch")]
+use crate::meta::watch::take_watch_request;
 use crate::session::Session;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use dql_output::{render_result, DisplayBackend};
@@ -71,6 +73,15 @@ fn repl_loop(
                         app.input.clear();
                         if take_exit_request() {
                             break;
+                        }
+                        #[cfg(feature = "watch")]
+                        if let Some(tables) = take_watch_request() {
+                            ratatui::restore();
+                            let watch_result = crate::meta::watch::run_monitor(app.session, &tables);
+                            *terminal = ratatui::init();
+                            if let Err(err) = watch_result {
+                                app.output.push(format!("watch error: {err}"));
+                            }
                         }
                     }
                     KeyCode::Up => app.history_up(),
