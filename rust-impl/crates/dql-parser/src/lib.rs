@@ -797,10 +797,18 @@ impl Parser {
         if !self.peek_symbol('(') {
             return false;
         }
-        matches!(
-            (self.tokens.get(self.pos + 1), self.tokens.get(self.pos + 2)),
-            (Some(Token::Ident(_)), Some(Token::Symbol('=')))
-        )
+        // Keyword INSERT keys are `ident (- ident)* = value`.
+        let mut index = self.pos + 1;
+        match self.tokens.get(index) {
+            Some(Token::Ident(_)) => index += 1,
+            _ => return false,
+        }
+        while matches!(self.tokens.get(index), Some(Token::Symbol('-')))
+            && matches!(self.tokens.get(index + 1), Some(Token::Ident(_)))
+        {
+            index += 2;
+        }
+        matches!(self.tokens.get(index), Some(Token::Symbol('=')))
     }
 
     fn parse_keyword_insert_rows(&mut self) -> Result<Vec<Vec<(String, Value)>>, ParseError> {
@@ -809,7 +817,7 @@ impl Parser {
             self.expect_symbol('(')?;
             let mut pairs = Vec::new();
             loop {
-                let key = self.expect_ident()?;
+                let key = self.parse_hyphenated_ident()?;
                 self.expect_symbol('=')?;
                 let value = self.parse_value()?;
                 pairs.push((key, value));
@@ -1280,7 +1288,7 @@ impl Parser {
     }
 
     fn parse_field_path(&mut self) -> Result<String, ParseError> {
-        let mut field = self.expect_ident()?;
+        let mut field = self.parse_hyphenated_ident()?;
         loop {
             if self.accept_symbol('[') {
                 let index = self.expect_string_or_ident()?;
@@ -1290,12 +1298,29 @@ impl Parser {
                 field.push(']');
             } else if self.accept_symbol('.') {
                 field.push('.');
-                field.push_str(&self.expect_ident()?);
+                field.push_str(&self.parse_hyphenated_ident()?);
             } else {
                 break;
             }
         }
         Ok(field)
+    }
+
+    /// Attribute / path segment that may include hyphens (`my-field`, `a-b-c`).
+    ///
+    /// The lexer already folds `-` into idents when there is no whitespace
+    /// (`is_ident_part`). This also joins `Ident '-' Ident` when those tokens
+    /// appear separately, matching Python's `Word(..., "_-.")` behavior.
+    fn parse_hyphenated_ident(&mut self) -> Result<String, ParseError> {
+        let mut name = self.expect_ident()?;
+        while self.peek_symbol('-')
+            && matches!(self.tokens.get(self.pos + 1), Some(Token::Ident(_)))
+        {
+            self.pos += 1;
+            name.push('-');
+            name.push_str(&self.expect_ident()?);
+        }
+        Ok(name)
     }
 
     fn peek_function_condition(&self) -> bool {
@@ -1933,6 +1958,42 @@ mod tests {
                 assert_eq!(table, "t");
                 assert_eq!(parts.len(), 2);
             }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_hyphenated_field_paths() {
+        let statement = parse_statement("SCAN * FROM t WHERE my-field = 1").unwrap();
+        match statement {
+            Statement::Scan {
+                condition: Some(Condition::Compare { field, .. }),
+                ..
+            } => assert_eq!(field, "my-field"),
+            other => panic!("unexpected statement: {other:?}"),
+        }
+
+        let statement = parse_statement("INSERT INTO t (id='a', my-field=1)").unwrap();
+        match statement {
+            Statement::Insert {
+                form: InsertForm::Keyword { rows },
+                ..
+            } => {
+                assert_eq!(rows[0][1].0, "my-field");
+                assert_eq!(rows[0][1].1, Value::Number("1".to_string()));
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+
+        let update = parse_update_expr("SET my-field = 2").unwrap();
+        assert_eq!(update.clauses[0].path, "my-field");
+
+        let statement = parse_statement("SELECT * FROM t WHERE a.b-c = 1").unwrap();
+        match statement {
+            Statement::Select {
+                condition: Some(Condition::Compare { field, .. }),
+                ..
+            } => assert_eq!(field, "a.b-c"),
             other => panic!("unexpected statement: {other:?}"),
         }
     }

@@ -104,6 +104,7 @@ mod test_parser {
             r#"INSERT INTO foobars (foo, bar) VALUES (b"binary", ("set", "of", "values"))"#,
         );
         assert_parse_ok("INSERT INTO foobars (id='a', bar=1), (id='b', baz=4)");
+        assert_parse_ok("INSERT INTO foobars (id='a', my-field=1), (id='b', my-field=4)");
         assert_parse_err("INSERT foobars (foo, bar) VALUES (1, 2)");
         assert_parse_err("INSERT INTO foobars foo, bar VALUES (1, 2)");
         assert_parse_err("INSERT INTO foobars (foo, bar) VALUES 1, 2");
@@ -290,6 +291,9 @@ mod test_expressions {
             r#"WHERE foo > ms(utcts "2015-12-5")"#,
             r#"WHERE foo > utcts "2015-12-5" + interval "1 minute 1s""#,
             r#"WHERE foo < 1 AND (bar >= 0 OR baz < "str" OR qux = 1)"#,
+            "WHERE my-field = 1",
+            "WHERE a.b-c = 1",
+            "WHERE hash in (1, 2, 3)",
         ] {
             parse_statement(&format!("SELECT * FROM foobars {expression}"))
                 .unwrap_or_else(|err| panic!("{expression:?} should parse: {err}"));
@@ -311,6 +315,7 @@ mod test_expressions {
             "SET foo = if_not_exists(foo, 2)",
             "SET foo = list_append(foo, 2)",
             "SET foo = list_append(2, foo)",
+            "SET my-field = 2",
             "REMOVE foo",
             "REMOVE foo, bar",
             "REMOVE foo[0]",
