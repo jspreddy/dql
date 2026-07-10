@@ -120,6 +120,8 @@ impl<'a> ReplApp<'a> {
             .unwrap_or("")
             .to_ascii_lowercase();
         let output_config = self.session.config.output_config();
+        // TUI REPL always buffers into the output pane. `display=less` is honored
+        // by non-TUI paths (`-c`, `file`) so less does not fight the alternate screen.
         let mut backend = BufferBackend::default();
         {
             let mut writer = backend.writer();

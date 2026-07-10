@@ -299,7 +299,15 @@ impl Session {
             self.config.output_config()
         };
         output_config.silent = use_json;
-        let mut backend = DisplayMode::Stdout.backend();
+        // Honor `opt display less` for -c / one-shot paths. JSON and non-TTY
+        // stay on stdout so pipes remain pipe-friendly.
+        let mut backend = if use_json || !io::IsTerminal::is_terminal(&io::stdout()) {
+            DisplayMode::Stdout.backend()
+        } else {
+            DisplayMode::from_name(&self.config.display)
+                .unwrap_or(DisplayMode::Stdout)
+                .backend()
+        };
         let trimmed = command.trim();
         let is_meta = trimmed
             .split_once(char::is_whitespace)

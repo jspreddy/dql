@@ -29,9 +29,14 @@ pub fn handle(
         out.write_all(&buffer).map_err(|err| err.to_string())?;
         return Ok(());
     }
-    let mut backend = dql_output::DisplayMode::from_name(&session.config.display)
-        .unwrap_or(dql_output::DisplayMode::Stdout)
-        .backend();
+    // Non-REPL `file` honors display=less when stdout is a TTY (same as -c).
+    let mut backend = if std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+        dql_output::DisplayMode::from_name(&session.config.display)
+            .unwrap_or(dql_output::DisplayMode::Stdout)
+            .backend()
+    } else {
+        dql_output::DisplayMode::Stdout.backend()
+    };
     for line in contents.lines() {
         if let Some(result) = session
             .engine
