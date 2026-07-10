@@ -62,8 +62,10 @@ statements, and tear down tables.
 See [migration-from-python.md](../rust-plans/migration-from-python.md) for
 install and behavior differences versus the Python CLI.
 
-Deferred engine work includes SAVE exports, gzip/pickle LOAD, and a handful of
-`#[ignore]` parity tests in `crates/dql-engine/tests/python_engine_query_model_parity.rs`.
+SAVE/LOAD supports JSON lines, CSV, gzip wrappers, and MessagePack (pickle
+replacement). Legacy `.p` / `.pkl` / `.pickle` files are rejected with a
+migration hint. A handful of other `#[ignore]` parity tests remain in
+`crates/dql-engine/tests/python_engine_query_model_parity.rs`.
 
 ## Local checks
 

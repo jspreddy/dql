@@ -132,9 +132,12 @@ pub const LOAD: &str = r"
 
     LOAD filename INTO tablename
 
+    Formats: .json / .csv / .msgpack (optional .gz). Pickle (.p) is not supported.
+
     Examples
     --------
-    LOAD archive.p INTO mytable;
+    LOAD archive.msgpack INTO mytable;
+    LOAD archive.json.gz INTO mytable;
 ";
 
 pub const SCAN: &str = SELECT;
@@ -150,11 +153,14 @@ pub const SELECT: &str = r"
         [ LIMIT limit ]
         [ ORDER BY field ]
         [ ASC | DESC ]
+        [ SAVE file.json ]
 
     Examples
     --------
     SELECT * FROM foobars WHERE foo = 'bar';
     SELECT * FROM foobars KEYS IN 'id1', 'id2';
+    SELECT * FROM foobars SAVE out.msgpack;
+    SELECT * FROM foobars SAVE out.json.gz;
 ";
 
 pub const UPDATE: &str = r"

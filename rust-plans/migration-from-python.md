@@ -63,12 +63,40 @@ readline, but one-shot commands and shell scripting behavior are preserved.
 
 ## File formats
 
-| Topic | Python | Rust |
-| --- | --- | --- |
-| `LOAD` JSON lines | yes | yes |
-| `LOAD` CSV | yes | yes |
-| `LOAD` gzip / pickle | yes | not yet |
-| `SAVE` exports | multiple formats | not yet |
+| Format | Extension(s) | Python | Rust |
+| --- | --- | --- | --- |
+| JSON lines | `.json`, `.json.gz` | SAVE + LOAD | SAVE + LOAD |
+| CSV | `.csv`, `.csv.gz` | SAVE + LOAD | SAVE + LOAD |
+| MessagePack | `.msgpack`, `.msgpack.gz`, or default binary | — | SAVE + LOAD |
+| Pickle | `.p`, `.pkl`, `.pickle` (+ gzip) | SAVE + LOAD | **rejected** |
+
+Rust replaces Python’s pickle binary format with [MessagePack](https://msgpack.org/).
+Files use concatenated MessagePack maps (one object per item), optionally prefixed
+with the 4-byte magic `DQL1`. Numbers are tagged as
+`{"__dql_number__": "<decimal>"}` and sets as `{"__dql_set__": [...]}` so types
+round-trip cleanly.
+
+### Migrating pickle archives
+
+Rust cannot read `.p` / `.pkl` / `.pickle` files. Re-export from Python DQL first:
+
+```text
+SELECT * FROM t SAVE 'x.json';
+# or
+SELECT * FROM t SAVE 'x.csv';
+```
+
+Then in Rust:
+
+```text
+LOAD 'x.json' INTO t;
+# or SAVE/LOAD with MessagePack going forward:
+SCAN * FROM t SAVE 'x.msgpack';
+LOAD 'x.msgpack' INTO t;
+```
+
+Attempting `LOAD archive.p INTO t` returns a clear error pointing at MessagePack
+or JSON/CSV re-export.
 
 ## Known parity gaps
 
@@ -78,8 +106,6 @@ A small set of engine parity tests remain `#[ignore]` in
 - Parse-error caret display
 - DynamoDB Local GSI throughput edge case
 - GSI throughput metadata
-- SAVE / gzip / pickle LOAD formats
-- Reserved-word and dashed field path regressions
 
 See `rust-impl/README.md` for the current implementation status and
 `rust-plans/migration-roadmap.md` for the overall rewrite plan.
