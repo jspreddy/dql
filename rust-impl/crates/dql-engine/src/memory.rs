@@ -639,9 +639,8 @@ fn apply_read_options<'a>(
 fn compare_operand(item: &Item, left: &Value, op: &CompareOp, rhs: &ConditionOperand) -> bool {
     match rhs {
         ConditionOperand::Value(value) => compare_values(left, op, value),
-        ConditionOperand::Field(field) => item
-            .get(field)
-            .is_some_and(|right| compare_values(left, op, right)),
+        ConditionOperand::Field(field) => resolve_field_value(item, field)
+            .is_some_and(|right| compare_values(left, op, &right)),
     }
 }
 
@@ -905,7 +904,7 @@ fn is_quoted(value: &str) -> bool {
 mod tests {
     use super::*;
     use dql_models::TableMeta;
-    use dql_parser::parse_statement;
+    use dql_parser::{parse_statement, Condition, ConditionOperand, CompareOp};
 
     #[test]
     fn backend_describes_created_table_metadata() {
@@ -915,5 +914,31 @@ mod tests {
         backend.create_table(meta, false).unwrap();
         let desc = backend.describe_table("t").unwrap().unwrap();
         assert_eq!(desc.hash_key, "id");
+    }
+
+    #[test]
+    fn compare_operand_resolves_dashed_and_nested_fields() {
+        let mut nested = BTreeMap::new();
+        nested.insert("b-c".to_string(), Value::Number("1".to_string()));
+        let mut item = Item::new();
+        item.insert("my-field".to_string(), Value::Number("1".to_string()));
+        item.insert("nested".to_string(), Value::Map(nested));
+
+        assert!(matches_condition(
+            &item,
+            &Condition::Compare {
+                field: "my-field".to_string(),
+                op: CompareOp::Eq,
+                rhs: ConditionOperand::Field("nested.b-c".to_string()),
+            },
+        ));
+        assert_eq!(
+            resolve_field_value(&item, "my-field"),
+            Some(Value::Number("1".to_string()))
+        );
+        assert_eq!(
+            resolve_field_value(&item, "nested.b-c"),
+            Some(Value::Number("1".to_string()))
+        );
     }
 }
