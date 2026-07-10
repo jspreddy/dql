@@ -2313,12 +2313,18 @@ mod test_models {
     use super::*;
 
     #[test]
-    #[ignore = "needs GSI throughput metadata"]
     fn test_total_throughput() {
-        pending(
-            "tests/test_models.py::TestModels::test_total_throughput",
-            "global index throughput metadata is deferred",
-        );
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar \
+                 (id STRING HASH KEY, foo NUMBER, THROUGHPUT (1, 1))\
+                 GLOBAL INDEX ('idx', id, foo, THROUGHPUT(1, 1))",
+            )
+            .unwrap();
+        let desc = engine.describe("foobar", true).unwrap().unwrap();
+        assert_eq!(desc.total_read_throughput(), Some(2.0));
+        assert_eq!(desc.total_write_throughput(), Some(2.0));
     }
 
     #[test]
