@@ -36,10 +36,26 @@ these major surfaces:
 - `migration-from-python.md` documents install and behavior differences for users moving from Python to Rust.
 - `testing-strategy.md` defines the parity gates and test migration approach.
 
+## Post–Phase 6 parity plans
+
+Phases 1–6 are implemented. Remaining Python parity work is tracked as
+executable plans under [`.cursor/plans/`](../.cursor/plans/):
+
+| Plan | Focus |
+| --- | --- |
+| [`parity_1_default_aws.plan.md`](../.cursor/plans/parity_1_default_aws.plan.md) | Default live AWS connection (not memory) |
+| [`parity_2_order_by.plan.md`](../.cursor/plans/parity_2_order_by.plan.md) | ORDER BY / ASC / DESC / ScanIndexForward |
+| [`parity_3_index_projection.plan.md`](../.cursor/plans/parity_3_index_projection.plan.md) | Non-projected index attrs + count on index |
+| [`parity_4_expression_regressions.plan.md`](../.cursor/plans/parity_4_expression_regressions.plan.md) | Reserved words + dashed field paths |
+| [`parity_5_save_load.plan.md`](../.cursor/plans/parity_5_save_load.plan.md) | SAVE/LOAD; MessagePack replaces pickle |
+| [`parity_6_cli_polish.plan.md`](../.cursor/plans/parity_6_cli_polish.plan.md) | less, caret errors, metrics, rich ls, watch |
+
 ## Non-goals for the first rewrite pass
 
 - Changing DQL syntax.
 - Adding new DynamoDB features before parity is established.
 - Replacing the documented CLI workflow with an incompatible interface.
 - Preserving Python-specific serialization formats such as pickle unless a
-  compatibility requirement is explicitly accepted.
+  compatibility requirement is explicitly accepted. SAVE/LOAD binary format in
+  Rust uses MessagePack instead (see
+  [`.cursor/plans/parity_5_save_load.plan.md`](../.cursor/plans/parity_5_save_load.plan.md)).

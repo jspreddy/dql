@@ -170,3 +170,15 @@ Primary risks:
 - Users may depend on pip/pex distribution.
 - Platform-specific terminal and TLS behavior should be validated before a
   broad release.
+
+## Post–Phase 6: Remaining parity tracks
+
+Phases 1–6 are implemented in `rust-impl/`. Remaining gaps versus Python are
+tracked as separate plans (one commit-series each) under `.cursor/plans/`:
+
+1. [Default AWS connection](../.cursor/plans/parity_1_default_aws.plan.md)
+2. [ORDER BY / ScanIndexForward](../.cursor/plans/parity_2_order_by.plan.md)
+3. [Index projection + count](../.cursor/plans/parity_3_index_projection.plan.md)
+4. [Expression regressions](../.cursor/plans/parity_4_expression_regressions.plan.md)
+5. [SAVE/LOAD + MessagePack](../.cursor/plans/parity_5_save_load.plan.md) (pickle replaced by MessagePack)
+6. [CLI polish](../.cursor/plans/parity_6_cli_polish.plan.md)
