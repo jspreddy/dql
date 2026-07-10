@@ -24,10 +24,8 @@ pub async fn get_capacity(
 /// Attach CloudWatch consumed capacity to `meta` (table + GSIs).
 pub async fn attach_metrics(config: &SdkConfig, meta: &mut TableMeta) -> Result<(), EngineError> {
     let (read, write) = get_capacity(config, &meta.name, None).await?;
-    meta.consumed_capacity.insert(
-        "__table__".to_string(),
-        ConsumedCapacity { read, write },
-    );
+    meta.consumed_capacity
+        .insert("__table__".to_string(), ConsumedCapacity { read, write });
     let index_names: Vec<String> = meta.global_indexes.keys().cloned().collect();
     for index_name in index_names {
         let (read, write) = get_capacity(config, &meta.name, Some(&index_name)).await?;
@@ -43,20 +41,8 @@ async fn get_capacity_inner(
     index_name: Option<&str>,
 ) -> Result<(f64, f64), EngineError> {
     let client = build_client(config).await?;
-    let read = get_metric(
-        &client,
-        "ConsumedReadCapacityUnits",
-        tablename,
-        index_name,
-    )
-    .await?;
-    let write = get_metric(
-        &client,
-        "ConsumedWriteCapacityUnits",
-        tablename,
-        index_name,
-    )
-    .await?;
+    let read = get_metric(&client, "ConsumedReadCapacityUnits", tablename, index_name).await?;
+    let write = get_metric(&client, "ConsumedWriteCapacityUnits", tablename, index_name).await?;
     Ok((read, write))
 }
 
@@ -113,9 +99,6 @@ async fn get_metric(
         return Ok(0.0);
     }
     points.sort_by_key(|point| point.timestamp.map(|ts| ts.secs()).unwrap_or(0));
-    let sum = points
-        .last()
-        .and_then(|point| point.sum)
-        .unwrap_or(0.0);
+    let sum = points.last().and_then(|point| point.sum).unwrap_or(0.0);
     Ok(sum / f64::from(period))
 }

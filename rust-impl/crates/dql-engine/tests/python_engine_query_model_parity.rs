@@ -2365,14 +2365,7 @@ mod test_save {
             .unwrap();
 
         // Python uses pickle (`.p`); Rust uses MessagePack instead.
-        let formats = [
-            "msgpack",
-            "csv",
-            "json",
-            "msgpack.gz",
-            "csv.gz",
-            "json.gz",
-        ];
+        let formats = ["msgpack", "csv", "json", "msgpack.gz", "csv.gz", "json.gz"];
         for fmt in formats {
             let path = dir.join(format!("out.{fmt}"));
             let saved = engine
@@ -2403,7 +2396,10 @@ mod test_save {
         let pickle_path = dir.join("legacy.p");
         fs::write(&pickle_path, b"").unwrap();
         let err = engine
-            .execute(&format!("LOAD '{}' INTO destination", pickle_path.display()))
+            .execute(&format!(
+                "LOAD '{}' INTO destination",
+                pickle_path.display()
+            ))
             .unwrap_err();
         assert!(
             err.to_string().contains("pickle") || err.to_string().contains("MessagePack"),

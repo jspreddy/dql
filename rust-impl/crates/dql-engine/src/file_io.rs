@@ -478,10 +478,7 @@ fn csv_escape(value: &str) -> String {
 }
 
 fn split_csv_line(line: &str) -> Vec<String> {
-    line.split(',')
-        .map(str::trim)
-        .map(str::to_string)
-        .collect()
+    line.split(',').map(str::trim).map(str::to_string).collect()
 }
 
 fn csv_field_to_value(field: &str) -> Value {
@@ -541,11 +538,17 @@ mod tests {
         item.insert("bin".to_string(), Value::Binary(b"abc".to_vec()));
         item.insert(
             "list".to_string(),
-            Value::List(vec![Value::Number("1".to_string()), Value::String("x".to_string())]),
+            Value::List(vec![
+                Value::Number("1".to_string()),
+                Value::String("x".to_string()),
+            ]),
         );
         item.insert(
             "set".to_string(),
-            Value::Set(vec![Value::String("a".to_string()), Value::String("b".to_string())]),
+            Value::Set(vec![
+                Value::String("a".to_string()),
+                Value::String("b".to_string()),
+            ]),
         );
         item.insert("map".to_string(), Value::Map(nested));
 

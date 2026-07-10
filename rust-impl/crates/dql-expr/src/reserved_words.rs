@@ -580,4 +580,3 @@ pub const DYNAMODB_RESERVED_WORDS: &[&str] = &[
     "YEAR",
     "ZONE",
 ];
-

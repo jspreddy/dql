@@ -97,7 +97,8 @@ fn repl_loop(
                         if let Some(tables) = take_watch_request() {
                             let _ = disable_mouse_capture();
                             ratatui::restore();
-                            let watch_result = crate::meta::watch::run_monitor(app.session, &tables);
+                            let watch_result =
+                                crate::meta::watch::run_monitor(app.session, &tables);
                             *terminal = ratatui::init();
                             enable_mouse_capture()?;
                             if let Err(err) = watch_result {
@@ -168,9 +169,7 @@ impl<'a> ReplApp<'a> {
     }
 
     fn max_scroll_offset(&self, visible_height: usize) -> usize {
-        display_lines(self)
-            .len()
-            .saturating_sub(visible_height)
+        display_lines(self).len().saturating_sub(visible_height)
     }
 
     fn clamp_scroll(&mut self, visible_height: usize) {
@@ -192,10 +191,8 @@ impl<'a> ReplApp<'a> {
 
     fn push_command_line(&mut self, text: String, continuation: bool) {
         if continuation {
-            self.transcript.push(Line::from(vec![
-                Span::raw("   | "),
-                Span::raw(text),
-            ]));
+            self.transcript
+                .push(Line::from(vec![Span::raw("   | "), Span::raw(text)]));
         } else {
             let prompt = full_prompt(self.session);
             self.transcript.push(Line::from(vec![
@@ -324,10 +321,7 @@ fn full_prompt(session: &Session) -> String {
 
 fn current_input_line(app: &ReplApp<'_>) -> Line<'static> {
     if app.partial {
-        Line::from(vec![
-            Span::raw("   | "),
-            Span::raw(app.input.clone()),
-        ])
+        Line::from(vec![Span::raw("   | "), Span::raw(app.input.clone())])
     } else {
         let prompt = full_prompt(app.session);
         Line::from(vec![

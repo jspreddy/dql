@@ -639,8 +639,9 @@ fn apply_read_options<'a>(
 fn compare_operand(item: &Item, left: &Value, op: &CompareOp, rhs: &ConditionOperand) -> bool {
     match rhs {
         ConditionOperand::Value(value) => compare_values(left, op, value),
-        ConditionOperand::Field(field) => resolve_field_value(item, field)
-            .is_some_and(|right| compare_values(left, op, &right)),
+        ConditionOperand::Field(field) => {
+            resolve_field_value(item, field).is_some_and(|right| compare_values(left, op, &right))
+        }
     }
 }
 
@@ -904,7 +905,7 @@ fn is_quoted(value: &str) -> bool {
 mod tests {
     use super::*;
     use dql_models::TableMeta;
-    use dql_parser::{parse_statement, Condition, ConditionOperand, CompareOp};
+    use dql_parser::{parse_statement, CompareOp, Condition, ConditionOperand};
 
     #[test]
     fn backend_describes_created_table_metadata() {

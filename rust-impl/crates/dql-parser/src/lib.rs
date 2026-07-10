@@ -439,9 +439,7 @@ fn tokenize(input: &str) -> Result<(Vec<Token>, Vec<usize>), ParseError> {
                 chars.next();
                 if matches!(chars.peek().map(|(_, c)| *c), Some('"') | Some('\'')) {
                     offsets.push(start);
-                    tokens.push(Token::Binary(
-                        read_quoted(&mut chars, start)?.into_bytes(),
-                    ));
+                    tokens.push(Token::Binary(read_quoted(&mut chars, start)?.into_bytes()));
                 } else {
                     let mut ident = String::from(ch);
                     read_ident(&mut chars, &mut ident);

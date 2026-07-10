@@ -36,8 +36,7 @@ pub fn handle(
         PENDING_WATCH.with(|cell| {
             *cell.borrow_mut() = Some(tables);
         });
-        writeln!(out, "Starting watch… (q / Ctrl-C to stop)")
-            .map_err(|err| err.to_string())?;
+        writeln!(out, "Starting watch… (q / Ctrl-C to stop)").map_err(|err| err.to_string())?;
         return Ok(());
     }
     run_monitor(session, &tables)
@@ -148,18 +147,8 @@ fn render_capacity_lines(metas: &[TableMeta]) -> Vec<Line<'static>> {
         let cap = meta.consumed_capacity.get("__table__");
         let read = cap.map(|c| c.read).unwrap_or(0.0);
         let write = cap.map(|c| c.write).unwrap_or(0.0);
-        lines.push(capacity_line(
-            "",
-            "R",
-            meta.table_read_throughput(),
-            read,
-        ));
-        lines.push(capacity_line(
-            "",
-            "W",
-            meta.table_write_throughput(),
-            write,
-        ));
+        lines.push(capacity_line("", "R", meta.table_read_throughput(), read));
+        lines.push(capacity_line("", "W", meta.table_write_throughput(), write));
         for (index_name, gindex) in &meta.global_indexes {
             let idx_cap = meta.consumed_capacity.get(index_name);
             let read = idx_cap.map(|c| c.read).unwrap_or(0.0);

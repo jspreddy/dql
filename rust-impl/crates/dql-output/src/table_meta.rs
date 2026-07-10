@@ -95,10 +95,7 @@ pub fn format_table_detail(meta: &TableMeta, stats: &TableStats) -> String {
         lines.push(String::new());
         lines.push("Local Indexes:".to_string());
         for index in meta.local_indexes.values() {
-            let range = index
-                .range_key
-                .as_deref()
-                .unwrap_or("-");
+            let range = index.range_key.as_deref().unwrap_or("-");
             lines.push(format!(
                 "  {}  hash={}  range={}  projection={}",
                 index.name,
@@ -260,7 +257,10 @@ mod tests {
         assert!(output.contains("ts-index"));
         assert!(output.contains("Global Indexes:"));
         assert!(output.contains("baz-index"));
-        assert!(output.contains("0/2 (25%)"), "unexpected GSI read format:\n{output}");
+        assert!(
+            output.contains("0/2 (25%)"),
+            "unexpected GSI read format:\n{output}"
+        );
         assert!(output.contains("CREATE TABLE foobar"));
         // Keep a stable golden fragment for layout regressions.
         let expected_prefix = "\
