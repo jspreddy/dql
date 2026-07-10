@@ -423,6 +423,16 @@ pub fn plan_read(input: PlanInput<'_>) -> Result<QueryPlan, PlanError> {
         })
     };
     let Some(condition) = input.condition else {
+        if let Some(index_name) = input.using_index {
+            if index_name == "-" {
+                return scan_plan(None, None);
+            }
+            let index = input
+                .table
+                .get_index(index_name)
+                .map_err(|_| PlanError::UnknownIndex(index_name.to_string()))?;
+            return scan_plan(Some(index), None);
+        }
         return scan_plan(None, None);
     };
     let possible_hash = possible_hash_fields(condition);
@@ -849,6 +859,29 @@ mod tests {
             }),
             Err(PlanError::SelectScanRejected)
         );
+    }
+
+    #[test]
+    fn plans_scan_with_using_index_without_where() {
+        let meta = meta(
+            "CREATE TABLE foobar (id STRING HASH KEY, name STRING) \
+             GLOBAL INCLUDE INDEX ('gindex', name, ['foo'])",
+        );
+        let plan = plan_read(PlanInput {
+            table: &meta,
+            kind: ReadKind::Scan,
+            condition: None,
+            selection: Some(&Selection::CountAll),
+            using_index: Some("gindex"),
+            allow_select_scan: true,
+        })
+        .unwrap();
+        assert_eq!(plan.operation, Operation::Scan);
+        assert_eq!(
+            plan.index.as_ref().map(|index| index.name.as_str()),
+            Some("gindex")
+        );
+        assert!(!plan.follow_up_batch_get);
     }
 
     #[test]

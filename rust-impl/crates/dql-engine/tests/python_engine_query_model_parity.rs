@@ -579,18 +579,6 @@ mod test_select {
         assert_items_len(result, 1);
     }
 
-    macro_rules! ignored_select {
-        ($($name:ident => $reason:expr),+ $(,)?) => {
-            $(
-                #[test]
-                #[ignore = $reason]
-                fn $name() {
-                    pending(concat!("tests/test_queries.py::TestSelect::", stringify!($name)), $reason);
-                }
-            )+
-        };
-    }
-
     #[test]
     fn test_reverse() {
         let mut engine = InMemoryEngine::default();
@@ -818,9 +806,52 @@ mod test_select {
         assert_items_len(result, 2);
     }
 
-    ignored_select!(
-        test_count_smart_index => "needs count selection and index planner",
-    );
+    #[test]
+    fn test_count_smart_index() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, bar NUMBER RANGE KEY, ts NUMBER INDEX('ts-index'));
+                 INSERT INTO foobar (id, bar, ts) VALUES ('a', 1, 100), ('a', 2, 200)",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SELECT count(*) FROM foobar WHERE id = 'a' AND ts < 150")
+            .unwrap();
+        assert_eq!(result, StatementResult::Affected(1));
+    }
+
+    #[test]
+    fn test_select_non_projected() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, foo STRING) \
+                 GLOBAL KEYS INDEX ('gindex', foo);
+                 INSERT INTO foobar (id, foo, bar) VALUES ('a', 'a', 1), ('b', 'b', 2)",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SELECT bar FROM foobar WHERE foo = 'b' USING gindex")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items, vec![item(&[("bar", "2")])]);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    fn seeded_table() -> InMemoryEngine {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, range NUMBER RANGE KEY, foo NUMBER);
+                 INSERT INTO foobar (id, range, foo) VALUES ('a', 1, 1), ('b', 1, 2)",
+            )
+            .unwrap();
+        engine
+    }
 
     #[test]
     fn test_count() {
@@ -955,21 +986,6 @@ mod test_select {
             item(&[("id", "a"), ("bar", "3"), ("baz", "10")]),
         ];
         assert_eq!(ret, expected);
-    }
-
-    ignored_select!(
-        test_select_non_projected => "needs projection and index follow-up support",
-    );
-
-    fn seeded_table() -> InMemoryEngine {
-        let mut engine = InMemoryEngine::default();
-        engine
-            .execute(
-                "CREATE TABLE foobar (id STRING HASH KEY, range NUMBER RANGE KEY, foo NUMBER);
-                 INSERT INTO foobar (id, range, foo) VALUES ('a', 1, 1), ('b', 1, 2)",
-            )
-            .unwrap();
-        engine
     }
 }
 
@@ -2236,10 +2252,26 @@ mod test_regressions {
         };
     }
 
+    #[test]
+    fn test_count_on_index() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (
+                    id STRING HASH KEY,
+                    name STRING
+                ) GLOBAL INCLUDE INDEX ('gindex', name, ['foo'], THROUGHPUT(1, 1))",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SCAN count(*) FROM foobar USING gindex")
+            .unwrap();
+        assert_eq!(result, StatementResult::Affected(0));
+    }
+
     ignored_regression!(
         test_filter_banned_word => "needs DynamoDB expression reserved-word escaping",
         test_filter_with_dash => "needs dashed field path support",
-        test_count_on_index => "needs count on GSI support",
     );
 }
 

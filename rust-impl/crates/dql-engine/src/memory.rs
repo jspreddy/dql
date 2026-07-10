@@ -133,7 +133,17 @@ impl DynamoBackend for MemoryBackend {
             let keys = keys_in_to_items(&table_data.meta, keys_in)?;
             return self.batch_get_keys(table, &keys, request.consistent);
         }
-        let items = apply_read_options(table_data.items.iter(), request);
+        let mut items = apply_read_options(table_data.items.iter(), request);
+        if request.follow_up_batch_get && !matches!(request.selection, Selection::CountAll) {
+            let meta = &table_data.meta;
+            let keys = items
+                .iter()
+                .filter_map(|item| primary_key_item(meta, item))
+                .collect::<Vec<_>>();
+            items = self
+                .batch_get_keys(table, &keys, request.consistent)?
+                .output;
+        }
         let count = matches!(request.selection, Selection::CountAll).then_some(items.len());
         let op_name = match request.operation {
             ReadOperation::Query => "query",
@@ -568,6 +578,16 @@ impl ValueExt for Value {
             _ => None,
         }
     }
+}
+
+fn primary_key_item(meta: &dql_models::TableMeta, item: &Item) -> Option<Item> {
+    let hash = item.get(&meta.hash_key)?.clone();
+    let mut key = Item::new();
+    key.insert(meta.hash_key.clone(), hash);
+    if let Some(range_key) = &meta.range_key {
+        key.insert(range_key.clone(), item.get(range_key)?.clone());
+    }
+    Some(key)
 }
 
 fn apply_read_options<'a>(

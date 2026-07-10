@@ -4,16 +4,16 @@ overview: "Finish index-aware reads: PK-only query/scan when the index does not 
 todos:
   - id: step-1-aws-two-phase
     content: "Step 1: AWS two-phase read — PK projection then batch_get with selection"
-    status: pending
+    status: completed
   - id: step-2-memory-follow-up
     content: "Step 2: MemoryBackend implements follow_up_batch_get semantics"
-    status: pending
+    status: completed
   - id: step-3-count-index
     content: "Step 3: count(*) uses Query/Scan on chosen index (smart + USING GSI)"
-    status: pending
+    status: completed
   - id: step-4-unignore-tests
     content: "Step 4: Un-ignore test_select_non_projected, test_count_smart_index, test_count_on_index"
-    status: pending
+    status: completed
 isProject: false
 ---
 

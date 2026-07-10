@@ -14,7 +14,7 @@ use aws_sdk_dynamodb::types::{
 use aws_sdk_dynamodb::Client;
 use dql_expr::{
     render_condition, render_projection, render_update, renumber_rendered_expression,
-    RenderedExpression,
+    RenderedExpression, Visitor,
 };
 use dql_models::TableMeta;
 use dql_parser::{AlterAction, Condition, QueryOptions, Selection, UpdateExpr};
@@ -353,11 +353,12 @@ impl DynamoBackend for SdkBackend {
                     .describe_table(table)?
                     .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
                 let keys = keys_in_to_items(&meta, keys_in)?;
-                self.batch_get_items(table, &keys, request.consistent)?
+                self.batch_get_items(table, &keys, request.consistent, Some(request.selection))?
             }
         };
         if request.follow_up_batch_get {
-            items = self.batch_get_items(table, &items, request.consistent)?;
+            items =
+                self.batch_get_items(table, &items, request.consistent, Some(request.selection))?;
         }
         let count = matches!(request.selection, Selection::CountAll).then_some(items.len());
         let op_name = match request.operation {
@@ -462,7 +463,7 @@ impl DynamoBackend for SdkBackend {
         keys: &[Item],
         consistent: bool,
     ) -> Result<BackendResponse<Vec<Item>>, EngineError> {
-        let items = self.batch_get_items(table, keys, consistent)?;
+        let items = self.batch_get_items(table, keys, consistent, None)?;
         Ok(BackendResponse::new("batch_get_item", table, items))
     }
 
@@ -868,15 +869,12 @@ impl SdkBackend {
                         filter_condition.expression_values.as_ref(),
                     )?);
             }
-            if let Selection::Items(_) = request.selection {
-                let rendered = render_projection(request.selection);
-                if !rendered.expression.is_empty() {
-                    query = query
-                        .projection_expression(rendered.expression.clone())
-                        .set_expression_attribute_names(names_to_hash(
-                            rendered.attribute_names.clone(),
-                        ));
-                }
+            if let Some(rendered) = self.read_projection(table, request)? {
+                query = query
+                    .projection_expression(rendered.expression.clone())
+                    .set_expression_attribute_names(names_to_hash(
+                        rendered.attribute_names.clone(),
+                    ));
             }
             if let Some(last_key) = &last_key {
                 query = query.set_exclusive_start_key(Some(last_key.clone()));
@@ -954,15 +952,12 @@ impl SdkBackend {
                             .unwrap_or(&BTreeMap::new()),
                     )?));
             }
-            if let Selection::Items(_) = request.selection {
-                let rendered = render_projection(request.selection);
-                if !rendered.expression.is_empty() {
-                    scan = scan
-                        .projection_expression(rendered.expression.clone())
-                        .set_expression_attribute_names(names_to_hash(
-                            rendered.attribute_names.clone(),
-                        ));
-                }
+            if let Some(rendered) = self.read_projection(table, request)? {
+                scan = scan
+                    .projection_expression(rendered.expression.clone())
+                    .set_expression_attribute_names(names_to_hash(
+                        rendered.attribute_names.clone(),
+                    ));
             }
             if let Some(last_key) = &last_key {
                 scan = scan.set_exclusive_start_key(Some(last_key.clone()));
@@ -999,24 +994,62 @@ impl SdkBackend {
         Ok(items)
     }
 
+    fn read_projection(
+        &self,
+        table: &str,
+        request: &ReadRequest<'_>,
+    ) -> Result<Option<RenderedExpression>, EngineError> {
+        if matches!(request.selection, Selection::CountAll) {
+            return Ok(None);
+        }
+        if request.follow_up_batch_get {
+            let meta = self
+                .describe_table(table)?
+                .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+            return Ok(Some(render_field_list_projection(
+                &meta.primary_key_attributes(),
+            )));
+        }
+        match request.selection {
+            Selection::Items(_) => {
+                let rendered = render_projection(request.selection);
+                Ok((!rendered.expression.is_empty()).then_some(rendered))
+            }
+            _ => Ok(None),
+        }
+    }
+
     fn batch_get_items(
         &self,
         table: &str,
         partial_items: &[Item],
         consistent: bool,
+        selection: Option<&Selection>,
     ) -> Result<Vec<Item>, EngineError> {
         let meta = self
             .describe_table(table)?
             .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let projection = selection.and_then(|selection| {
+            let rendered = render_projection(selection);
+            (!rendered.expression.is_empty()).then_some(rendered)
+        });
         let mut results = Vec::new();
         for chunk in partial_items.chunks(BATCH_GET_CHUNK) {
             let keys = chunk
                 .iter()
                 .map(|item| primary_key_from_meta(&meta, item))
                 .collect::<Result<Vec<_>, _>>()?;
-            let keys_and_attributes = aws_sdk_dynamodb::types::KeysAndAttributes::builder()
+            let mut keys_and_attributes = aws_sdk_dynamodb::types::KeysAndAttributes::builder()
                 .set_keys(Some(keys))
-                .consistent_read(consistent)
+                .consistent_read(consistent);
+            if let Some(rendered) = &projection {
+                keys_and_attributes = keys_and_attributes
+                    .projection_expression(rendered.expression.clone())
+                    .set_expression_attribute_names(names_to_hash(
+                        rendered.attribute_names.clone(),
+                    ));
+            }
+            let keys_and_attributes = keys_and_attributes
                 .build()
                 .map_err(|err| EngineError::Runtime(err.to_string()))?;
             let response = self
@@ -1092,6 +1125,20 @@ fn resolve_alter_throughput_value(
             .parse::<i64>()
             .map_err(|err: std::num::ParseIntError| EngineError::Runtime(err.to_string())),
         _ => Err(EngineError::Runtime("invalid throughput value".to_string())),
+    }
+}
+
+fn render_field_list_projection(fields: &[String]) -> RenderedExpression {
+    let mut visitor = Visitor::with_default_reserved_words();
+    let expression = fields
+        .iter()
+        .map(|field| visitor.get_field(field))
+        .collect::<Vec<_>>()
+        .join(", ");
+    RenderedExpression {
+        expression,
+        attribute_names: visitor.attribute_names(),
+        expression_values: visitor.expression_values(),
     }
 }
 
