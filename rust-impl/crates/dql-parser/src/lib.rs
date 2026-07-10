@@ -224,6 +224,8 @@ pub struct QueryOptions {
     /// `None` means no explicit direction clause was present.
     pub descending: Option<bool>,
     pub throttle: Option<ThrottleConfig>,
+    /// Optional `SAVE <filename>` target for SELECT/SCAN exports.
+    pub save_file: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -529,6 +531,12 @@ fn merge_query_options(mut base: QueryOptions, tail: QueryOptions) -> QueryOptio
     }
     if tail.descending.is_some() {
         base.descending = tail.descending;
+    }
+    if tail.throttle.is_some() {
+        base.throttle = tail.throttle;
+    }
+    if tail.save_file.is_some() {
+        base.save_file = tail.save_file;
     }
     base.consistent |= tail.consistent;
     base
@@ -894,6 +902,7 @@ impl Parser {
         let table = self.expect_ident()?;
         let (condition, tail_options) = self.parse_query_tail()?;
         options = merge_query_options(options, tail_options);
+        reject_count_with_save(&selection, &options)?;
         Ok(Statement::Scan {
             table,
             selection,
@@ -912,6 +921,7 @@ impl Parser {
         let table = self.expect_ident()?;
         let (condition, tail_options) = self.parse_query_tail()?;
         options = merge_query_options(options, tail_options);
+        reject_count_with_save(&selection, &options)?;
         Ok(Statement::Select {
             table,
             selection,
@@ -986,11 +996,48 @@ impl Parser {
                 options.descending = Some(false);
             } else if self.accept_keyword("THROTTLE") {
                 options.throttle = Some(self.parse_throttle_clause()?);
+            } else if self.accept_keyword("SAVE") {
+                options.save_file = Some(self.parse_filename()?);
             } else {
                 return Err(self.error("unexpected token in query options"));
             }
         }
         Ok(())
+    }
+
+    /// Python `filename = quotedString | Regex(r"[0-9A-Za-z/_\-\.]+")`.
+    fn parse_filename(&mut self) -> Result<String, ParseError> {
+        if let Some(Token::String(value)) = self.peek().cloned() {
+            self.pos += 1;
+            return Ok(value);
+        }
+        let mut path = String::new();
+        loop {
+            match self.peek().cloned() {
+                Some(Token::Ident(value)) | Some(Token::Number(value)) => {
+                    self.pos += 1;
+                    path.push_str(&value);
+                }
+                Some(Token::Symbol('/')) => {
+                    self.pos += 1;
+                    path.push('/');
+                }
+                Some(Token::Symbol('-')) if !path.is_empty() => {
+                    self.pos += 1;
+                    path.push('-');
+                }
+                Some(Token::Symbol('.')) if !path.is_empty() => {
+                    self.pos += 1;
+                    path.push('.');
+                }
+                _ => break,
+            }
+        }
+        if path.is_empty() {
+            Err(self.error("expected filename after SAVE"))
+        } else {
+            Ok(path)
+        }
     }
 
     fn parse_keys_in_list(&mut self) -> Result<Vec<Vec<Value>>, ParseError> {
@@ -1784,6 +1831,14 @@ fn token_to_source(token: &Token) -> String {
     }
 }
 
+fn reject_count_with_save(selection: &Selection, options: &QueryOptions) -> Result<(), ParseError> {
+    if matches!(selection, Selection::CountAll) && options.save_file.is_some() {
+        Err(ParseError::new("Cannot use count(*) with SAVE"))
+    } else {
+        Ok(())
+    }
+}
+
 fn parse_update_expr_raw(raw: &str) -> Result<UpdateExpr, ParseError> {
     let mut clauses = Vec::new();
     let mut current_kind = None;
@@ -1960,6 +2015,31 @@ mod tests {
             }
             other => panic!("unexpected statement: {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_save_clause_on_select_and_scan() {
+        let statement = parse_statement("SELECT * FROM t SAVE 'out.json'").unwrap();
+        match statement {
+            Statement::Select { options, .. } => {
+                assert_eq!(options.save_file.as_deref(), Some("out.json"));
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+
+        let statement = parse_statement("SCAN * FROM t SAVE /tmp/out.csv").unwrap();
+        match statement {
+            Statement::Scan { options, .. } => {
+                assert_eq!(options.save_file.as_deref(), Some("/tmp/out.csv"));
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+
+        let err = parse_statement("SELECT count(*) FROM t SAVE 'out.json'").unwrap_err();
+        assert!(
+            err.to_string().contains("count(*)"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

@@ -451,6 +451,14 @@ mod test_query_options {
         assert_parse_ok("UPDATE foobars SET foo = 1 KEYS IN 'a' USING idx");
         assert_parse_ok("UPDATE foobars SET foo = 1 WHERE id = 'a' USING idx RETURNS ALL NEW");
     }
+
+    #[test]
+    fn parses_save_clause() {
+        assert_parse_ok("SELECT * FROM foobars SAVE 'out.json'");
+        assert_parse_ok("SCAN * FROM foobars SAVE out.csv");
+        assert_parse_ok("SELECT * FROM foobars WHERE id = 'a' LIMIT 5 SAVE /tmp/out.json");
+        assert_parse_err("SELECT count(*) FROM foobars SAVE 'out.json'");
+    }
 }
 
 mod phase_1_statements {
