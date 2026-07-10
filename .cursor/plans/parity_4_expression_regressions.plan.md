@@ -4,16 +4,16 @@ overview: "Fix reserved-word and dashed-field path regressions by extending the 
 todos:
   - id: step-1-dashed-paths
     content: "Step 1: Parser accepts hyphenated field paths (WHERE, INSERT, UPDATE)"
-    status: pending
+    status: completed
   - id: step-2-reserved-words
     content: "Step 2: Full DynamoDB reserved-word list in dql-expr Visitor"
-    status: pending
+    status: completed
   - id: step-3-memory-resolve
     content: "Step 3: Memory compare_operand uses resolve_field_value"
-    status: pending
+    status: completed
   - id: step-4-unignore-tests
     content: "Step 4: Un-ignore test_filter_banned_word and test_filter_with_dash"
-    status: pending
+    status: completed
 isProject: false
 ---
 
