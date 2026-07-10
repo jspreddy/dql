@@ -113,16 +113,12 @@ pub fn help(
     out: &mut dyn Write,
     _repl: bool,
 ) -> Result<(), String> {
-    if let Some(topic) = args.first() {
-        if let Some(text) = help::statement_help(topic) {
-            write!(out, "{text}").map_err(|err| err.to_string())?;
-            return Ok(());
-        }
-        return Err(format!("No help available for {topic}"));
-    }
-    writeln!(out, "{}", help::GENERAL).map_err(|err| err.to_string())?;
     let _ = session;
-    Ok(())
+    let width = crossterm::terminal::size()
+        .map(|(width, _)| width as usize)
+        .unwrap_or(80)
+        .max(40);
+    help::write_help(args, out, width)
 }
 
 pub fn watch_disabled(

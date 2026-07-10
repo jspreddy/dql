@@ -622,7 +622,17 @@ impl<'a> ReplApp<'a> {
         let output_config = self.session.config.output_config();
         let mut backend = BufferBackend::default();
         let rich_context = self.session.engine.rich_context();
-        if output_config.format == OutputFormat::Rich && first == "ls" {
+        if first == "help" {
+            let arglist = execute_text
+                .split_once(char::is_whitespace)
+                .map(|(_, rest)| rest.trim())
+                .unwrap_or("");
+            let (args, _) = crate::meta::parse_repl_args(arglist);
+            match crate::help::render_lines(&args, terminal_width()) {
+                Ok(lines) => self.output_lines.extend(lines),
+                Err(err) => self.push_error(err),
+            }
+        } else if output_config.format == OutputFormat::Rich && first == "ls" {
             let arglist = execute_text
                 .split_once(char::is_whitespace)
                 .map(|(_, rest)| rest.trim())
