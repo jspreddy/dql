@@ -2240,18 +2240,6 @@ mod test_delete {
 mod test_regressions {
     use super::*;
 
-    macro_rules! ignored_regression {
-        ($($name:ident => $reason:expr),+ $(,)?) => {
-            $(
-                #[test]
-                #[ignore = $reason]
-                fn $name() {
-                    pending(concat!("tests/test_queries.py::TestRegressions::", stringify!($name)), $reason);
-                }
-            )+
-        };
-    }
-
     #[test]
     fn test_count_on_index() {
         let mut engine = InMemoryEngine::default();
@@ -2269,10 +2257,45 @@ mod test_regressions {
         assert_eq!(result, StatementResult::Affected(0));
     }
 
-    ignored_regression!(
-        test_filter_banned_word => "needs DynamoDB expression reserved-word escaping",
-        test_filter_with_dash => "needs dashed field path support",
-    );
+    #[test]
+    fn test_filter_banned_word() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY)")
+            .unwrap();
+        engine
+            .execute("INSERT INTO foobar (id='a', hash=1), (id='b', hash=4)")
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE hash in (1, 2, 3)")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items, vec![item(&[("id", "a"), ("hash", "1")])]);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_filter_with_dash() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute("CREATE TABLE foobar (id STRING HASH KEY)")
+            .unwrap();
+        engine
+            .execute("INSERT INTO foobar (id='a', my-field=1), (id='b', my-field=4)")
+            .unwrap();
+        let result = engine
+            .execute("SCAN * FROM foobar WHERE my-field = 1")
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(items, vec![item(&[("id", "a"), ("my-field", "1")])]);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
 }
 
 mod test_models {
