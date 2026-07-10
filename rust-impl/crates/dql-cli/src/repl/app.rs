@@ -2,7 +2,7 @@ use crate::meta::lifecycle::take_exit_request;
 #[cfg(feature = "watch")]
 use crate::meta::watch::take_watch_request;
 use crate::session::Session;
-use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use dql_engine::StatementResult;
 use dql_output::{build_rich_layout, render_result, DisplayBackend, OutputFormat};
 use ratatui::style::{Color, Style};
@@ -40,20 +40,24 @@ impl dql_output::DisplayBackend for BufferBackend {
 
 pub fn run_repl(session: &mut Session) -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = ratatui::init();
-    enable_mouse_capture()?;
+    // Wheel → Up/Down on the alternate screen, without mouse reporting, so
+    // native click-drag text selection keeps working.
+    enable_alternate_scroll()?;
     let result = repl_loop(session, &mut terminal);
-    let _ = disable_mouse_capture();
+    let _ = disable_alternate_scroll();
     ratatui::restore();
     session.history.try_to_write_history();
     result
 }
 
-fn enable_mouse_capture() -> io::Result<()> {
-    crossterm::execute!(io::stdout(), event::EnableMouseCapture)
+fn enable_alternate_scroll() -> io::Result<()> {
+    write!(io::stdout(), "\x1b[?1007h")?;
+    io::stdout().flush()
 }
 
-fn disable_mouse_capture() -> io::Result<()> {
-    crossterm::execute!(io::stdout(), event::DisableMouseCapture)
+fn disable_alternate_scroll() -> io::Result<()> {
+    write!(io::stdout(), "\x1b[?1007l")?;
+    io::stdout().flush()
 }
 
 fn terminal_width() -> usize {
@@ -74,76 +78,124 @@ fn repl_loop(
     terminal: &mut ratatui::DefaultTerminal,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut app = ReplApp::new(session);
+    let mut needs_redraw = true;
     loop {
-        terminal.draw(|frame| draw(frame, &app))?;
-        if event::poll(Duration::from_millis(100))? {
-            match event::read()? {
-                Event::Key(key) => match key.code {
-                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        app.session.engine.reset_fragment();
-                        app.transcript.truncate(app.command_start);
-                        app.input.clear();
-                        app.partial = false;
-                        app.scroll_offset = 0;
+        // Only redraw when state changes. Continuous redraws clear the
+        // terminal's native text selection in many emulators.
+        if needs_redraw {
+            terminal.draw(|frame| draw(frame, &app))?;
+            needs_redraw = false;
+        }
+        if !event::poll(Duration::from_millis(250))? {
+            if take_exit_request() {
+                break;
+            }
+            continue;
+        }
+        match event::read()? {
+            Event::Key(key) => match key.code {
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    app.session.engine.reset_fragment();
+                    app.transcript.truncate(app.command_start);
+                    app.input.clear();
+                    app.partial = false;
+                    app.scroll_offset = 0;
+                    needs_redraw = true;
+                }
+                KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    let _ = app.session.history.remove_items(1);
+                    break;
+                }
+                KeyCode::Enter => {
+                    let line = app.input.clone();
+                    let continuation = app.partial;
+                    app.history_index = None;
+                    if !line.trim().is_empty() {
+                        app.session.history.add_entry(line.clone());
                     }
-                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        let _ = app.session.history.remove_items(1);
+                    app.handle_submit(line, continuation)?;
+                    app.input.clear();
+                    app.scroll_offset = 0;
+                    needs_redraw = true;
+                    if take_exit_request() {
                         break;
                     }
-                    KeyCode::Enter => {
-                        let line = app.input.clone();
-                        let continuation = app.partial;
-                        app.history_index = None;
-                        if !line.trim().is_empty() {
-                            app.session.history.add_entry(line.clone());
+                    #[cfg(feature = "watch")]
+                    if let Some(tables) = take_watch_request() {
+                        let _ = disable_alternate_scroll();
+                        ratatui::restore();
+                        let watch_result = crate::meta::watch::run_monitor(app.session, &tables);
+                        *terminal = ratatui::init();
+                        enable_alternate_scroll()?;
+                        if let Err(err) = watch_result {
+                            app.transcript
+                                .push(Line::from(format!("watch error: {err}")));
                         }
-                        app.handle_submit(line, continuation)?;
-                        app.input.clear();
-                        app.scroll_offset = 0;
-                        if take_exit_request() {
-                            break;
-                        }
-                        #[cfg(feature = "watch")]
-                        if let Some(tables) = take_watch_request() {
-                            let _ = disable_mouse_capture();
-                            ratatui::restore();
-                            let watch_result =
-                                crate::meta::watch::run_monitor(app.session, &tables);
-                            *terminal = ratatui::init();
-                            enable_mouse_capture()?;
-                            if let Err(err) = watch_result {
-                                app.transcript
-                                    .push(Line::from(format!("watch error: {err}")));
-                            }
-                            app.clamp_scroll(terminal_height());
-                        }
+                        app.clamp_scroll(terminal_height());
+                        needs_redraw = true;
                     }
-                    KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                        app.scroll_up(3, terminal_height());
+                }
+                KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    app.history_up();
+                    needs_redraw = true;
+                }
+                KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    app.history_down();
+                    needs_redraw = true;
+                }
+                KeyCode::Up if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    app.scroll_up(3, terminal_height());
+                    needs_redraw = true;
+                }
+                KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    app.scroll_down(3);
+                    needs_redraw = true;
+                }
+                // Alternate-scroll sends Up/Down for the mouse wheel. Prefer
+                // transcript scroll when there is overflow; otherwise history.
+                KeyCode::Up => {
+                    let height = terminal_height();
+                    if app.history_index.is_some() {
+                        app.history_up();
+                    } else if app.scroll_offset < app.max_scroll_offset(height) {
+                        app.scroll_up(3, height);
+                    } else {
+                        app.history_up();
                     }
-                    KeyCode::Down if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                    needs_redraw = true;
+                }
+                KeyCode::Down => {
+                    if app.history_index.is_some() {
+                        app.history_down();
+                    } else if app.scroll_offset > 0 {
                         app.scroll_down(3);
+                    } else {
+                        app.history_down();
                     }
-                    KeyCode::Up => app.history_up(),
-                    KeyCode::Down => app.history_down(),
-                    KeyCode::Tab => app.complete(),
-                    KeyCode::Backspace => {
-                        app.input.pop();
-                    }
-                    KeyCode::Char(ch) => {
-                        app.input.push(ch);
-                        app.scroll_offset = 0;
-                    }
-                    _ => {}
-                },
-                Event::Mouse(mouse) => match mouse.kind {
-                    MouseEventKind::ScrollUp => app.scroll_up(3, terminal_height()),
-                    MouseEventKind::ScrollDown => app.scroll_down(3),
-                    _ => {}
-                },
-                Event::Resize(_, _) => app.clamp_scroll(terminal_height()),
+                    needs_redraw = true;
+                }
+                KeyCode::Tab => {
+                    app.complete();
+                    needs_redraw = true;
+                }
+                KeyCode::Backspace => {
+                    app.input.pop();
+                    needs_redraw = true;
+                }
+                KeyCode::Char(ch) => {
+                    app.input.push(ch);
+                    app.scroll_offset = 0;
+                    needs_redraw = true;
+                }
                 _ => {}
+            },
+            Event::Resize(_, _) => {
+                app.clamp_scroll(terminal_height());
+                needs_redraw = true;
             }
+            // Do not enable mouse reporting: any tracking mode steals
+            // click-drag from the terminal and breaks native selection.
+            _ => {}
         }
         if take_exit_request() {
             break;
