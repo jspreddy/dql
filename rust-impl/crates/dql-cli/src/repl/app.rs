@@ -145,14 +145,23 @@ fn panel_title_line(title: &str, status: Option<&str>, fg: Color) -> Line<'stati
     ))
 }
 
+fn panel_top_border(width: usize, color: Color) -> Line<'static> {
+    let rule = "─".repeat(width.max(1));
+    Line::from(Span::styled(
+        rule,
+        Style::default().fg(color).add_modifier(Modifier::BOLD),
+    ))
+}
+
 fn command_panel_lines(
     title: &str,
     status: Option<&str>,
     command_lines: &[String],
     title_fg: Color,
+    width: usize,
 ) -> Vec<Line<'static>> {
     let mut lines = vec![
-        Line::from(""), // top padding
+        panel_top_border(width, title_fg),
         panel_title_line(title, status, title_fg),
     ];
     lines.extend(highlight_command(command_lines));
@@ -160,8 +169,7 @@ fn command_panel_lines(
     lines
 }
 
-/// Push a blank separator, the consolidated command panel, then result lines
-/// into terminal scrollback.
+/// Push the consolidated command panel and result lines into terminal scrollback.
 fn flush_to_scrollback(terminal: &mut ReplTerminal, app: &mut ReplApp<'_>) -> io::Result<()> {
     let command_lines = std::mem::take(&mut app.committed_command);
     let output = std::mem::take(&mut app.output_lines);
@@ -172,21 +180,30 @@ fn flush_to_scrollback(terminal: &mut ReplTerminal, app: &mut ReplApp<'_>) -> io
         return Ok(());
     }
 
-    // Blank line before every input block.
-    terminal.insert_before(1, |buf| {
-        Paragraph::new(Line::from("")).render(buf.area, buf);
-    })?;
+    let width = terminal_width();
 
     if !command_lines.is_empty() {
         let title = full_prompt(app.session);
         let status = if ok { "ok" } else { "error" };
-        let lines = command_panel_lines(&title, Some(status), &command_lines, status_panel_fg(ok));
+        let lines = command_panel_lines(
+            &title,
+            Some(status),
+            &command_lines,
+            status_panel_fg(ok),
+            width,
+        );
         let height = lines.len() as u16;
         let bg = status_panel_bg(ok);
         terminal.insert_before(height, |buf| {
             Paragraph::new(lines)
                 .style(Style::default().bg(bg))
                 .render(buf.area, buf);
+        })?;
+    }
+
+    if !command_lines.is_empty() && !output.is_empty() {
+        terminal.insert_before(1, |buf| {
+            Paragraph::new(Line::from("")).render(buf.area, buf);
         })?;
     }
 
@@ -199,17 +216,6 @@ fn flush_to_scrollback(terminal: &mut ReplTerminal, app: &mut ReplApp<'_>) -> io
         })?;
     }
 
-    // Status-colored rule below the result.
-    let rule_width = terminal_width().max(1);
-    let rule = "─".repeat(rule_width);
-    let rule_style = Style::default()
-        .fg(status_panel_fg(ok))
-        .add_modifier(Modifier::BOLD);
-    terminal.insert_before(1, |buf| {
-        Paragraph::new(Line::from(Span::styled(rule, rule_style))).render(buf.area, buf);
-    })?;
-
-    // Trailing blank line after the result block.
     terminal.insert_before(1, |buf| {
         Paragraph::new(Line::from("")).render(buf.area, buf);
     })?;
@@ -789,20 +795,21 @@ fn full_prompt(session: &Session) -> String {
     }
 }
 
-fn live_panel_lines(app: &ReplApp<'_>) -> Vec<Line<'static>> {
+fn live_panel_lines(app: &ReplApp<'_>, width: usize) -> Vec<Line<'static>> {
     let title = full_prompt(app.session);
-    command_panel_lines(&title, None, &app.lines, Color::Cyan)
+    command_panel_lines(&title, None, &app.lines, Color::Cyan, width)
 }
 
 fn draw(frame: &mut Frame, app: &ReplApp<'_>) {
     let area = frame.area();
-    let lines = live_panel_lines(app);
+    let width = area.width.max(1) as usize;
+    let lines = live_panel_lines(app, width);
     frame.render_widget(
         Paragraph::new(lines).style(Style::default().bg(live_panel_bg())),
         area,
     );
 
-    // Caret on the active edit row (below top pad + title).
+    // Caret on the active edit row (below top border + title).
     if area.width > 0 && area.height > 2 {
         let row = (2 + app.row as u16).min(area.height.saturating_sub(1));
         let col = (app.col as u16).min(area.width.saturating_sub(1));
