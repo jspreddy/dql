@@ -172,6 +172,7 @@ pub fn table_meta_from_description(table: &TableDescription) -> Result<TableMeta
             .table_status()
             .map(table_status_to_model)
             .unwrap_or(TableStatus::Active),
+        consumed_capacity: BTreeMap::new(),
     })
 }
 

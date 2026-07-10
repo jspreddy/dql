@@ -128,6 +128,27 @@ impl SdkBackend {
         self.rate_limit = Some(RateLimit::new(read_per_second, write_per_second));
     }
 
+    /// Attach CloudWatch consumed capacity metrics when the `cloudwatch` feature is enabled.
+    pub fn attach_cloudwatch_metrics(&self, meta: &mut TableMeta) -> Result<(), EngineError> {
+        #[cfg(feature = "cloudwatch")]
+        {
+            return self.block_on(crate::cloudwatch::attach_metrics(&self.config, meta));
+        }
+        #[cfg(not(feature = "cloudwatch"))]
+        {
+            let _ = meta;
+            Ok(())
+        }
+    }
+
+    pub fn is_local(&self) -> bool {
+        self.config.host.is_some()
+    }
+
+    pub fn sdk_config(&self) -> &SdkConfig {
+        &self.config
+    }
+
     fn block_on<F: std::future::Future>(&self, future: F) -> F::Output {
         self.runtime.block_on(future)
     }

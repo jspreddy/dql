@@ -221,6 +221,42 @@ impl RuntimeEngine {
         }
     }
 
+    /// Describe a table and optionally attach CloudWatch consumed capacity.
+    pub fn describe_with_metrics(
+        &mut self,
+        table: &str,
+        refresh: bool,
+        metrics: bool,
+    ) -> Result<Option<dql_models::TableMeta>, EngineError> {
+        let mut meta = self.describe(table, refresh)?;
+        if metrics {
+            if let Some(meta) = meta.as_mut() {
+                self.attach_cloudwatch_metrics(meta)?;
+            }
+        }
+        Ok(meta)
+    }
+
+    pub fn attach_cloudwatch_metrics(
+        &self,
+        meta: &mut dql_models::TableMeta,
+    ) -> Result<(), EngineError> {
+        match self {
+            Self::Memory(_) => {
+                // In-memory / offline: no CloudWatch.
+                Ok(())
+            }
+            Self::Remote(engine) => engine.inner().backend().attach_cloudwatch_metrics(meta),
+        }
+    }
+
+    pub fn is_local_or_memory(&self) -> bool {
+        match self {
+            Self::Memory(_) => true,
+            Self::Remote(engine) => engine.inner().backend().is_local(),
+        }
+    }
+
     pub fn table_item_count(&self, table: &str) -> usize {
         match self {
             Self::Memory(engine) => engine.inner().table_item_count(table),

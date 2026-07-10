@@ -65,12 +65,17 @@ pub fn format_table_detail(meta: &TableMeta, stats: &TableStats) -> String {
     lines.push(format!("Status: {:?}", meta.status));
     lines.push(format!("Items: {}", stats.item_count));
     lines.push(format!("Size: {}", format_size(stats.size_bytes, BINARY)));
-    if let Some(read) = meta.total_read_throughput() {
-        lines.push(format!("Read: {}", format_throughput(Some(read), None)));
-    }
-    if let Some(write) = meta.total_write_throughput() {
-        lines.push(format!("Write: {}", format_throughput(Some(write), None)));
-    }
+    let cap = meta.consumed_capacity.get("__table__");
+    let read_used = cap.map(|c| c.read);
+    let write_used = cap.map(|c| c.write);
+    lines.push(format!(
+        "Read: {}",
+        format_throughput(meta.table_read_throughput(), read_used)
+    ));
+    lines.push(format!(
+        "Write: {}",
+        format_throughput(meta.table_write_throughput(), write_used)
+    ));
     lines.push(String::new());
     lines.push(meta.schema_dql());
     lines.join("\n")

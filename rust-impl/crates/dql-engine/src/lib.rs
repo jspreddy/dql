@@ -1,4 +1,6 @@
 mod aws;
+#[cfg(feature = "cloudwatch")]
+mod cloudwatch;
 mod convert;
 mod engine;
 mod file_io;

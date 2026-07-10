@@ -5,9 +5,14 @@ license.workspace = true
 version.workspace = true
 publish = false
 
+[features]
+default = []
+cloudwatch = ["dep:aws-sdk-cloudwatch"]
+
 [dependencies]
 aws-config = "1.8.18"
 aws-credential-types = "1.2.14"
+aws-sdk-cloudwatch = { version = "1.116.0", optional = true }
 aws-sdk-dynamodb = "1.116.0"
 aws-sdk-sts.workspace = true
 dql-expr = { path = "../dql-expr" }

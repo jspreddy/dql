@@ -12,7 +12,9 @@ pub fn handle(
 ) -> Result<(), String> {
     let refresh = parse_bool(kwargs.get("refresh"), false);
     let metrics = parse_bool(kwargs.get("metrics"), false);
-    let _ = metrics;
+    if metrics {
+        warn_metrics_availability(session, out)?;
+    }
     if args.is_empty() {
         let tables = session
             .engine
@@ -53,7 +55,7 @@ pub fn handle(
             let name = &filtered[0];
             let meta = session
                 .engine
-                .describe(name, refresh)
+                .describe_with_metrics(name, refresh, metrics)
                 .map_err(|err| err.to_string())?
                 .ok_or_else(|| format!("Table {name:?} not found"))?;
             let count = session.engine.table_item_count(name);
@@ -76,7 +78,7 @@ pub fn handle(
             for name in filtered {
                 let meta = session
                     .engine
-                    .describe(&name, refresh)
+                    .describe_with_metrics(&name, refresh, metrics)
                     .map_err(|err| err.to_string())?
                     .ok_or_else(|| format!("Table {name:?} not found"))?;
                 let count = session.engine.table_item_count(&name);
@@ -93,6 +95,31 @@ pub fn handle(
             Ok(())
         }
     }
+}
+
+fn warn_metrics_availability(session: &Session, out: &mut dyn Write) -> Result<(), String> {
+    if session.engine.is_local_or_memory() {
+        writeln!(
+            out,
+            "note: metrics=True has no CloudWatch data for local/memory backends"
+        )
+        .map_err(|err| err.to_string())?;
+        return Ok(());
+    }
+    #[cfg(not(feature = "watch"))]
+    {
+        let _ = session;
+        writeln!(
+            out,
+            "note: CloudWatch metrics require rebuilding with --features watch"
+        )
+        .map_err(|err| err.to_string())?;
+    }
+    #[cfg(feature = "watch")]
+    {
+        let _ = (session, out);
+    }
+    Ok(())
 }
 
 fn parse_bool(value: Option<&String>, default: bool) -> bool {

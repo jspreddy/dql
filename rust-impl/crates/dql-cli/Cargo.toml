@@ -8,6 +8,10 @@ version.workspace = true
 name = "dql"
 path = "src/main.rs"
 
+[features]
+default = []
+watch = ["dql-engine/cloudwatch"]
+
 [dependencies]
 clap.workspace = true
 crossterm.workspace = true

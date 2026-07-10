@@ -100,6 +100,12 @@ impl QueryIndex {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ConsumedCapacity {
+    pub read: f64,
+    pub write: f64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct TableMeta {
     pub name: String,
     pub attrs: BTreeMap<String, TableField>,
@@ -110,6 +116,8 @@ pub struct TableMeta {
     pub throughput: Option<Throughput>,
     pub billing_mode: BillingMode,
     pub status: TableStatus,
+    /// CloudWatch consumed capacity keyed by `"__table__"` or GSI name.
+    pub consumed_capacity: BTreeMap<String, ConsumedCapacity>,
 }
 
 impl TableMeta {
@@ -234,6 +242,7 @@ impl TableMeta {
                 BillingMode::Provisioned
             },
             status: TableStatus::Active,
+            consumed_capacity: BTreeMap::new(),
         })
     }
 
@@ -318,6 +327,14 @@ impl TableMeta {
                     .filter_map(|index| throughput_number(index.throughput.as_ref(), false))
                     .sum::<f64>()
         })
+    }
+
+    pub fn table_read_throughput(&self) -> Option<f64> {
+        self.throughput_value(true)
+    }
+
+    pub fn table_write_throughput(&self) -> Option<f64> {
+        self.throughput_value(false)
     }
 
     fn throughput_value(&self, read: bool) -> Option<f64> {
