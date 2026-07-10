@@ -1,22 +1,22 @@
 ---
 name: Parity 5 SAVE LOAD Formats
-overview: "Add SELECT/SCAN … SAVE and complete LOAD format parity using JSON lines, CSV, gzip wrappers, and MessagePack as the open-source binary replacement for Python pickle. Un-ignore test_file_formats with a Rust-native MessagePack round-trip."
+overview: Add SELECT/SCAN … SAVE and complete LOAD format parity using JSON lines, CSV, gzip wrappers, and MessagePack as the open-source binary replacement for Python pickle. Un-ignore test_file_formats with a Rust-native MessagePack round-trip.
 todos:
   - id: step-1-parser-save
     content: "Step 1: Parse SAVE filename on SELECT/SCAN"
-    status: pending
+    status: completed
   - id: step-2-json-csv-gzip
     content: "Step 2: Engine SAVE/LOAD for JSON lines, CSV, and gzip"
-    status: pending
+    status: completed
   - id: step-3-messagepack
     content: "Step 3: MessagePack (.msgpack / default binary) replaces pickle"
-    status: pending
+    status: completed
   - id: step-4-migration-docs
     content: "Step 4: Document pickle→MessagePack migration and rejection of .p pickle"
-    status: pending
+    status: completed
   - id: step-5-unignore-tests
     content: "Step 5: Un-ignore/adapt test_file_formats for MessagePack"
-    status: pending
+    status: completed
 isProject: false
 ---
 
