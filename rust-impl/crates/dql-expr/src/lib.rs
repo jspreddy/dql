@@ -6,6 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
 
+mod reserved_words;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExprError {
     message: String,
@@ -707,13 +709,10 @@ fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
 }
 
 fn default_reserved_words() -> BTreeSet<String> {
-    [
-        "ABORT", "ACTION", "ADD", "COUNT", "DELETE", "FROM", "HASH", "INDEX", "ORDER", "RANGE",
-        "SELECT", "SET", "SIZE", "TABLE", "UPDATE",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect()
+    reserved_words::DYNAMODB_RESERVED_WORDS
+        .iter()
+        .map(|word| (*word).to_string())
+        .collect()
 }
 
 fn is_number(value: &str) -> bool {
@@ -1121,6 +1120,23 @@ mod tests {
                 ("#f1".to_string(), "order".to_string()),
                 ("#f2".to_string(), "foo-bar".to_string()),
                 ("#f3".to_string(), "_baz".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn visitor_escapes_full_reserved_word_list() {
+        let mut visitor = Visitor::with_default_reserved_words();
+        assert_eq!(visitor.get_field("hash"), "#f1");
+        assert_eq!(visitor.get_field("TIMESTAMP"), "#f2");
+        assert_eq!(visitor.get_field("STATUS"), "#f3");
+        assert_eq!(visitor.get_field("plain"), "plain");
+        assert_eq!(
+            visitor.attribute_names().unwrap(),
+            BTreeMap::from([
+                ("#f1".to_string(), "hash".to_string()),
+                ("#f2".to_string(), "TIMESTAMP".to_string()),
+                ("#f3".to_string(), "STATUS".to_string()),
             ])
         );
     }
