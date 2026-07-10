@@ -27,25 +27,23 @@ pub fn version(
 }
 
 pub fn exit(
-    session: &mut Session,
+    _session: &mut Session,
     _: &[String],
     _: &HashMap<String, String>,
     _out: &mut dyn Write,
     _repl: bool,
 ) -> Result<(), String> {
-    let _ = session.history.remove_items(1);
     SHOULD_EXIT.with(|flag| flag.set(true));
     Ok(())
 }
 
 pub fn clear(
-    session: &mut Session,
+    _session: &mut Session,
     _: &[String],
     _: &HashMap<String, String>,
     _out: &mut dyn Write,
     repl: bool,
 ) -> Result<(), String> {
-    let _ = session.history.remove_items(1);
     if !repl {
         crossterm::execute!(
             io::stdout(),

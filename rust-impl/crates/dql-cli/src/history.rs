@@ -60,7 +60,7 @@ impl HistoryManager {
         let reader = io::BufReader::new(file);
         self.in_memory.clear();
         for line in reader.lines() {
-            self.in_memory.push_back(line?);
+            self.in_memory.push_back(decode_history_line(&line?));
         }
         self.initial_history_length = self.in_memory.len();
         Ok(())
@@ -96,7 +96,7 @@ impl HistoryManager {
             .skip(self.initial_history_length)
             .take(new_entries)
         {
-            writeln!(handle, "{entry}")?;
+            writeln!(handle, "{}", encode_history_line(entry))?;
         }
         self.initial_history_length = current;
         Ok(())
@@ -137,6 +137,53 @@ fn default_history_dir() -> PathBuf {
         return PathBuf::from(home).join(".dql");
     }
     PathBuf::from(".dql")
+}
+
+/// Encode embedded newlines so each history entry stays on one physical file line.
+fn encode_history_line(entry: &str) -> String {
+    let mut out = String::with_capacity(entry.len());
+    for ch in entry.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+fn decode_history_line(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('\\') => out.push('\\'),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod encode_tests {
+    use super::{decode_history_line, encode_history_line};
+
+    #[test]
+    fn roundtrips_multiline_commands() {
+        let entry = "scan * from t\nwhere x = 1;";
+        let encoded = encode_history_line(entry);
+        assert!(!encoded.contains('\n'));
+        assert_eq!(decode_history_line(&encoded), entry);
+    }
 }
 
 #[cfg(test)]

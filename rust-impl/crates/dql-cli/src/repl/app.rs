@@ -150,10 +150,9 @@ fn command_panel_lines(
 /// Push a blank separator, the consolidated command panel, then result lines
 /// into terminal scrollback.
 fn flush_to_scrollback(terminal: &mut ReplTerminal, app: &mut ReplApp<'_>) -> io::Result<()> {
-    let command_lines = std::mem::take(&mut app.pending_command);
+    let command_lines = std::mem::take(&mut app.committed_command);
     let output = std::mem::take(&mut app.output_lines);
     let ok = app.command_ok;
-    app.command_start = 0;
     app.command_ok = true;
 
     if command_lines.is_empty() && output.is_empty() {
@@ -227,104 +226,122 @@ fn repl_loop(
         }
 
         match event::read()? {
-            Event::Key(key) => match key.code {
-                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.session.engine.reset_fragment();
-                    app.pending_command.clear();
-                    app.output_lines.clear();
-                    app.command_ok = true;
-                    app.command_start = 0;
-                    app.clear_input();
-                    app.partial = false;
-                    needs_redraw = true;
-                }
-                KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    let _ = app.session.history.remove_items(1);
-                    break;
-                }
-                KeyCode::Enter => {
-                    let line = app.input.clone();
-                    let continuation = app.partial;
-                    app.history_index = None;
-                    if !line.trim().is_empty() {
-                        app.session.history.add_entry(line.clone());
+            Event::Key(key) => {
+                let alt = key.modifiers.contains(KeyModifiers::ALT);
+                match key.code {
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.session.engine.reset_fragment();
+                        app.output_lines.clear();
+                        app.command_ok = true;
+                        app.reset_buffer();
+                        app.partial = false;
+                        needs_redraw = true;
                     }
-                    app.handle_submit(line, continuation)?;
-                    app.clear_input();
-                    if !app.partial {
-                        // Drop the live multi-line panel before committing, so
-                        // its cyan title isn't left above the scrolled result.
-                        ensure_inline_height(terminal, inline_height, panel_height(1))?;
-                        flush_to_scrollback(terminal, &mut app)?;
-                    }
-                    needs_redraw = true;
-                    if take_exit_request() {
+                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         break;
                     }
-                    #[cfg(feature = "watch")]
-                    if let Some(tables) = take_watch_request() {
-                        let watch_result = crate::meta::watch::run_monitor(app.session, &tables);
-                        enable_raw_mode()?;
-                        *inline_height = panel_height(1);
-                        *terminal = inline_terminal(*inline_height)?;
-                        if let Err(err) = watch_result {
-                            app.command_ok = false;
-                            app.push_error(format!("watch error: {err}"));
+                    KeyCode::Enter => {
+                        app.history_index = None;
+                        app.handle_submit()?;
+                        if !app.partial {
+                            ensure_inline_height(terminal, inline_height, panel_height(1))?;
                             flush_to_scrollback(terminal, &mut app)?;
                         }
                         needs_redraw = true;
+                        if take_exit_request() {
+                            break;
+                        }
+                        #[cfg(feature = "watch")]
+                        if let Some(tables) = take_watch_request() {
+                            let watch_result =
+                                crate::meta::watch::run_monitor(app.session, &tables);
+                            enable_raw_mode()?;
+                            *inline_height = panel_height(1);
+                            *terminal = inline_terminal(*inline_height)?;
+                            if let Err(err) = watch_result {
+                                app.command_ok = false;
+                                app.push_error(format!("watch error: {err}"));
+                                flush_to_scrollback(terminal, &mut app)?;
+                            }
+                            needs_redraw = true;
+                        }
                     }
+                    KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.history_up();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.history_down();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Left if alt => {
+                        app.move_word_left();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Right if alt => {
+                        app.move_word_right();
+                        needs_redraw = true;
+                    }
+                    // macOS Option often sends Meta+b / Meta+f for word motion.
+                    KeyCode::Char('b') if alt => {
+                        app.move_word_left();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Char('f') if alt => {
+                        app.move_word_right();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Up if alt => {
+                        app.move_line_up();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Down if alt => {
+                        app.move_line_down();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Left => {
+                        app.move_cursor_left();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Right => {
+                        app.move_cursor_right();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Home => {
+                        app.col = 0;
+                        needs_redraw = true;
+                    }
+                    KeyCode::End => {
+                        app.cursor_to_end_of_line();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Up => {
+                        app.history_up();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Down => {
+                        app.history_down();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Tab => {
+                        app.complete();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Backspace => {
+                        app.backspace();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Delete => {
+                        app.delete_forward();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Char(ch) => {
+                        app.insert_char(ch);
+                        needs_redraw = true;
+                    }
+                    _ => {}
                 }
-                KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.history_up();
-                    needs_redraw = true;
-                }
-                KeyCode::Char('n') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.history_down();
-                    needs_redraw = true;
-                }
-                KeyCode::Left => {
-                    app.move_cursor_left();
-                    needs_redraw = true;
-                }
-                KeyCode::Right => {
-                    app.move_cursor_right();
-                    needs_redraw = true;
-                }
-                KeyCode::Home => {
-                    app.cursor = 0;
-                    needs_redraw = true;
-                }
-                KeyCode::End => {
-                    app.cursor_to_end();
-                    needs_redraw = true;
-                }
-                KeyCode::Up => {
-                    app.history_up();
-                    needs_redraw = true;
-                }
-                KeyCode::Down => {
-                    app.history_down();
-                    needs_redraw = true;
-                }
-                KeyCode::Tab => {
-                    app.complete();
-                    needs_redraw = true;
-                }
-                KeyCode::Backspace => {
-                    app.backspace();
-                    needs_redraw = true;
-                }
-                KeyCode::Delete => {
-                    app.delete_forward();
-                    needs_redraw = true;
-                }
-                KeyCode::Char(ch) => {
-                    app.insert_char(ch);
-                    needs_redraw = true;
-                }
-                _ => {}
-            },
+            }
             Event::Resize(_, _) => {
                 needs_redraw = true;
             }
@@ -340,16 +357,18 @@ fn repl_loop(
 
 struct ReplApp<'a> {
     session: &'a mut Session,
-    /// Prior lines of the in-progress multi-line statement (not yet flushed).
-    pending_command: Vec<String>,
+    /// Editable lines of the in-progress command.
+    lines: Vec<String>,
+    /// Caret row into `lines`.
+    row: usize,
+    /// Caret column as a Unicode scalar index into the current line.
+    col: usize,
+    /// Command lines captured for the scrollback panel on successful submit.
+    committed_command: Vec<String>,
     /// Result lines for the statement currently being committed.
     output_lines: Vec<Line<'static>>,
     /// Whether the statement about to be flushed succeeded.
     command_ok: bool,
-    command_start: usize,
-    input: String,
-    /// Caret position as a Unicode scalar index into `input`.
-    cursor: usize,
     partial: bool,
     history_index: Option<usize>,
 }
@@ -358,74 +377,188 @@ impl<'a> ReplApp<'a> {
     fn new(session: &'a mut Session) -> Self {
         Self {
             session,
-            pending_command: Vec::new(),
+            lines: vec![String::new()],
+            row: 0,
+            col: 0,
+            committed_command: Vec::new(),
             output_lines: Vec::new(),
             command_ok: true,
-            command_start: 0,
-            input: String::new(),
-            cursor: 0,
             partial: false,
             history_index: None,
         }
     }
 
     fn live_content_line_count(&self) -> usize {
-        self.pending_command.len() + 1
+        self.lines.len().max(1)
     }
 
-    fn clear_input(&mut self) {
-        self.input.clear();
-        self.cursor = 0;
+    fn current_line(&self) -> &str {
+        self.lines.get(self.row).map(String::as_str).unwrap_or("")
     }
 
-    fn cursor_to_end(&mut self) {
-        self.cursor = self.input.chars().count();
+    fn current_line_mut(&mut self) -> &mut String {
+        if self.row >= self.lines.len() {
+            self.row = self.lines.len().saturating_sub(1);
+        }
+        &mut self.lines[self.row]
+    }
+
+    fn clamp_caret(&mut self) {
+        if self.lines.is_empty() {
+            self.lines.push(String::new());
+        }
+        if self.row >= self.lines.len() {
+            self.row = self.lines.len() - 1;
+        }
+        let len = self.lines[self.row].chars().count();
+        if self.col > len {
+            self.col = len;
+        }
+    }
+
+    fn reset_buffer(&mut self) {
+        self.lines = vec![String::new()];
+        self.row = 0;
+        self.col = 0;
+    }
+
+    fn cursor_to_end_of_line(&mut self) {
+        self.col = self.current_line().chars().count();
     }
 
     fn move_cursor_left(&mut self) {
-        self.cursor = self.cursor.saturating_sub(1);
+        if self.col > 0 {
+            self.col -= 1;
+        } else if self.row > 0 {
+            self.row -= 1;
+            self.cursor_to_end_of_line();
+        }
     }
 
     fn move_cursor_right(&mut self) {
-        if self.cursor < self.input.chars().count() {
-            self.cursor += 1;
+        let len = self.current_line().chars().count();
+        if self.col < len {
+            self.col += 1;
+        } else if self.row + 1 < self.lines.len() {
+            self.row += 1;
+            self.col = 0;
         }
     }
 
-    fn byte_index_at_cursor(&self) -> usize {
-        self.input
+    fn move_line_up(&mut self) {
+        if self.row > 0 {
+            self.row -= 1;
+            self.clamp_caret();
+        }
+    }
+
+    fn move_line_down(&mut self) {
+        if self.row + 1 < self.lines.len() {
+            self.row += 1;
+            self.clamp_caret();
+        }
+    }
+
+    fn move_word_left(&mut self) {
+        self.clamp_caret();
+        if self.col == 0 {
+            if self.row > 0 {
+                self.row -= 1;
+                self.cursor_to_end_of_line();
+            }
+            return;
+        }
+        let chars: Vec<char> = self.current_line().chars().collect();
+        let mut i = self.col.min(chars.len());
+        while i > 0 && chars[i - 1].is_whitespace() {
+            i -= 1;
+        }
+        while i > 0 && !chars[i - 1].is_whitespace() {
+            i -= 1;
+        }
+        self.col = i;
+    }
+
+    fn move_word_right(&mut self) {
+        self.clamp_caret();
+        let chars: Vec<char> = self.current_line().chars().collect();
+        let len = chars.len();
+        if self.col >= len {
+            if self.row + 1 < self.lines.len() {
+                self.row += 1;
+                self.col = 0;
+            }
+            return;
+        }
+        let mut i = self.col;
+        while i < len && !chars[i].is_whitespace() {
+            i += 1;
+        }
+        while i < len && chars[i].is_whitespace() {
+            i += 1;
+        }
+        self.col = i;
+    }
+
+    fn byte_index_at_col(&self) -> usize {
+        self.current_line()
             .char_indices()
-            .nth(self.cursor)
+            .nth(self.col)
             .map(|(i, _)| i)
-            .unwrap_or(self.input.len())
+            .unwrap_or(self.current_line().len())
     }
 
     fn insert_char(&mut self, ch: char) {
-        let idx = self.byte_index_at_cursor();
-        self.input.insert(idx, ch);
-        self.cursor += 1;
+        let idx = self.byte_index_at_col();
+        self.current_line_mut().insert(idx, ch);
+        self.col += 1;
     }
 
     fn backspace(&mut self) {
-        if self.cursor == 0 {
+        if self.col > 0 {
+            self.col -= 1;
+            let idx = self.byte_index_at_col();
+            self.current_line_mut().remove(idx);
             return;
         }
-        self.cursor -= 1;
-        let idx = self.byte_index_at_cursor();
-        self.input.remove(idx);
+        if self.row == 0 {
+            return;
+        }
+        // Merge with previous line.
+        let current = self.lines.remove(self.row);
+        self.row -= 1;
+        self.col = self.lines[self.row].chars().count();
+        self.lines[self.row].push_str(&current);
     }
 
     fn delete_forward(&mut self) {
-        if self.cursor >= self.input.chars().count() {
+        let len = self.current_line().chars().count();
+        if self.col < len {
+            let idx = self.byte_index_at_col();
+            self.current_line_mut().remove(idx);
             return;
         }
-        let idx = self.byte_index_at_cursor();
-        self.input.remove(idx);
+        if self.row + 1 >= self.lines.len() {
+            return;
+        }
+        let next = self.lines.remove(self.row + 1);
+        self.lines[self.row].push_str(&next);
     }
 
-    fn set_input(&mut self, text: String) {
-        self.input = text;
-        self.cursor_to_end();
+    /// Load a history entry into the live panel (multi-line aware).
+    fn apply_history_entry(&mut self, entry: String) {
+        self.session.engine.reset_fragment();
+        self.partial = false;
+        let mut lines: Vec<String> = entry.lines().map(str::to_string).collect();
+        if lines.is_empty() {
+            lines.push(entry);
+        }
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
+        self.lines = lines;
+        self.row = self.lines.len() - 1;
+        self.cursor_to_end_of_line();
     }
 
     fn push_error(&mut self, err: impl ToString) {
@@ -436,31 +569,48 @@ impl<'a> ReplApp<'a> {
         )));
     }
 
-    fn handle_submit(
-        &mut self,
-        line: String,
-        continuation: bool,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let cmd = line
+    fn command_text(&self) -> String {
+        self.lines.join("\n")
+    }
+
+    fn trimmed_command_lines(&self) -> Vec<String> {
+        let mut lines = self.lines.clone();
+        while lines.last().is_some_and(|l| l.is_empty()) && lines.len() > 1 {
+            lines.pop();
+        }
+        lines
+    }
+
+    fn record_history_if_complete(&mut self) {
+        let lines = self.trimmed_command_lines();
+        let full = lines.join("\n");
+        if should_record_history(&full) {
+            self.session.history.add_entry(full);
+        }
+    }
+
+    fn handle_submit(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let execute_text = self.command_text();
+        let first = execute_text
+            .lines()
+            .next()
+            .unwrap_or("")
             .split_whitespace()
             .next()
             .unwrap_or("")
             .to_ascii_lowercase();
 
-        if !continuation {
-            self.command_start = self.pending_command.len();
-            self.output_lines.clear();
-            self.command_ok = true;
-        }
-        if !line.is_empty() || continuation {
-            self.pending_command.push(line.clone());
-        }
+        self.output_lines.clear();
+        self.command_ok = true;
+
+        // Always re-run the full editable buffer so any line can be corrected.
+        self.session.engine.reset_fragment();
 
         let output_config = self.session.config.output_config();
         let mut backend = BufferBackend::default();
         let rich_context = self.session.engine.rich_context();
-        if output_config.format == OutputFormat::Rich && cmd == "ls" {
-            let arglist = line
+        if output_config.format == OutputFormat::Rich && first == "ls" {
+            let arglist = execute_text
                 .split_once(char::is_whitespace)
                 .map(|(_, rest)| rest.trim())
                 .unwrap_or("");
@@ -476,7 +626,7 @@ impl<'a> ReplApp<'a> {
             }
         } else {
             let mut writer = backend.writer();
-            match crate::meta::dispatch(self.session, &line, writer.as_mut(), true) {
+            match crate::meta::dispatch(self.session, &execute_text, writer.as_mut(), true) {
                 Ok(Some(result)) => {
                     drop(writer);
                     let render = if output_config.format == OutputFormat::Rich {
@@ -507,20 +657,35 @@ impl<'a> ReplApp<'a> {
                 }
             }
         }
-        if matches!(cmd.as_str(), "clear" | "cls" | "c") {
-            self.pending_command.clear();
+
+        if matches!(first.as_str(), "clear" | "cls" | "c") {
+            self.committed_command.clear();
             self.output_lines.clear();
-            self.command_start = 0;
             self.command_ok = true;
             self.partial = false;
+            self.reset_buffer();
             return Ok(());
         }
+
         if let Ok(text) = String::from_utf8(backend.buffer) {
             for line in text.lines() {
                 self.output_lines.push(Line::from(line.to_string()));
             }
         }
+
         self.partial = self.session.engine.partial();
+        if self.partial {
+            // Keep editing; ensure a trailing blank line for the next fragment.
+            if !self.lines.last().is_some_and(|l| l.is_empty()) {
+                self.lines.push(String::new());
+            }
+            self.row = self.lines.len() - 1;
+            self.col = 0;
+        } else {
+            self.record_history_if_complete();
+            self.committed_command = self.trimmed_command_lines();
+            self.reset_buffer();
+        }
         Ok(())
     }
 
@@ -531,7 +696,7 @@ impl<'a> ReplApp<'a> {
         }
         let index = self.history_index.unwrap_or(len).saturating_sub(1);
         if let Some(entry) = self.session.history.entries().get(index) {
-            self.set_input(entry.clone());
+            self.apply_history_entry(entry.clone());
             self.history_index = Some(index);
         }
     }
@@ -542,21 +707,25 @@ impl<'a> ReplApp<'a> {
             return;
         };
         if index + 1 >= len {
-            self.clear_input();
+            self.reset_buffer();
+            self.session.engine.reset_fragment();
+            self.partial = false;
             self.history_index = None;
         } else if let Some(entry) = self.session.history.entries().get(index + 1) {
-            self.set_input(entry.clone());
+            self.apply_history_entry(entry.clone());
             self.history_index = Some(index + 1);
         }
     }
 
     fn complete(&mut self) {
         let tables = with_tables(self.session);
-        let lower = self.input.to_ascii_lowercase();
+        let current = self.current_line().to_string();
+        let lower = current.to_ascii_lowercase();
         for token in ["from", "into", "table", "update", "dump"] {
             if lower.contains(token) {
-                if let Some(table) = tables.iter().find(|name| name.starts_with(&self.input)) {
-                    self.set_input(format!("{table} "));
+                if let Some(table) = tables.iter().find(|name| name.starts_with(&current)) {
+                    *self.current_line_mut() = format!("{table} ");
+                    self.cursor_to_end_of_line();
                 }
                 return;
             }
@@ -597,11 +766,41 @@ fn full_prompt(session: &Session) -> String {
     }
 }
 
+/// Meta commands that should not pollute Up/Down history.
+fn should_record_history(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let mut parts = trimmed.split_whitespace();
+    let cmd = parts.next().unwrap_or("").to_ascii_lowercase();
+    match cmd.as_str() {
+        "clear" | "cls" | "c" | "exit" | "quit" | "help" => false,
+        // Bare `ls` is omitted; `ls <tablename>` (or any args) is kept.
+        "ls" => parts.next().is_some(),
+        _ => true,
+    }
+}
+
+#[cfg(test)]
+mod history_filter_tests {
+    use super::should_record_history;
+
+    #[test]
+    fn filters_meta_and_bare_ls() {
+        assert!(!should_record_history("ls"));
+        assert!(!should_record_history("clear"));
+        assert!(!should_record_history("exit"));
+        assert!(!should_record_history("c"));
+        assert!(!should_record_history("help"));
+        assert!(should_record_history("ls mytable"));
+        assert!(should_record_history("scan * from t;"));
+    }
+}
+
 fn live_panel_lines(app: &ReplApp<'_>) -> Vec<Line<'static>> {
     let title = full_prompt(app.session);
-    let mut command = app.pending_command.clone();
-    command.push(app.input.clone());
-    command_panel_lines(&title, None, &command, Color::Cyan)
+    command_panel_lines(&title, None, &app.lines, Color::Cyan)
 }
 
 fn draw(frame: &mut Frame, app: &ReplApp<'_>) {
@@ -612,10 +811,10 @@ fn draw(frame: &mut Frame, app: &ReplApp<'_>) {
         area,
     );
 
-    // Caret on the active input row (below top pad + title).
+    // Caret on the active edit row (below top pad + title).
     if area.width > 0 && area.height > 2 {
-        let row = (2 + app.pending_command.len() as u16).min(area.height.saturating_sub(1));
-        let col = (app.cursor as u16).min(area.width.saturating_sub(1));
+        let row = (2 + app.row as u16).min(area.height.saturating_sub(1));
+        let col = (app.col as u16).min(area.width.saturating_sub(1));
         frame.set_cursor_position(Position {
             x: area.x.saturating_add(col),
             y: area.y.saturating_add(row),
