@@ -788,11 +788,7 @@ fn with_tables(session: &Session) -> Vec<String> {
 }
 
 fn full_prompt(session: &Session) -> String {
-    if let Some((host, port)) = &session.local_endpoint {
-        format!("({host}:{port}) {}", session.region)
-    } else {
-        session.region.clone()
-    }
+    session.prompt_title()
 }
 
 fn live_panel_lines(app: &ReplApp<'_>, width: usize) -> Vec<Line<'static>> {

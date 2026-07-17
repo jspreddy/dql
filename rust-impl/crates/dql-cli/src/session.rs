@@ -4,7 +4,7 @@ use dql_engine::{
 };
 use dql_output::{render_result, DisplayMode, OutputConfig, RichContext};
 use std::env;
-use std::io::{self, Write};
+use std::io;
 
 pub const REGIONS: &[&str] = &[
     "us-east-1",
@@ -440,17 +440,15 @@ impl Session {
 }
 
 impl Session {
-    pub fn write_prompt(&self, partial: bool, out: &mut dyn Write) -> io::Result<()> {
-        if partial {
-            write!(out, "   | ")?;
-        } else if let Some((host, port)) = &self.local_endpoint {
-            writeln!(out)?;
-            write!(out, "({host}:{port}) {}\n   ===> ", self.region)?;
+    /// Title line shown above the REPL input (region for AWS, host:port for Local).
+    pub fn prompt_title(&self) -> String {
+        if let Some((host, port)) = &self.local_endpoint {
+            // DynamoDB Local ignores region for routing (and sharedDb/inMemory
+            // ignore it for storage), so the host:port is the useful identity.
+            format!("({host}:{port})")
         } else {
-            writeln!(out)?;
-            write!(out, "{}\n   ===> ", self.region)?;
+            self.region.clone()
         }
-        out.flush()
     }
 }
 
@@ -516,5 +514,18 @@ mod tests {
         assert!(session.engine.is_memory());
         assert!(session.local_endpoint.is_none());
         assert_eq!(session.region, "us-west-1");
+    }
+
+    #[test]
+    fn prompt_omits_region_for_local_endpoint() {
+        let mut session = Session::new_memory("us-west-1");
+        session.local_endpoint = Some(("localhost".to_string(), 8000));
+        assert_eq!(session.prompt_title(), "(localhost:8000)");
+    }
+
+    #[test]
+    fn prompt_shows_region_for_aws() {
+        let session = Session::new_memory("eu-west-1");
+        assert_eq!(session.prompt_title(), "eu-west-1");
     }
 }
