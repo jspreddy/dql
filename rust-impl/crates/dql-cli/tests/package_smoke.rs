@@ -1,4 +1,4 @@
-//! Package smoke tests for the release `dql` binary.
+//! Package smoke tests for the release `dqlrs` binary.
 //!
 //! Verifies `--version`, one-shot memory commands, JSON output, and optional
 //! DynamoDB Local integration when reachable.
@@ -10,14 +10,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static TABLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn dql_bin() -> PathBuf {
-    if let Some(path) = std::env::var_os("CARGO_BIN_EXE_dql") {
+    if let Some(path) = std::env::var_os("CARGO_BIN_EXE_dqlrs") {
         return PathBuf::from(path);
     }
     let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
     let target = std::env::var("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target"));
-    target.join(profile).join("dql")
+    target.join(profile).join("dqlrs")
 }
 
 fn run(args: &[&str]) -> std::process::Output {
@@ -25,7 +25,7 @@ fn run(args: &[&str]) -> std::process::Output {
         .args(args)
         .env("DQL_BACKEND", "memory")
         .output()
-        .unwrap_or_else(|err| panic!("failed to run dql {args:?}: {err}"))
+        .unwrap_or_else(|err| panic!("failed to run dqlrs {args:?}: {err}"))
 }
 
 fn run_raw(args: &[&str]) -> std::process::Output {
@@ -33,7 +33,7 @@ fn run_raw(args: &[&str]) -> std::process::Output {
         .args(args)
         .env_remove("DQL_BACKEND")
         .output()
-        .unwrap_or_else(|err| panic!("failed to run dql {args:?}: {err}"))
+        .unwrap_or_else(|err| panic!("failed to run dqlrs {args:?}: {err}"))
 }
 
 fn assert_success(output: &std::process::Output, context: &str) {
@@ -69,7 +69,7 @@ fn require_local() -> bool {
 #[test]
 fn smoke_version() {
     let output = run_raw(&["--version"]);
-    assert_success(&output, "dql --version");
+    assert_success(&output, "dqlrs --version");
     let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
     assert!(
         !version.is_empty(),

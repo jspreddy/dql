@@ -5,7 +5,7 @@ license.workspace = true
 version.workspace = true
 
 [[bin]]
-name = "dql"
+name = "dqlrs"
 path = "src/main.rs"
 
 [features]

@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn parses_version_flag() {
-        let args = CliArgs::try_parse_from(["dql", "--version"]).unwrap();
+        let args = CliArgs::try_parse_from(["dqlrs", "--version"]).unwrap();
         assert!(args.version);
     }
 }

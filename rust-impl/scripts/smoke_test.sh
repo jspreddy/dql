@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Smoke-test a built `dql` binary (release by default).
+# Smoke-test a built `dqlrs` binary (release by default).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-DQL_BIN="${DQL_BIN:-$ROOT/target/release/dql}"
+DQL_BIN="${DQL_BIN:-$ROOT/target/release/dqlrs}"
 REQUIRE_LOCAL="${DQL_REQUIRE_LOCAL:-0}"
 
 if [[ ! -x "$DQL_BIN" ]]; then
-  echo "error: dql binary not found or not executable: $DQL_BIN" >&2
+  echo "error: dqlrs binary not found or not executable: $DQL_BIN" >&2
   exit 1
 fi
 

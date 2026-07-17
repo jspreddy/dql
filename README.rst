@@ -32,7 +32,7 @@ Or build and install from a release tag with Cargo::
 
     cargo install --git https://github.com/stevearc/dql.git --tag 0.6.4 --locked -p dql-cli --root ~/.local
 
-The binary is installed as ``~/.local/bin/dql``. Add that directory to your ``PATH`` if needed.
+The binary is installed as ``~/.local/bin/dqlrs``. Add that directory to your ``PATH`` if needed.
 
 For local development of the Rust implementation, see ``rust-impl/README.md``.
 

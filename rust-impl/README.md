@@ -2,12 +2,12 @@
 
 [![Rust CI](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml)
 
-Cargo workspace that builds the `dql` CLI and supporting libraries for DynamoDB
+Cargo workspace that builds the `dqlrs` CLI and supporting libraries for DynamoDB
 Query Language.
 
 | Crate | Role |
 | --- | --- |
-| `dql-cli` | `dql` binary: clap flags, meta-commands, ratatui REPL |
+| `dql-cli` | `dqlrs` binary: clap flags, meta-commands, ratatui REPL |
 | `dql-parser` | Lexer/parser and typed statement AST |
 | `dql-expr` | Expression rendering, placeholders, value conversion |
 | `dql-models` | Table/index metadata and query planning |
@@ -16,7 +16,7 @@ Query Language.
 
 ---
 
-## For `dql` users
+## For `dqlrs` users
 
 ### Install
 
@@ -25,7 +25,7 @@ Query Language.
 ```bash
 cd rust-impl
 cargo build --release -p dql-cli
-install -m 0755 target/release/dql ~/.local/bin/dql
+install -m 0755 target/release/dqlrs ~/.local/bin/dqlrs
 ```
 
 **From a git tag:**
@@ -44,9 +44,9 @@ curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/v-rust/bin/install-rus
 
 | Mode | How |
 | --- | --- |
-| Live AWS | `dql` (default when `-H` is unset; uses the AWS SDK credential chain) |
-| DynamoDB Local | `dql -H localhost -p 8000` |
-| In-memory (offline) | `DQL_BACKEND=memory dql …` |
+| Live AWS | `dqlrs` (default when `-H` is unset; uses the AWS SDK credential chain) |
+| DynamoDB Local | `dqlrs -H localhost -p 8000` |
+| In-memory (offline) | `DQL_BACKEND=memory dqlrs …` |
 
 Region defaults to `AWS_REGION`, else `us-west-1`. Override with `-r`.
 
@@ -91,11 +91,11 @@ JSON or CSV first if needed.
 ### Quick examples
 
 ```bash
-dql --version
-dql -c "ls"
-dql --json -c "SCAN * FROM mytable LIMIT 5"
-dql -H localhost -p 8000 -c "CREATE TABLE t (id STRING HASH KEY); SCAN * FROM t"
-DQL_BACKEND=memory dql -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"
+dqlrs --version
+dqlrs -c "ls"
+dqlrs --json -c "SCAN * FROM mytable LIMIT 5"
+dqlrs -H localhost -p 8000 -c "CREATE TABLE t (id STRING HASH KEY); SCAN * FROM t"
+DQL_BACKEND=memory dqlrs -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"
 ```
 
 ---

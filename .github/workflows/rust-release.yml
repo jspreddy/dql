@@ -60,18 +60,18 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME}"
           arch="$(uname -m)"
-          asset="dql-${version}-${{ matrix.target }}-${arch}.tar.gz"
+          asset="dqlrs-${version}-${{ matrix.target }}-${arch}.tar.gz"
           mkdir -p "dist/${version}"
-          cp rust-impl/target/release/dql "dist/${version}/dql"
+          cp rust-impl/target/release/dqlrs "dist/${version}/dqlrs"
           cp LICENSE "dist/${version}/LICENSE"
-          tar -czf "$asset" -C "dist/${version}" dql LICENSE
+          tar -czf "$asset" -C "dist/${version}" dqlrs LICENSE
           echo "asset=${asset}" >> "$GITHUB_OUTPUT"
 
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dql-${{ matrix.target }}-${{ runner.arch }}
-          path: dql-*.tar.gz
+          name: dqlrs-${{ matrix.target }}-${{ runner.arch }}
+          path: dqlrs-*.tar.gz
 
   release:
     needs: build

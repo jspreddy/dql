@@ -3,7 +3,7 @@ use std::env;
 
 #[derive(Debug, Parser, PartialEq, Eq)]
 #[command(
-    name = "dql",
+    name = "dqlrs",
     about = "Start the DQL client.",
     disable_help_flag = true,
     disable_version_flag = true
@@ -73,14 +73,14 @@ mod tests {
 
     #[test]
     fn parses_version_flag() {
-        let args = CliArgs::try_parse_from(["dql", "--version"]).unwrap();
+        let args = CliArgs::try_parse_from(["dqlrs", "--version"]).unwrap();
         assert!(args.version);
     }
 
     #[test]
     fn parses_command_and_local_flags() {
         let args = CliArgs::try_parse_from([
-            "dql",
+            "dqlrs",
             "-H",
             "localhost",
             "-p",

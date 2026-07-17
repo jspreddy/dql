@@ -11,7 +11,7 @@ fn test_session() -> Session {
 }
 
 fn dql() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_dql"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_dqlrs"));
     // Offline smoke paths must not hit live AWS.
     cmd.env("DQL_BACKEND", "memory");
     cmd
