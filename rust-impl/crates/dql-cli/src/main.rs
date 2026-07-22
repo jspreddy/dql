@@ -1,6 +1,4 @@
-fn main() {
-    if let Err(err) = dql_cli::run() {
-        eprintln!("{err}");
-        std::process::exit(1);
-    }
+fn main() -> color_eyre::Result<()> {
+    dql_cli::error::initialize_panic_handler()?;
+    dql_cli::run()
 }

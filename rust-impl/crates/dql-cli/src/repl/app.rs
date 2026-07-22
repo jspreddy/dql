@@ -1,7 +1,9 @@
+use crate::error::report_lines;
 use crate::meta::lifecycle::{take_exit_request, take_history_edit_request};
 #[cfg(feature = "watch")]
 use crate::meta::watch::take_watch_request;
 use crate::session::Session;
+use color_eyre::eyre::{self, eyre, WrapErr};
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 #[cfg(feature = "watch")]
 use crossterm::terminal::enable_raw_mode;
@@ -48,25 +50,28 @@ impl dql_output::DisplayBackend for BufferBackend {
     }
 }
 
-pub fn run_repl(session: &mut Session) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_repl(session: &mut Session) -> eyre::Result<()> {
     let mut inline_height = PANEL_CHROME + 1;
     let mut terminal = ratatui::init_with_options(TerminalOptions {
         viewport: Viewport::Inline(inline_height),
     });
     let result = repl_loop(session, &mut terminal, &mut inline_height);
-    ratatui::restore();
+    if let Err(err) = ratatui::try_restore() {
+        eprintln!(
+            "failed to restore terminal. Run `reset` or restart your terminal to recover: {err}"
+        );
+    }
     session.history.try_to_write_history();
     if let Some((editor, path)) = take_history_edit_request() {
         let status = std::process::Command::new(&editor)
             .arg(&path)
             .status()
-            .map_err(|err| format!("Failed to open history with {editor:?}: {err}"))?;
+            .wrap_err_with(|| format!("Failed to open history with {editor:?}"))?;
         if !status.success() {
-            return Err(format!(
+            return Err(eyre!(
                 "Editor {editor:?} exited with status {status} while editing {}",
                 path.display()
-            )
-            .into());
+            ));
         }
     }
     result
@@ -226,7 +231,7 @@ fn repl_loop(
     session: &mut Session,
     terminal: &mut ReplTerminal,
     inline_height: &mut u16,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> eyre::Result<()> {
     let mut app = ReplApp::new(session);
     let mut needs_redraw = true;
     loop {
@@ -278,8 +283,7 @@ fn repl_loop(
                             *inline_height = panel_height(1);
                             *terminal = inline_terminal(*inline_height)?;
                             if let Err(err) = watch_result {
-                                app.command_ok = false;
-                                app.push_error(format!("watch error: {err}"));
+                                app.push_error(eyre!(err).wrap_err("watch failed"));
                                 flush_to_scrollback(terminal, &mut app)?;
                             }
                             needs_redraw = true;
@@ -580,12 +584,13 @@ impl<'a> ReplApp<'a> {
         self.cursor_to_end_of_line();
     }
 
-    fn push_error(&mut self, err: impl ToString) {
+    fn push_error(&mut self, report: eyre::Report) {
         self.command_ok = false;
-        self.output_lines.push(Line::from(Span::styled(
-            err.to_string(),
-            Style::default().fg(Color::Red),
-        )));
+        let style = Style::default().fg(Color::Red);
+        for line in report_lines(&report) {
+            self.output_lines
+                .push(Line::from(Span::styled(line, style)));
+        }
     }
 
     fn command_text(&self) -> String {
@@ -608,7 +613,7 @@ impl<'a> ReplApp<'a> {
         }
     }
 
-    fn handle_submit(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn handle_submit(&mut self) -> eyre::Result<()> {
         let execute_text = self.command_text();
         let first = execute_text
             .lines()
@@ -636,7 +641,7 @@ impl<'a> ReplApp<'a> {
             let (args, _) = crate::meta::parse_repl_args(arglist);
             match crate::help::render_lines(&args, terminal_width()) {
                 Ok(lines) => self.output_lines.extend(lines),
-                Err(err) => self.push_error(err),
+                Err(err) => self.push_error(eyre!(err).wrap_err("help failed")),
             }
         } else if output_config.format == OutputFormat::Rich && first == "ls" {
             let arglist = execute_text
@@ -651,7 +656,7 @@ impl<'a> ReplApp<'a> {
                 terminal_width() as u16,
             ) {
                 Ok(lines) => self.output_lines.extend(lines),
-                Err(err) => self.push_error(err),
+                Err(err) => self.push_error(eyre!(err).wrap_err("ls failed")),
             }
         } else {
             let mut writer = backend.writer();
@@ -676,13 +681,13 @@ impl<'a> ReplApp<'a> {
                         render_result(&result, &output_config, &mut backend, rich_context.as_ref())
                     };
                     if let Err(err) = render {
-                        self.push_error(err);
+                        self.push_error(eyre!(err).wrap_err("failed to render result"));
                     }
                 }
                 Ok(None) => {}
                 Err(err) => {
                     drop(writer);
-                    self.push_error(err);
+                    self.push_error(eyre!(err).wrap_err("query failed"));
                 }
             }
         }

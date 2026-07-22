@@ -1,5 +1,6 @@
 pub mod args;
 pub mod config;
+pub mod error;
 pub mod help;
 pub mod history;
 pub mod meta;
@@ -9,6 +10,7 @@ pub mod throttle;
 
 use args::{help_text, CliArgs};
 use clap::Parser;
+use color_eyre::eyre::WrapErr;
 use session::Session;
 use std::io::{self, Write};
 
@@ -29,7 +31,7 @@ const KNOWN_FLAGS: &[&str] = &[
     "--help",
 ];
 
-pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+pub fn run() -> color_eyre::Result<()> {
     let argv: Vec<String> = std::env::args().collect();
     let mut args_iter = argv.iter().skip(1);
     while let Some(arg) = args_iter.next() {
@@ -47,7 +49,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let args = CliArgs::try_parse_from(&argv)?;
+    let args = CliArgs::try_parse_from(&argv).wrap_err("failed to parse CLI arguments")?;
 
     if args.help {
         let mut stderr = io::stderr();
@@ -60,13 +62,13 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let mut session = Session::new(&args)?;
+    let mut session = Session::new(&args).wrap_err("failed to start session")?;
     if let Some(command) = args.command {
         if let Err(err) = session.run_command(command.trim(), args.json) {
             eprintln!("{err}");
         }
-    } else if let Err(err) = repl::run_repl(&mut session) {
-        eprintln!("{err}");
+    } else {
+        repl::run_repl(&mut session).wrap_err("repl failed")?;
     }
     Ok(())
 }
