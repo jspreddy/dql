@@ -1,16 +1,20 @@
 DQL
 ===
-:Build: |build|_ |coverage|_
+:Build: |build|_
 :Documentation: http://dql.readthedocs.org/
 :Downloads: http://pypi.python.org/pypi/dql
-:Source: https://github.com/stevearc/dql
+:Source: https://github.com/jspreddy/dql
+:Upstream: https://github.com/stevearc/dql
 
-.. |build| image:: https://github.com/stevearc/dql/actions/workflows/code-workflows.yml/badge.svg
-.. _build: https://github.com/stevearc/dql/actions/workflows/code-workflows.yml
-.. |coverage| image:: https://coveralls.io/repos/stevearc/dql/badge.png?branch=master
-.. _coverage: https://coveralls.io/r/stevearc/dql?branch=master
+.. |build| image:: https://github.com/jspreddy/dql/actions/workflows/code-workflows.yml/badge.svg
+.. _build: https://github.com/jspreddy/dql/actions/workflows/code-workflows.yml
 
 A simple, SQL-ish language for DynamoDB
+
+This repository (`jspreddy/dql <https://github.com/jspreddy/dql>`__) is a
+**fork** of `stevearc/dql <https://github.com/stevearc/dql>`__. Use this repo
+for clone, install-from-source, and GitHub release URLs. The PyPI package and
+Read the Docs site still belong to upstream.
 
 As of November 2020, Amazon has released `PartiQL
 support <https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-reference.html>`__
@@ -24,13 +28,13 @@ Installation can be done in a variety of ways.
 Rust binary (recommended on the ``v-rust`` branch)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Download a prebuilt binary from `GitHub releases <https://github.com/stevearc/dql/releases>`__::
+Download a prebuilt binary from `GitHub releases <https://github.com/jspreddy/dql/releases>`__::
 
-    curl -fsSL https://raw.githubusercontent.com/stevearc/dql/v-rust/bin/install-rust.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/v-rust/bin/install-rust.sh | sh
 
 Or build and install from a release tag with Cargo::
 
-    cargo install --git https://github.com/stevearc/dql.git --tag 0.6.4 --locked -p dql-cli --root ~/.local
+    cargo install --git https://github.com/jspreddy/dql.git --tag 0.6.4 --locked -p dql-cli --root ~/.local
 
 The binary is installed as ``~/.local/bin/dqlrs``. Add that directory to your ``PATH`` if needed.
 
@@ -41,9 +45,9 @@ Legacy Python installation
 
 The Python implementation remains available while the Rust rewrite completes.
 
-* An executable `pex <https://github.com/pantsbuild/pex>`__ file is available on `the release page <https://github.com/stevearc/dql/releases>`__.
-* You can run a script to generate the pex file yourself: ``curl -fsSL https://raw.githubusercontent.com/stevearc/dql/master/bin/install.py | sh``
-* With pip: ``pip install dql`` (To get the official version)
+* An executable `pex <https://github.com/pantsbuild/pex>`__ file is available on `this fork's release page <https://github.com/jspreddy/dql/releases>`__.
+* You can run a script to generate the pex file yourself: ``curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/master/bin/install.py | sh``
+* With pip: ``pip install dql`` (upstream package on PyPI)
 * If you want the Python development version, see branch `v-next`_
 
 Prerequisites for Python development version: ``uv``

@@ -21,7 +21,8 @@ extensions = ['sphinx.ext.autodoc', 'numpydoc', 'sphinx.ext.intersphinx',
 master_doc = 'index'
 project = u'dql'
 copyright = u'2013, Steven Arcangeli'
-github_user = u'stevearc'
+# Sphinx linkcode points at this fork (jspreddy/dql), not upstream stevearc/dql.
+github_user = u'jspreddy'
 
 release = '0.6.4-dev12'
 version = '.'.join(release.split('.')[:2])

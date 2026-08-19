@@ -1,10 +1,11 @@
 Getting Started
 ===============
-Install DQL with a prebuilt Rust binary from `GitHub releases
-<https://github.com/stevearc/dql/releases>`__ (``v-rust`` branch) or with pip
-for the legacy Python package::
+This project is a fork of `stevearc/dql <https://github.com/stevearc/dql>`__.
+Install DQL with a prebuilt Rust binary from `this fork's GitHub releases
+<https://github.com/jspreddy/dql/releases>`__ (``v-rust`` branch) or with pip
+for the legacy upstream Python package::
 
-    curl -fsSL https://raw.githubusercontent.com/stevearc/dql/v-rust/bin/install-rust.sh | sh
+    curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/v-rust/bin/install-rust.sh | sh
 
     pip install dql
 

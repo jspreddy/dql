@@ -1,8 +1,9 @@
 Developing
 ==========
-To get started developing dql, clone the repo::
+This repository is a fork of `stevearc/dql <https://github.com/stevearc/dql>`__.
+To get started developing this fork, clone it::
 
-    git clone https://github.com/stevearc/dql.git
+    git clone https://github.com/jspreddy/dql.git
 
 Some tests require `DynamoDB Local
 <http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Tools.html>`_.

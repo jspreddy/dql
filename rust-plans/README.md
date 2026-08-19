@@ -3,6 +3,9 @@
 This folder contains high-level plans for rewriting DQL in Rust while preserving
 the current user-facing behavior of the Python implementation.
 
+This repository ([jspreddy/dql](https://github.com/jspreddy/dql)) is a fork of
+[stevearc/dql](https://github.com/stevearc/dql).
+
 ## Current product shape
 
 DQL is a SQL-like CLI and library for DynamoDB. The current implementation has

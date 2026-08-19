@@ -208,7 +208,7 @@ Script logic:
 **cargo install from tag:**
 
 ```bash
-cargo install --git https://github.com/<org>/dql.git --tag v0.6.4 --locked -p dql-cli --root ~/.local
+cargo install --git https://github.com/jspreddy/dql.git --tag v0.6.4 --locked -p dql-cli --root ~/.local
 # binary lands at ~/.local/bin/dql
 ```
 

@@ -11,6 +11,7 @@ name = "dql"
 version = "0.6.4-dev12"
 description = "DynamoDB Query Language"
 authors = [{ name = "Steven Arcangeli", email = "stevearc@stevearc.com" }]
+maintainers = [{ name = "Sai Jonnala", email = "jspreddy@users.noreply.github.com" }]
 license = { text = "MIT" }
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -37,7 +38,9 @@ dependencies = [
 requires-python = ">=3.9,<3.12"
 
 [project.urls]
-Homepage = "http://github.com/stevearc/dql"
+Homepage = "https://github.com/jspreddy/dql"
+Repository = "https://github.com/jspreddy/dql"
+Upstream = "https://github.com/stevearc/dql"
 
 [project.scripts]
 dql = "dql:main"

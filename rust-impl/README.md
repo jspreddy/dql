@@ -2,6 +2,9 @@
 
 [![Rust CI](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml)
 
+This crate lives in [jspreddy/dql](https://github.com/jspreddy/dql), a fork of
+[stevearc/dql](https://github.com/stevearc/dql).
+
 Cargo workspace that builds the `dqlrs` CLI and supporting libraries for DynamoDB
 Query Language.
 

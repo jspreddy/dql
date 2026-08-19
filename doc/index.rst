@@ -2,7 +2,8 @@ DQL - DynamoDB Query Language
 =============================
 A simple, SQL-ish language for DynamoDB
 
-Code lives here: https://github.com/stevearc/dql
+This project is a fork of `stevearc/dql <https://github.com/stevearc/dql>`__.
+Code for this fork lives here: https://github.com/jspreddy/dql
 
 User Guide
 ----------

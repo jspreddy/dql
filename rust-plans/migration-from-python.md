@@ -21,8 +21,10 @@ curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/v-rust/bin/install-rus
 cargo install --git https://github.com/jspreddy/dql.git --tag <version> --locked -p dql-cli --root ~/.local
 ```
 
-Upstream `stevearc/dql` may also publish binaries; this fork’s docs and CI use
-`jspreddy/dql`. Override with `DQL_REPO=owner/repo` when using `bin/install-rust.sh`.
+This repository is a fork of [`stevearc/dql`](https://github.com/stevearc/dql).
+Install URLs, Cargo `--git` sources, and CI badges in these docs point at
+[`jspreddy/dql`](https://github.com/jspreddy/dql). Upstream may also publish
+binaries; override with `DQL_REPO=owner/repo` when using `bin/install-rust.sh`.
 
 ## Configuration and history
 
