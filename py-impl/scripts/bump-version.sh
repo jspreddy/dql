@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run bump2version, then refresh uv.lock and rust-impl/Cargo.lock in the bump commit.
+# Run bump2version, then refresh uv.lock in the bump commit.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -13,19 +13,18 @@ for arg in "$@"; do
   esac
 done
 
-sync_lockfiles() {
+sync_lockfile() {
   uv lock
-  (cd rust-impl && cargo generate-lockfile)
 }
 
 # `uv run task bump` rebuilds the local package and may leave uv.lock modified.
-sync_lockfiles
-if ! git diff --quiet uv.lock rust-impl/Cargo.lock; then
-  if git diff --quiet -- . ':!uv.lock' ':!rust-impl/Cargo.lock' && git diff --cached --quiet; then
-    git add uv.lock rust-impl/Cargo.lock
-    git commit -m "Sync lockfiles with project versions"
+sync_lockfile
+if ! git diff --quiet uv.lock; then
+  if git diff --quiet -- . ':!uv.lock' && git diff --cached --quiet; then
+    git add uv.lock
+    git commit -m "Sync lockfile with project version"
   else
-    echo "error: lockfiles are out of sync; commit or stash other changes first" >&2
+    echo "error: uv.lock is out of sync; commit or stash other changes first" >&2
     exit 1
   fi
 fi
@@ -38,8 +37,8 @@ if [[ "$dry_run" == true || "$no_commit" == true ]]; then
   exit 0
 fi
 
-sync_lockfiles
-git add uv.lock rust-impl/Cargo.lock
+sync_lockfile
+git add uv.lock
 if git diff --cached --quiet; then
   exit 0
 fi

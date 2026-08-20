@@ -81,3 +81,17 @@ Harness: `crates/dql-engine/tests/support/mod.rs` (`LocalHarness`).
 
 See `rust-toolchain.toml`. CI: `.github/workflows/rust-workflows.yml` (fmt,
 clippy, tests, smoke).
+
+## Versioning
+
+Python and Rust versions bump independently. From this directory:
+
+```bash
+./scripts/bump-version.sh --dry-run build
+./scripts/bump-version.sh build
+./scripts/bump-version.sh --tag release
+```
+
+Release tags are `rust-<version>` (for example `rust-0.6.4`) so they do not
+collide with Python `python-<version>` tags. Requires `bump2version` (from
+`py-impl` `uv sync --dev`, or on `PATH`).
