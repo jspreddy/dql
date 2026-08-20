@@ -10,7 +10,7 @@ import sphinx_rtd_theme
 docs_basepath = os.path.abspath(os.path.dirname(__file__))
 
 addtl_paths = (
-    os.pardir,
+    os.path.join(os.pardir, 'py-impl'),
 )
 for path in addtl_paths:
     sys.path.insert(0, os.path.abspath(os.path.join(docs_basepath, path)))
@@ -54,5 +54,5 @@ def linkcode_resolve(domain, info):
             lineno = '#L%d' % inspect.getsourcelines(item)[1]
         except (TypeError, IOError):
             pass
-    return ("https://github.com/%s/%s/blob/%s/%s.py%s" %
+    return ("https://github.com/%s/%s/blob/%s/py-impl/%s.py%s" %
             (github_user, project, release, filename, lineno))

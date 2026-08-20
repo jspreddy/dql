@@ -78,7 +78,7 @@ include = ["dql*"]
 namespaces = false
 
 [tool.setuptools.package-data]
-"*" = ["README.rst", "CHANGES.rst"]
+"*" = ["README.md", "CHANGES.rst"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["tests"]
@@ -125,15 +125,15 @@ test-specific = "pytest"
 # Linting and formatting scripts
 lint = "task lint-mypy && task lint-isort && task lint-black && task lint-pylint"
 
-lint-mypy = "mypy dql tests bin/install.py"
-lint-isort = "isort --skip snapshots --check dql tests bin/install.py"
-lint-black = "black --exclude=snapshots --check dql tests bin/install.py"
-lint-pylint = "pylint --rcfile=.pylintrc dql tests bin/install.py"
+lint-mypy = "mypy dql tests"
+lint-isort = "isort --skip snapshots --check dql tests"
+lint-black = "black --exclude=snapshots --check dql tests"
+lint-pylint = "pylint --rcfile=.pylintrc dql tests"
 
 fix = "task fix-isort && task fix-black"
 
-fix-isort = "isort --skip snapshots --atomic dql tests bin/install.py"
-fix-black = "black --exclude=snapshots dql tests bin/install.py"
+fix-isort = "isort --skip snapshots --atomic dql tests"
+fix-black = "black --exclude=snapshots dql tests"
 
 # Coverage scripts
 coverage = "pytest --cov=dql --cov-report=html --cov-branch tests"

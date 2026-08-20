@@ -1,16 +1,23 @@
 Getting Started
 ===============
 This project is a fork of `stevearc/dql <https://github.com/stevearc/dql>`__.
-Install DQL with a prebuilt Rust binary from `this fork's GitHub releases
-<https://github.com/jspreddy/dql/releases>`__ (``v-rust`` branch) or with pip
-for the legacy upstream Python package::
+These pages document the **Python** implementation in ``py-impl/``. The
+recommended client is the Rust binary ``dqlrs``; see ``rust-docs/`` at the
+repository root.
 
-    curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/v-rust/bin/install-rust.sh | sh
+Install the Python package from this fork with ``uv`` (development branch) or
+pip for the upstream PyPI package::
+
+    uv tool install --python 3.9 "git+https://github.com/jspreddy/dql.git#subdirectory=py-impl"
 
     pip install dql
 
-See ``rust-plans/migration-from-python.md`` for differences between the Python
-and Rust clients.
+From a local clone::
+
+    git clone https://github.com/jspreddy/dql.git
+    cd dql/py-impl
+    uv sync --dev
+    uv pip install -e .
 
 Since DQL uses AWS credentials under the hood, the authentication mechanism is
 the same. You can use the ``$HOME/.aws/credentials`` file or set the environment
