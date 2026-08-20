@@ -78,7 +78,7 @@ include = ["dql*"]
 namespaces = false
 
 [tool.setuptools.package-data]
-"*" = ["README.rst", "CHANGES.rst"]
+"*" = ["README.md", "CHANGES.rst"]
 
 [tool.setuptools.exclude-package-data]
 "*" = ["tests"]
@@ -105,35 +105,35 @@ addopts = "--verbose"
 testpaths = ["tests"]
 
 [tool.pytest-dynamodb]
-dir = "./.dynamo-local/data"
+dir = "../.dynamo-local/data"
 port = 8000
 delay = 2
 
 [tool.taskipy.tasks]
-bump = "sh ./scripts/bump-version.sh"
+bump = "sh ../scripts/bump-version.sh python"
 version = "which python && python --version"
 
-clean = "rm -rf .dynamo-local build dql.egg-info .pytest_cache .coverage; uv venv --clear"
+clean = "rm -rf .dynamo-local ../.dynamo-local build dql.egg-info .pytest_cache .coverage; uv venv --clear"
 resync = "uv sync --dev --refresh --reinstall --no-cache"
 
 # Test scripts
 test = "pytest tests"
-test-matrix = "sh ./scripts/test-python-versions.sh"
+test-matrix = "sh ../scripts/py-test-python-versions.sh"
 test-verbose = "pytest --verbose tests"
 test-specific = "pytest"
 
 # Linting and formatting scripts
 lint = "task lint-mypy && task lint-isort && task lint-black && task lint-pylint"
 
-lint-mypy = "mypy dql tests bin/install.py"
-lint-isort = "isort --skip snapshots --check dql tests bin/install.py"
-lint-black = "black --exclude=snapshots --check dql tests bin/install.py"
-lint-pylint = "pylint --rcfile=.pylintrc dql tests bin/install.py"
+lint-mypy = "mypy dql tests"
+lint-isort = "isort --skip snapshots --check dql tests"
+lint-black = "black --exclude=snapshots --check dql tests"
+lint-pylint = "pylint --rcfile=.pylintrc dql tests"
 
 fix = "task fix-isort && task fix-black"
 
-fix-isort = "isort --skip snapshots --atomic dql tests bin/install.py"
-fix-black = "black --exclude=snapshots dql tests bin/install.py"
+fix-isort = "isort --skip snapshots --atomic dql tests"
+fix-black = "black --exclude=snapshots dql tests"
 
 # Coverage scripts
 coverage = "pytest --cov=dql --cov-report=html --cov-branch tests"
@@ -142,4 +142,4 @@ coverage-ci = "pytest --cov=dql --cov-report=html --cov-branch tests"
 # Package building script
 package = "task version && uv build --verbose && uv run pex . -m dql:main -o build/dql"
 
-dynamo = "sh ./scripts/install_dynamodb_local.sh"
+dynamo = "sh ../scripts/install_dynamodb_local.sh"

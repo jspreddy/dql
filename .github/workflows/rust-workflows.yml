@@ -1,11 +1,19 @@
 name: Rust workflows
 on:
   push:
-    branches:
-      - v-rust
+    paths:
+      - "rust-impl/**"
+      - "rust-docs/**"
+      - "rust-plans/**"
+      - "scripts/**"
+      - ".github/workflows/rust-workflows.yml"
   pull_request:
-    branches:
-      - v-rust
+    paths:
+      - "rust-impl/**"
+      - "rust-docs/**"
+      - "rust-plans/**"
+      - "scripts/**"
+      - ".github/workflows/rust-workflows.yml"
 
 defaults:
   run:

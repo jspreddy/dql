@@ -17,7 +17,7 @@ description = "DynamoDB Query Language"
 authors = ["Sai Jonnala <jspreddy@users.noreply.github.com>"]
 repository = "https://github.com/jspreddy/dql"
 homepage = "https://github.com/jspreddy/dql"
-readme = "../README.rst"
+readme = "../rust-docs/README.md"
 
 [profile.release]
 lto = "thin"

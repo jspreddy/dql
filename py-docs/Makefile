@@ -46,8 +46,8 @@ clean:
 	-rm -rf $(APIDIR)/*
 
 apidoc:
-	$(SPHINXAPIDOC) -f -e -o $(APIDIR) ../dql
-	cp ../CHANGES.rst changes.rst
+	$(SPHINXAPIDOC) -f -e -o $(APIDIR) ../py-impl/dql
+	cp ../py-impl/CHANGES.rst changes.rst
 	@echo
 	@echo "Build finished. The RST files are in $(APIDIR)."
 

@@ -39,16 +39,16 @@ Code is ahead of the ideal boundaries in a few places; see `todo_*.md`:
 
 | Python area        | Rust target                   | Notes                                                                                                                                                               |
 | ------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dql/__init__.py`  | `dql-cli/src/main.rs`         | Use `clap` for `-c`, `--json`, region, host, port, and version flags.                                                                                               |
-| `dql/cli.py`       | `dql-cli`                     | Use `ratatui` for the interactive terminal UI, with a line-input/history layer for completion and multiline input. Keep meta-commands separate from DQL statements. |
-| `dql/grammar/`     | `dql-parser`                  | Prefer a grammar-first parser such as `pest`, or a typed combinator parser if error recovery needs more control.                                                    |
-| `dql/expressions/` | `dql-expr`                    | Build typed constraint, selection, and update expressions; render DynamoDB expression strings and placeholders.                                                     |
-| `dql/models.py`    | `dql-models`                  | Represent `TableMeta`, `QueryIndex`, fields, projections, throughput, and billing mode as Rust structs.                                                             |
-| `dql/engine.py`    | `dql-engine`                  | Dispatch typed statements, plan queries, call `aws-sdk-dynamodb`, track capacity, and handle throttling.                                                            |
-| `dql/output.py`    | `dql-output`                  | Use terminal-aware formatting crates while preserving JSON and tabular output semantics.                                                                            |
-| `dql/history.py`   | `dql-cli`                     | Store and append history with the same user-visible behavior where practical.                                                                                       |
-| `dql/help.py`      | `dql-cli`                     | Embed or generate command help from markdown or RST source.                                                                                                         |
-| `dql/monitor.py`   | `dql-cli` or optional feature | Keep CloudWatch/watch support optional until the core engine is stable.                                                                                             |
+| `py-impl/dql/__init__.py`  | `dql-cli/src/main.rs`         | Use `clap` for `-c`, `--json`, region, host, port, and version flags.                                                                                               |
+| `py-impl/dql/cli.py`       | `dql-cli`                     | Use `ratatui` for the interactive terminal UI, with a line-input/history layer for completion and multiline input. Keep meta-commands separate from DQL statements. |
+| `py-impl/dql/grammar/`     | `dql-parser`                  | Prefer a grammar-first parser such as `pest`, or a typed combinator parser if error recovery needs more control.                                                    |
+| `py-impl/dql/expressions/` | `dql-expr`                    | Build typed constraint, selection, and update expressions; render DynamoDB expression strings and placeholders.                                                     |
+| `py-impl/dql/models.py`    | `dql-models`                  | Represent `TableMeta`, `QueryIndex`, fields, projections, throughput, and billing mode as Rust structs.                                                             |
+| `py-impl/dql/engine.py`    | `dql-engine`                  | Dispatch typed statements, plan queries, call `aws-sdk-dynamodb`, track capacity, and handle throttling.                                                            |
+| `py-impl/dql/output.py`    | `dql-output`                  | Use terminal-aware formatting crates while preserving JSON and tabular output semantics.                                                                            |
+| `py-impl/dql/history.py`   | `dql-cli`                     | Store and append history with the same user-visible behavior where practical.                                                                                       |
+| `py-impl/dql/help.py`      | `dql-cli`                     | Embed or generate command help from markdown or RST source.                                                                                                         |
+| `py-impl/dql/monitor.py`   | `dql-cli` or optional feature | Keep CloudWatch/watch support optional until the core engine is stable.                                                                                             |
 
 
 

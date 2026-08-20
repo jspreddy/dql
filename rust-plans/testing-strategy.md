@@ -6,7 +6,7 @@ coverage in an order that follows the rewrite phases.
 
 ## Success criteria
 
-- DQL examples in `README.rst` and `doc/topics/queries/` parse and execute with
+- DQL examples in `rust-docs/README.md` and `py-docs/topics/queries/` parse and execute with
   the same user-visible behavior.
 - Parser tests cover every supported statement family and important error case.
 - Query tests pass against DynamoDB Local for table lifecycle, data mutation,
@@ -24,9 +24,9 @@ language contract.
 
 Sources to port:
 
-- `tests/test_parser.py`
-- statement examples from `README.rst`
-- query documentation under `doc/topics/queries/`
+- `py-impl/tests/test_parser.py`
+- statement examples from `rust-docs/README.md`
+- query documentation under `py-docs/topics/queries/`
 
 Rust test shape:
 
@@ -42,7 +42,7 @@ Expression rendering should be verified before any live DynamoDB calls.
 
 Sources to port:
 
-- `dql/expressions/`
+- `py-impl/dql/expressions/`
 - expression assertions currently embedded in parser and query tests
 
 Rust test shape:
@@ -58,8 +58,8 @@ Planner tests should run without DynamoDB by using table metadata fixtures.
 
 Sources to port:
 
-- `tests/test_models.py`
-- index-sensitive cases from `tests/test_queries.py`
+- `py-impl/tests/test_models.py`
+- index-sensitive cases from `py-impl/tests/test_queries.py`
 
 Rust test shape:
 
@@ -76,9 +76,9 @@ against DynamoDB Local.
 
 Sources to port:
 
-- `tests/test_engine.py`
-- `tests/test_queries.py`
-- shared setup from `tests/__init__.py` and `tests/conftest.py`
+- `py-impl/tests/test_engine.py`
+- `py-impl/tests/test_queries.py`
+- shared setup from `py-impl/tests/__init__.py` and `py-impl/tests/conftest.py`
 
 Rust test shape:
 
@@ -95,11 +95,11 @@ all lower layers.
 
 Sources to port:
 
-- `tests/test_cli.py`
-- `tests/test_history.py`
-- `tests/test_readline_compat.py`
-- `tests/test_save.py`
-- snapshots under `tests/__snapshots__/`
+- `py-impl/tests/test_cli.py`
+- `py-impl/tests/test_history.py`
+- `py-impl/tests/test_readline_compat.py`
+- `py-impl/tests/test_save.py`
+- snapshots under `py-impl/tests/__snapshots__/`
 
 Rust test shape:
 
