@@ -2,7 +2,8 @@
 # Install the Rust `dql` binary from GitHub releases.
 set -euo pipefail
 
-REPO="${DQL_REPO:-stevearc/dql}"
+# Default to this fork. Override with DQL_REPO=stevearc/dql for upstream.
+REPO="${DQL_REPO:-jspreddy/dql}"
 VERSION="${DQL_VERSION:-latest}"
 INSTALL_DIR="${DQL_INSTALL_DIR:-}"
 
