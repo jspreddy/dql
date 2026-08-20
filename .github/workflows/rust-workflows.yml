@@ -1,0 +1,100 @@
+name: Rust workflows
+on:
+  push:
+    paths:
+      - "rust-impl/**"
+      - "rust-docs/**"
+      - "rust-plans/**"
+      - "scripts/**"
+      - ".github/workflows/rust-workflows.yml"
+  pull_request:
+    paths:
+      - "rust-impl/**"
+      - "rust-docs/**"
+      - "rust-plans/**"
+      - "scripts/**"
+      - ".github/workflows/rust-workflows.yml"
+
+defaults:
+  run:
+    working-directory: rust-impl
+
+jobs:
+  check-job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-impl
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Verify Cargo.lock is fresh
+        run: |
+          cargo generate-lockfile
+          git diff --exit-code Cargo.lock
+
+  test-job:
+    needs: check-job
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-impl
+
+      - name: Run tests
+        run: cargo test --workspace
+
+  dynamodb-local-job:
+    needs: check-job
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v6
+
+      - name: Install Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: corretto
+          java-version: "21"
+
+      - name: Install and start DynamoDB Local
+        working-directory: .
+        run: ./scripts/install_dynamodb_local.sh background
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-impl
+
+      - name: Run DynamoDB Local integration tests
+        run: |
+          cargo test -p dql-engine --test dynamodb_local_smoke
+          cargo test -p dql-engine --test dynamodb_local_parity

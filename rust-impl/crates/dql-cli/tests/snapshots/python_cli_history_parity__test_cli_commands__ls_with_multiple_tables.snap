@@ -1,0 +1,8 @@
+---
+source: crates/dql-cli/tests/python_cli_history_parity.rs
+expression: output
+---
+Tables
+Name                        Items     Read    Write     Status     Size
+bar                             0        -        -     ACTIVE      0 B
+foo                             0        -        -     ACTIVE      0 B

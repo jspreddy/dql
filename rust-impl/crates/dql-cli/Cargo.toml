@@ -1,0 +1,38 @@
+[package]
+name = "dql-cli"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "dqlrs"
+path = "src/main.rs"
+
+[features]
+default = []
+watch = ["dql-engine/cloudwatch"]
+
+[dependencies]
+better-panic = "0.3.0"
+clap.workspace = true
+color-eyre = "0.6.5"
+crossterm.workspace = true
+dql-engine = { path = "../dql-engine" }
+dql-models = { path = "../dql-models" }
+dql-output = { path = "../dql-output" }
+dql-parser = { path = "../dql-parser" }
+glob.workspace = true
+human-panic = "2.0.8"
+humansize.workspace = true
+ratatui.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+shell-words.workspace = true
+strip-ansi-escapes = "0.2.1"
+
+[dev-dependencies]
+insta.workspace = true
+tempfile = "3.23.0"
