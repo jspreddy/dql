@@ -4,58 +4,58 @@ overview: Reorganize the monorepo so Python and Rust are sibling, self-contained
 todos:
   - id: move-py-impl
     content: git mv only — Python package, tests, packaging, tooling, and scripts/ into py-impl/ (no file content edits)
-    status: pending
+    status: completed
   - id: commit-move-py-impl
     content: Commit the py-impl git mv (rename-only)
-    status: pending
+    status: completed
   - id: move-py-docs
     content: git mv only — doc/ to py-docs/ (no Sphinx or RST edits)
-    status: pending
+    status: completed
   - id: commit-move-py-docs
     content: Commit the py-docs git mv (rename-only)
-    status: pending
+    status: completed
   - id: move-rust-docs
     content: git mv only — rust-plans/migration-from-python.md to rust-docs/ (mkdir rust-docs, no content edits)
-    status: pending
+    status: completed
   - id: commit-move-rust-docs
     content: Commit the rust-docs git mv (rename-only)
-    status: pending
+    status: completed
   - id: create-py-plans
     content: Add py-plans/README.md stub for Python-only design plans
-    status: pending
+    status: completed
   - id: commit-py-plans
     content: Commit py-plans/README.md
-    status: pending
+    status: completed
   - id: fix-python-paths
     content: Content edits — pyproject/Sphinx/bump paths, Python-only getting_started/develop, py-impl README.md, git-subdirectory install docs
-    status: pending
+    status: completed
   - id: commit-python-paths
     content: Commit Python path and docs content fixes
-    status: pending
+    status: completed
   - id: split-rust-docs
     content: Content edits — rust-docs user Markdown, slim rust-impl README, copy Local/install scripts into rust-impl/scripts/, Cargo readme path
-    status: pending
+    status: completed
   - id: commit-rust-docs
     content: Commit Rust docs split and script copies
-    status: pending
+    status: completed
   - id: split-versioning
     content: Content edits — independent bump configs/scripts; namespaced git tags; stop dual lockfile sync
-    status: pending
+    status: completed
   - id: commit-versioning
     content: Commit independent Python and Rust versioning
-    status: pending
+    status: completed
   - id: split-ci
     content: Content edits — path-filtered python-workflows.yml and rust workflows; drop v-next/v-rust-only triggers; point Local scripts at each impl
-    status: pending
+    status: completed
   - id: commit-ci
     content: Commit CI workflow split
-    status: pending
+    status: completed
   - id: thin-root
     content: Content edits — replace root README.rst with README.md; slim .gitignore; delete leftover root Python config; keep LICENSE + manual-tests
-    status: pending
+    status: completed
   - id: commit-thin-root
     content: Commit thin repo root
-    status: pending
+    status: completed
 isProject: false
 ---
 

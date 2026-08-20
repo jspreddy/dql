@@ -1,5 +1,5 @@
-use color_eyre::eyre;
 use color_eyre::config::HookBuilder;
+use color_eyre::eyre;
 
 /// Install color-eyre / better-panic / human-panic hooks (Ratatui recipes).
 ///
