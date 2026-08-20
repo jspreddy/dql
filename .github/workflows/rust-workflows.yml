@@ -1,11 +1,17 @@
 name: Rust workflows
 on:
   push:
-    branches:
-      - v-rust
+    paths:
+      - "rust-impl/**"
+      - "rust-docs/**"
+      - "rust-plans/**"
+      - ".github/workflows/rust-workflows.yml"
   pull_request:
-    branches:
-      - v-rust
+    paths:
+      - "rust-impl/**"
+      - "rust-docs/**"
+      - "rust-plans/**"
+      - ".github/workflows/rust-workflows.yml"
 
 defaults:
   run:
@@ -75,7 +81,6 @@ jobs:
           java-version: "21"
 
       - name: Install and start DynamoDB Local
-        working-directory: .
         run: ./scripts/install_dynamodb_local.sh background
 
       - name: Install Rust toolchain
