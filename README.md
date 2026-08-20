@@ -1,8 +1,5 @@
 # DQL
 
-[![Python CI](https://github.com/jspreddy/dql/actions/workflows/python-workflows.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/python-workflows.yml)
-[![Rust CI](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml)
-
 A SQL-ish language and CLI for Amazon DynamoDB. You write statements such as
 `CREATE TABLE`, `INSERT`, `SELECT`, `SCAN`, `UPDATE`, and `DELETE`, and DQL
 turns them into DynamoDB API calls.
@@ -101,6 +98,11 @@ More: [`rust-docs/README.md`](rust-docs/README.md).
 
 
 ## For maintainers
+
+[![Python CI](https://github.com/jspreddy/dql/actions/workflows/python-workflows.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/python-workflows.yml)
+
+[![Rust CI](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml)
+
 
 | Path | Contents |
 | --- | --- |
