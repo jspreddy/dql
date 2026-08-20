@@ -11,9 +11,9 @@ turns them into DynamoDB API calls.
 
 Start the shell by running `dql`. Once inside the shell you can run queries or other available commands. `help` command is available.
 
-Example commands and queries... 
+Example queries and commands... 
 
-```text
+```sql
 CREATE TABLE forum_threads (name STRING HASH KEY, subject STRING RANGE KEY, THROUGHPUT (4, 2));
 
 INSERT INTO forum_threads (name, subject, views, replies) VALUES ('Self Defense', 'Defense from Banana', 67, 4);
