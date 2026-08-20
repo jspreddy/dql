@@ -20,9 +20,9 @@ Deliverables:
 
 Compatibility gate:
 
-- Port parser test cases from `tests/test_parser.py`.
-- Add golden AST snapshots for documentation examples from `README.rst` and
-  `doc/topics/queries/`.
+- Port parser test cases from `py-impl/tests/test_parser.py`.
+- Add golden AST snapshots for documentation examples from `rust-docs/README.md` and
+  `py-docs/topics/queries/`.
 
 Primary risks:
 
@@ -72,7 +72,7 @@ Deliverables:
 
 Compatibility gate:
 
-- Port `tests/test_models.py`.
+- Port `py-impl/tests/test_models.py`.
 - Add planner-only tests extracted from query scenarios before connecting the
   AWS SDK.
 
@@ -105,13 +105,13 @@ Status:
 - CLI connects to DynamoDB Local when `-H` is provided
 - Integration tests `dynamodb_local_smoke` and `dynamodb_local_parity` require
   DynamoDB Local and fail if it is not running
-- `python_engine_query_model_parity` mirrors `tests/test_queries.py`; one Local
+- `python_engine_query_model_parity` mirrors `py-impl/tests/test_queries.py`; one Local
   GSI throughput case remains `#[ignore]`. Design debt for engine/backend
   boundaries is tracked in `todo_engine_backend_boundaries.md`.
 
 Compatibility gate:
 
-- Port `tests/test_engine.py` and `tests/test_queries.py` incrementally by
+- Port `py-impl/tests/test_engine.py` and `py-impl/tests/test_queries.py` incrementally by
   statement family.
 - Run the Rust and Python suites against DynamoDB Local with the same fixture
   data where practical.
@@ -146,7 +146,7 @@ Status:
 
 Compatibility gate:
 
-- Port `tests/test_cli.py`, `tests/test_history.py`, and output-focused tests.
+- Port `py-impl/tests/test_cli.py`, `py-impl/tests/test_history.py`, and output-focused tests.
 - Snapshot command output for common one-shot and REPL flows.
 
 Primary risks:
@@ -170,7 +170,7 @@ Deliverables:
 Status:
 
 - `rust-impl/` workspace, `scripts/smoke_test.sh`, and
-  `migration-from-python.md` are in place
+  `rust-docs/migration-from-python.md` are in place
 
 Compatibility gate:
 

@@ -11,15 +11,15 @@ This repository ([jspreddy/dql](https://github.com/jspreddy/dql)) is a fork of
 DQL is a SQL-like CLI and library for DynamoDB. The current implementation has
 these major surfaces:
 
-- CLI entrypoint and REPL: `dql/__init__.py` and `dql/cli.py`
-- Query execution and DynamoDB integration: `dql/engine.py`
-- Grammar and parse tree construction: `dql/grammar/`
-- Expression AST and DynamoDB expression rendering: `dql/expressions/`
-- Table and index metadata: `dql/models.py`
-- Output, paging, JSON handling, history, help, and monitoring: `dql/output.py`,
-  `dql/history.py`, `dql/help.py`, and `dql/monitor.py`
-- Compatibility tests: `tests/test_parser.py`, `tests/test_queries.py`,
-  `tests/test_engine.py`, `tests/test_cli.py`, and related focused tests
+- CLI entrypoint and REPL: `py-impl/dql/__init__.py` and `py-impl/dql/cli.py`
+- Query execution and DynamoDB integration: `py-impl/dql/engine.py`
+- Grammar and parse tree construction: `py-impl/dql/grammar/`
+- Expression AST and DynamoDB expression rendering: `py-impl/dql/expressions/`
+- Table and index metadata: `py-impl/dql/models.py`
+- Output, paging, JSON handling, history, help, and monitoring: `py-impl/dql/output.py`,
+  `py-impl/dql/history.py`, `py-impl/dql/help.py`, and `py-impl/dql/monitor.py`
+- Compatibility tests: `py-impl/tests/test_parser.py`, `py-impl/tests/test_queries.py`,
+  `py-impl/tests/test_engine.py`, `py-impl/tests/test_cli.py`, and related focused tests
 
 ## Rewrite goals
 
@@ -37,8 +37,8 @@ these major surfaces:
 - `architecture.md` describes the Rust crate and module boundaries (target and
   current layout).
 - `migration-roadmap.md` breaks the rewrite into compatibility-focused phases.
-- `migration-from-python.md` documents install and behavior differences for users
-  moving from Python to Rust.
+- [`rust-docs/migration-from-python.md`](../rust-docs/migration-from-python.md)
+  documents install and behavior differences for users moving from Python to Rust.
 - `testing-strategy.md` defines the parity gates and test migration approach.
 
 ## Design debt (`todo_*.md`)

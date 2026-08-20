@@ -10,21 +10,22 @@ or remain incomplete.
 | Topic | Python | Rust |
 | --- | --- | --- |
 | Recommended install | `pip install dql` or PEX from releases | GitHub release binary or `cargo install --git` |
-| Install script | `bin/install.py` (PEX) | `bin/install-rust.sh` |
+| Install script | PEX builder in Python tree | `rust-impl/scripts/install-rust.sh` |
 | Development branch | `v-next` | `v-rust` |
 
 Rust install examples:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/v-rust/bin/install-rust.sh | sh
+curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/HEAD/rust-impl/scripts/install-rust.sh | sh
 
-cargo install --git https://github.com/jspreddy/dql.git --tag <version> --locked -p dql-cli --root ~/.local
+cd rust-impl && cargo install --path crates/dql-cli --locked --root ~/.local
 ```
 
 This repository is a fork of [`stevearc/dql`](https://github.com/stevearc/dql).
 Install URLs, Cargo `--git` sources, and CI badges in these docs point at
 [`jspreddy/dql`](https://github.com/jspreddy/dql). Upstream may also publish
-binaries; override with `DQL_REPO=owner/repo` when using `bin/install-rust.sh`.
+binaries; override with `DQL_REPO=owner/repo` when using
+`rust-impl/scripts/install-rust.sh`.
 
 ## Configuration and history
 
@@ -118,7 +119,7 @@ Design-debt follow-ups (not user-facing parity) are listed in
 
 The Python package remains available for existing users. New installs on
 `v-rust` should prefer the Rust binary. PyPI publication is not removed in this
-phase; pip/pex are documented as legacy install paths in `README.rst`.
+phase; pip/pex are documented as legacy install paths in `py-impl/README.md`.
 
 ## Verifying your migration
 
