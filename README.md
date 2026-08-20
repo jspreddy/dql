@@ -123,20 +123,18 @@ cd dql
 git checkout v-next
 ```
 
-Python (editable):
+#### Python (editable):
 
 ```bash
 cd py-impl
-uv sync --dev
-source .venv/bin/activate
-uv pip install -e .
+uv tool install --python 3.9 --editable .
 ```
 
-Rust:
+#### Rust:
 
 ```bash
 cd rust-impl
 cargo install --path crates/dql-cli --locked --root ~/.local
 ```
 
-Local checks: [`VERIFICATION.md`](VERIFICATION.md).
+Run local verifications: [`VERIFICATION.md`](VERIFICATION.md).
