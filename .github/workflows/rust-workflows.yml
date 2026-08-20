@@ -5,12 +5,14 @@ on:
       - "rust-impl/**"
       - "rust-docs/**"
       - "rust-plans/**"
+      - "scripts/**"
       - ".github/workflows/rust-workflows.yml"
   pull_request:
     paths:
       - "rust-impl/**"
       - "rust-docs/**"
       - "rust-plans/**"
+      - "scripts/**"
       - ".github/workflows/rust-workflows.yml"
 
 defaults:
@@ -81,6 +83,7 @@ jobs:
           java-version: "21"
 
       - name: Install and start DynamoDB Local
+        working-directory: .
         run: ./scripts/install_dynamodb_local.sh background
 
       - name: Install Rust toolchain

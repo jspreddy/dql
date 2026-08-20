@@ -2,7 +2,7 @@
 # Smoke-test a built `dqlrs` binary (release by default).
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$(dirname "$0")/../rust-impl" && pwd)"
 cd "$ROOT"
 
 DQL_BIN="${DQL_BIN:-$ROOT/target/release/dqlrs}"

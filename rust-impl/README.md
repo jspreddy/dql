@@ -30,11 +30,9 @@ crates/
   dql-models/   # TableMeta, QueryPlan, index matching
   dql-engine/   # Engine<B>, MemoryBackend, SdkBackend, file I/O
   dql-output/   # formatters, display backends, table-meta text
-scripts/
-  smoke_test.sh
-  install_dynamodb_local.sh
-  install-rust.sh
 ```
+
+Helpers live at the repo root: [`../scripts/`](../scripts/) (`rust-smoke-test.sh`, `install_dynamodb_local.sh`, `rust-install.sh`, `bump-version.sh`).
 
 Default CLI backend is live AWS. `DQL_BACKEND=memory` is for offline demos and
 smoke tests. Engine unit tests use `MemoryBackend` directly. DynamoDB Local is
@@ -47,7 +45,7 @@ cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo build --release -p dql-cli
-./scripts/smoke_test.sh
+../scripts/rust-smoke-test.sh
 ```
 
 Optional CloudWatch/`watch` build:
@@ -68,7 +66,7 @@ Integration tests expect Local on port 8000 (override with `DQL_LOCAL_HOST` /
 `DQL_LOCAL_PORT`). They run with the normal suite and fail if Local is down.
 
 ```bash
-./scripts/install_dynamodb_local.sh background
+../scripts/install_dynamodb_local.sh background
 cargo test -p dql-engine --test dynamodb_local_smoke
 cargo test -p dql-engine --test dynamodb_local_parity
 cargo test --workspace
@@ -84,12 +82,12 @@ clippy, tests, smoke).
 
 ## Versioning
 
-Python and Rust versions bump independently. From this directory:
+Python and Rust versions bump independently. From the repository root:
 
 ```bash
-./scripts/bump-version.sh --dry-run build
-./scripts/bump-version.sh build
-./scripts/bump-version.sh --tag release
+./scripts/bump-version.sh rust --dry-run build
+./scripts/bump-version.sh rust build
+./scripts/bump-version.sh rust --tag release
 ```
 
 Release tags are `rust-<version>` (for example `rust-0.6.4`) so they do not

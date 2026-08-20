@@ -60,7 +60,7 @@ Common commands::
 
 Tests require DynamoDB Local. Start it before running tests::
 
-    ./scripts/install_dynamodb_local.sh background
+    ../scripts/install_dynamodb_local.sh background
 
 Multi-Python testing
 --------------------
@@ -83,7 +83,7 @@ Use `bump2version` instead of `bumpversion` because `bump2version` is actively m
 
 Config based on: `<https://medium.com/@williamhayes/versioning-using-bumpversion-4d13c914e9b8>`_
 
-Run bump2version from ``py-impl/`` (``scripts/bump-version.sh`` runs ``uv lock`` and amends the bump commit to include ``uv.lock``)::
+Run bump2version from ``py-impl/`` (``../scripts/bump-version.sh python`` runs ``uv lock`` and amends the bump commit to include ``uv.lock``)::
 
     uv run task bump --dry-run build   # preview dev build bump
     uv run task bump --dry-run patch   # preview patch bump

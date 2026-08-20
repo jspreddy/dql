@@ -43,15 +43,17 @@ jobs:
 
       - name: Install and start DynamoDB Local
         if: matrix.os == 'ubuntu-latest'
+        working-directory: .
         run: ./scripts/install_dynamodb_local.sh background
 
       - name: Build release binary
         run: cargo build --release -p dql-cli
 
       - name: Run package smoke test
+        working-directory: .
         env:
           DQL_REQUIRE_LOCAL: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
-        run: ./scripts/smoke_test.sh
+        run: ./scripts/rust-smoke-test.sh
 
       - name: Package release archive
         id: package

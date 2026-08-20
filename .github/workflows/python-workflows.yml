@@ -5,12 +5,14 @@ on:
       - "py-impl/**"
       - "py-docs/**"
       - "py-plans/**"
+      - "scripts/**"
       - ".github/workflows/python-workflows.yml"
   pull_request:
     paths:
       - "py-impl/**"
       - "py-docs/**"
       - "py-plans/**"
+      - "scripts/**"
       - ".github/workflows/python-workflows.yml"
 
 defaults:
@@ -57,6 +59,7 @@ jobs:
           java-version: "21"
 
       - name: Install & start DynamoDB Local
+        working-directory: .
         run: ./scripts/install_dynamodb_local.sh background
 
       - name: Install uv

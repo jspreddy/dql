@@ -2,7 +2,7 @@
 # Run the test suite under each supported Python version (matches CI matrix).
 set -euo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../py-impl"
 
 PYTHON_VERSIONS=(3.9 3.10 3.11)
 failed=()

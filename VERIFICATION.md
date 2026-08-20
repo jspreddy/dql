@@ -7,10 +7,10 @@ Commands to confirm both implementations still **install**, **lint**, **test**, 
 Python pytest and Rust Local tests both need Local on **8000**. Start it in a **separate terminal** and leave it running (a `… &` child is killed when that shell exits).
 
 ```bash
-./py-impl/scripts/install_dynamodb_local.sh
+./scripts/install_dynamodb_local.sh
 ```
 
-That script downloads the jar into `py-impl/.dynamo-local/` on first run, then starts Java in the foreground. Confirm:
+That script downloads the jar into `.dynamo-local/` on first run, then starts Java in the foreground. Confirm:
 
 ```bash
 nc -z localhost 8000 && echo "DynamoDB Local is up"
@@ -19,11 +19,9 @@ nc -z localhost 8000 && echo "DynamoDB Local is up"
 To run Local in the background from an already-open terminal that you will keep:
 
 ```bash
-java -Djava.library.path="$PWD/py-impl/.dynamo-local/DynamoDBLocal_lib" \
-  -jar "$PWD/py-impl/.dynamo-local/DynamoDBLocal.jar" -inMemory -sharedDb
+java -Djava.library.path="$PWD/.dynamo-local/DynamoDBLocal_lib" \
+  -jar "$PWD/.dynamo-local/DynamoDBLocal.jar" -inMemory -sharedDb
 ```
-
-(`rust-impl/scripts/install_dynamodb_local.sh` is the same installer; it uses `rust-impl/.dynamo-local/`.)
 
 ---
 
@@ -74,7 +72,7 @@ cargo test -p dql-engine --test dynamodb_local_parity
 cargo build --release -p dql-cli
 
 # Smoke the binary (DQL_REQUIRE_LOCAL=1 fails if Local is down)
-DQL_REQUIRE_LOCAL=1 ./scripts/smoke_test.sh
+DQL_REQUIRE_LOCAL=1 ../scripts/rust-smoke-test.sh
 ```
 
 ---
@@ -86,9 +84,9 @@ Foreground Local would block, so this starts Java in the same shell, waits for p
 ```bash
 set -euo pipefail
 
-JAR_DIR="py-impl/.dynamo-local"
+JAR_DIR=".dynamo-local"
 if [[ ! -f "$JAR_DIR/DynamoDBLocal.jar" ]]; then
-  ./py-impl/scripts/install_dynamodb_local.sh background
+  ./scripts/install_dynamodb_local.sh background
 else
   java -Djava.library.path="$JAR_DIR/DynamoDBLocal_lib" \
     -jar "$JAR_DIR/DynamoDBLocal.jar" -inMemory -sharedDb &
@@ -105,7 +103,7 @@ nc -z localhost 8000
   && cargo test -p dql-engine --test dynamodb_local_smoke \
   && cargo test -p dql-engine --test dynamodb_local_parity \
   && cargo build --release -p dql-cli \
-  && DQL_REQUIRE_LOCAL=1 ./scripts/smoke_test.sh )
+  && DQL_REQUIRE_LOCAL=1 ../scripts/rust-smoke-test.sh )
 ```
 
 ---
@@ -124,7 +122,7 @@ nc -z localhost 8000
 | `rust-impl`: `cargo test --workspace` | Pass (a few tests ignored, as before) |
 | `rust-impl`: Local smoke + parity tests | Pass (1 + 5) |
 | `rust-impl`: `cargo build --release -p dql-cli` | Pass |
-| `rust-impl`: `DQL_REQUIRE_LOCAL=1 ./scripts/smoke_test.sh` | Pass |
+| `rust-impl`: `DQL_REQUIRE_LOCAL=1 ../scripts/rust-smoke-test.sh` | Pass |
 
 Python failures (not caused by missing packages after the move; the suite loads from `py-impl/`):
 

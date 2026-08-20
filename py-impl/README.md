@@ -35,5 +35,5 @@ uv run task dynamo    # start DynamoDB Local
 Start DynamoDB Local before tests if the pytest plugin is not downloading it:
 
 ```bash
-./scripts/install_dynamodb_local.sh background
+../scripts/install_dynamodb_local.sh background
 ```

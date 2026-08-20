@@ -16,7 +16,7 @@ Download a prebuilt binary from
 [GitHub releases](https://github.com/jspreddy/dql/releases):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/HEAD/rust-impl/scripts/install-rust.sh | sh
+curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/HEAD/scripts/rust-install.sh | sh
 ```
 
 **Local release build:**

@@ -105,20 +105,20 @@ addopts = "--verbose"
 testpaths = ["tests"]
 
 [tool.pytest-dynamodb]
-dir = "./.dynamo-local/data"
+dir = "../.dynamo-local/data"
 port = 8000
 delay = 2
 
 [tool.taskipy.tasks]
-bump = "sh ./scripts/bump-version.sh"
+bump = "sh ../scripts/bump-version.sh python"
 version = "which python && python --version"
 
-clean = "rm -rf .dynamo-local build dql.egg-info .pytest_cache .coverage; uv venv --clear"
+clean = "rm -rf .dynamo-local ../.dynamo-local build dql.egg-info .pytest_cache .coverage; uv venv --clear"
 resync = "uv sync --dev --refresh --reinstall --no-cache"
 
 # Test scripts
 test = "pytest tests"
-test-matrix = "sh ./scripts/test-python-versions.sh"
+test-matrix = "sh ../scripts/py-test-python-versions.sh"
 test-verbose = "pytest --verbose tests"
 test-specific = "pytest"
 
@@ -142,4 +142,4 @@ coverage-ci = "pytest --cov=dql --cov-report=html --cov-branch tests"
 # Package building script
 package = "task version && uv build --verbose && uv run pex . -m dql:main -o build/dql"
 
-dynamo = "sh ./scripts/install_dynamodb_local.sh"
+dynamo = "sh ../scripts/install_dynamodb_local.sh"
