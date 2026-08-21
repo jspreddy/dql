@@ -37,8 +37,8 @@ export AWS_SECRET_ACCESS_KEY=fakekey
 
 The harness sets those if they are unset.
 
-Output is colorized when stdout is a TTY (`NO_COLOR` disables it, `FORCE_COLOR`
-forces it). `-v` / `--verbose` prints the DQL and CLI output for each step.
+Output is colorized by default. Set `NO_COLOR` to disable it. `-v` / `--verbose`
+prints the DQL and CLI output for each step.
 
 ## What belongs here
 

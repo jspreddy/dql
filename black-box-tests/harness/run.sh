@@ -27,7 +27,7 @@ Environment:
   DQL_BIN / DQLRS_BIN         Explicit binary paths
   DQL_LOCAL_HOST / DQL_LOCAL_PORT   Default localhost:8000
   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY   Dummy keys if unset
-  NO_COLOR / FORCE_COLOR      Disable or force ANSI color
+  NO_COLOR                    Set to disable ANSI color
 EOF
 }
 

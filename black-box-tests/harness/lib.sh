@@ -4,13 +4,7 @@
 HARNESS_VERBOSE="${HARNESS_VERBOSE:-0}"
 
 harness_color_enabled() {
-  if [[ -n "${NO_COLOR:-}" ]]; then
-    return 1
-  fi
-  if [[ -n "${FORCE_COLOR:-}" ]]; then
-    return 0
-  fi
-  [[ -t 1 ]]
+  [[ -z "${NO_COLOR:-}" ]]
 }
 
 # Paint text with an SGR code (e.g. 1, 2, 31, 1;32). No trailing newline.
