@@ -41,6 +41,7 @@ Several cases **test** one feature and **check** it with another:
 | `110-insert-multiple-values` | `INSERT` | `SELECT` in `input.dql` |
 | `110-load-json-into-table` | `LOAD` | `SELECT` in `input.dql` |
 | `300-update-set-where` | `UPDATE` | `SELECT` in `input.dql` |
+| `300-update-except-pk-sk-filters` | `UPDATE` | `SCAN count(*)` + `attribute_exists` |
 | `300-delete-where-hash` | `DELETE` | `SELECT` in `input.dql` |
 | `210-alter-set-throughput` | `ALTER` | `DUMP SCHEMA` in `input.dql` |
 
@@ -78,6 +79,7 @@ flowchart TB
   subgraph g3 ["3xx — needs group 2"]
     ana["300-analyze-select"]
     upd["300-update-set-where"]
+    upexc["300-update-except-pk-sk-filters"]
     del["300-delete-where-hash"]
     jour["310-journeys-getting-started-posts"]
   end
@@ -95,6 +97,8 @@ flowchart TB
   selk --> exp
   selk --> ana
   selk --> upd
+  selfilt --> upexc
+  scan --> upexc
   selk --> del
   selr --> jour
 ```
@@ -123,6 +127,7 @@ the `SELECT` cases it explains. `ANALYZE` actually runs `SELECT`, so it sits in
 | `210-explain-select-query` | `insert` (setup); sorts after `SELECT` |
 | `300-analyze-select` | `select` |
 | `300-update-set-where` | `select` |
+| `300-update-except-pk-sk-filters` | `200-select-pk-sk-filters`, `scan` |
 | `300-delete-where-hash` | `select` |
 | `310-journeys-getting-started-posts` | `create`, `insert`, `200-select-hash-range` |
 
@@ -167,7 +172,7 @@ Same group. Read paths after a successful write.
 | --- | --- | --- |
 | `200-select-hash-key` | `CREATE` + `INSERT` | `SELECT` by hash |
 | `200-select-hash-range` | `CREATE` (hash+range) + `INSERT` | `SELECT` by hash and range |
-| `200-select-pk-sk-filters` | `CREATE` (hash+range) + `LOAD` 1000 JSON-line rows | `SELECT` by hash, sort-key prefix, and extra filters |
+| `200-select-pk-sk-filters` | `CREATE` (hash+range) + `LOAD` shared 1000-row fixture | `SELECT` by hash, sort-key prefix, and extra filters |
 | `200-scan-all-items` | `CREATE` + `INSERT` | `SCAN *` |
 
 `200-select-hash-range` does not need `200-select-hash-key` to pass; both need
@@ -184,7 +189,7 @@ Same number: both sit after group `1`, neither needs the other.
 | `210-alter-set-throughput` | `CREATE … THROUGHPUT (1, 1)` | `ALTER SET THROUGHPUT` + `DUMP SCHEMA` | `100-dump-schema` |
 | `210-explain-select-query` | `CREATE` + `INSERT` | `EXPLAIN SELECT` (does not run the query) | table from `create` / `insert`; ordered after `SELECT` |
 
-### `300` — `300-analyze-select`, `300-update-set-where`, `300-delete-where-hash`
+### `300` — `300-analyze-select`, `300-update-set-where`, `300-update-except-pk-sk-filters`, `300-delete-where-hash`
 
 Same group. Each is only meaningful if `SELECT` already works.
 
@@ -192,6 +197,7 @@ Same group. Each is only meaningful if `SELECT` already works.
 | --- | --- | --- |
 | `300-analyze-select` | `CREATE` + `INSERT` | `ANALYZE SELECT` (still returns the item) |
 | `300-update-set-where` | `CREATE` + `INSERT` | `UPDATE` then `SELECT` |
+| `300-update-except-pk-sk-filters` | `CREATE` (hash+range) + `LOAD` shared 1000-row fixture | `UPDATE SET patched` except the two filtered rows, then `SCAN count(*)` where `attribute_exists(patched)` (998) |
 | `300-delete-where-hash` | `CREATE` + `INSERT` | `DELETE` then `SELECT` of the remaining row |
 
 ### `310` — `310-journeys-getting-started-posts`

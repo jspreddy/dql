@@ -1,0 +1,2 @@
+UPDATE {{TABLE}} SET patched = 1 WHERE NOT (pk = 'acct-00' AND begins_with(sk, 'item#00') AND status = 'active' AND region = 'us-west');
+SCAN count(*) FROM {{TABLE}} WHERE attribute_exists(patched);

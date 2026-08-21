@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the 1000-row JSON-lines fixture for 200-select-pk-sk-filters.
+"""Generate the shared 1000-row JSON-lines fixture under fixtures/pk-sk-records/.
 
 Run this once (or to regenerate). The harness does not import this file and
 does not need faker at test time.
@@ -38,11 +38,14 @@ PLANTED = {
 }
 
 HERE = Path(__file__).resolve().parent
+SUITE_ROOT = HERE.parent.parent
 SEED_PATH = HERE / "seed.json"
-EXPECTED_PATH = HERE / "expected.json"
+SELECT_EXPECTED_PATH = (
+    SUITE_ROOT / "cases" / "200-select-pk-sk-filters" / "expected.json"
+)
 
 
-def matches_query(row: dict) -> bool:
+def matches_select_query(row: dict) -> bool:
     return (
         row["pk"] == QUERY_PK
         and str(row["sk"]).startswith(QUERY_SK_PREFIX)
@@ -94,16 +97,16 @@ def main() -> None:
             handle.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")))
             handle.write("\n")
 
-    expected = [row for row in rows if matches_query(row)]
+    expected = [row for row in rows if matches_select_query(row)]
     expected.sort(key=lambda row: (row["pk"], row["sk"]))
     if not expected:
-        raise SystemExit("query matched no rows; refuse to write an empty oracle")
-    EXPECTED_PATH.write_text(
+        raise SystemExit("select query matched no rows; refuse to write an empty oracle")
+    SELECT_EXPECTED_PATH.write_text(
         json.dumps(expected, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    print(f"wrote {len(rows)} json-lines to {SEED_PATH.name}")
-    print(f"wrote {len(expected)} expected items to {EXPECTED_PATH.name}")
+    print(f"wrote {len(rows)} json-lines to {SEED_PATH}")
+    print(f"wrote {len(expected)} expected items to {SELECT_EXPECTED_PATH}")
 
 
 if __name__ == "__main__":
