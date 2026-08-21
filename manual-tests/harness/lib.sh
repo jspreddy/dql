@@ -108,30 +108,27 @@ table_name() {
   printf 'at_%s_%s_%s' "$(sanitize_slug "$slug")" "$$" "$index"
 }
 
-# Substitute {{TABLE}} {{TABLE2}} ... in stdin.
+# Substitute {{TABLE}} {{TABLE2}} ... on stdin; write to stdout.
 apply_tables() {
   local slug="$1"
-  python3 - "$slug" "$$" <<'PY'
+  python3 -c '
 import sys
-
 slug = sys.argv[1]
 pid = sys.argv[2]
 text = sys.stdin.read()
 safe = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in slug.replace("/", "_").replace("-", "_"))
-# Longest placeholder first so TABLE10 is not eaten by TABLE1.
 for n in range(20, 0, -1):
     token = "{{TABLE}}" if n == 1 else "{{TABLE%d}}" % n
     name = "at_%s_%s_%s" % (safe, pid, n)
     text = text.replace(token, name)
 sys.stdout.write(text)
-PY
+' "$slug" "$$"
 }
 
 used_table_indexes() {
-  python3 - <<'PY'
+  python3 -c '
 import re
 import sys
-
 text = sys.stdin.read()
 indexes = set()
 for match in re.finditer(r"\{\{TABLE(\d*)\}\}", text):
@@ -139,7 +136,7 @@ for match in re.finditer(r"\{\{TABLE(\d*)\}\}", text):
     indexes.add(int(raw) if raw else 1)
 for n in sorted(indexes):
     print(n)
-PY
+'
 }
 
 list_case_dirs() {

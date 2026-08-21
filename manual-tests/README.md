@@ -85,7 +85,8 @@ cases can share one Local process.
 Relative `LOAD` / `SAVE` / `file` paths are resolved from the **case
 directory**.
 
-Prefer `--json` oracles. Pretty `smart` / `rich` tables depend on terminal
+Prefer `--json` oracles. `expected.json` is always a **JSON array of items**,
+even for a single row. Pretty `smart` / `rich` tables depend on terminal
 width and are a poor acceptance target.
 
 ### Modes

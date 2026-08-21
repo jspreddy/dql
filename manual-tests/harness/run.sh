@@ -156,6 +156,10 @@ export HOME="$ISOLATION/home"
 export XDG_CONFIG_HOME="$HOME/.config"
 mkdir -p "$XDG_CONFIG_HOME" "$HOME/.dql"
 cleanup_isolation() {
+  # Pipeline subshells inherit EXIT; only the top-level shell should remove the dir.
+  if [[ "${BASH_SUBSHELL:-0}" -gt 0 ]]; then
+    return 0
+  fi
   rm -rf "$ISOLATION"
 }
 trap cleanup_isolation EXIT
@@ -225,7 +229,8 @@ for rel in "${CASE_RELS[@]}"; do
   if [[ -f "$case_dir/teardown.dql" ]]; then
     apply_tables "$rel" <"$case_dir/teardown.dql" >"$work/teardown.dql"
   else
-    default_teardown "$rel" "$source_blob" | apply_tables "$rel" >"$work/teardown.dql"
+    default_teardown "$rel" "$source_blob" >"$work/teardown.raw"
+    apply_tables "$rel" <"$work/teardown.raw" >"$work/teardown.dql"
   fi
   if [[ -f "$case_dir/expected.json" ]]; then
     apply_tables "$rel" <"$case_dir/expected.json" >"$work/expected.json"

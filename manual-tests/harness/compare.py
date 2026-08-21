@@ -16,7 +16,10 @@ def parse_cli_json(stdout: str) -> Any:
     if not text:
         return []
     try:
-        return json.loads(text)
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return [parsed]
+        return parsed
     except json.JSONDecodeError:
         pass
     decoder = json.JSONDecoder()
@@ -47,10 +50,10 @@ def parse_cli_json(stdout: str) -> Any:
         idx = end
     if not values:
         raise ValueError("no JSON values found in CLI stdout:\n" + text[:500])
-    if len(values) == 1:
-        return values[0]
     if all(isinstance(value, dict) for value in values):
         return values
+    if len(values) == 1:
+        return values[0]
     return values
 
 
@@ -182,7 +185,7 @@ def _self_test() -> int:
         "concat objects",
         json_equal(parse_cli_json(concatenated), [{"id": "a", "n": 1}, {"id": "b", "n": 2}]),
     )
-    check("empty stdout", parse_cli_json("") == [])
+    check("single object is item list", json_equal(parse_cli_json('{"id": "a"}'), [{"id": "a"}]))
     check("number 1 vs 1.0", json_equal([{"n": 1}], [{"n": 1.0}]))
     check(
         "unordered items",
