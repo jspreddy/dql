@@ -2,9 +2,14 @@
 # Shared helpers for the black-box acceptance harness. Source from run.sh.
 
 HARNESS_VERBOSE="${HARNESS_VERBOSE:-0}"
+HARNESS_INDENT="${HARNESS_INDENT:-0}"
 
 harness_color_enabled() {
   [[ -z "${NO_COLOR:-}" ]]
+}
+
+harness_pad() {
+  printf '%*s' "${HARNESS_INDENT:-0}" ''
 }
 
 # Paint text with an SGR code (e.g. 1, 2, 31, 1;32). No trailing newline.
@@ -18,33 +23,35 @@ harness_paint() {
   fi
 }
 
-harness_width() {
-  local w="${COLUMNS:-}"
-  if [[ -z "$w" ]] && command -v tput >/dev/null 2>&1; then
-    w="$(tput cols 2>/dev/null || true)"
+# Bold yellow heading, three blank lines above, dashed line above and below.
+harness_heading() {
+  local text="$1"
+  local n=${#text}
+  local line
+  if [[ "$n" -lt 3 ]]; then
+    n=3
   fi
-  case "$w" in
-    '' | *[!0-9]*) w=72 ;;
-  esac
-  if [[ "$w" -lt 52 ]]; then
-    w=52
-  fi
-  if [[ "$w" -gt 100 ]]; then
-    w=100
-  fi
-  printf '%s' "$w"
+  line="$(printf '%*s' "$n" '' | tr ' ' '-')"
+  printf '\n\n\n%s\n%s\n%s\n' "$(harness_paint 33 "$line")" "$(harness_paint '1;33' "$text")" "$(harness_paint 33 "$line")"
 }
 
-harness_hr() {
-  python3 -c 'import sys; print("\u2500" * int(sys.argv[1]))' "$(harness_width)" | {
-    local line
-    IFS= read -r line || true
-    if harness_color_enabled; then
-      printf '\033[2m%s\033[0m\n' "$line"
-    else
-      printf '%s\n' "$line"
-    fi
-  }
+# Bold white subheading, blank line above.
+harness_subheading() {
+  printf '\n%s%s\n' "$(harness_pad)" "$(harness_paint '1;37' "$1")"
+}
+
+# Bold magenta subheading for a binary section (dql / dqlrs).
+harness_bin_heading() {
+  printf '\n%s\n' "$(harness_paint '1;35' "$1")"
+}
+
+harness_verbose_subheading() {
+  [[ "${HARNESS_VERBOSE:-0}" == "1" ]] || return 0
+  harness_subheading "$1"
+}
+
+harness_filename() {
+  harness_paint 34 "$1"
 }
 
 harness_info() {
@@ -67,25 +74,42 @@ harness_warn() {
 
 harness_verbose() {
   [[ "${HARNESS_VERBOSE:-0}" == "1" ]] || return 0
-  printf '  %s %s\n' "$(harness_paint 2 "·")" "$(harness_paint 2 "$*")"
+  printf '%s  %s %s\n' "$(harness_pad)" "$(harness_paint 2 "·")" "$(harness_paint 2 "$*")"
 }
 
-# Dump a file under a verbose heading. Missing or empty files are noted.
+# Dump a file under a blue filename label. Missing or empty files are noted.
 harness_verbose_file() {
   local title="$1"
   local file="${2:-}"
   [[ "${HARNESS_VERBOSE:-0}" == "1" ]] || return 0
-  harness_verbose "$title"
+  printf '\n%s%s\n' "$(harness_pad)" "$(harness_filename "$title")"
   if [[ -z "$file" || ! -e "$file" ]]; then
-    printf '      %s\n' "$(harness_paint 2 "(none)")"
+    printf '%s      %s\n' "$(harness_pad)" "$(harness_paint 2 "(none)")"
     return 0
   fi
   if [[ ! -s "$file" ]]; then
-    printf '      %s\n' "$(harness_paint 2 "(empty)")"
+    printf '%s      %s\n' "$(harness_pad)" "$(harness_paint 2 "(empty)")"
     return 0
   fi
   while IFS= read -r line || [[ -n "$line" ]]; do
-    printf '      %s\n' "$(harness_paint 2 "$line")"
+    printf '%s      %s\n' "$(harness_pad)" "$(harness_paint 2 "$line")"
+  done <"$file"
+}
+
+# Dump file contents in verbose mode with no title (caller prints the heading).
+harness_verbose_dump() {
+  local file="${1:-}"
+  [[ "${HARNESS_VERBOSE:-0}" == "1" ]] || return 0
+  if [[ -z "$file" || ! -e "$file" ]]; then
+    printf '%s      %s\n' "$(harness_pad)" "$(harness_paint 2 "(none)")"
+    return 0
+  fi
+  if [[ ! -s "$file" ]]; then
+    printf '%s      %s\n' "$(harness_pad)" "$(harness_paint 2 "(empty)")"
+    return 0
+  fi
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    printf '%s      %s\n' "$(harness_pad)" "$(harness_paint 2 "$line")"
   done <"$file"
 }
 

@@ -177,20 +177,6 @@ cleanup_isolation() {
   rm -rf "$ISOLATION"
 }
 trap cleanup_isolation EXIT
-harness_verbose "isolation $ISOLATION"
-
-idx=0
-for bin in "${BINS[@]}"; do
-  harness_verbose "binary ${BIN_LABELS[$idx]} = $bin"
-  idx=$((idx + 1))
-done
-
-NAME_WIDTH=8
-for rel in "${CASE_RELS[@]}"; do
-  if [[ ${#rel} -gt $NAME_WIDTH ]]; then
-    NAME_WIDTH=${#rel}
-  fi
-done
 
 bin_list=""
 for label in "${BIN_LABELS[@]}"; do
@@ -203,17 +189,16 @@ done
 
 print_status() {
   local status="$1"
-  local rel="$2"
-  local extra="${3:-}"
+  local extra="${2:-}"
   local sgr="1"
   case "$status" in
     PASS) sgr="1;32" ;;
     FAIL) sgr="1;31" ;;
     SKIP) sgr="1;33" ;;
   esac
-  printf '  %s  %s' "$(harness_paint "$sgr" "$status")" "$(printf '%-*s' "$NAME_WIDTH" "$rel")"
+  printf '%s  %s' "$(harness_pad)" "$(harness_paint "$sgr" "$status")"
   if [[ -n "$extra" ]]; then
-    printf '  %s' "$(harness_paint 2 "$extra")"
+    printf '  %s' "$(harness_paint '1;37' "$extra")"
   fi
   printf '\n'
 }
@@ -221,7 +206,7 @@ print_status() {
 print_detail() {
   local sgr="$1"
   shift
-  printf '      %s\n' "$(harness_paint "$sgr" "$*")"
+  printf '%s      %s\n' "$(harness_pad)" "$(harness_paint "$sgr" "$*")"
 }
 
 print_detail_file() {
@@ -231,16 +216,15 @@ print_detail_file() {
     return 0
   fi
   if [[ ! -s "$file" ]]; then
-    printf '        %s\n' "$(harness_paint 2 "(empty)")"
+    printf '%s        %s\n' "$(harness_pad)" "$(harness_paint 2 "(empty)")"
     return 0
   fi
   while IFS= read -r line || [[ -n "$line" ]]; do
-    printf '        %s\n' "$(harness_paint "$sgr" "$line")"
+    printf '%s        %s\n' "$(harness_pad)" "$(harness_paint "$sgr" "$line")"
   done <"$file"
 }
 
-harness_hr
-printf '  %s\n' "$(harness_paint 1 "black-box tests")"
+harness_heading "black-box tests"
 harness_kv "local" "$(local_host):$(local_port)"
 harness_kv "bins" "$bin_list"
 harness_kv "cases" "${#CASE_RELS[@]}"
@@ -250,7 +234,12 @@ fi
 if [[ "$HARNESS_VERBOSE" == "1" ]]; then
   harness_kv "verbose" "on"
 fi
-harness_hr
+harness_verbose "isolation $ISOLATION"
+idx=0
+for bin in "${BINS[@]}"; do
+  harness_verbose "binary ${BIN_LABELS[$idx]} = $bin"
+  idx=$((idx + 1))
+done
 
 run_cli() {
   local bin="$1"
@@ -294,13 +283,14 @@ SKIPPED=0
 
 for rel in "${CASE_RELS[@]}"; do
   case_dir="$CASES_ROOT/$rel"
+  harness_heading "$rel"
   mode="oneshot"
   if [[ -f "$case_dir/mode" ]]; then
     mode="$(tr -d '[:space:]' <"$case_dir/mode" | tr '[:upper:]' '[:lower:]')"
   fi
   if [[ ! -f "$case_dir/expected.json" && ! -f "$case_dir/expected.stdout" ]]; then
-    print_status FAIL "$rel"
-    print_detail 31 "missing expected.json or expected.stdout"
+    print_status FAIL
+    printf '      missing %s or %s\n' "$(harness_filename expected.json)" "$(harness_filename expected.stdout)"
     FAILED=$((FAILED + 1))
     continue
   fi
@@ -340,7 +330,7 @@ for rel in "${CASE_RELS[@]}"; do
     use_json=1
   fi
 
-  harness_verbose "$rel  mode=$mode  json=$use_json  work=$work"
+  harness_verbose "mode=$mode  json=$use_json  work=$work"
   harness_verbose_file "setup.dql" "$work/setup.dql"
   harness_verbose_file "input.dql" "$work/input.dql"
   harness_verbose_file "teardown.dql" "$work/teardown.dql"
@@ -352,10 +342,14 @@ for rel in "${CASE_RELS[@]}"; do
     label="${BIN_LABELS[$idx]}"
     idx=$((idx + 1))
 
+    harness_bin_heading "$label"
+    HARNESS_INDENT=4
+
     if [[ "$mode" == "repl-stdin" && "$label" == "dqlrs" ]]; then
-      print_status SKIP "$rel" "$label"
+      print_status SKIP
       print_detail 2 "repl-stdin is Python dql only; dqlrs uses a TUI"
       SKIPPED=$((SKIPPED + 1))
+      HARNESS_INDENT=0
       continue
     fi
 
@@ -419,11 +413,13 @@ for rel in "${CASE_RELS[@]}"; do
     [[ -f "$work/step.$label" ]] && step="$(cat "$work/step.$label")"
     harness_verbose "step $step"
     if [[ -f "$work/setup.stdout.$label" ]]; then
-      harness_verbose_file "setup stdout" "$work/setup.stdout.$label"
-      harness_verbose_file "setup stderr" "$work/setup.stderr.$label"
+      harness_verbose_subheading "setup stdout"
+      harness_verbose_dump "$work/setup.stdout.$label"
+      harness_verbose_subheading "setup stderr"
+      harness_verbose_dump "$work/setup.stderr.$label"
     fi
     if [[ -f "$work/all.dql" ]]; then
-      harness_verbose_file "file $work/all.dql" "$work/all.dql"
+      harness_verbose_file "all.dql" "$work/all.dql"
     fi
 
     # Always teardown so Local does not accumulate tables.
@@ -435,19 +431,24 @@ for rel in "${CASE_RELS[@]}"; do
         cd "$case_dir"
         run_cli "$bin" 0 "$(cat "$work/teardown.dql")" "$td_out" "$td_err" >/dev/null || true
       )
-      harness_verbose_file "teardown stdout" "$td_out"
-      harness_verbose_file "teardown stderr" "$td_err"
+      harness_verbose_subheading "teardown stdout"
+      harness_verbose_dump "$td_out"
+      harness_verbose_subheading "teardown stderr"
+      harness_verbose_dump "$td_err"
     fi
 
     rc="$(cat "$work/rc.$label")"
     harness_verbose "asserted command exit $rc (expected $expected_exit)"
-    harness_verbose_file "stdout" "$out"
-    harness_verbose_file "stderr" "$err"
+    harness_verbose_subheading "stdout"
+    harness_verbose_dump "$out"
+    harness_verbose_subheading "stderr"
+    harness_verbose_dump "$err"
 
     if [[ "$step" == "unknown-mode" ]]; then
-      print_status FAIL "$rel" "$label"
+      print_status FAIL
       print_detail 31 "unknown mode '$mode'"
       FAILED=$((FAILED + 1))
+      HARNESS_INDENT=0
       continue
     fi
 
@@ -466,29 +467,30 @@ for rel in "${CASE_RELS[@]}"; do
     cmp_rc=$?
     set -e
     if [[ "$cmp_rc" -eq 0 ]]; then
-      print_status PASS "$rel" "$label"
+      print_status PASS
       PASSED=$((PASSED + 1))
     else
-      print_status FAIL "$rel" "$label"
+      print_status FAIL
       FAILED=$((FAILED + 1))
       if [[ "$step" == "setup" ]]; then
         print_detail 31 "setup failed (exit $rc)"
       fi
       if [[ -s "$work/cmp.err.$label" ]]; then
-        print_detail 2 "compare"
+        harness_subheading "compare"
         print_detail_file 31 "$work/cmp.err.$label"
       fi
-      print_detail 2 "stdout"
+      harness_subheading "stdout"
       print_detail_file 2 "$out"
       if [[ -s "$err" ]]; then
-        print_detail 2 "stderr"
+        harness_subheading "stderr"
         print_detail_file 31 "$err"
       fi
     fi
+    HARNESS_INDENT=0
   done
 done
 
-harness_hr
+harness_heading "summary"
 pass_txt="$(harness_paint '1;32' "$PASSED passed")"
 if [[ "$FAILED" -gt 0 ]]; then
   fail_txt="$(harness_paint '1;31' "$FAILED failed")"
@@ -501,7 +503,6 @@ else
   skip_txt="$(harness_paint 2 "$SKIPPED skipped")"
 fi
 printf '  %s    %s    %s\n' "$pass_txt" "$fail_txt" "$skip_txt"
-harness_hr
 
 if [[ "$FAILED" -ne 0 ]]; then
   exit 1
