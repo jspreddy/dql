@@ -4,22 +4,22 @@ overview: Grow manual-tests/ into a language-agnostic acceptance suite. Cases li
 todos:
   - id: contract-readme
     content: "Document the black-box contract, binary discovery, DynamoDB Local setup, and case file convention in manual-tests/README.md"
-    status: pending
+    status: completed
   - id: folder-skeleton
     content: "Add cases/, fixtures/, and harness/ folders plus empty family directories (create, insert, select, scan, update, delete, alter, drop, load, dump, explain, analyze, cli, journeys)"
-    status: pending
+    status: completed
   - id: harness
     content: "Write a subprocess-only runner that starts/waits for Local, invokes dql and/or dqlrs, substitutes unique table names, and compares JSON/stdout/exit"
-    status: pending
+    status: completed
   - id: seed-cases
     content: "Add 2–3 golden cases (getting-started journey, SELECT by hash, LOAD+query) so the convention is copy-pasteable"
-    status: pending
+    status: completed
   - id: leave-adhoc
     content: "Leave fake-users/ and update-gsi-fails/ as ad-hoc notes; do not import dynamo3 or DQL internals in new cases"
-    status: pending
+    status: completed
   - id: docs-pointer
     content: "Point rust-plans/testing-strategy.md and VERIFICATION.md at the new suite as the user-facing acceptance layer"
-    status: pending
+    status: completed
   - id: optional-ci
     content: "Optional follow-up: CI job that builds both binaries, starts Local, and runs the harness"
     status: pending

@@ -124,6 +124,32 @@ Recommended comparisons:
 This harness can be removed once the Rust implementation is the only supported
 runtime.
 
+## Black-box acceptance (`manual-tests/`)
+
+Crate tests and Python pytest import implementation packages. User-facing
+acceptance lives in [`manual-tests/`](../manual-tests/) and must not.
+
+That suite:
+
+- Talks only to the `dql` and `dqlrs` **binaries** (`-c`, `--json`, `-H` / `-p`).
+- Requires DynamoDB Local (same port 8000 as the integration tests).
+- Loads schema and data with DQL (`CREATE`, `INSERT`, `LOAD`) then asserts
+  stdout / JSON / exit code.
+- Runs the same case folders against both binaries when both are on `PATH`
+  (or `DQL_BIN` / `DQLRS_BIN`).
+
+```bash
+./manual-tests/harness/run.sh
+./manual-tests/harness/run.sh select
+```
+
+Add cases as `manual-tests/cases/<family>/<slug>/` (see
+[`manual-tests/README.md`](../manual-tests/README.md)). Do not treat
+`fake-users/` or `update-gsi-fails/` as harness cases; they are ad-hoc notes.
+
+This layer does **not** replace parser/engine unit tests. It is the check that
+an installed CLI behaves like a user expects against Local.
+
 ## CI gates
 
 Implemented in GitHub Actions (``.github/workflows/rust-workflows.yml``):

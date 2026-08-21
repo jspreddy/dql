@@ -112,7 +112,7 @@ More: [`rust-docs/README.md`](rust-docs/README.md).
 | [`rust-impl/`](rust-impl/) | Rust Cargo workspace (`dqlrs`) |
 | [`rust-docs/`](rust-docs/) | Markdown user docs for the Rust client |
 | [`rust-plans/`](rust-plans/) | Rust rewrite / architecture notes |
-| [`manual-tests/`](manual-tests/) | Language-agnostic DQL scripts and fixtures |
+| [`manual-tests/`](manual-tests/) | Black-box acceptance cases (binaries + DynamoDB Local) |
 | [`scripts/`](scripts/) | Shared installers, version bump, and language-prefixed helpers |
 | [`.github/workflows/`](.github/workflows/) | Python and Rust CI |
 
