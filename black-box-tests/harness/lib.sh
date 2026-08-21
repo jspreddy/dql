@@ -148,7 +148,9 @@ list_case_dirs() {
   local cases_root="$1"
   local filter="${2:-}"
   local dir rel
-  while IFS= read -r -d "" dir; do
+  # Newline-delimited: portable on macOS bash 3.2 / BSD sort (no `sort -z`).
+  while IFS= read -r dir; do
+    [[ -n "$dir" ]] || continue
     if [[ ! -f "$dir/input.dql" ]]; then
       continue
     fi
@@ -157,5 +159,5 @@ list_case_dirs() {
       continue
     fi
     printf '%s\n' "$rel"
-  done < <(find "$cases_root" -mindepth 2 -maxdepth 2 -type d -print0 | sort -z)
+  done < <(find "$cases_root" -mindepth 2 -maxdepth 2 -type d | LC_ALL=C sort)
 }

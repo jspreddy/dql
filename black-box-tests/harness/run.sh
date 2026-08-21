@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Black-box acceptance runner: spawn dql / dqlrs against DynamoDB Local.
+# Written for bash 3.2+ (macOS /bin/bash) as well as bash 4+.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -149,7 +150,11 @@ else
   fi
 fi
 
-mapfile -t CASE_RELS < <(list_case_dirs "$CASES_ROOT" "$FILTER")
+CASE_RELS=()
+while IFS= read -r _rel || [[ -n "${_rel:-}" ]]; do
+  [[ -z "${_rel:-}" ]] && continue
+  CASE_RELS+=("$_rel")
+done < <(list_case_dirs "$CASES_ROOT" "$FILTER")
 if [[ ${#CASE_RELS[@]} -eq 0 ]]; then
   echo "error: no cases with input.dql under $CASES_ROOT${FILTER:+ matching '$FILTER'}" >&2
   exit 1
@@ -160,10 +165,6 @@ export HOME="$ISOLATION/home"
 export XDG_CONFIG_HOME="$HOME/.config"
 mkdir -p "$XDG_CONFIG_HOME" "$HOME/.dql"
 cleanup_isolation() {
-  # Pipeline subshells inherit EXIT; only the top-level shell should remove the dir.
-  if [[ "${BASH_SUBSHELL:-0}" -gt 0 ]]; then
-    return 0
-  fi
   rm -rf "$ISOLATION"
 }
 trap cleanup_isolation EXIT
@@ -274,6 +275,7 @@ for rel in "${CASE_RELS[@]}"; do
     rc=0
 
     (
+      trap - EXIT
       cd "$case_dir"
       if [[ "$mode" == "oneshot" ]]; then
         if [[ -f "$work/setup.dql" ]]; then
@@ -317,6 +319,7 @@ for rel in "${CASE_RELS[@]}"; do
       td_out="$work/teardown.stdout.$label"
       td_err="$work/teardown.stderr.$label"
       (
+        trap - EXIT
         cd "$case_dir"
         run_cli "$bin" 0 "$(cat "$work/teardown.dql")" "$td_out" "$td_err" >/dev/null || true
       )
