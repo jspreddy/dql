@@ -1,0 +1,26 @@
+[
+  {
+    "city": "North Judithbury",
+    "email": "donaldgarcia@example.net",
+    "first_name": "Patricia",
+    "last_name": "Miller",
+    "phone": "(900)613-3890x83863",
+    "pk": "acct-00",
+    "region": "us-west",
+    "score": 82,
+    "sk": "item#0000",
+    "status": "active"
+  },
+  {
+    "city": "East Marie",
+    "email": "jenniferwilliams@example.com",
+    "first_name": "Erica",
+    "last_name": "Young",
+    "phone": "994.973.8347x359",
+    "pk": "acct-00",
+    "region": "us-west",
+    "score": 20,
+    "sk": "item#0060",
+    "status": "active"
+  }
+]

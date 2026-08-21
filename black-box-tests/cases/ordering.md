@@ -69,6 +69,7 @@ flowchart TB
   subgraph g2 ["2xx — needs group 1"]
     selk["200-select-hash-key"]
     selr["200-select-hash-range"]
+    selfilt["200-select-pk-sk-filters"]
     scan["200-scan-all-items"]
     alt["210-alter-set-throughput"]
     exp["210-explain-select-query"]
@@ -89,6 +90,7 @@ flowchart TB
   ins --> selk
   ins --> selr
   ins --> scan
+  load --> selfilt
   dump --> alt
   selk --> exp
   selk --> ana
@@ -115,6 +117,7 @@ the `SELECT` cases it explains. `ANALYZE` actually runs `SELECT`, so it sits in
 | `110-load-json-into-table` | `create` |
 | `200-select-hash-key` | `insert` |
 | `200-select-hash-range` | `insert` |
+| `200-select-pk-sk-filters` | `load` |
 | `200-scan-all-items` | `insert` |
 | `210-alter-set-throughput` | `dump` |
 | `210-explain-select-query` | `insert` (setup); sorts after `SELECT` |
@@ -156,7 +159,7 @@ Same group. Write paths after `CREATE`. Neither needs the other. Both use
 | `110-insert-multiple-values` | `CREATE` | `INSERT` (multi-row) then `SELECT` |
 | `110-load-json-into-table` | `CREATE` + `LOAD seed.json` | `SELECT` |
 
-### `200` — `200-select-hash-key`, `200-select-hash-range`, `200-scan-all-items`
+### `200` — `200-select-hash-key`, `200-select-hash-range`, `200-select-pk-sk-filters`, `200-scan-all-items`
 
 Same group. Read paths after a successful write.
 
@@ -164,10 +167,13 @@ Same group. Read paths after a successful write.
 | --- | --- | --- |
 | `200-select-hash-key` | `CREATE` + `INSERT` | `SELECT` by hash |
 | `200-select-hash-range` | `CREATE` (hash+range) + `INSERT` | `SELECT` by hash and range |
+| `200-select-pk-sk-filters` | `CREATE` (hash+range) + `LOAD` 1000 JSON-line rows | `SELECT` by hash, sort-key prefix, and extra filters |
 | `200-scan-all-items` | `CREATE` + `INSERT` | `SCAN *` |
 
 `200-select-hash-range` does not need `200-select-hash-key` to pass; both need
-`INSERT`.
+`INSERT`. `200-select-pk-sk-filters` uses `LOAD` instead of `INSERT`; the extra
+`status` / `region` predicates are FilterExpression (they drop some rows that
+match the key condition).
 
 ### `210` — `210-alter-set-throughput`, `210-explain-select-query`
 
