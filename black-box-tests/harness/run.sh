@@ -331,11 +331,7 @@ for rel in "${CASE_RELS[@]}"; do
   fi
 
   harness_verbose "mode=$mode  json=$use_json  work=$work"
-  harness_verbose_file "setup.dql" "$work/setup.dql"
-  harness_verbose_file "input.dql" "$work/input.dql"
-  harness_verbose_file "teardown.dql" "$work/teardown.dql"
-  harness_verbose_file "expected.json" "$work/expected.json"
-  harness_verbose_file "expected.stdout" "$work/expected.stdout"
+  harness_verbose_test_files "$case_dir"
 
   idx=0
   for bin in "${BINS[@]}"; do
@@ -353,17 +349,14 @@ for rel in "${CASE_RELS[@]}"; do
       continue
     fi
 
-    json_note=""
-    if [[ "$use_json" == "1" ]]; then
-      json_note=" --json"
-    fi
-    harness_verbose "[$label] exec $bin -H $HOST -p $PORT -r ${AWS_REGION:-us-west-1}$json_note"
-
     out="$work/stdout.$label"
     err="$work/stderr.$label"
     : >"$out"
     : >"$err"
     rc=0
+    td_rc=""
+    td_out=""
+    td_err=""
 
     (
       trap - EXIT
@@ -412,19 +405,7 @@ for rel in "${CASE_RELS[@]}"; do
 
     step="input"
     [[ -f "$work/step.$label" ]] && step="$(cat "$work/step.$label")"
-    harness_verbose "step $step"
-    if [[ -f "$work/setup.stdout.$label" ]]; then
-      harness_verbose_subheading "setup stdout"
-      harness_verbose_dump "$work/setup.stdout.$label"
-      setup_rc=0
-      [[ -f "$work/setup.rc.$label" ]] && setup_rc="$(cat "$work/setup.rc.$label")"
-      harness_verbose_stderr "setup stderr" "$work/setup.stderr.$label" "$setup_rc"
-    fi
-    if [[ -f "$work/all.dql" ]]; then
-      harness_verbose_file "all.dql" "$work/all.dql"
-    fi
 
-    # Always teardown so Local does not accumulate tables.
     if [[ -s "$work/teardown.dql" ]]; then
       td_out="$work/teardown.stdout.$label"
       td_err="$work/teardown.stderr.$label"
@@ -433,18 +414,12 @@ for rel in "${CASE_RELS[@]}"; do
         cd "$case_dir"
         run_cli "$bin" 0 "$(cat "$work/teardown.dql")" "$td_out" "$td_err"
       )" || true
-      harness_verbose_subheading "teardown stdout"
-      harness_verbose_dump "$td_out"
-      harness_verbose_stderr "teardown stderr" "$td_err" "$td_rc"
     fi
 
     rc="$(cat "$work/rc.$label")"
-    harness_verbose "asserted command exit $rc (expected $expected_exit)"
-    harness_verbose_subheading "stdout"
-    harness_verbose_dump "$out"
-    harness_verbose_stderr "stderr" "$err" "$rc"
 
     if [[ "$step" == "unknown-mode" ]]; then
+      harness_verbose "notes: unknown mode '$mode'"
       print_status FAIL
       print_detail 31 "unknown mode '$mode'"
       FAILED=$((FAILED + 1))
@@ -466,24 +441,121 @@ for rel in "${CASE_RELS[@]}"; do
     python3 "$COMPARE_PY" "${cmp_args[@]}" >"$work/cmp.out.$label" 2>"$work/cmp.err.$label"
     cmp_rc=$?
     set -e
-    if [[ "$cmp_rc" -eq 0 ]]; then
+
+    combined_note=""
+    if [[ "$mode" == "file" || "$mode" == "repl-stdin" ]]; then
+      combined_note="setup and input sent in one invocation"
+    fi
+
+    if [[ -f "$work/setup.dql" ]]; then
+      setup_rc=0
+      [[ -f "$work/setup.rc.$label" ]] && setup_rc="$(cat "$work/setup.rc.$label")"
+      setup_notes=""
+      if [[ "$step" == "setup" ]]; then
+        setup_notes="setup failed"
+      fi
+      setup_out_arg=""
+      setup_err_arg=""
+      if [[ "$mode" == "oneshot" ]]; then
+        setup_out_arg="$work/setup.stdout.$label"
+        setup_err_arg="$work/setup.stderr.$label"
+      fi
+      harness_verbose_step "Setup" "setup.dql" "$work/setup.dql" "$setup_out_arg" "$setup_err_arg" "$setup_rc" "$setup_notes"
+    fi
+
+    if [[ "$step" != "setup" ]]; then
+      input_notes=""
+      if [[ "$mode" == "file" || "$mode" == "repl-stdin" ]]; then
+        input_notes="$combined_note"
+      fi
+      harness_verbose_step "Input" "input.dql" "$work/input.dql" "$out" "$err" "$rc" "$input_notes"
+    fi
+
+    if [[ "$HARNESS_VERBOSE" == "1" ]]; then
+      expect_names=""
+      expect_count=0
+      for expect_f in expected.json expected.stdout expected.stderr expected.exit; do
+        if [[ -f "$work/$expect_f" || -f "$case_dir/$expect_f" ]]; then
+          expect_count=$((expect_count + 1))
+          if [[ -n "$expect_names" ]]; then
+            expect_names="$expect_names, $(harness_filename "$expect_f")"
+          else
+            expect_names="$(harness_filename "$expect_f")"
+          fi
+        fi
+      done
+      if [[ -n "$expect_names" ]]; then
+        printf '  %s %s %s\n' "$(harness_paint 2 "·")" "$(harness_paint '1;34' "Expect:")" "$expect_names"
+        for expect_f in expected.json expected.stdout expected.stderr expected.exit; do
+          expect_src=""
+          if [[ -f "$work/$expect_f" ]]; then
+            expect_src="$work/$expect_f"
+          elif [[ -f "$case_dir/$expect_f" ]]; then
+            expect_src="$case_dir/$expect_f"
+          fi
+          if [[ -n "$expect_src" ]]; then
+            if [[ "$expect_count" -gt 1 ]]; then
+              printf '%*s%s\n' 12 '' "$(harness_filename "$expect_f")"
+            fi
+            harness_verbose_body 12 "$expect_src"
+          fi
+        done
+      fi
+      if [[ "$cmp_rc" -ne 0 && -s "$work/cmp.err.$label" ]]; then
+        harness_subheading "compare"
+        print_detail_file 31 "$work/cmp.err.$label"
+      fi
+    fi
+
+    if [[ -s "$work/teardown.dql" ]]; then
+      harness_verbose_step "Teardown" "teardown.dql" "$work/teardown.dql" "$td_out" "$td_err" "${td_rc:-0}" ""
+    fi
+
+    teardown_failed=0
+    if [[ -n "$td_rc" && "$td_rc" != "0" ]]; then
+      teardown_failed=1
+    fi
+
+    if [[ "$cmp_rc" -eq 0 && "$teardown_failed" -eq 0 ]]; then
       print_status PASS
       PASSED=$((PASSED + 1))
     else
       print_status FAIL
       FAILED=$((FAILED + 1))
-      if [[ "$step" == "setup" ]]; then
-        print_detail 31 "setup failed (exit $rc)"
-      fi
-      if [[ -s "$work/cmp.err.$label" ]]; then
-        harness_subheading "compare"
-        print_detail_file 31 "$work/cmp.err.$label"
-      fi
-      harness_subheading "stdout"
-      print_detail_file 2 "$out"
-      if [[ -s "$err" ]]; then
-        harness_subheading "stderr"
-        print_detail_file 31 "$err"
+      if [[ "$HARNESS_VERBOSE" != "1" ]]; then
+        if [[ "$step" == "setup" ]]; then
+          print_detail 31 "setup failed (exit $rc)"
+        fi
+        if [[ -s "$work/cmp.err.$label" ]]; then
+          harness_subheading "compare"
+          print_detail_file 31 "$work/cmp.err.$label"
+        fi
+        if [[ "$cmp_rc" -ne 0 ]]; then
+          harness_subheading "stdout"
+          print_detail_file 2 "$out"
+          if [[ -s "$err" ]]; then
+            harness_subheading "stderr"
+            print_detail_file 31 "$err"
+          fi
+        fi
+        if [[ "$teardown_failed" -eq 1 ]]; then
+          print_detail 31 "teardown failed (exit $td_rc)"
+          if [[ -n "$td_out" ]]; then
+            harness_subheading "teardown stdout"
+            print_detail_file 2 "$td_out"
+          fi
+          if [[ -n "$td_err" && -s "$td_err" ]]; then
+            harness_subheading "teardown stderr"
+            print_detail_file 31 "$td_err"
+          fi
+        fi
+      else
+        if [[ "$step" == "setup" ]]; then
+          print_detail 31 "setup failed (exit $rc)"
+        fi
+        if [[ "$teardown_failed" -eq 1 ]]; then
+          print_detail 31 "teardown failed (exit $td_rc)"
+        fi
       fi
     fi
     HARNESS_INDENT=0
