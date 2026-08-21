@@ -35,9 +35,9 @@ harness_heading() {
   printf '\n\n\n%s\n%s\n%s\n' "$(harness_paint 33 "$line")" "$(harness_paint '1;33' "$text")" "$(harness_paint 33 "$line")"
 }
 
-# Bold white subheading, blank line above.
+# Bold grey subheading, blank line above.
 harness_subheading() {
-  printf '\n%s%s\n' "$(harness_pad)" "$(harness_paint '1;37' "$1")"
+  printf '\n%s%s\n' "$(harness_pad)" "$(harness_paint '1;90' "$1")"
 }
 
 # Bold magenta subheading for a binary section (dql / dqlrs).
@@ -124,6 +124,66 @@ harness_verbose_stderr() {
   fi
   harness_subheading "$title"
   harness_verbose_dump "$file"
+}
+
+harness_verbose_body() {
+  local indent="$1"
+  local file="${2:-}"
+  [[ "${HARNESS_VERBOSE:-0}" == "1" ]] || return 0
+  if [[ -z "$file" || ! -f "$file" ]]; then
+    return 0
+  fi
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    printf '%*s%s\n' "$indent" '' "$(harness_paint 2 "$line")"
+  done <"$file"
+}
+
+# One verbose step: "  · Setup: file" + body, optional stdout/stderr/notes.
+# Empty stdout_file skips the stdout block. Empty stderr follows harness_verbose_stderr rules.
+harness_verbose_step() {
+  local step="$1"
+  local fname="$2"
+  local contents="${3:-}"
+  local stdout_file="${4:-}"
+  local stderr_file="${5:-}"
+  local exit_code="${6:-0}"
+  local notes="${7:-}"
+  [[ "${HARNESS_VERBOSE:-0}" == "1" ]] || return 0
+
+  local prefix="  · ${step}: "
+  printf '  %s %s %s\n' "$(harness_paint 2 "·")" "$(harness_paint '1;34' "${step}:")" "$(harness_filename "$fname")"
+  harness_verbose_body "${#prefix}" "$contents"
+  if [[ -n "$stdout_file" ]]; then
+    harness_verbose_subheading "stdout"
+    harness_verbose_dump "$stdout_file"
+  fi
+  if [[ -n "$stderr_file" ]]; then
+    harness_verbose_stderr "stderr" "$stderr_file" "$exit_code"
+  fi
+  if [[ -n "$notes" ]]; then
+    printf '\n%s%s\n' "$(harness_pad)" "$(harness_paint 2 "notes: $notes")"
+  fi
+}
+
+# Case-level list of files that exist in the case directory.
+harness_verbose_test_files() {
+  local case_dir="$1"
+  local f
+  local out=""
+  [[ "${HARNESS_VERBOSE:-0}" == "1" ]] || return 0
+  for f in setup.dql input.dql teardown.dql seed.json expected.json expected.stdout expected.stderr expected.exit mode; do
+    if [[ -f "$case_dir/$f" ]]; then
+      if [[ -n "$out" ]]; then
+        out="$out, $(harness_filename "$f")"
+      else
+        out="$(harness_filename "$f")"
+      fi
+    fi
+  done
+  if [[ -z "$out" ]]; then
+    return 0
+  fi
+  printf '  %s %s\n' "$(harness_paint 2 "Test Files:")" "$out"
 }
 
 manual_tests_root() {
