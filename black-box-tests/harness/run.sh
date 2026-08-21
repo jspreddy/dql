@@ -20,7 +20,7 @@ Runs black-box acceptance cases under black-box-tests/cases/ against DynamoDB Lo
 
   --bin dql|dqlrs|both  Which binary to invoke (default: both, skipping missing)
   --start-local         Start Local only if the port is down (safe if already running)
-  filter                Substring match on cases/<family>/<slug>
+  filter                Numeric group (1xx, 11x, 2xx) or substring of the case folder name
 
 Environment:
   DQL_BIN / DQLRS_BIN         Explicit binary paths

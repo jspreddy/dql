@@ -140,11 +140,12 @@ That suite:
 
 ```bash
 ./black-box-tests/harness/run.sh
-./black-box-tests/harness/run.sh select
+./black-box-tests/harness/run.sh 1xx
 ```
 
-Add cases as `black-box-tests/cases/<family>/<slug>/` (see
-[`black-box-tests/README.md`](../black-box-tests/README.md)). Do not treat
+Add cases as `black-box-tests/cases/<NNN>-<family>-<slug>/` (see
+[`black-box-tests/README.md`](../black-box-tests/README.md) and
+[`black-box-tests/cases/ordering.md`](../black-box-tests/cases/ordering.md)). Do not treat
 `fake-users/` or `update-gsi-fails/` as harness cases; they are ad-hoc notes.
 
 This layer does **not** replace parser/engine unit tests. It is the check that

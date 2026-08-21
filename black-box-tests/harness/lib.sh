@@ -144,20 +144,35 @@ for n in sorted(indexes):
 '
 }
 
+# List case directory names under cases_root, one per line, sorted.
+# Filter: a pattern of digits and x/X (e.g. 1xx, 11x, 2xx) matches the
+# leading number; any other string is a substring of the folder name.
 list_case_dirs() {
   local cases_root="$1"
   local filter="${2:-}"
-  local dir rel
-  # Newline-delimited: portable on macOS bash 3.2 / BSD sort (no `sort -z`).
-  while IFS= read -r dir; do
-    [[ -n "$dir" ]] || continue
-    if [[ ! -f "$dir/input.dql" ]]; then
-      continue
-    fi
-    rel="${dir#"$cases_root"/}"
-    if [[ -n "$filter" && "$rel" != *"$filter"* ]]; then
-      continue
-    fi
-    printf '%s\n' "$rel"
-  done < <(find "$cases_root" -mindepth 2 -maxdepth 2 -type d | LC_ALL=C sort)
+  python3 -c '
+import os
+import re
+import sys
+
+root, filt = sys.argv[1], sys.argv[2]
+names = []
+for name in os.listdir(root):
+    path = os.path.join(root, name)
+    if not os.path.isdir(path):
+        continue
+    if not os.path.isfile(os.path.join(path, "input.dql")):
+        continue
+    names.append(name)
+names.sort()
+if filt:
+    if re.fullmatch(r"[0-9xX]+", filt):
+        pat = "".join("[0-9]" if c in "xX" else re.escape(c) for c in filt)
+        rx = re.compile(pat)
+        names = [n for n in names if rx.match(n)]
+    else:
+        names = [n for n in names if filt in n]
+for name in names:
+    print(name)
+' "$cases_root" "$filter"
 }

@@ -18,7 +18,7 @@ From the repository root:
 
 # Terminal 2 — binaries on PATH, or set DQL_BIN / DQLRS_BIN
 ./black-box-tests/harness/run.sh
-./black-box-tests/harness/run.sh select          # family or slug filter
+./black-box-tests/harness/run.sh 1xx             # numeric group (also 11x, 2xx, …)
 ./black-box-tests/harness/run.sh --bin dqlrs
 ./black-box-tests/harness/run.sh --start-local   # start Local only if the port is down
 ```
@@ -56,18 +56,19 @@ Unit and crate tests stay in `py-impl/tests/` and `rust-impl/crates/*/tests/`.
 black-box-tests/
   harness/          # runner (subprocess only)
   fixtures/         # shared datasets
-  cases/<family>/<slug>/
+  cases/<NNN>-<family>-<slug>/
   fake-users/       # ad-hoc sample data (not part of the harness)
   update-gsi-fails/ # ad-hoc DynamoDB Local GSI repro (not a gate)
 ```
 
-Statement families match the language docs: `create`, `insert`, `select`,
-`scan`, `update`, `delete`, `alter`, `drop`, `load`, `dump`, `explain`,
-`analyze`, plus `cli` (flags) and `journeys` (multi-step stories).
+The `family` segment in the folder name matches the language docs (`create`,
+`insert`, `select`, …) plus `cli` and `journeys`. Numbering and groups are
+documented in [cases/ordering.md](cases/ordering.md).
 
 ## Case files
 
-Each case is a directory under `cases/<family>/<slug>/`:
+Each case is a directory `cases/<NNN>-<family>-<slug>/` (must contain
+`input.dql` plus `expected.json` or `expected.stdout`):
 
 | File | Required | Meaning |
 | --- | --- | --- |
@@ -100,9 +101,9 @@ width and are a poor acceptance target.
 
 ## Adding a case
 
-1. Copy `cases/select/hash-key/` to `cases/<family>/<slug>/`.
+1. Copy `cases/200-select-hash-key/` to `cases/<NNN>-<family>-<slug>/`. See [cases/ordering.md](cases/ordering.md) for the numbering.
 2. Edit `setup.dql` / `input.dql` / `expected.json`.
-3. Run `./black-box-tests/harness/run.sh <slug>`.
+3. Run `./black-box-tests/harness/run.sh 2xx` (or the new folder name).
 
 ## Ad-hoc folders (not harness cases)
 
