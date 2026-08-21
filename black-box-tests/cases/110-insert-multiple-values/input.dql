@@ -1,0 +1,2 @@
+INSERT INTO {{TABLE}} (id, n) VALUES ('a', 1), ('b', 2);
+SELECT * FROM {{TABLE}} WHERE id = 'b';

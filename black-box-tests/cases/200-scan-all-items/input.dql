@@ -1,0 +1,1 @@
+SCAN * FROM {{TABLE}};

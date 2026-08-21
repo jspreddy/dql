@@ -77,6 +77,26 @@ DQL_REQUIRE_LOCAL=1 ../scripts/rust-smoke-test.sh
 
 ---
 
+## Acceptance (binaries + Local)
+
+Black-box cases under [`black-box-tests/`](black-box-tests/) spawn `dql` / `dqlrs` and
+assert CLI output. They do not import either implementation. Local must be on
+**8000** (same as above).
+
+```bash
+# Point at built binaries if they are not on PATH
+export DQL_BIN="$PWD/py-impl/.venv/bin/dql"          # after: cd py-impl && uv sync --dev
+export DQLRS_BIN="$PWD/rust-impl/target/release/dqlrs"  # after: cargo build --release -p dql-cli
+
+./black-box-tests/harness/run.sh
+./black-box-tests/harness/run.sh --bin dqlrs
+./black-box-tests/harness/run.sh --start-local   # starts Local only if the port is down
+```
+
+Details and the case file convention: [`black-box-tests/README.md`](black-box-tests/README.md).
+
+---
+
 ## One-shot (copy-paste from repo root)
 
 Foreground Local would block, so this starts Java in the same shell, waits for port 8000, then runs both trees:
