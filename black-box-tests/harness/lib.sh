@@ -74,7 +74,7 @@ harness_warn() {
 
 harness_verbose() {
   [[ "${HARNESS_VERBOSE:-0}" == "1" ]] || return 0
-  printf '%s  %s %s\n' "$(harness_pad)" "$(harness_paint 2 "·")" "$(harness_paint 2 "$*")"
+  printf '  %s %s\n' "$(harness_paint 2 "·")" "$(harness_paint 2 "$*")"
 }
 
 # Dump a file under a blue filename label. Missing or empty files are noted.
@@ -111,6 +111,19 @@ harness_verbose_dump() {
   while IFS= read -r line || [[ -n "$line" ]]; do
     printf '%s      %s\n' "$(harness_pad)" "$(harness_paint 2 "$line")"
   done <"$file"
+}
+
+# In -v, omit empty stderr when exit is 0. Non-zero exit always shows the section.
+harness_verbose_stderr() {
+  local title="$1"
+  local file="$2"
+  local exit_code="${3:-0}"
+  [[ "${HARNESS_VERBOSE:-0}" == "1" ]] || return 0
+  if [[ "$exit_code" == "0" && ( -z "$file" || ! -s "$file" ) ]]; then
+    return 0
+  fi
+  harness_subheading "$title"
+  harness_verbose_dump "$file"
 }
 
 manual_tests_root() {

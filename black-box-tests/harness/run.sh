@@ -373,6 +373,7 @@ for rel in "${CASE_RELS[@]}"; do
           setup_out="$work/setup.stdout.$label"
           setup_err="$work/setup.stderr.$label"
           setup_rc="$(run_cli "$bin" 0 "$(cat "$work/setup.dql")" "$setup_out" "$setup_err")"
+          printf '%s' "$setup_rc" >"$work/setup.rc.$label"
           if [[ "$setup_rc" != "0" ]]; then
             cat "$setup_out" >"$out"
             cat "$setup_err" >"$err"
@@ -415,8 +416,9 @@ for rel in "${CASE_RELS[@]}"; do
     if [[ -f "$work/setup.stdout.$label" ]]; then
       harness_verbose_subheading "setup stdout"
       harness_verbose_dump "$work/setup.stdout.$label"
-      harness_verbose_subheading "setup stderr"
-      harness_verbose_dump "$work/setup.stderr.$label"
+      setup_rc=0
+      [[ -f "$work/setup.rc.$label" ]] && setup_rc="$(cat "$work/setup.rc.$label")"
+      harness_verbose_stderr "setup stderr" "$work/setup.stderr.$label" "$setup_rc"
     fi
     if [[ -f "$work/all.dql" ]]; then
       harness_verbose_file "all.dql" "$work/all.dql"
@@ -426,23 +428,21 @@ for rel in "${CASE_RELS[@]}"; do
     if [[ -s "$work/teardown.dql" ]]; then
       td_out="$work/teardown.stdout.$label"
       td_err="$work/teardown.stderr.$label"
-      (
+      td_rc="$(
         trap - EXIT
         cd "$case_dir"
-        run_cli "$bin" 0 "$(cat "$work/teardown.dql")" "$td_out" "$td_err" >/dev/null || true
-      )
+        run_cli "$bin" 0 "$(cat "$work/teardown.dql")" "$td_out" "$td_err"
+      )" || true
       harness_verbose_subheading "teardown stdout"
       harness_verbose_dump "$td_out"
-      harness_verbose_subheading "teardown stderr"
-      harness_verbose_dump "$td_err"
+      harness_verbose_stderr "teardown stderr" "$td_err" "$td_rc"
     fi
 
     rc="$(cat "$work/rc.$label")"
     harness_verbose "asserted command exit $rc (expected $expected_exit)"
     harness_verbose_subheading "stdout"
     harness_verbose_dump "$out"
-    harness_verbose_subheading "stderr"
-    harness_verbose_dump "$err"
+    harness_verbose_stderr "stderr" "$err" "$rc"
 
     if [[ "$step" == "unknown-mode" ]]; then
       print_status FAIL
