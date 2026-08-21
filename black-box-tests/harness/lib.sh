@@ -1,6 +1,100 @@
 # shellcheck shell=bash
 # Shared helpers for the black-box acceptance harness. Source from run.sh.
 
+HARNESS_VERBOSE="${HARNESS_VERBOSE:-0}"
+
+harness_color_enabled() {
+  if [[ -n "${NO_COLOR:-}" ]]; then
+    return 1
+  fi
+  if [[ -n "${FORCE_COLOR:-}" ]]; then
+    return 0
+  fi
+  [[ -t 1 ]]
+}
+
+# Paint text with an SGR code (e.g. 1, 2, 31, 1;32). No trailing newline.
+harness_paint() {
+  local code="$1"
+  shift
+  if harness_color_enabled; then
+    printf '\033[%sm%s\033[0m' "$code" "$*"
+  else
+    printf '%s' "$*"
+  fi
+}
+
+harness_width() {
+  local w="${COLUMNS:-}"
+  if [[ -z "$w" ]] && command -v tput >/dev/null 2>&1; then
+    w="$(tput cols 2>/dev/null || true)"
+  fi
+  case "$w" in
+    '' | *[!0-9]*) w=72 ;;
+  esac
+  if [[ "$w" -lt 52 ]]; then
+    w=52
+  fi
+  if [[ "$w" -gt 100 ]]; then
+    w=100
+  fi
+  printf '%s' "$w"
+}
+
+harness_hr() {
+  python3 -c 'import sys; print("\u2500" * int(sys.argv[1]))' "$(harness_width)" | {
+    local line
+    IFS= read -r line || true
+    if harness_color_enabled; then
+      printf '\033[2m%s\033[0m\n' "$line"
+    else
+      printf '%s\n' "$line"
+    fi
+  }
+}
+
+harness_info() {
+  printf '  %s\n' "$*"
+}
+
+harness_kv() {
+  local key="$1"
+  local value="$2"
+  printf '  %s  %s\n' "$(harness_paint 2 "$(printf '%-8s' "$key")")" "$(harness_paint 1 "$value")"
+}
+
+harness_error() {
+  printf '%s %s\n' "$(harness_paint '1;31' "error:")" "$*" >&2
+}
+
+harness_warn() {
+  printf '%s %s\n' "$(harness_paint '1;33' "warning:")" "$*" >&2
+}
+
+harness_verbose() {
+  [[ "${HARNESS_VERBOSE:-0}" == "1" ]] || return 0
+  printf '  %s %s\n' "$(harness_paint 2 "·")" "$(harness_paint 2 "$*")"
+}
+
+# Dump a file under a verbose heading. Missing or empty files are noted.
+harness_verbose_file() {
+  local title="$1"
+  local file="${2:-}"
+  [[ "${HARNESS_VERBOSE:-0}" == "1" ]] || return 0
+  harness_verbose "$title"
+  if [[ -z "$file" || ! -e "$file" ]]; then
+    printf '      %s\n' "$(harness_paint 2 "(none)")"
+    return 0
+  fi
+  if [[ ! -s "$file" ]]; then
+    printf '      %s\n' "$(harness_paint 2 "(empty)")"
+    return 0
+  fi
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    printf '      %s\n' "$(harness_paint 2 "$line")"
+  done <"$file"
+}
+
 manual_tests_root() {
   cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd
 }
@@ -52,19 +146,19 @@ start_local() {
   local root
   root="$(repo_root)"
   if local_available; then
-    echo "DynamoDB Local already running at $(local_host):$(local_port)"
+    harness_info "DynamoDB Local already running at $(local_host):$(local_port)"
     return 0
   fi
   if [[ ! -x "$root/scripts/install_dynamodb_local.sh" ]]; then
-    echo "error: missing $root/scripts/install_dynamodb_local.sh" >&2
+    harness_error "missing $root/scripts/install_dynamodb_local.sh"
     return 1
   fi
-  echo "Starting DynamoDB Local via $root/scripts/install_dynamodb_local.sh"
+  harness_info "Starting DynamoDB Local via $root/scripts/install_dynamodb_local.sh"
   "$root/scripts/install_dynamodb_local.sh" background
   if wait_for_local; then
     return 0
   fi
-  echo "error: DynamoDB Local did not become reachable at $(local_host):$(local_port)" >&2
+  harness_error "DynamoDB Local did not become reachable at $(local_host):$(local_port)"
   return 1
 }
 
@@ -72,10 +166,10 @@ require_local() {
   if local_available; then
     return 0
   fi
-  echo "error: DynamoDB Local is not reachable at $(local_host):$(local_port)" >&2
-  echo "Start it from the repository root:" >&2
-  echo "  ./scripts/install_dynamodb_local.sh" >&2
-  echo "Or re-run with --start-local." >&2
+  harness_error "DynamoDB Local is not reachable at $(local_host):$(local_port)"
+  printf '  Start it from the repository root:\n' >&2
+  printf '    ./scripts/install_dynamodb_local.sh\n' >&2
+  printf '  Or re-run with --start-local.\n' >&2
   return 1
 }
 
@@ -90,7 +184,7 @@ find_named_bin() {
       printf '%s' "$from_env"
       return 0
     fi
-    echo "error: $env_var is set but not executable: $from_env" >&2
+    harness_error "$env_var is set but not executable: $from_env"
     return 1
   fi
   if command -v "$name" >/dev/null 2>&1; then

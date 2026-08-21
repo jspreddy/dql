@@ -19,6 +19,7 @@ From the repository root:
 # Terminal 2 — binaries on PATH, or set DQL_BIN / DQLRS_BIN
 ./black-box-tests/harness/run.sh
 ./black-box-tests/harness/run.sh 1xx             # numeric group (also 11x, 2xx, …)
+./black-box-tests/harness/run.sh -v              # log commands, DQL, and CLI output
 ./black-box-tests/harness/run.sh --bin dqlrs
 ./black-box-tests/harness/run.sh --start-local   # start Local only if the port is down
 ```
@@ -35,6 +36,9 @@ export AWS_SECRET_ACCESS_KEY=fakekey
 ```
 
 The harness sets those if they are unset.
+
+Output is colorized when stdout is a TTY (`NO_COLOR` disables it, `FORCE_COLOR`
+forces it). `-v` / `--verbose` prints the DQL and CLI output for each step.
 
 ## What belongs here
 
