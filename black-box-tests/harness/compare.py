@@ -39,7 +39,7 @@ def parse_cli_json(stdout: str) -> Any:
             candidates = [n for n in (nxt_obj, nxt_arr) if n != -1]
             if not candidates:
                 leftover = text[idx:].strip()
-                if leftover:
+                if leftover and not values:
                     raise ValueError(
                         "could not parse JSON from CLI stdout:\n" + leftover[:500]
                     ) from None
@@ -186,6 +186,13 @@ def _self_test() -> int:
         json_equal(parse_cli_json(concatenated), [{"id": "a", "n": 1}, {"id": "b", "n": 2}]),
     )
     check("single object is item list", json_equal(parse_cli_json('{"id": "a"}'), [{"id": "a"}]))
+    check(
+        "trailing non-json after object",
+        json_equal(
+            parse_cli_json('{\n    "id": "a"\n}\n\nquery\n  Table: R:0.5\n'),
+            [{"id": "a"}],
+        ),
+    )
     check("number 1 vs 1.0", json_equal([{"n": 1}], [{"n": 1.0}]))
     check(
         "unordered items",

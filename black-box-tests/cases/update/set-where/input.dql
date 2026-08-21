@@ -1,0 +1,2 @@
+UPDATE {{TABLE}} SET n = 9 WHERE id = 'a';
+SELECT * FROM {{TABLE}} WHERE id = 'a';
