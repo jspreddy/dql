@@ -20,8 +20,11 @@ From the repository root:
 ./black-box-tests/harness/run.sh
 ./black-box-tests/harness/run.sh select          # family or slug filter
 ./black-box-tests/harness/run.sh --bin dqlrs
-./black-box-tests/harness/run.sh --start-local   # start Local, then run
+./black-box-tests/harness/run.sh --start-local   # start Local only if the port is down
 ```
+
+If DynamoDB Local is already listening, the harness and
+`./scripts/install_dynamodb_local.sh` reuse it and do not start a second JVM.
 
 Local must listen on `localhost:8000` (override with `DQL_LOCAL_HOST` /
 `DQL_LOCAL_PORT`). Dummy AWS keys are enough:

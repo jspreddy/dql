@@ -18,7 +18,7 @@ Usage: run.sh [--bin dql|dqlrs|both] [--start-local] [filter]
 Runs black-box acceptance cases under black-box-tests/cases/ against DynamoDB Local.
 
   --bin dql|dqlrs|both  Which binary to invoke (default: both, skipping missing)
-  --start-local         Start ./scripts/install_dynamodb_local.sh if port is down
+  --start-local         Start Local only if the port is down (safe if already running)
   filter                Substring match on cases/<family>/<slug>
 
 Environment:
@@ -90,7 +90,11 @@ if [[ "$START_LOCAL" == "1" ]]; then
     exit 1
   fi
 else
-  require_local
+  if local_available; then
+    echo "DynamoDB Local already running at $(local_host):$(local_port)"
+  else
+    require_local
+  fi
 fi
 
 HOST="$(local_host)"

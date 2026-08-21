@@ -90,7 +90,7 @@ export DQLRS_BIN="$PWD/rust-impl/target/release/dqlrs"  # after: cargo build --r
 
 ./black-box-tests/harness/run.sh
 ./black-box-tests/harness/run.sh --bin dqlrs
-./black-box-tests/harness/run.sh --start-local   # starts Local if needed
+./black-box-tests/harness/run.sh --start-local   # starts Local only if the port is down
 ```
 
 Details and the case file convention: [`black-box-tests/README.md`](black-box-tests/README.md).

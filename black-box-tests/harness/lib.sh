@@ -18,24 +18,23 @@ local_port() {
 }
 
 local_available() {
-  local host port
-  host="$(local_host)"
-  port="$(local_port)"
-  if command -v nc >/dev/null 2>&1; then
-    nc -z "$host" "$port" >/dev/null 2>&1
-    return
-  fi
-  python3 - "$host" "$port" <<'PY'
+  python3 -c '
 import socket
 import sys
 
 host, port = sys.argv[1], int(sys.argv[2])
-try:
-    with socket.create_connection((host, port), timeout=1):
-        pass
-except OSError:
-    sys.exit(1)
-PY
+tried = []
+for candidate in (host, "127.0.0.1", "localhost"):
+    if candidate in tried:
+        continue
+    tried.append(candidate)
+    try:
+        with socket.create_connection((candidate, port), timeout=1):
+            sys.exit(0)
+    except OSError:
+        continue
+sys.exit(1)
+' "$(local_host)" "$(local_port)"
 }
 
 wait_for_local() {
@@ -53,14 +52,20 @@ start_local() {
   local root
   root="$(repo_root)"
   if local_available; then
+    echo "DynamoDB Local already running at $(local_host):$(local_port)"
     return 0
   fi
   if [[ ! -x "$root/scripts/install_dynamodb_local.sh" ]]; then
     echo "error: missing $root/scripts/install_dynamodb_local.sh" >&2
     return 1
   fi
+  echo "Starting DynamoDB Local via $root/scripts/install_dynamodb_local.sh"
   "$root/scripts/install_dynamodb_local.sh" background
-  wait_for_local
+  if wait_for_local; then
+    return 0
+  fi
+  echo "error: DynamoDB Local did not become reachable at $(local_host):$(local_port)" >&2
+  return 1
 }
 
 require_local() {
