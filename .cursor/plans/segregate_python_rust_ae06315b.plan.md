@@ -51,7 +51,7 @@ todos:
     content: Commit CI workflow split
     status: completed
   - id: thin-root
-    content: Content edits — replace root README.rst with README.md; slim .gitignore; delete leftover root Python config; keep LICENSE + manual-tests
+    content: Content edits — replace root README.rst with README.md; slim .gitignore; delete leftover root Python config; keep LICENSE + black-box-tests
     status: completed
   - id: commit-thin-root
     content: Commit thin repo root
@@ -67,7 +67,7 @@ Target layout (same git repo, one checkout):
 LICENSE
 README.md                  # thin index only (Markdown, replaces README.rst)
 .github/workflows/         # GitHub requires this location
-manual-tests/              # language-agnostic DQL fixtures (unchanged)
+black-box-tests/              # language-agnostic DQL fixtures (unchanged)
 py-impl/                   # Python package, tests, packaging, Python tooling
 py-docs/                   # existing Sphinx tree (keep .rst)
 py-plans/                  # new; Python design plans (README.md)
@@ -230,7 +230,7 @@ Keep [`LICENSE`](LICENSE) at root (Rust release tarball already copies it).
 
 Slim [`.gitignore`](.gitignore): Python artifacts belong in `py-impl/.gitignore`; `rust-impl/.gitignore` already ignores `target/`. Root keeps editor/OS + optional `.dynamo-local` if anyone still runs Local from repo root.
 
-Leave [`manual-tests/`](manual-tests/) at root (DQL scripts + JSON; not an implementation). [`manual-tests/fake-users/convert.py`](manual-tests/fake-users/convert.py) can stay as an ad-hoc helper.
+Leave [`black-box-tests/`](black-box-tests/) at root (DQL scripts + JSON; not an implementation). [`black-box-tests/fake-users/convert.py`](black-box-tests/fake-users/convert.py) can stay as an ad-hoc helper.
 
 Delete any leftover root Python config that was not part of the `py-impl` move. Root `scripts/` should already be gone after the move commit.
 

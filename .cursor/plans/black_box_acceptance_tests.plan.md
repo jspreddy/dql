@@ -1,9 +1,9 @@
 ---
 name: Black-Box Acceptance Tests
-overview: Grow manual-tests/ into a language-agnostic acceptance suite. Cases live in statement-family folders, talk only to the dql/dqlrs binaries and DynamoDB Local, and assert CLI input/output the way a user would.
+overview: Grow black-box-tests/ into a language-agnostic acceptance suite. Cases live in statement-family folders, talk only to the dql/dqlrs binaries and DynamoDB Local, and assert CLI input/output the way a user would.
 todos:
   - id: contract-readme
-    content: "Document the black-box contract, binary discovery, DynamoDB Local setup, and case file convention in manual-tests/README.md"
+    content: "Document the black-box contract, binary discovery, DynamoDB Local setup, and case file convention in black-box-tests/README.md"
     status: completed
   - id: folder-skeleton
     content: "Add cases/, fixtures/, and harness/ folders plus empty family directories (create, insert, select, scan, update, delete, alter, drop, load, dump, explain, analyze, cli, journeys)"
@@ -26,7 +26,7 @@ todos:
 isProject: false
 ---
 
-# Black-box acceptance tests under `manual-tests/`
+# Black-box acceptance tests under `black-box-tests/`
 
 ## Why this exists
 
@@ -36,7 +36,7 @@ In-tree tests today know too much about the implementations:
 - Rust crate tests (`rust-impl/crates/*/tests/`) import parser, engine, and CLI libraries.
 - `scripts/rust-smoke-test.sh` is the closest user-like check, but it is a single script, not a place to add cases.
 
-`manual-tests/` is already documented as language-agnostic DQL fixtures (`README.md`). It currently has two ad-hoc folders (`fake-users/`, `update-gsi-fails/`) and no runner. This plan turns that directory into the **acceptance** layer: additional cases that a user could perform with only the installed binaries and DynamoDB Local.
+`black-box-tests/` is already documented as language-agnostic DQL fixtures (`README.md`). It currently has two ad-hoc folders (`fake-users/`, `update-gsi-fails/`) and no runner. This plan turns that directory into the **acceptance** layer: additional cases that a user could perform with only the installed binaries and DynamoDB Local.
 
 These tests must not import, link, or otherwise know about `py-impl/` or `rust-impl/` source. They treat `dql` and `dqlrs` as opaque programs.
 
@@ -57,8 +57,8 @@ flowchart LR
 
 | Path | Role today |
 | --- | --- |
-| [`manual-tests/fake-users/`](manual-tests/fake-users/) | Sample `CREATE` / `ALTER` / `LOAD` script plus JSON; generator uses `dynamo3` (not black-box) |
-| [`manual-tests/update-gsi-fails/`](manual-tests/update-gsi-fails/) | DynamoDB Local GSI bug repro via AWS CLI, not DQL |
+| [`black-box-tests/fake-users/`](black-box-tests/fake-users/) | Sample `CREATE` / `ALTER` / `LOAD` script plus JSON; generator uses `dynamo3` (not black-box) |
+| [`black-box-tests/update-gsi-fails/`](black-box-tests/update-gsi-fails/) | DynamoDB Local GSI bug repro via AWS CLI, not DQL |
 | [`scripts/install_dynamodb_local.sh`](scripts/install_dynamodb_local.sh) | Download jar, start Local in-memory shared DB on 8000 |
 | [`scripts/rust-smoke-test.sh`](scripts/rust-smoke-test.sh) | One-shot `dqlrs -c` / `--json` / `-H` smoke |
 | Python/Rust unit + Local tests | Implementation-aware; stay where they are |
@@ -74,7 +74,7 @@ REPL `file path.dql` also exists in both. Piped interactive shells are **not** a
 
 ## Goal
 
-1. Add a **folder-per-case** layout under `manual-tests/` so new acceptance tests are copy-paste of an existing case.
+1. Add a **folder-per-case** layout under `black-box-tests/` so new acceptance tests are copy-paste of an existing case.
 2. Provide a **harness** that:
    - Requires DynamoDB Local on `localhost:8000` (same as [`VERIFICATION.md`](VERIFICATION.md)).
    - Discovers `dql` and/or `dqlrs` from `PATH` (or `DQL_BIN` / `DQLRS_BIN`).
@@ -87,7 +87,7 @@ REPL `file path.dql` also exists in both. Piped interactive shells are **not** a
 
 ### Black-box contract
 
-Allowed in `manual-tests/` (new code):
+Allowed in `black-box-tests/` (new code):
 
 - Shell, Python **stdlib only**, or AWS CLI talking to Local.
 - DQL language files (`.dql`), JSON/CSV fixtures, expected-output files.
@@ -119,7 +119,7 @@ Do not rewrite `fake-users/` or `update-gsi-fails/` in the first pass. Document 
 ## Target layout
 
 ```text
-manual-tests/
+black-box-tests/
   README.md                 # how to run; black-box rules
   harness/
     run.sh                  # entry: ./harness/run.sh [filter] [--bin dql|dqlrs|both]
@@ -215,12 +215,12 @@ Later cases can follow `py-impl/tests/test_queries.py` class names (create index
 
 ## Harness behavior
 
-[`manual-tests/harness/run.sh`](manual-tests/harness/run.sh):
+[`black-box-tests/harness/run.sh`](black-box-tests/harness/run.sh):
 
 ```bash
-./manual-tests/harness/run.sh                  # both binaries if found
-./manual-tests/harness/run.sh select           # family or slug filter
-./manual-tests/harness/run.sh --bin dqlrs
+./black-box-tests/harness/run.sh                  # both binaries if found
+./black-box-tests/harness/run.sh select           # family or slug filter
+./black-box-tests/harness/run.sh --bin dqlrs
 ```
 
 Steps:
@@ -247,15 +247,15 @@ Python `test_cli.py` width/snapshot failures are exactly why pretty-print oracle
 
 ### Step 1 — Contract README
 
-Write [`manual-tests/README.md`](manual-tests/README.md): purpose, allowed tools, how to start Local, how to install/find binaries, how to add a case, how to run the harness. One short “do not import DQL” rule at the top.
+Write [`black-box-tests/README.md`](black-box-tests/README.md): purpose, allowed tools, how to start Local, how to install/find binaries, how to add a case, how to run the harness. One short “do not import DQL” rule at the top.
 
-**Commit:** `docs(manual-tests): black-box acceptance test contract`
+**Commit:** `docs(black-box-tests): black-box acceptance test contract`
 
 ### Step 2 — Folder skeleton
 
 Create `harness/`, `fixtures/`, `cases/<family>/` with `.gitkeep` or family README stubs. Do not delete `fake-users/` or `update-gsi-fails/`.
 
-**Commit:** `chore(manual-tests): add acceptance case folder skeleton`
+**Commit:** `chore(black-box-tests): add acceptance case folder skeleton`
 
 ### Step 3 — Harness
 
@@ -263,27 +263,27 @@ Implement `harness/run.sh` + `harness/compare.py` (or a single bash script if JS
 
 **Gate:** a deliberately wrong expected file fails; a matching seed case passes against at least one binary.
 
-**Commit:** `test(manual-tests): add black-box CLI harness for DynamoDB Local`
+**Commit:** `test(black-box-tests): add black-box CLI harness for DynamoDB Local`
 
 ### Step 4 — Seed cases
 
 Add the three cases above plus a small fixture file. Use `{{TABLE}}` everywhere.
 
-**Gate:** `./manual-tests/harness/run.sh --bin dql` and `--bin dqlrs` both pass with Local up (skip a binary only if it is not installed, unless `--bin` named it).
+**Gate:** `./black-box-tests/harness/run.sh --bin dql` and `--bin dqlrs` both pass with Local up (skip a binary only if it is not installed, unless `--bin` named it).
 
-**Commit:** `test(manual-tests): add getting-started, select, and load seed cases`
+**Commit:** `test(black-box-tests): add getting-started, select, and load seed cases`
 
 ### Step 5 — Pointers, leave ad-hoc tests
 
-- Add a subsection to [`rust-plans/testing-strategy.md`](rust-plans/testing-strategy.md): “Black-box acceptance (`manual-tests/`)” distinct from crate Local tests.
+- Add a subsection to [`rust-plans/testing-strategy.md`](rust-plans/testing-strategy.md): “Black-box acceptance (`black-box-tests/`)” distinct from crate Local tests.
 - Add a “Acceptance (binaries + Local)” snippet to [`VERIFICATION.md`](VERIFICATION.md).
-- In `manual-tests/README.md`, label `fake-users/` and `update-gsi-fails/` as ad-hoc.
+- In `black-box-tests/README.md`, label `fake-users/` and `update-gsi-fails/` as ad-hoc.
 
 **Commit:** `docs: point verification at black-box acceptance suite`
 
 ### Step 6 — Optional CI (follow-up)
 
-New workflow or job: install Java, start Local, `uv tool install` Python dql and/or `cargo build -p dql-cli`, run harness with `--bin both`. Path filter `manual-tests/**`. Not required to land the folder convention.
+New workflow or job: install Java, start Local, `uv tool install` Python dql and/or `cargo build -p dql-cli`, run harness with `--bin both`. Path filter `black-box-tests/**`. Not required to land the folder convention.
 
 ## Risk mitigations
 

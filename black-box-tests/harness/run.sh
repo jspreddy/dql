@@ -6,16 +6,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
-MANUAL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CASES_ROOT="$MANUAL_ROOT/cases"
-REPO_ROOT="$(cd "$MANUAL_ROOT/.." && pwd)"
+SUITE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CASES_ROOT="$SUITE_ROOT/cases"
+REPO_ROOT="$(cd "$SUITE_ROOT/.." && pwd)"
 COMPARE_PY="$SCRIPT_DIR/compare.py"
 
 usage() {
   cat <<'EOF'
 Usage: run.sh [--bin dql|dqlrs|both] [--start-local] [filter]
 
-Runs black-box acceptance cases under manual-tests/cases/ against DynamoDB Local.
+Runs black-box acceptance cases under black-box-tests/cases/ against DynamoDB Local.
 
   --bin dql|dqlrs|both  Which binary to invoke (default: both, skipping missing)
   --start-local         Start ./scripts/install_dynamodb_local.sh if port is down

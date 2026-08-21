@@ -124,10 +124,10 @@ Recommended comparisons:
 This harness can be removed once the Rust implementation is the only supported
 runtime.
 
-## Black-box acceptance (`manual-tests/`)
+## Black-box acceptance (`black-box-tests/`)
 
 Crate tests and Python pytest import implementation packages. User-facing
-acceptance lives in [`manual-tests/`](../manual-tests/) and must not.
+acceptance lives in [`black-box-tests/`](../black-box-tests/) and must not.
 
 That suite:
 
@@ -139,12 +139,12 @@ That suite:
   (or `DQL_BIN` / `DQLRS_BIN`).
 
 ```bash
-./manual-tests/harness/run.sh
-./manual-tests/harness/run.sh select
+./black-box-tests/harness/run.sh
+./black-box-tests/harness/run.sh select
 ```
 
-Add cases as `manual-tests/cases/<family>/<slug>/` (see
-[`manual-tests/README.md`](../manual-tests/README.md)). Do not treat
+Add cases as `black-box-tests/cases/<family>/<slug>/` (see
+[`black-box-tests/README.md`](../black-box-tests/README.md)). Do not treat
 `fake-users/` or `update-gsi-fails/` as harness cases; they are ad-hoc notes.
 
 This layer does **not** replace parser/engine unit tests. It is the check that

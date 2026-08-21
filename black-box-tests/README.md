@@ -1,4 +1,4 @@
-# Manual / acceptance tests
+# Black-box tests
 
 Black-box checks that drive the **`dql` and `dqlrs` binaries** against
 **DynamoDB Local**, the same way a person would: load data, connect, query,
@@ -17,10 +17,10 @@ From the repository root:
 ./scripts/install_dynamodb_local.sh
 
 # Terminal 2 — binaries on PATH, or set DQL_BIN / DQLRS_BIN
-./manual-tests/harness/run.sh
-./manual-tests/harness/run.sh select          # family or slug filter
-./manual-tests/harness/run.sh --bin dqlrs
-./manual-tests/harness/run.sh --start-local   # start Local, then run
+./black-box-tests/harness/run.sh
+./black-box-tests/harness/run.sh select          # family or slug filter
+./black-box-tests/harness/run.sh --bin dqlrs
+./black-box-tests/harness/run.sh --start-local   # start Local, then run
 ```
 
 Local must listen on `localhost:8000` (override with `DQL_LOCAL_HOST` /
@@ -50,7 +50,7 @@ Unit and crate tests stay in `py-impl/tests/` and `rust-impl/crates/*/tests/`.
 ## Layout
 
 ```text
-manual-tests/
+black-box-tests/
   harness/          # runner (subprocess only)
   fixtures/         # shared datasets
   cases/<family>/<slug>/
@@ -99,7 +99,7 @@ width and are a poor acceptance target.
 
 1. Copy `cases/select/hash-key/` to `cases/<family>/<slug>/`.
 2. Edit `setup.dql` / `input.dql` / `expected.json`.
-3. Run `./manual-tests/harness/run.sh <slug>`.
+3. Run `./black-box-tests/harness/run.sh <slug>`.
 
 ## Ad-hoc folders (not harness cases)
 

@@ -79,7 +79,7 @@ DQL_REQUIRE_LOCAL=1 ../scripts/rust-smoke-test.sh
 
 ## Acceptance (binaries + Local)
 
-Black-box cases under [`manual-tests/`](manual-tests/) spawn `dql` / `dqlrs` and
+Black-box cases under [`black-box-tests/`](black-box-tests/) spawn `dql` / `dqlrs` and
 assert CLI output. They do not import either implementation. Local must be on
 **8000** (same as above).
 
@@ -88,12 +88,12 @@ assert CLI output. They do not import either implementation. Local must be on
 export DQL_BIN="$PWD/py-impl/.venv/bin/dql"          # after: cd py-impl && uv sync --dev
 export DQLRS_BIN="$PWD/rust-impl/target/release/dqlrs"  # after: cargo build --release -p dql-cli
 
-./manual-tests/harness/run.sh
-./manual-tests/harness/run.sh --bin dqlrs
-./manual-tests/harness/run.sh --start-local   # starts Local if needed
+./black-box-tests/harness/run.sh
+./black-box-tests/harness/run.sh --bin dqlrs
+./black-box-tests/harness/run.sh --start-local   # starts Local if needed
 ```
 
-Details and the case file convention: [`manual-tests/README.md`](manual-tests/README.md).
+Details and the case file convention: [`black-box-tests/README.md`](black-box-tests/README.md).
 
 ---
 

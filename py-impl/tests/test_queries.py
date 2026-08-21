@@ -115,7 +115,7 @@ class TestAlter(BaseSystemTest):
         self.assertEqual(desc.throughput, Throughput(2, 3))
 
     @pytest.mark.skip(
-        reason="ddb local seems to have a bug. See manual-tests/update-gsi-fails/"
+        reason="ddb local seems to have a bug. See black-box-tests/update-gsi-fails/"
     )
     def test_alter_index_throughput(self):
         """Can alter throughput of a global index"""
