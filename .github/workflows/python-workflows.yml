@@ -1,0 +1,116 @@
+name: Python workflows
+
+on:
+  push:
+    paths:
+      - "py-impl/**"
+      - "py-docs/**"
+      - "py-plans/**"
+      - "scripts/**"
+      - ".github/workflows/python-workflows.yml"
+  pull_request:
+    paths:
+      - "py-impl/**"
+      - "py-docs/**"
+      - "py-plans/**"
+      - "scripts/**"
+      - ".github/workflows/python-workflows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-job:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"]
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v6
+
+      - name: Resolve Python project root
+        id: py
+        run: |
+          if [ -f py-impl/pyproject.toml ]; then
+            echo "root=py-impl" >> "$GITHUB_OUTPUT"
+          elif [ -f pyproject.toml ]; then
+            echo "root=." >> "$GITHUB_OUTPUT"
+          else
+            echo "error: no pyproject.toml at repo root or py-impl/" >&2
+            exit 1
+          fi
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: "latest"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        working-directory: ${{ steps.py.outputs.root }}
+        run: uv sync --dev
+
+      - name: Run linting
+        working-directory: ${{ steps.py.outputs.root }}
+        run: uv run task lint
+
+  test-job:
+    needs: lint-job
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"]
+    env:
+      AWS_ACCESS_KEY_ID: dummy
+      AWS_SECRET_ACCESS_KEY: dummy
+      AWS_DEFAULT_REGION: us-west-1
+      AWS_EC2_METADATA_DISABLED: "true"
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v6
+
+      - name: Resolve Python project root
+        id: py
+        run: |
+          if [ -f py-impl/pyproject.toml ]; then
+            echo "root=py-impl" >> "$GITHUB_OUTPUT"
+          elif [ -f pyproject.toml ]; then
+            echo "root=." >> "$GITHUB_OUTPUT"
+          else
+            echo "error: no pyproject.toml at repo root or py-impl/" >&2
+            exit 1
+          fi
+
+      - name: Install Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: "corretto"
+          java-version: "21"
+
+      - name: Install & start DynamoDB Local
+        run: ./scripts/install_dynamodb_local.sh background
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          version: "latest"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        working-directory: ${{ steps.py.outputs.root }}
+        run: uv sync --dev
+
+      - name: Run tests
+        working-directory: ${{ steps.py.outputs.root }}
+        run: uv run task test
