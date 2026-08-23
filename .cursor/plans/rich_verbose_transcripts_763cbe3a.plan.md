@@ -4,34 +4,34 @@ overview: When -v is set, print a Rich transcript per test — heading, docstrin
 todos:
   - id: dep-rich
     content: Add rich to black-box-tests/pyproject.toml and uv.lock
-    status: pending
+    status: completed
   - id: commit-dep-rich
     content: "Commit: test(black-box-tests): add rich for verbose transcripts"
-    status: pending
+    status: completed
   - id: report-module
     content: Add report.py — heading, description, binary subheading, list-item steps with Syntax blocks
-    status: pending
+    status: completed
   - id: commit-report-module
     content: "Commit: test(black-box-tests): add Rich transcript reporter"
-    status: pending
+    status: completed
   - id: docstrings
     content: Add a one-line docstring to each of the 18 tests for the verbose description
-    status: pending
+    status: completed
   - id: commit-docstrings
     content: "Commit: test(black-box-tests): add verbose descriptions to acceptance tests"
-    status: pending
+    status: completed
   - id: wire-cli
     content: Cli.verbose prints Setup/Test/Output/Expect/Teardown; conftest prints heading; run.sh -v -s
-    status: pending
+    status: completed
   - id: commit-wire-cli
     content: "Commit: test(black-box-tests): print Rich transcripts when pytest is verbose"
-    status: pending
+    status: completed
   - id: docs
     content: Update run.sh usage and README for transcript -v
-    status: pending
+    status: completed
   - id: commit-docs
     content: "Commit: docs(black-box-tests): document -v CLI transcripts"
-    status: pending
+    status: completed
 isProject: false
 ---
 

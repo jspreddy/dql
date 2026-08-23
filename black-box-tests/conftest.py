@@ -248,6 +248,9 @@ def cli(request: pytest.FixtureRequest, isolation_home: Path, suite_root: Path) 
     if request.config.getoption("--skip-teardown"):
         if verbose:
             report.print_note_step("Teardown", "skipped (--skip-teardown)")
+            report.print_test_footer()
         return
     for name in helper.tables:
         helper.oneshot("DROP TABLE IF EXISTS %s;" % name, check=False)
+    if verbose:
+        report.print_test_footer()

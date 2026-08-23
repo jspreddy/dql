@@ -26,12 +26,19 @@ def print_test_header(name: str, description: str | None, binary: str) -> None:
     if not desc:
         desc = "(no description)"
     console.print()
-    console.rule(Text("# %s" % name, style="bold yellow"), style="yellow")
+    console.rule(Text(name, style="bold yellow"), style="yellow", align="left")
     console.print()
     console.print(Text(desc, style="dim"))
     console.print()
-    console.print(Text("## %s" % binary, style="bold magenta"))
+    console.print(Text(binary, style="bold magenta"))
     console.print()
+
+
+def print_test_footer() -> None:
+    console.print()
+    console.print()
+    console.print()
+    console.rule(style="yellow")
 
 
 def print_step(title: str, code: str | None = None, lexer: str = "text", notes: str = "") -> None:
