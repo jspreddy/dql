@@ -295,24 +295,36 @@ sanitize_slug() {
 table_name() {
   local slug="$1"
   local index="$2"
-  printf 'at_%s_%s_%s' "$(sanitize_slug "$slug")" "$$" "$index"
+  local salt="${3:-}"
+  if [[ -n "$salt" ]]; then
+    printf 'at_%s_%s_%s_%s' "$(sanitize_slug "$slug")" "$(sanitize_slug "$salt")" "$index" "$$"
+  else
+    printf 'at_%s_%s_%s' "$(sanitize_slug "$slug")" "$index" "$$"
+  fi
 }
 
 # Substitute {{TABLE}} {{TABLE2}} ... on stdin; write to stdout.
+# Optional salt (binary label) keeps dql / dqlrs from sharing leftover tables.
 apply_tables() {
   local slug="$1"
+  local salt="${2:-}"
   python3 -c '
 import sys
 slug = sys.argv[1]
 pid = sys.argv[2]
+salt = sys.argv[3] if len(sys.argv) > 3 else ""
 text = sys.stdin.read()
 safe = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in slug.replace("/", "_").replace("-", "_"))
+salt_safe = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in salt)
 for n in range(20, 0, -1):
     token = "{{TABLE}}" if n == 1 else "{{TABLE%d}}" % n
-    name = "at_%s_%s_%s" % (safe, pid, n)
+    if salt_safe:
+        name = "at_%s_%s_%s_%s" % (safe, salt_safe, n, pid)
+    else:
+        name = "at_%s_%s_%s" % (safe, n, pid)
     text = text.replace(token, name)
 sys.stdout.write(text)
-' "$slug" "$$"
+' "$slug" "$$" "$salt"
 }
 
 used_table_indexes() {

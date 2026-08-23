@@ -106,7 +106,13 @@ def stdout_matches(actual: str, expected: str) -> bool:
         return True
     if actual_n.rstrip("\n") == expected_n.rstrip("\n"):
         return True
-    return expected_n.strip() != "" and expected_n.strip() in actual_n
+    want = expected_n.strip()
+    if want and want in actual_n:
+        return True
+    # DUMP SCHEMA / rich tables wrap at the terminal width.
+    actual_ws = " ".join(actual_n.split())
+    expected_ws = " ".join(expected_n.split())
+    return expected_ws != "" and expected_ws in actual_ws
 
 
 def stderr_matches(actual: str, expected: str) -> bool:
@@ -200,6 +206,10 @@ def _self_test() -> int:
     )
     check("stdout substring", stdout_matches("hello world\n", "world"))
     check("stdout exact", stdout_matches("hello\n", "hello\n"))
+    check(
+        "stdout wrapped substring",
+        stdout_matches("THROUGHPUT (2, \n3));\n", "(2, 3)"),
+    )
     check("stderr empty", stderr_matches("", ""))
     check("stderr nonempty fail", not stderr_matches("oops\n", ""))
     errs = compare("[]", "", 0, "[]", None, None, 0)

@@ -191,10 +191,16 @@ pub fn render_condition_with_visitor(
         )),
         Condition::And(conditions) => render_joined_conditions("AND", conditions, visitor),
         Condition::Or(conditions) => render_joined_conditions("OR", conditions, visitor),
-        Condition::Not(condition) => Ok(format!(
-            "NOT ({})",
-            render_condition_with_visitor(condition, visitor)?
-        )),
+        Condition::Not(condition) => {
+            let inner = render_condition_with_visitor(condition, visitor)?;
+            // AND/OR already wrap themselves in parentheses. `NOT ((a AND b))` is
+            // rejected by DynamoDB Local as redundant parentheses.
+            if inner.starts_with('(') && inner.ends_with(')') {
+                Ok(format!("NOT {inner}"))
+            } else {
+                Ok(format!("NOT ({inner})"))
+            }
+        }
     }
 }
 
@@ -314,7 +320,15 @@ fn renumber_with_offsets(
                 .map(|(old, new)| (old.as_str(), new.as_str())),
         )
         .collect::<Vec<_>>();
-    replacements.sort_by_key(|(old, _)| std::cmp::Reverse(old.len()));
+    replacements.sort_by(|(old_a, _), (old_b, _)| {
+        // Longer tokens first so :v10 is not eaten by :v1. Highest index first so
+        // replacing :v1 -> :v2 does not also rewrite an existing :v2.
+        old_b.len().cmp(&old_a.len()).then_with(|| {
+            placeholder_index(old_b, ":v")
+                .max(placeholder_index(old_b, "#f"))
+                .cmp(&placeholder_index(old_a, ":v").max(placeholder_index(old_a, "#f")))
+        })
+    });
     for (old, new) in replacements {
         expression = expression.replace(old, new);
     }
@@ -1142,6 +1156,41 @@ mod tests {
     }
 
     #[test]
+    fn renders_not_and_without_redundant_parens() {
+        let statement =
+            parse_statement("SCAN * FROM t WHERE NOT (pk = 'acct-00' AND status = 'active')")
+                .unwrap();
+        let Statement::Scan {
+            condition: Some(condition),
+            ..
+        } = statement
+        else {
+            panic!("expected scan");
+        };
+        let rendered = render_condition(&condition).unwrap();
+        assert_eq!(rendered.expression, "NOT (pk = :v1 AND #f1 = :v2)");
+        assert!(
+            !rendered.expression.contains("NOT (("),
+            "DynamoDB Local rejects NOT ((… AND …))"
+        );
+    }
+
+    #[test]
+    fn renders_not_function_with_parens() {
+        let statement =
+            parse_statement("SCAN * FROM t WHERE NOT begins_with(sk, 'item#00')").unwrap();
+        let Statement::Scan {
+            condition: Some(condition),
+            ..
+        } = statement
+        else {
+            panic!("expected scan");
+        };
+        let rendered = render_condition(&condition).unwrap();
+        assert_eq!(rendered.expression, "NOT (begins_with(sk, :v1))");
+    }
+
+    #[test]
     fn renders_condition_with_placeholders() {
         let statement = parse_statement("SELECT * FROM t WHERE order IN (1, 2)").unwrap();
         let Statement::Select {
@@ -1205,6 +1254,27 @@ mod tests {
             update.expression_values.as_ref().unwrap()[":v1"],
             renumbered.expression_values.as_ref().unwrap()[":v2"]
         );
+    }
+
+    #[test]
+    fn renumbers_multi_placeholder_not_and_without_colliding() {
+        let update = render_update(&parse_update_expr("SET patched = 1").unwrap()).unwrap();
+        let Statement::Scan {
+            condition: Some(condition),
+            ..
+        } = parse_statement("SCAN * FROM t WHERE NOT (pk = 'acct-00' AND status = 'active')")
+            .unwrap()
+        else {
+            panic!("expected scan");
+        };
+        let condition = render_condition(&condition).unwrap();
+        assert_eq!(condition.expression, "NOT (pk = :v1 AND #f1 = :v2)");
+        let renumbered = renumber_rendered_expression(&condition, &update);
+        assert_eq!(renumbered.expression, "NOT (pk = :v2 AND #f1 = :v3)");
+        let values = renumbered.expression_values.as_ref().unwrap();
+        assert!(values.contains_key(":v2"));
+        assert!(values.contains_key(":v3"));
+        assert!(!values.contains_key(":v1"));
     }
 
     #[test]

@@ -99,7 +99,7 @@ Details and the case file convention: [`black-box-tests/README.md`](black-box-te
 
 ## One-shot (copy-paste from repo root)
 
-Foreground Local would block, so this starts Java in the same shell, waits for port 8000, then runs both trees:
+Foreground Local would block, so this starts Java in the same shell, waits for port 8000, then runs both trees and the black-box acceptance suite:
 
 ```bash
 set -euo pipefail
@@ -124,6 +124,10 @@ nc -z localhost 8000
   && cargo test -p dql-engine --test dynamodb_local_parity \
   && cargo build --release -p dql-cli \
   && DQL_REQUIRE_LOCAL=1 ../scripts/rust-smoke-test.sh )
+
+export DQL_BIN="$PWD/py-impl/.venv/bin/dql"
+export DQLRS_BIN="$PWD/rust-impl/target/release/dqlrs"
+./black-box-tests/harness/run.sh
 ```
 
 ---

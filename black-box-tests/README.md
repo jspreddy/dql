@@ -22,6 +22,7 @@ From the repository root:
 ./black-box-tests/harness/run.sh -v              # log commands, DQL, and CLI output
 ./black-box-tests/harness/run.sh --bin dqlrs
 ./black-box-tests/harness/run.sh --start-local   # start Local only if the port is down
+./black-box-tests/harness/run.sh --skip-teardown # leave tables in Local after each case
 ```
 
 If DynamoDB Local is already listening, the harness and
@@ -80,15 +81,27 @@ Each case is a directory `cases/<NNN>-<family>-<slug>/` (must contain
 | `setup.dql` | no | `CREATE` / `INSERT` / `LOAD` before the asserted commands |
 | `seed.json` | no | Fixture for `LOAD seed.json INTO {{TABLE}}` |
 | `input.dql` | yes | Commands whose output is asserted |
-| `teardown.dql` | no | Default: `DROP TABLE {{TABLE}}` (and `{{TABLE2}}` …) |
+| `teardown.dql` | no | Default: `DROP TABLE {{TABLE}}` (and `{{TABLE2}}` …). Skipped with `--skip-teardown`. |
 | `expected.json` | one of json/stdout | Item list (or JSON value) from `--json` |
 | `expected.stdout` | one of json/stdout | Exact match, else substring |
 | `expected.stderr` | no | Substring; empty file means stderr must be empty |
 | `expected.exit` | no | Integer process exit code (default `0`) |
 | `mode` | no | `oneshot` (default), `file`, or `repl-stdin` |
 
-The harness replaces `{{TABLE}}`, `{{TABLE2}}`, … with unique names so
-cases can share one Local process.
+The harness replaces `{{TABLE}}`, `{{TABLE2}}`, … with unique names so cases
+and `dql` / `dqlrs` can share one Local process even when teardown is skipped.
+A substituted name looks like `at_010_create_hash_key_table_dql_1_58104`:
+
+| Part | Example | Meaning |
+| --- | --- | --- |
+| `at` | `at` | Prefix for **a**cceptance **t**est tables, so they are easy to spot in Local next to anything else. |
+| case folder | `010_create_hash_key_table` | The case directory (`010-create-hash-key-table`) with `/` and `-` turned into `_`, then stripped to `[A-Za-z0-9_]`. Identifies which case created the table. |
+| binary | `dql` or `dqlrs` | Which CLI is under test. Stops Python and Rust from sharing a leftover table when teardown is skipped. |
+| table index | `1` | Which placeholder: `{{TABLE}}` → `1`, `{{TABLE2}}` → `2`, … up to `{{TABLE20}}`. |
+| harness pid | `58104` | `$$` of `run.sh`. A new harness process gets a new pid, so a second run does not reuse names from the first. |
+
+The full pattern is `at_<case>_<bin>_<index>_<pid>`. A case that uses two tables
+gets `…_1_<pid>` and `…_2_<pid>` with the same case/bin prefix.
 
 Relative `LOAD` / `SAVE` / `file` paths are resolved from the **case
 directory**.
@@ -99,7 +112,7 @@ width and are a poor acceptance target.
 
 ### Modes
 
-- **`oneshot`:** `dql -H localhost -p 8000 [--json] -c "…"` (setup, then input, then teardown).
+- **`oneshot`:** `dql -H localhost -p 8000 [--json] -c "…"` (setup, then input, then teardown unless `--skip-teardown`).
 - **`file`:** write a temp `.dql` and run `-c "file <path>"`.
 - **`repl-stdin`:** pipe lines into the process with no `-c`. **Python `dql` only**; `dqlrs` is skipped (TUI REPL).
 

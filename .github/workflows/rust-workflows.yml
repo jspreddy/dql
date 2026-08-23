@@ -1,4 +1,5 @@
 name: Rust workflows
+
 on:
   push:
     paths:
@@ -14,13 +15,30 @@ on:
       - "rust-plans/**"
       - "scripts/**"
       - ".github/workflows/rust-workflows.yml"
+  workflow_dispatch:
 
-defaults:
-  run:
-    working-directory: rust-impl
+permissions:
+  contents: read
 
 jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      has_rust: ${{ steps.d.outputs.has_rust }}
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v6
+      - id: d
+        run: |
+          if [ -d rust-impl ]; then
+            echo "has_rust=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_rust=false" >> "$GITHUB_OUTPUT"
+          fi
+
   check-job:
+    needs: detect
+    if: needs.detect.outputs.has_rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository code
@@ -37,12 +55,15 @@ jobs:
           workspaces: rust-impl
 
       - name: Check formatting
+        working-directory: rust-impl
         run: cargo fmt --check
 
       - name: Run clippy
+        working-directory: rust-impl
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Verify Cargo.lock is fresh
+        working-directory: rust-impl
         run: |
           cargo generate-lockfile
           git diff --exit-code Cargo.lock
@@ -54,6 +75,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      AWS_ACCESS_KEY_ID: dummy
+      AWS_SECRET_ACCESS_KEY: dummy
+      AWS_REGION: us-west-1
+      AWS_EC2_METADATA_DISABLED: "true"
     steps:
       - name: Check out repository code
         uses: actions/checkout@v6
@@ -67,11 +93,17 @@ jobs:
           workspaces: rust-impl
 
       - name: Run tests
+        working-directory: rust-impl
         run: cargo test --workspace
 
   dynamodb-local-job:
     needs: check-job
     runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: dummy
+      AWS_SECRET_ACCESS_KEY: dummy
+      AWS_REGION: us-west-1
+      AWS_EC2_METADATA_DISABLED: "true"
     steps:
       - name: Check out repository code
         uses: actions/checkout@v6
@@ -83,7 +115,6 @@ jobs:
           java-version: "21"
 
       - name: Install and start DynamoDB Local
-        working-directory: .
         run: ./scripts/install_dynamodb_local.sh background
 
       - name: Install Rust toolchain
@@ -95,6 +126,7 @@ jobs:
           workspaces: rust-impl
 
       - name: Run DynamoDB Local integration tests
+        working-directory: rust-impl
         run: |
           cargo test -p dql-engine --test dynamodb_local_smoke
           cargo test -p dql-engine --test dynamodb_local_parity

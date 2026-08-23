@@ -513,17 +513,15 @@ impl DynamoBackend for SdkBackend {
                 .set_key(Some(key))
                 .return_consumed_capacity(ReturnConsumedCapacity::Total);
             if let Some(condition_expr) = condition_expr.as_ref() {
-                request = request
-                    .condition_expression(condition_expr.expression.clone())
-                    .set_expression_attribute_names(names_to_hash(
-                        condition_expr.attribute_names.clone(),
-                    ))
-                    .set_expression_attribute_values(Some(expression_values_to_attributes(
-                        condition_expr
-                            .expression_values
-                            .as_ref()
-                            .unwrap_or(&BTreeMap::new()),
-                    )?));
+                request = request.condition_expression(condition_expr.expression.clone());
+                if let Some(names) = names_to_hash(condition_expr.attribute_names.clone()) {
+                    request = request.set_expression_attribute_names(Some(names));
+                }
+                if let Some(values) =
+                    nonempty_expression_values(condition_expr.expression_values.as_ref())?
+                {
+                    request = request.set_expression_attribute_values(Some(values));
+                }
             }
             let response = self
                 .block_on(async { request.send().await })
@@ -862,17 +860,15 @@ impl SdkBackend {
                 query = query.scan_index_forward(forward);
             }
             if let Some(key_condition) = key_condition {
-                query = query
-                    .key_condition_expression(key_condition.expression.clone())
-                    .set_expression_attribute_names(names_to_hash(
-                        key_condition.attribute_names.clone(),
-                    ))
-                    .set_expression_attribute_values(Some(expression_values_to_attributes(
-                        key_condition
-                            .expression_values
-                            .as_ref()
-                            .unwrap_or(&BTreeMap::new()),
-                    )?));
+                query = query.key_condition_expression(key_condition.expression.clone());
+                if let Some(names) = names_to_hash(key_condition.attribute_names.clone()) {
+                    query = query.set_expression_attribute_names(Some(names));
+                }
+                if let Some(values) =
+                    nonempty_expression_values(key_condition.expression_values.as_ref())?
+                {
+                    query = query.set_expression_attribute_values(Some(values));
+                }
             }
             if let Some(filter_condition) = filter_condition {
                 let filter_condition = match key_condition {
@@ -961,17 +957,15 @@ impl SdkBackend {
                 scan = scan.index_name(index_name);
             }
             if let Some(filter_condition) = filter_condition {
-                scan = scan
-                    .filter_expression(filter_condition.expression.clone())
-                    .set_expression_attribute_names(names_to_hash(
-                        filter_condition.attribute_names.clone(),
-                    ))
-                    .set_expression_attribute_values(Some(expression_values_to_attributes(
-                        filter_condition
-                            .expression_values
-                            .as_ref()
-                            .unwrap_or(&BTreeMap::new()),
-                    )?));
+                scan = scan.filter_expression(filter_condition.expression.clone());
+                if let Some(names) = names_to_hash(filter_condition.attribute_names.clone()) {
+                    scan = scan.set_expression_attribute_names(Some(names));
+                }
+                if let Some(values) =
+                    nonempty_expression_values(filter_condition.expression_values.as_ref())?
+                {
+                    scan = scan.set_expression_attribute_values(Some(values));
+                }
             }
             if let Some(rendered) = self.read_projection(table, request)? {
                 scan = scan
@@ -1221,18 +1215,32 @@ fn names_to_hash(names: Option<BTreeMap<String, String>>) -> Option<HashMap<Stri
     names.map(|map| map.into_iter().collect())
 }
 
+fn nonempty_expression_values(
+    values: Option<&BTreeMap<String, dql_expr::DynamoValue>>,
+) -> Result<Option<HashMap<String, aws_sdk_dynamodb::types::AttributeValue>>, EngineError> {
+    match values {
+        Some(map) if !map.is_empty() => expression_values_to_attributes(map).map(Some),
+        _ => Ok(None),
+    }
+}
+
 fn merge_values(
     left: Option<&BTreeMap<String, dql_expr::DynamoValue>>,
     right: Option<&BTreeMap<String, dql_expr::DynamoValue>>,
 ) -> Result<Option<HashMap<String, aws_sdk_dynamodb::types::AttributeValue>>, EngineError> {
-    match (left, right) {
-        (None, None) => Ok(None),
-        (Some(left), None) => expression_values_to_attributes(left).map(Some),
-        (None, Some(right)) => expression_values_to_attributes(right).map(Some),
+    let merged = match (left, right) {
+        (None, None) => return Ok(None),
+        (Some(left), None) => left.clone(),
+        (None, Some(right)) => right.clone(),
         (Some(left), Some(right)) => {
             let mut merged = left.clone();
             merged.extend(right.clone());
-            expression_values_to_attributes(&merged).map(Some)
+            merged
         }
+    };
+    if merged.is_empty() {
+        Ok(None)
+    } else {
+        expression_values_to_attributes(&merged).map(Some)
     }
 }
