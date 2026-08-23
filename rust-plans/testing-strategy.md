@@ -135,18 +135,18 @@ That suite:
 - Requires DynamoDB Local (same port 8000 as the integration tests).
 - Loads schema and data with DQL (`CREATE`, `INSERT`, `LOAD`) then asserts
   stdout / JSON / exit code.
-- Runs the same case folders against both binaries when both are on `PATH`
+- Runs the same pytest tests against both binaries when both are on `PATH`
   (or `DQL_BIN` / `DQLRS_BIN`).
 
 ```bash
-./black-box-tests/harness/run.sh
-./black-box-tests/harness/run.sh 1xx
+./black-box-tests/run.sh
+./black-box-tests/run.sh 1xx
 ```
 
-Add cases as `black-box-tests/cases/<NNN>-<family>-<slug>/` (see
+Add tests as `black-box-tests/tests/test_<NNN>_*.py` (see
 [`black-box-tests/README.md`](../black-box-tests/README.md) and
-[`black-box-tests/cases/ordering.md`](../black-box-tests/cases/ordering.md)). Do not treat
-`fake-users/` or `update-gsi-fails/` as harness cases; they are ad-hoc notes.
+[`black-box-tests/ordering.md`](../black-box-tests/ordering.md)). Do not treat
+`manual-cases/` as pytest tests; they are ad-hoc notes.
 
 This layer does **not** replace parser/engine unit tests. It is the check that
 an installed CLI behaves like a user expects against Local.
