@@ -1,0 +1,18 @@
+[project]
+name = "dql-black-box-tests"
+version = "0.0.0"
+description = "Black-box acceptance tests for dql / dqlrs against DynamoDB Local"
+requires-python = ">=3.9"
+dependencies = [
+    "pexpect>=4.9",
+    "pytest>=8",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
+norecursedirs = ["manual-cases", "cases", "harness", "fixtures", ".venv"]
