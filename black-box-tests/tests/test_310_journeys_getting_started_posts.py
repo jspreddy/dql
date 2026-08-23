@@ -2,6 +2,7 @@ from cli import Cli
 
 
 def test_310_journeys_getting_started_posts(cli: Cli) -> None:
+    """Getting-started journey: hash+range+LSI table, INSERT posts, SELECT by hash."""
     table = cli.table()
     cli.oneshot(
         f"CREATE TABLE {table} (username STRING HASH KEY, postid NUMBER RANGE KEY,"

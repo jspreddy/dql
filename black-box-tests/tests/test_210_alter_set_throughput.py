@@ -2,6 +2,7 @@ from cli import Cli
 
 
 def test_210_alter_set_throughput(cli: Cli) -> None:
+    """ALTER SET THROUGHPUT and confirm the new values via DUMP SCHEMA."""
     table = cli.table()
     cli.oneshot(f"CREATE TABLE {table} (id STRING HASH KEY, THROUGHPUT (1, 1));")
     cli.assert_stdout(

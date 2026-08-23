@@ -2,6 +2,7 @@ from cli import Cli
 
 
 def test_210_explain_select_query(cli: Cli) -> None:
+    """EXPLAIN SELECT shows the key condition without running the query."""
     table = cli.table()
     cli.oneshot(
         f"CREATE TABLE {table} (id STRING HASH KEY);\n"

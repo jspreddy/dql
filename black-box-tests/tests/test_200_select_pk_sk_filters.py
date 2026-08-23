@@ -11,6 +11,7 @@ _EXPECTED = json.loads(
 
 
 def test_200_select_pk_sk_filters(cli: Cli) -> None:
+    """SELECT by hash, sort-key prefix, and extra FilterExpression predicates."""
     table = cli.table()
     cli.oneshot(
         f"CREATE TABLE {table} (pk STRING HASH KEY, sk STRING RANGE KEY, THROUGHPUT (10, 10));\n"

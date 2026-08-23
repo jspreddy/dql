@@ -2,6 +2,7 @@ from cli import Cli
 
 
 def test_300_update_except_pk_sk_filters(cli: Cli) -> None:
+    """UPDATE all but two filtered rows, then SCAN the patched count."""
     table = cli.table()
     cli.oneshot(
         f"CREATE TABLE {table} (pk STRING HASH KEY, sk STRING RANGE KEY, THROUGHPUT (10, 10));\n"

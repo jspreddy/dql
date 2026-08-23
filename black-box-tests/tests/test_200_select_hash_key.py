@@ -2,6 +2,7 @@ from cli import Cli
 
 
 def test_200_select_hash_key(cli: Cli) -> None:
+    """Query a table by hash key through the CLI against DynamoDB Local."""
     table = cli.table()
     cli.oneshot(
         f"CREATE TABLE {table} (id STRING HASH KEY, n NUMBER);\n"

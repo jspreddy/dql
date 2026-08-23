@@ -2,6 +2,7 @@ from cli import Cli
 
 
 def test_200_scan_all_items(cli: Cli) -> None:
+    """SCAN all items from a small table."""
     table = cli.table()
     cli.oneshot(
         f"CREATE TABLE {table} (id STRING HASH KEY, n NUMBER);\n"

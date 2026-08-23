@@ -2,6 +2,7 @@ from cli import Cli
 
 
 def test_110_insert_multiple_values(cli: Cli) -> None:
+    """INSERT multiple rows and SELECT one of them back."""
     table = cli.table()
     cli.oneshot(f"CREATE TABLE {table} (id STRING HASH KEY, n NUMBER);")
     cli.assert_json(
