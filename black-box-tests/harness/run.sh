@@ -14,12 +14,13 @@ COMPARE_PY="$SCRIPT_DIR/compare.py"
 
 usage() {
   cat <<'EOF'
-Usage: run.sh [--bin dql|dqlrs|both] [--start-local] [-v|--verbose] [filter]
+Usage: run.sh [--bin dql|dqlrs|both] [--start-local] [--skip-teardown] [-v|--verbose] [filter]
 
 Runs black-box acceptance cases under black-box-tests/cases/ against DynamoDB Local.
 
   --bin dql|dqlrs|both  Which binary to invoke (default: both, skipping missing)
   --start-local         Start Local only if the port is down (safe if already running)
+  --skip-teardown       Do not run teardown.dql / default DROP TABLE after each case
   -v, --verbose         Log setup, commands, DQL, and CLI output for each case
   filter                Numeric group (1xx, 11x, 2xx) or substring of the case folder name
 
@@ -33,6 +34,7 @@ EOF
 
 BIN_CHOICE="both"
 START_LOCAL=0
+SKIP_TEARDOWN=0
 FILTER=""
 HARNESS_VERBOSE=0
 
@@ -52,6 +54,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --start-local)
       START_LOCAL=1
+      shift
+      ;;
+    --skip-teardown)
+      SKIP_TEARDOWN=1
       shift
       ;;
     -v | --verbose)
@@ -234,6 +240,9 @@ fi
 if [[ "$HARNESS_VERBOSE" == "1" ]]; then
   harness_kv "verbose" "on"
 fi
+if [[ "$SKIP_TEARDOWN" == "1" ]]; then
+  harness_kv "teardown" "skipped"
+fi
 harness_verbose "isolation $ISOLATION"
 idx=0
 for bin in "${BINS[@]}"; do
@@ -406,7 +415,7 @@ for rel in "${CASE_RELS[@]}"; do
     step="input"
     [[ -f "$work/step.$label" ]] && step="$(cat "$work/step.$label")"
 
-    if [[ -s "$work/teardown.dql" ]]; then
+    if [[ "$SKIP_TEARDOWN" != "1" && -s "$work/teardown.dql" ]]; then
       td_out="$work/teardown.stdout.$label"
       td_err="$work/teardown.stderr.$label"
       td_rc="$(
@@ -507,7 +516,9 @@ for rel in "${CASE_RELS[@]}"; do
       fi
     fi
 
-    if [[ -s "$work/teardown.dql" ]]; then
+    if [[ "$SKIP_TEARDOWN" == "1" ]]; then
+      harness_verbose_step "Teardown" "teardown.dql" "$work/teardown.dql" "" "" "0" "skipped (--skip-teardown)"
+    elif [[ -s "$work/teardown.dql" ]]; then
       harness_verbose_step "Teardown" "teardown.dql" "$work/teardown.dql" "$td_out" "$td_err" "${td_rc:-0}" ""
     fi
 

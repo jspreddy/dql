@@ -22,6 +22,7 @@ From the repository root:
 ./black-box-tests/harness/run.sh -v              # log commands, DQL, and CLI output
 ./black-box-tests/harness/run.sh --bin dqlrs
 ./black-box-tests/harness/run.sh --start-local   # start Local only if the port is down
+./black-box-tests/harness/run.sh --skip-teardown # leave tables in Local after each case
 ```
 
 If DynamoDB Local is already listening, the harness and
@@ -80,7 +81,7 @@ Each case is a directory `cases/<NNN>-<family>-<slug>/` (must contain
 | `setup.dql` | no | `CREATE` / `INSERT` / `LOAD` before the asserted commands |
 | `seed.json` | no | Fixture for `LOAD seed.json INTO {{TABLE}}` |
 | `input.dql` | yes | Commands whose output is asserted |
-| `teardown.dql` | no | Default: `DROP TABLE {{TABLE}}` (and `{{TABLE2}}` …) |
+| `teardown.dql` | no | Default: `DROP TABLE {{TABLE}}` (and `{{TABLE2}}` …). Skipped with `--skip-teardown`. |
 | `expected.json` | one of json/stdout | Item list (or JSON value) from `--json` |
 | `expected.stdout` | one of json/stdout | Exact match, else substring |
 | `expected.stderr` | no | Substring; empty file means stderr must be empty |
@@ -99,7 +100,7 @@ width and are a poor acceptance target.
 
 ### Modes
 
-- **`oneshot`:** `dql -H localhost -p 8000 [--json] -c "…"` (setup, then input, then teardown).
+- **`oneshot`:** `dql -H localhost -p 8000 [--json] -c "…"` (setup, then input, then teardown unless `--skip-teardown`).
 - **`file`:** write a temp `.dql` and run `-c "file <path>"`.
 - **`repl-stdin`:** pipe lines into the process with no `-c`. **Python `dql` only**; `dqlrs` is skipped (TUI REPL).
 
