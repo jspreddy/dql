@@ -239,4 +239,4 @@ def cli(request: pytest.FixtureRequest, isolation_home: Path, suite_root: Path) 
     if request.config.getoption("--skip-teardown"):
         return
     for name in helper.tables:
-        helper.oneshot("DROP TABLE %s;" % name, check=False)
+        helper.oneshot("DROP TABLE IF EXISTS %s;" % name, check=False)

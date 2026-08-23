@@ -15,4 +15,4 @@ package = false
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-ra"
-norecursedirs = ["manual-cases", "cases", "harness", "fixtures", ".venv"]
+norecursedirs = ["manual-cases", "fixtures", ".venv"]

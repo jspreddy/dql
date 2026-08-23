@@ -1,2 +1,0 @@
-CREATE TABLE {{TABLE}} (id STRING HASH KEY, sk NUMBER RANGE KEY);
-INSERT INTO {{TABLE}} (id, sk, n) VALUES ('p', 1, 10), ('p', 2, 20);

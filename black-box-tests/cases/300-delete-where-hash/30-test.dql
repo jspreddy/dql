@@ -1,2 +1,0 @@
-DELETE FROM {{TABLE}} WHERE id = 'a';
-SELECT * FROM {{TABLE}} WHERE id = 'b';
