@@ -88,8 +88,20 @@ Each case is a directory `cases/<NNN>-<family>-<slug>/` (must contain
 | `expected.exit` | no | Integer process exit code (default `0`) |
 | `mode` | no | `oneshot` (default), `file`, or `repl-stdin` |
 
-The harness replaces `{{TABLE}}`, `{{TABLE2}}`, … with unique names so
-cases can share one Local process.
+The harness replaces `{{TABLE}}`, `{{TABLE2}}`, … with unique names so cases
+and `dql` / `dqlrs` can share one Local process even when teardown is skipped.
+A substituted name looks like `at_010_create_hash_key_table_dql_1_58104`:
+
+| Part | Example | Meaning |
+| --- | --- | --- |
+| `at` | `at` | Prefix for **a**cceptance **t**est tables, so they are easy to spot in Local next to anything else. |
+| case folder | `010_create_hash_key_table` | The case directory (`010-create-hash-key-table`) with `/` and `-` turned into `_`, then stripped to `[A-Za-z0-9_]`. Identifies which case created the table. |
+| binary | `dql` or `dqlrs` | Which CLI is under test. Stops Python and Rust from sharing a leftover table when teardown is skipped. |
+| table index | `1` | Which placeholder: `{{TABLE}}` → `1`, `{{TABLE2}}` → `2`, … up to `{{TABLE20}}`. |
+| harness pid | `58104` | `$$` of `run.sh`. A new harness process gets a new pid, so a second run does not reuse names from the first. |
+
+The full pattern is `at_<case>_<bin>_<index>_<pid>`. A case that uses two tables
+gets `…_1_<pid>` and `…_2_<pid>` with the same case/bin prefix.
 
 Relative `LOAD` / `SAVE` / `file` paths are resolved from the **case
 directory**.

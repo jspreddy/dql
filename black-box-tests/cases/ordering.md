@@ -1,10 +1,10 @@
 # Case ordering
 
 Harness cases under `cases/<NNN>-<family>-<slug>/` do **not** share DynamoDB
-state. Each run gets unique `{{TABLE}}` names, its own `setup.dql`, and
-teardown. The numbers below are **diagnostic dependencies**: if an earlier case
-fails, a later case that uses that feature in setup or to check its result is
-not trustworthy.
+state. Each run gets unique `{{TABLE}}` names (case folder, binary, and
+harness pid), its own `setup.dql`, and teardown. The numbers below are **diagnostic
+dependencies**: if an earlier case fails, a later case that uses that feature
+in setup or to check its result is not trustworthy.
 
 `harness/run.sh` runs cases in this order (`LC_ALL=C` sort of folder names).
 Pass a numeric group to run a subset; `x` is a digit wildcard:

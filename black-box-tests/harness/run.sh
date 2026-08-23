@@ -310,25 +310,6 @@ for rel in "${CASE_RELS[@]}"; do
   [[ -f "$case_dir/teardown.dql" ]] && source_blob+="$(cat "$case_dir/teardown.dql")"$'\n'
 
   work="$(mktemp -d "$ISOLATION/case.XXXXXX")"
-  if [[ -f "$case_dir/setup.dql" ]]; then
-    apply_tables "$rel" <"$case_dir/setup.dql" >"$work/setup.dql"
-  fi
-  apply_tables "$rel" <"$case_dir/input.dql" >"$work/input.dql"
-  if [[ -f "$case_dir/teardown.dql" ]]; then
-    apply_tables "$rel" <"$case_dir/teardown.dql" >"$work/teardown.dql"
-  else
-    default_teardown "$rel" "$source_blob" >"$work/teardown.raw"
-    apply_tables "$rel" <"$work/teardown.raw" >"$work/teardown.dql"
-  fi
-  if [[ -f "$case_dir/expected.json" ]]; then
-    apply_tables "$rel" <"$case_dir/expected.json" >"$work/expected.json"
-  fi
-  if [[ -f "$case_dir/expected.stdout" ]]; then
-    apply_tables "$rel" <"$case_dir/expected.stdout" >"$work/expected.stdout"
-  fi
-  if [[ -f "$case_dir/expected.stderr" ]]; then
-    apply_tables "$rel" <"$case_dir/expected.stderr" >"$work/expected.stderr"
-  fi
   expected_exit=0
   if [[ -f "$case_dir/expected.exit" ]]; then
     expected_exit="$(tr -d '[:space:]' <"$case_dir/expected.exit")"
@@ -356,6 +337,28 @@ for rel in "${CASE_RELS[@]}"; do
       SKIPPED=$((SKIPPED + 1))
       HARNESS_INDENT=0
       continue
+    fi
+
+    rm -f "$work/setup.dql" "$work/teardown.dql" "$work/teardown.raw" \
+      "$work/expected.json" "$work/expected.stdout" "$work/expected.stderr"
+    if [[ -f "$case_dir/setup.dql" ]]; then
+      apply_tables "$rel" "$label" <"$case_dir/setup.dql" >"$work/setup.dql"
+    fi
+    apply_tables "$rel" "$label" <"$case_dir/input.dql" >"$work/input.dql"
+    if [[ -f "$case_dir/teardown.dql" ]]; then
+      apply_tables "$rel" "$label" <"$case_dir/teardown.dql" >"$work/teardown.dql"
+    else
+      default_teardown "$rel" "$source_blob" >"$work/teardown.raw"
+      apply_tables "$rel" "$label" <"$work/teardown.raw" >"$work/teardown.dql"
+    fi
+    if [[ -f "$case_dir/expected.json" ]]; then
+      apply_tables "$rel" "$label" <"$case_dir/expected.json" >"$work/expected.json"
+    fi
+    if [[ -f "$case_dir/expected.stdout" ]]; then
+      apply_tables "$rel" "$label" <"$case_dir/expected.stdout" >"$work/expected.stdout"
+    fi
+    if [[ -f "$case_dir/expected.stderr" ]]; then
+      apply_tables "$rel" "$label" <"$case_dir/expected.stderr" >"$work/expected.stderr"
     fi
 
     out="$work/stdout.$label"
