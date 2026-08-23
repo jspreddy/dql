@@ -1,21 +1,36 @@
 ---
 name: pexpect black-box harness
-overview: Replace the bash folder-per-case harness with pytest + pexpect. Each of the 18 cases becomes a test function named test_NNN_*, keeping the 0xx/1xx/2xx/3xx diagnostic groups. Drive both binaries with -c --json via a shared Cli helper.
+overview: Replace the bash folder-per-case harness with pytest + pexpect. Each of the 18 cases becomes a test function named test_NNN_*, keeping the 0xx/1xx/2xx/3xx diagnostic groups. Drive both binaries with -c --json via a shared Cli helper. Commit after each work todo (separate commit todos).
 todos:
   - id: pyproject
     content: Add black-box-tests/pyproject.toml (pytest, pexpect) + uv.lock; thin run.sh that maps --bin, --start-local, --group 1xx onto pytest
     status: pending
+  - id: commit-pyproject
+    content: "Commit: test(black-box-tests): add pytest+pexpect project skeleton and run.sh"
+    status: pending
   - id: cli-helper
     content: conftest.py + Cli helper (pexpect.spawn -c, unique tables, isolated HOME, Local check, DROP teardown fixture)
+    status: pending
+  - id: commit-cli-helper
+    content: "Commit: test(black-box-tests): add Cli helper and conftest for Local and both binaries"
     status: pending
   - id: port-tests
     content: Port 18 cases to tests/test_NNN_*.py; move ordering.md; keep shared JSON fixtures; delete cases/ and the bash harness
     status: pending
+  - id: commit-port-tests
+    content: "Commit: test(black-box-tests): replace case folders with test_NNN pytest modules"
+    status: pending
   - id: docs
     content: Rewrite black-box-tests/README.md; update VERIFICATION.md and rust-plans/testing-strategy.md
     status: pending
+  - id: commit-docs
+    content: "Commit: docs(black-box-tests): document pytest harness and diagnostic groups"
+    status: pending
   - id: verify
-    content: Run full suite and --group 1xx against dql and dqlrs with Local up
+    content: Run full suite and --group 1xx against dql and dqlrs with Local up; fix any oracle/PTY issues
+    status: pending
+  - id: commit-verify
+    content: "Commit PTY/oracle fixes if verify changed files; skip if the working tree is clean"
     status: pending
 isProject: false
 ---
@@ -198,3 +213,13 @@ export DQLRS_BIN="$PWD/rust-impl/target/release/dqlrs"
 ```
 
 Gate: 18 tests × each present binary PASS (skip missing binary unless `--bin` requires it).
+
+## Commits
+
+Each work todo is followed by a **separate commit todo**. Do not start the next work item until that commit is done. Do not bundle work todos into one commit. Follow the repo’s commit-message style (why, 1–2 sentences).
+
+- After **pyproject** → **commit-pyproject**: `test(black-box-tests): add pytest+pexpect project skeleton and run.sh`
+- After **cli-helper** → **commit-cli-helper**: `test(black-box-tests): add Cli helper and conftest for Local and both binaries`
+- After **port-tests** → **commit-port-tests**: `test(black-box-tests): replace case folders with test_NNN pytest modules`
+- After **docs** → **commit-docs**: `docs(black-box-tests): document pytest harness and diagnostic groups`
+- After **verify** → **commit-verify**: `fix(black-box-tests): stabilize PTY stdout oracles` — skip if nothing changed
