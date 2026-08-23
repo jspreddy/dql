@@ -4,16 +4,16 @@ overview: Prefix only harness-consumed case files (plus 00-README.md) so each ca
 todos:
   - id: rename-files
     content: git mv harness-consumed case files to 00-/10-/20-/30-test-/40-/50- prefixes; leave seed.json as-is
-    status: pending
+    status: completed
   - id: harness-constants
     content: Define CASE_* names in lib.sh (CASE_TEST=30-test.dql); update discovery, verbose listing, and all case_dir reads in run.sh; rename the Input verbose step to Test
-    status: pending
+    status: completed
   - id: docs-generator
     content: Update README.md, ordering.md, generate_records.py; call the asserted-commands file 30-test.dql (not input)
-    status: pending
+    status: completed
   - id: verify
     content: Confirm folder sort order and that the harness still finds all cases via 30-test.dql
-    status: pending
+    status: completed
 isProject: false
 ---
 
