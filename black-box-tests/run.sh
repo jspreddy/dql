@@ -110,4 +110,8 @@ if [[ "$VERBOSE" == "1" ]]; then
 fi
 
 cd "$SUITE_ROOT"
-exec uv run pytest "${pytest_args[@]}" "${PYTEST_EXTRA[@]}"
+if [[ ${#PYTEST_EXTRA[@]} -gt 0 ]]; then
+  exec uv run pytest "${pytest_args[@]}" "${PYTEST_EXTRA[@]}"
+else
+  exec uv run pytest "${pytest_args[@]}"
+fi
