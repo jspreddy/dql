@@ -13,7 +13,7 @@ Runs black-box acceptance tests against DynamoDB Local.
   --bin dql|dqlrs|both  Which binary to invoke (default: both, skipping missing)
   --start-local         Start Local only if the port is down (safe if already running)
   --skip-teardown       Do not DROP TABLE after each test
-  -v, --verbose         pytest -v (and later: log DQL / CLI output)
+  -v, --verbose         pytest -v -s plus Rich transcripts (DQL, stdout, expect)
   --group FILTER        Numeric group (1xx, 11x, 2xx) or substring of the test name
   filter                Same as --group (positional, matches the old harness)
 

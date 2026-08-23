@@ -6,8 +6,8 @@ check the reply.
 
 **Do not import DQL.** New code in this directory must not `import dql`,
 `use dql_*`, or otherwise reach into `py-impl/` or `rust-impl/`. Talk to
-the installed programs only. pytest and pexpect are allowed; they spawn the
-CLIs.
+the installed programs only. pytest, pexpect, and rich are allowed; they spawn
+the CLIs and format `-v` transcripts.
 
 ## Quick start
 
@@ -21,7 +21,7 @@ Requires [uv](https://docs.astral.sh/uv/). From the repository root:
 ./black-box-tests/run.sh
 ./black-box-tests/run.sh 1xx             # numeric group (also 11x, 2xx, …)
 ./black-box-tests/run.sh --group 1xx     # same as the positional filter
-./black-box-tests/run.sh -v              # pytest -v
+./black-box-tests/run.sh -v              # transcripts: heading, DQL, stdout, expect
 ./black-box-tests/run.sh --bin dqlrs
 ./black-box-tests/run.sh --start-local   # start Local only if the port is down
 ./black-box-tests/run.sh --skip-teardown # leave tables in Local after each test
@@ -68,6 +68,7 @@ black-box-tests/
   run.sh            # maps --bin / --group / --start-local onto pytest
   conftest.py       # Local, binaries, diagnostic groups, Cli fixture
   cli.py            # pexpect.spawn of dql/dqlrs -c
+  report.py         # Rich transcripts for -v
   compare.py        # JSON / stdout match helpers
   tests/test_NNN_*.py
   fixtures/         # shared LOAD datasets
@@ -102,12 +103,18 @@ width and are a poor acceptance target.
 `2xx` match the `NNN` in `test_NNN_…`). Any other string is a substring of the
 test name (`create`, `select`).
 
+`-v` / `--verbose` enables pytest `-v -s` and prints a Rich transcript per
+test: heading (function name), the test docstring, binary subheading (`dql` /
+`dqlrs`), then Setup / Test / Output / Expect / Teardown as syntax-highlighted
+blocks. Set `NO_COLOR` to disable harness color.
+
 ## Adding a test
 
 1. Copy `tests/test_200_select_hash_key.py` to `tests/test_<NNN>_<family>_<slug>.py`.
    See [ordering.md](ordering.md) for the numbering.
 2. Call `cli.table()`, run setup with `cli.oneshot`, assert with `assert_json`
-   or `assert_stdout`.
+   or `assert_stdout`. Put a one-line docstring on the test function (`-v`
+   prints it as the description).
 3. Run `./black-box-tests/run.sh 2xx` (or `-k` the new name).
 
 ## Manual cases (not pytest)
