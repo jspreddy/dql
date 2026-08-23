@@ -62,8 +62,7 @@ black-box-tests/
   harness/          # runner (subprocess only)
   fixtures/         # shared datasets
   cases/<NNN>-<family>-<slug>/
-  fake-users/       # ad-hoc sample data (not part of the harness)
-  update-gsi-fails/ # ad-hoc DynamoDB Local GSI repro (not a gate)
+  manual-cases/     # ad-hoc scripts; not run by the harness
 ```
 
 The `family` segment in the folder name matches the language docs (`create`,
@@ -73,20 +72,20 @@ documented in [cases/ordering.md](cases/ordering.md).
 ## Case files
 
 Each case is a directory `cases/<NNN>-<family>-<slug>/` (must contain
-`input.dql` plus `expected.json` or `expected.stdout`):
+`30-test.dql` plus `40-expected.json` or `40-expected.stdout`):
 
 | File | Required | Meaning |
 | --- | --- | --- |
-| `README.md` | no | What a user is proving |
-| `setup.dql` | no | `CREATE` / `INSERT` / `LOAD` before the asserted commands |
-| `seed.json` | no | Fixture for `LOAD seed.json INTO {{TABLE}}` |
-| `input.dql` | yes | Commands whose output is asserted |
-| `teardown.dql` | no | Default: `DROP TABLE {{TABLE}}` (and `{{TABLE2}}` …). Skipped with `--skip-teardown`. |
-| `expected.json` | one of json/stdout | Item list (or JSON value) from `--json` |
-| `expected.stdout` | one of json/stdout | Exact match, else substring |
-| `expected.stderr` | no | Substring; empty file means stderr must be empty |
-| `expected.exit` | no | Integer process exit code (default `0`) |
-| `mode` | no | `oneshot` (default), `file`, or `repl-stdin` |
+| `00-README.md` | no | What a user is proving |
+| `10-mode` | no | `oneshot` (default), `file`, or `repl-stdin` |
+| `20-setup.dql` | no | `CREATE` / `INSERT` / `LOAD` before the asserted commands |
+| `30-test.dql` | yes | Commands whose output is asserted |
+| `40-expected.json` | one of json/stdout | Item list (or JSON value) from `--json` |
+| `40-expected.stdout` | one of json/stdout | Exact match, else substring |
+| `40-expected.stderr` | no | Substring; empty file means stderr must be empty |
+| `40-expected.exit` | no | Integer process exit code (default `0`) |
+| `50-teardown.dql` | no | Default: `DROP TABLE {{TABLE}}` (and `{{TABLE2}}` …). Skipped with `--skip-teardown`. |
+| `seed.json` | no | DQL fixture for `LOAD seed.json INTO {{TABLE}}` (not a harness step) |
 
 The harness replaces `{{TABLE}}`, `{{TABLE2}}`, … with unique names so cases
 and `dql` / `dqlrs` can share one Local process even when teardown is skipped.
@@ -106,23 +105,42 @@ gets `…_1_<pid>` and `…_2_<pid>` with the same case/bin prefix.
 Relative `LOAD` / `SAVE` / `file` paths are resolved from the **case
 directory**.
 
-Prefer `--json` oracles. `expected.json` is always a **JSON array of items**,
+Prefer `--json` oracles. `40-expected.json` is always a **JSON array of items**,
 even for a single row. Pretty `smart` / `rich` tables depend on terminal
 width and are a poor acceptance target.
 
 ### Modes
 
-- **`oneshot`:** `dql -H localhost -p 8000 [--json] -c "…"` (setup, then input, then teardown unless `--skip-teardown`).
-- **`file`:** write a temp `.dql` and run `-c "file <path>"`.
-- **`repl-stdin`:** pipe lines into the process with no `-c`. **Python `dql` only**; `dqlrs` is skipped (TUI REPL).
+`10-mode` chooses **how** the harness invokes the CLI, not which DQL to run.
+Omit the file to use `oneshot`. If present, the file is a single word
+(`oneshot`, `file`, or `repl-stdin`); whitespace is stripped and case is
+ignored. Any other value fails the case.
+
+Teardown is always a separate `-c` after the test (unless
+`--skip-teardown`). `--json` is used only when the case has
+`40-expected.json`.
+
+| Mode | Invocation | Asserted stdout | When to use |
+| --- | --- | --- | --- |
+| `oneshot` | Separate `-c` for setup (no `--json`), then `-c` for the test script | Test only. Setup failure is reported as setup, not a test mismatch. | Default. Assert one command’s result. |
+| `file` | Concatenate setup + test into a temp `.dql`, then `-c "file <path>"` | Setup and test together (one process) | The feature under test is the `file` command. |
+| `repl-stdin` | Pipe setup + test + `exit` into stdin; no `-c` | Setup and test together | The feature under test is the line-oriented REPL. **Python `dql` only**; `dqlrs` is skipped (TUI). |
+
+Example (`file`):
+
+```text
+cases/200-select-via-file/10-mode    # contents: file
+```
 
 ## Adding a case
 
 1. Copy `cases/200-select-hash-key/` to `cases/<NNN>-<family>-<slug>/`. See [cases/ordering.md](cases/ordering.md) for the numbering.
-2. Edit `setup.dql` / `input.dql` / `expected.json`.
+2. Edit `20-setup.dql` / `30-test.dql` / `40-expected.json`.
 3. Run `./black-box-tests/harness/run.sh 2xx` (or the new folder name).
 
-## Ad-hoc folders (not harness cases)
+## Manual cases (not harness cases)
 
-- [`fake-users/`](fake-users/) — sample `CREATE` / `LOAD` script and JSON. The generator uses `dynamo3`; do not copy that pattern into new cases.
-- [`update-gsi-fails/`](update-gsi-fails/) — documents a DynamoDB Local GSI `UpdateTable` failure via AWS CLI. Not a DQL acceptance gate.
+[`manual-cases/`](manual-cases/) holds ad-hoc scripts the harness does not discover or run. They have no `30-test.dql` and are not an acceptance gate.
+
+- [`manual-cases/fake-users/`](manual-cases/fake-users/) — sample `CREATE` / `LOAD` script and JSON. The generator uses `dynamo3`; do not copy that pattern into new harness cases.
+- [`manual-cases/update-gsi-fails/`](manual-cases/update-gsi-fails/) — documents a DynamoDB Local GSI `UpdateTable` failure via AWS CLI.

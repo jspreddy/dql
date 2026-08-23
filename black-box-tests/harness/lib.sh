@@ -4,6 +4,19 @@
 HARNESS_VERBOSE="${HARNESS_VERBOSE:-0}"
 HARNESS_INDENT="${HARNESS_INDENT:-0}"
 
+# Case-directory filenames (prefixed so they sort in harness step order).
+CASE_README="00-README.md"
+CASE_MODE="10-mode"
+CASE_SETUP="20-setup.dql"
+CASE_TEST="30-test.dql"
+CASE_EXPECTED_JSON="40-expected.json"
+CASE_EXPECTED_STDOUT="40-expected.stdout"
+CASE_EXPECTED_STDERR="40-expected.stderr"
+CASE_EXPECTED_EXIT="40-expected.exit"
+CASE_TEARDOWN="50-teardown.dql"
+# Fixture referenced from DQL (LOAD), not opened by the harness.
+CASE_SEED="seed.json"
+
 harness_color_enabled() {
   [[ -z "${NO_COLOR:-}" ]]
 }
@@ -171,7 +184,9 @@ harness_verbose_test_files() {
   local f
   local out=""
   [[ "${HARNESS_VERBOSE:-0}" == "1" ]] || return 0
-  for f in setup.dql input.dql teardown.dql seed.json expected.json expected.stdout expected.stderr expected.exit mode; do
+  for f in "$CASE_MODE" "$CASE_SETUP" "$CASE_TEST" \
+    "$CASE_EXPECTED_JSON" "$CASE_EXPECTED_STDOUT" "$CASE_EXPECTED_STDERR" "$CASE_EXPECTED_EXIT" \
+    "$CASE_TEARDOWN"; do
     if [[ -f "$case_dir/$f" ]]; then
       if [[ -n "$out" ]]; then
         out="$out, $(harness_filename "$f")"
@@ -180,6 +195,13 @@ harness_verbose_test_files() {
       fi
     fi
   done
+  if [[ -f "$case_dir/$CASE_SEED" ]]; then
+    if [[ -n "$out" ]]; then
+      out="$out, $(harness_filename "$CASE_SEED")"
+    else
+      out="$(harness_filename "$CASE_SEED")"
+    fi
+  fi
   if [[ -z "$out" ]]; then
     return 0
   fi
@@ -352,13 +374,13 @@ import os
 import re
 import sys
 
-root, filt = sys.argv[1], sys.argv[2]
+root, filt, test_file = sys.argv[1], sys.argv[2], sys.argv[3]
 names = []
 for name in os.listdir(root):
     path = os.path.join(root, name)
     if not os.path.isdir(path):
         continue
-    if not os.path.isfile(os.path.join(path, "input.dql")):
+    if not os.path.isfile(os.path.join(path, test_file)):
         continue
     names.append(name)
 names.sort()
@@ -371,5 +393,5 @@ if filt:
         names = [n for n in names if filt in n]
 for name in names:
     print(name)
-' "$cases_root" "$filter"
+' "$cases_root" "$filter" "$CASE_TEST"
 }

@@ -41,7 +41,7 @@ HERE = Path(__file__).resolve().parent
 SUITE_ROOT = HERE.parent.parent
 SEED_PATH = HERE / "seed.json"
 SELECT_EXPECTED_PATH = (
-    SUITE_ROOT / "cases" / "200-select-pk-sk-filters" / "expected.json"
+    SUITE_ROOT / "cases" / "200-select-pk-sk-filters" / "40-expected.json"
 )
 
 

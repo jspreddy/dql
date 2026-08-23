@@ -2,7 +2,7 @@
 
 Harness cases under `cases/<NNN>-<family>-<slug>/` do **not** share DynamoDB
 state. Each run gets unique `{{TABLE}}` names (case folder, binary, and
-harness pid), its own `setup.dql`, and teardown. The numbers below are **diagnostic
+harness pid), its own `20-setup.dql`, and teardown. The numbers below are **diagnostic
 dependencies**: if an earlier case fails, a later case that uses that feature
 in setup or to check its result is not trustworthy.
 
@@ -37,13 +37,13 @@ Several cases **test** one feature and **check** it with another:
 
 | Case | Feature under test | Check / setup that would cycle |
 | --- | --- | --- |
-| `010-create-hash-key-table` | `CREATE` | `INSERT` + `SELECT` in `input.dql` |
-| `110-insert-multiple-values` | `INSERT` | `SELECT` in `input.dql` |
-| `110-load-json-into-table` | `LOAD` | `SELECT` in `input.dql` |
-| `300-update-set-where` | `UPDATE` | `SELECT` in `input.dql` |
+| `010-create-hash-key-table` | `CREATE` | `INSERT` + `SELECT` in `30-test.dql` |
+| `110-insert-multiple-values` | `INSERT` | `SELECT` in `30-test.dql` |
+| `110-load-json-into-table` | `LOAD` | `SELECT` in `30-test.dql` |
+| `300-update-set-where` | `UPDATE` | `SELECT` in `30-test.dql` |
 | `300-update-except-pk-sk-filters` | `UPDATE` | `SCAN count(*)` + `attribute_exists` |
-| `300-delete-where-hash` | `DELETE` | `SELECT` in `input.dql` |
-| `210-alter-set-throughput` | `ALTER` | `DUMP SCHEMA` in `input.dql` |
+| `300-delete-where-hash` | `DELETE` | `SELECT` in `30-test.dql` |
+| `210-alter-set-throughput` | `ALTER` | `DUMP SCHEMA` in `30-test.dql` |
 
 A case depends on another case only for the **feature under test** of that other
 case, not for statements used only to check the result. So `create` is group `0`
@@ -135,12 +135,12 @@ the `SELECT` cases it explains. `ANALYZE` actually runs `SELECT`, so it sits in
 
 ### `000` — `000-cli-version`
 
-- Setup: none. Input: `version`.
+- Setup: none. Test: `version`.
 - No tables, no DQL statements. First check that the binary runs.
 
 ### `010` — `010-create-hash-key-table`
 
-- Input: `CREATE` + `INSERT` + `SELECT`. Expected output: the inserted row.
+- Test: `CREATE` + `INSERT` + `SELECT`. Expected output: the inserted row.
 - Foundation language case. No other case must pass first. Treat insert/select
   here as the check that `CREATE` worked, not as a dependency on those families.
 
@@ -148,7 +148,7 @@ the `SELECT` cases it explains. `ANALYZE` actually runs `SELECT`, so it sits in
 
 Same group. Each setup is only `CREATE TABLE`.
 
-| Case | Input | Why after create |
+| Case | Test | Why after create |
 | --- | --- | --- |
 | `100-drop-existing-table` | `DROP TABLE` | Table must exist. |
 | `100-dump-schema` | `DUMP SCHEMA` | Table must exist. |
@@ -159,7 +159,7 @@ Same group. Each setup is only `CREATE TABLE`.
 Same group. Write paths after `CREATE`. Neither needs the other. Both use
 `SELECT` only to check that the write worked.
 
-| Case | Setup | Input |
+| Case | Setup | Test |
 | --- | --- | --- |
 | `110-insert-multiple-values` | `CREATE` | `INSERT` (multi-row) then `SELECT` |
 | `110-load-json-into-table` | `CREATE` + `LOAD seed.json` | `SELECT` |
@@ -168,7 +168,7 @@ Same group. Write paths after `CREATE`. Neither needs the other. Both use
 
 Same group. Read paths after a successful write.
 
-| Case | Setup | Input |
+| Case | Setup | Test |
 | --- | --- | --- |
 | `200-select-hash-key` | `CREATE` + `INSERT` | `SELECT` by hash |
 | `200-select-hash-range` | `CREATE` (hash+range) + `INSERT` | `SELECT` by hash and range |
@@ -184,7 +184,7 @@ match the key condition).
 
 Same number: both sit after group `1`, neither needs the other.
 
-| Case | Setup | Input | Depends on |
+| Case | Setup | Test | Depends on |
 | --- | --- | --- | --- |
 | `210-alter-set-throughput` | `CREATE … THROUGHPUT (1, 1)` | `ALTER SET THROUGHPUT` + `DUMP SCHEMA` | `100-dump-schema` |
 | `210-explain-select-query` | `CREATE` + `INSERT` | `EXPLAIN SELECT` (does not run the query) | table from `create` / `insert`; ordered after `SELECT` |
@@ -193,7 +193,7 @@ Same number: both sit after group `1`, neither needs the other.
 
 Same group. Each is only meaningful if `SELECT` already works.
 
-| Case | Setup | Input |
+| Case | Setup | Test |
 | --- | --- | --- |
 | `300-analyze-select` | `CREATE` + `INSERT` | `ANALYZE SELECT` (still returns the item) |
 | `300-update-set-where` | `CREATE` + `INSERT` | `UPDATE` then `SELECT` |
@@ -203,7 +203,7 @@ Same group. Each is only meaningful if `SELECT` already works.
 ### `310` — `310-journeys-getting-started-posts`
 
 Capstone after the focused cases. Setup is `CREATE` with hash, range, LSI, and
-throughput, then multi-row `INSERT`. Input is `SELECT` by hash (two of three
+throughput, then multi-row `INSERT`. Test is `SELECT` by hash (two of three
 rows). Needs `create`, `insert`, and `200-select-hash-range` to be passing; it
 does not use `UPDATE` / `DELETE` / `ANALYZE`. `310` rather than `300` so it
 sorts after those narrower cases.

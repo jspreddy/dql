@@ -20,7 +20,7 @@ Runs black-box acceptance cases under black-box-tests/cases/ against DynamoDB Lo
 
   --bin dql|dqlrs|both  Which binary to invoke (default: both, skipping missing)
   --start-local         Start Local only if the port is down (safe if already running)
-  --skip-teardown       Do not run teardown.dql / default DROP TABLE after each case
+  --skip-teardown       Do not run 50-teardown.dql / default DROP TABLE after each case
   -v, --verbose         Log setup, commands, DQL, and CLI output for each case
   filter                Numeric group (1xx, 11x, 2xx) or substring of the case folder name
 
@@ -171,7 +171,7 @@ while IFS= read -r _rel || [[ -n "${_rel:-}" ]]; do
   CASE_RELS+=("$_rel")
 done < <(list_case_dirs "$CASES_ROOT" "$FILTER")
 if [[ ${#CASE_RELS[@]} -eq 0 ]]; then
-  harness_error "no cases with input.dql under $CASES_ROOT${FILTER:+ matching '$FILTER'}"
+  harness_error "no cases with $CASE_TEST under $CASES_ROOT${FILTER:+ matching '$FILTER'}"
   exit 1
 fi
 
@@ -294,29 +294,29 @@ for rel in "${CASE_RELS[@]}"; do
   case_dir="$CASES_ROOT/$rel"
   harness_heading "$rel"
   mode="oneshot"
-  if [[ -f "$case_dir/mode" ]]; then
-    mode="$(tr -d '[:space:]' <"$case_dir/mode" | tr '[:upper:]' '[:lower:]')"
+  if [[ -f "$case_dir/$CASE_MODE" ]]; then
+    mode="$(tr -d '[:space:]' <"$case_dir/$CASE_MODE" | tr '[:upper:]' '[:lower:]')"
   fi
-  if [[ ! -f "$case_dir/expected.json" && ! -f "$case_dir/expected.stdout" ]]; then
+  if [[ ! -f "$case_dir/$CASE_EXPECTED_JSON" && ! -f "$case_dir/$CASE_EXPECTED_STDOUT" ]]; then
     print_status FAIL
-    printf '      missing %s or %s\n' "$(harness_filename expected.json)" "$(harness_filename expected.stdout)"
+    printf '      missing %s or %s\n' "$(harness_filename "$CASE_EXPECTED_JSON")" "$(harness_filename "$CASE_EXPECTED_STDOUT")"
     FAILED=$((FAILED + 1))
     continue
   fi
 
   source_blob=""
-  [[ -f "$case_dir/setup.dql" ]] && source_blob+="$(cat "$case_dir/setup.dql")"$'\n'
-  source_blob+="$(cat "$case_dir/input.dql")"$'\n'
-  [[ -f "$case_dir/teardown.dql" ]] && source_blob+="$(cat "$case_dir/teardown.dql")"$'\n'
+  [[ -f "$case_dir/$CASE_SETUP" ]] && source_blob+="$(cat "$case_dir/$CASE_SETUP")"$'\n'
+  source_blob+="$(cat "$case_dir/$CASE_TEST")"$'\n'
+  [[ -f "$case_dir/$CASE_TEARDOWN" ]] && source_blob+="$(cat "$case_dir/$CASE_TEARDOWN")"$'\n'
 
   work="$(mktemp -d "$ISOLATION/case.XXXXXX")"
   expected_exit=0
-  if [[ -f "$case_dir/expected.exit" ]]; then
-    expected_exit="$(tr -d '[:space:]' <"$case_dir/expected.exit")"
+  if [[ -f "$case_dir/$CASE_EXPECTED_EXIT" ]]; then
+    expected_exit="$(tr -d '[:space:]' <"$case_dir/$CASE_EXPECTED_EXIT")"
   fi
 
   use_json=0
-  if [[ -f "$case_dir/expected.json" ]]; then
+  if [[ -f "$case_dir/$CASE_EXPECTED_JSON" ]]; then
     use_json=1
   fi
 
@@ -340,25 +340,25 @@ for rel in "${CASE_RELS[@]}"; do
     fi
 
     rm -f "$work/setup.dql" "$work/teardown.dql" "$work/teardown.raw" \
-      "$work/expected.json" "$work/expected.stdout" "$work/expected.stderr"
-    if [[ -f "$case_dir/setup.dql" ]]; then
-      apply_tables "$rel" "$label" <"$case_dir/setup.dql" >"$work/setup.dql"
+      "$work/test.dql" "$work/expected.json" "$work/expected.stdout" "$work/expected.stderr"
+    if [[ -f "$case_dir/$CASE_SETUP" ]]; then
+      apply_tables "$rel" "$label" <"$case_dir/$CASE_SETUP" >"$work/setup.dql"
     fi
-    apply_tables "$rel" "$label" <"$case_dir/input.dql" >"$work/input.dql"
-    if [[ -f "$case_dir/teardown.dql" ]]; then
-      apply_tables "$rel" "$label" <"$case_dir/teardown.dql" >"$work/teardown.dql"
+    apply_tables "$rel" "$label" <"$case_dir/$CASE_TEST" >"$work/test.dql"
+    if [[ -f "$case_dir/$CASE_TEARDOWN" ]]; then
+      apply_tables "$rel" "$label" <"$case_dir/$CASE_TEARDOWN" >"$work/teardown.dql"
     else
       default_teardown "$rel" "$source_blob" >"$work/teardown.raw"
       apply_tables "$rel" "$label" <"$work/teardown.raw" >"$work/teardown.dql"
     fi
-    if [[ -f "$case_dir/expected.json" ]]; then
-      apply_tables "$rel" "$label" <"$case_dir/expected.json" >"$work/expected.json"
+    if [[ -f "$case_dir/$CASE_EXPECTED_JSON" ]]; then
+      apply_tables "$rel" "$label" <"$case_dir/$CASE_EXPECTED_JSON" >"$work/expected.json"
     fi
-    if [[ -f "$case_dir/expected.stdout" ]]; then
-      apply_tables "$rel" "$label" <"$case_dir/expected.stdout" >"$work/expected.stdout"
+    if [[ -f "$case_dir/$CASE_EXPECTED_STDOUT" ]]; then
+      apply_tables "$rel" "$label" <"$case_dir/$CASE_EXPECTED_STDOUT" >"$work/expected.stdout"
     fi
-    if [[ -f "$case_dir/expected.stderr" ]]; then
-      apply_tables "$rel" "$label" <"$case_dir/expected.stderr" >"$work/expected.stderr"
+    if [[ -f "$case_dir/$CASE_EXPECTED_STDERR" ]]; then
+      apply_tables "$rel" "$label" <"$case_dir/$CASE_EXPECTED_STDERR" >"$work/expected.stderr"
     fi
 
     out="$work/stdout.$label"
@@ -387,13 +387,13 @@ for rel in "${CASE_RELS[@]}"; do
             exit 0
           fi
         fi
-        rc="$(run_cli "$bin" "$use_json" "$(cat "$work/input.dql")" "$out" "$err")"
+        rc="$(run_cli "$bin" "$use_json" "$(cat "$work/test.dql")" "$out" "$err")"
         printf '%s' "$rc" >"$work/rc.$label"
-        printf 'input' >"$work/step.$label"
+        printf 'test' >"$work/step.$label"
       elif [[ "$mode" == "file" ]]; then
         {
           [[ -f "$work/setup.dql" ]] && cat "$work/setup.dql"
-          cat "$work/input.dql"
+          cat "$work/test.dql"
         } >"$work/all.dql"
         rc="$(run_cli "$bin" "$use_json" "file $work/all.dql" "$out" "$err")"
         printf '%s' "$rc" >"$work/rc.$label"
@@ -402,7 +402,7 @@ for rel in "${CASE_RELS[@]}"; do
         set +e
         {
           [[ -f "$work/setup.dql" ]] && cat "$work/setup.dql"
-          cat "$work/input.dql"
+          cat "$work/test.dql"
           printf 'exit\n'
         } | "$bin" -H "$HOST" -p "$PORT" -r "${AWS_REGION:-us-west-1}" >"$out" 2>"$err"
         rc=$?
@@ -415,7 +415,7 @@ for rel in "${CASE_RELS[@]}"; do
       fi
     )
 
-    step="input"
+    step="test"
     [[ -f "$work/step.$label" ]] && step="$(cat "$work/step.$label")"
 
     if [[ "$SKIP_TEARDOWN" != "1" && -s "$work/teardown.dql" ]]; then
@@ -456,7 +456,7 @@ for rel in "${CASE_RELS[@]}"; do
 
     combined_note=""
     if [[ "$mode" == "file" || "$mode" == "repl-stdin" ]]; then
-      combined_note="setup and input sent in one invocation"
+      combined_note="setup and test sent in one invocation"
     fi
 
     if [[ -f "$work/setup.dql" ]]; then
@@ -472,42 +472,52 @@ for rel in "${CASE_RELS[@]}"; do
         setup_out_arg="$work/setup.stdout.$label"
         setup_err_arg="$work/setup.stderr.$label"
       fi
-      harness_verbose_step "Setup" "setup.dql" "$work/setup.dql" "$setup_out_arg" "$setup_err_arg" "$setup_rc" "$setup_notes"
+      harness_verbose_step "Setup" "$CASE_SETUP" "$work/setup.dql" "$setup_out_arg" "$setup_err_arg" "$setup_rc" "$setup_notes"
     fi
 
     if [[ "$step" != "setup" ]]; then
-      input_notes=""
+      test_notes=""
       if [[ "$mode" == "file" || "$mode" == "repl-stdin" ]]; then
-        input_notes="$combined_note"
+        test_notes="$combined_note"
       fi
-      harness_verbose_step "Input" "input.dql" "$work/input.dql" "$out" "$err" "$rc" "$input_notes"
+      harness_verbose_step "Test" "$CASE_TEST" "$work/test.dql" "$out" "$err" "$rc" "$test_notes"
     fi
 
     if [[ "$HARNESS_VERBOSE" == "1" ]]; then
       expect_names=""
       expect_count=0
-      for expect_f in expected.json expected.stdout expected.stderr expected.exit; do
-        if [[ -f "$work/$expect_f" || -f "$case_dir/$expect_f" ]]; then
+      expect_pairs=(
+        "$CASE_EXPECTED_JSON:expected.json"
+        "$CASE_EXPECTED_STDOUT:expected.stdout"
+        "$CASE_EXPECTED_STDERR:expected.stderr"
+        "$CASE_EXPECTED_EXIT:expected.exit"
+      )
+      for pair in "${expect_pairs[@]}"; do
+        case_f="${pair%%:*}"
+        work_f="${pair##*:}"
+        if [[ -f "$work/$work_f" || -f "$case_dir/$case_f" ]]; then
           expect_count=$((expect_count + 1))
           if [[ -n "$expect_names" ]]; then
-            expect_names="$expect_names, $(harness_filename "$expect_f")"
+            expect_names="$expect_names, $(harness_filename "$case_f")"
           else
-            expect_names="$(harness_filename "$expect_f")"
+            expect_names="$(harness_filename "$case_f")"
           fi
         fi
       done
       if [[ -n "$expect_names" ]]; then
         printf '  %s %s %s\n' "$(harness_paint 2 "·")" "$(harness_paint '1;34' "Expect:")" "$expect_names"
-        for expect_f in expected.json expected.stdout expected.stderr expected.exit; do
+        for pair in "${expect_pairs[@]}"; do
+          case_f="${pair%%:*}"
+          work_f="${pair##*:}"
           expect_src=""
-          if [[ -f "$work/$expect_f" ]]; then
-            expect_src="$work/$expect_f"
-          elif [[ -f "$case_dir/$expect_f" ]]; then
-            expect_src="$case_dir/$expect_f"
+          if [[ -f "$work/$work_f" ]]; then
+            expect_src="$work/$work_f"
+          elif [[ -f "$case_dir/$case_f" ]]; then
+            expect_src="$case_dir/$case_f"
           fi
           if [[ -n "$expect_src" ]]; then
             if [[ "$expect_count" -gt 1 ]]; then
-              printf '%*s%s\n' 12 '' "$(harness_filename "$expect_f")"
+              printf '%*s%s\n' 12 '' "$(harness_filename "$case_f")"
             fi
             harness_verbose_body 12 "$expect_src"
           fi
@@ -520,9 +530,9 @@ for rel in "${CASE_RELS[@]}"; do
     fi
 
     if [[ "$SKIP_TEARDOWN" == "1" ]]; then
-      harness_verbose_step "Teardown" "teardown.dql" "$work/teardown.dql" "" "" "0" "skipped (--skip-teardown)"
+      harness_verbose_step "Teardown" "$CASE_TEARDOWN" "$work/teardown.dql" "" "" "0" "skipped (--skip-teardown)"
     elif [[ -s "$work/teardown.dql" ]]; then
-      harness_verbose_step "Teardown" "teardown.dql" "$work/teardown.dql" "$td_out" "$td_err" "${td_rc:-0}" ""
+      harness_verbose_step "Teardown" "$CASE_TEARDOWN" "$work/teardown.dql" "$td_out" "$td_err" "${td_rc:-0}" ""
     fi
 
     teardown_failed=0
