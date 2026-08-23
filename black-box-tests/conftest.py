@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import os
 import re
 import shutil
@@ -15,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from cli import BinSpec, Cli
+import report
 from compare import self_test as compare_self_test
 
 SUITE_ROOT = Path(__file__).resolve().parent
@@ -223,6 +225,7 @@ def _ensure_local(pytestconfig: pytest.Config) -> None:
 def cli(request: pytest.FixtureRequest, isolation_home: Path, suite_root: Path) -> Cli:
     spec: BinSpec = request.param
     timeout = float(os.environ.get("DQL_BB_TIMEOUT", "120"))
+    verbose = request.config.option.verbose >= 1
     helper = Cli(
         binary=spec.path,
         label=spec.label,
@@ -234,9 +237,17 @@ def cli(request: pytest.FixtureRequest, isolation_home: Path, suite_root: Path) 
         timeout=timeout,
         nodeid=request.node.nodeid,
         pid=os.getpid(),
+        verbose=verbose,
     )
+    if verbose:
+        name = request.node.name.split("[")[0]
+        report.print_test_header(name, inspect.getdoc(request.function), spec.label)
     yield helper
+    if verbose:
+        report.console.print()
     if request.config.getoption("--skip-teardown"):
+        if verbose:
+            report.print_note_step("Teardown", "skipped (--skip-teardown)")
         return
     for name in helper.tables:
         helper.oneshot("DROP TABLE IF EXISTS %s;" % name, check=False)

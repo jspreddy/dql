@@ -106,7 +106,7 @@ if [[ -n "$GROUP" ]]; then
   pytest_args+=(--group "$GROUP")
 fi
 if [[ "$VERBOSE" == "1" ]]; then
-  pytest_args+=(-v)
+  pytest_args+=(-v -s)
 fi
 
 cd "$SUITE_ROOT"
