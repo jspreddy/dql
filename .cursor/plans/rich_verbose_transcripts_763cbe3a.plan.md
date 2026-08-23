@@ -1,21 +1,36 @@
 ---
 name: Rich verbose transcripts
-overview: When -v is set, print a Rich transcript per test — heading, docstring description, binary subheading, then each step as a list item with syntax-highlighted input/output/expect blocks.
+overview: When -v is set, print a Rich transcript per test — heading, docstring description, binary subheading, then each step as a list item with syntax-highlighted input/output/expect blocks. Commit after each work todo (separate commit todos).
 todos:
   - id: dep-rich
     content: Add rich to black-box-tests/pyproject.toml and uv.lock
     status: pending
+  - id: commit-dep-rich
+    content: "Commit: test(black-box-tests): add rich for verbose transcripts"
+    status: pending
   - id: report-module
     content: Add report.py — heading, description, binary subheading, list-item steps with Syntax blocks
+    status: pending
+  - id: commit-report-module
+    content: "Commit: test(black-box-tests): add Rich transcript reporter"
     status: pending
   - id: docstrings
     content: Add a one-line docstring to each of the 18 tests for the verbose description
     status: pending
+  - id: commit-docstrings
+    content: "Commit: test(black-box-tests): add verbose descriptions to acceptance tests"
+    status: pending
   - id: wire-cli
     content: Cli.verbose prints Setup/Test/Output/Expect/Teardown; conftest prints heading; run.sh -v -s
     status: pending
+  - id: commit-wire-cli
+    content: "Commit: test(black-box-tests): print Rich transcripts when pytest is verbose"
+    status: pending
   - id: docs
     content: Update run.sh usage and README for transcript -v
+    status: pending
+  - id: commit-docs
+    content: "Commit: docs(black-box-tests): document -v CLI transcripts"
     status: pending
 isProject: false
 ---
@@ -105,3 +120,13 @@ If a docstring is missing at runtime, print `(no description)` in dim so `-v` ne
 - README / `run.sh` help: `-v` is transcripts, not “later”
 
 Still no `import dql`.
+
+## Commits
+
+Each work todo is followed by a **separate commit todo**. Do not start the next work item until that commit is done. Do not bundle work todos into one commit.
+
+- After **dep-rich** → **commit-dep-rich**: `test(black-box-tests): add rich for verbose transcripts`
+- After **report-module** → **commit-report-module**: `test(black-box-tests): add Rich transcript reporter`
+- After **docstrings** → **commit-docstrings**: `test(black-box-tests): add verbose descriptions to acceptance tests`
+- After **wire-cli** → **commit-wire-cli**: `test(black-box-tests): print Rich transcripts when pytest is verbose`
+- After **docs** → **commit-docs**: `docs(black-box-tests): document -v CLI transcripts`
