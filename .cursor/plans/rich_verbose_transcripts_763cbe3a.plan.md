@@ -1,15 +1,18 @@
 ---
 name: Rich verbose transcripts
-overview: Restore bash-harness-style per-step DQL/CLI transcripts when `-v` is set, using Rich for the same color roles, without changing the 18 test functions.
+overview: When -v is set, print a Rich transcript per test — heading, docstring description, binary subheading, then each step as a list item with syntax-highlighted input/output/expect blocks.
 todos:
   - id: dep-rich
     content: Add rich to black-box-tests/pyproject.toml and uv.lock
     status: pending
   - id: report-module
-    content: Add report.py with Rich Console matching old harness colors
+    content: Add report.py — heading, description, binary subheading, list-item steps with Syntax blocks
+    status: pending
+  - id: docstrings
+    content: Add a one-line docstring to each of the 18 tests for the verbose description
     status: pending
   - id: wire-cli
-    content: Cli.verbose + infer Setup/Test/Expect/Teardown; pass from conftest; run.sh -v -s
+    content: Cli.verbose prints Setup/Test/Output/Expect/Teardown; conftest prints heading; run.sh -v -s
     status: pending
   - id: docs
     content: Update run.sh usage and README for transcript -v
@@ -19,41 +22,86 @@ isProject: false
 
 # Rich verbose transcripts
 
-`./black-box-tests/run.sh -v` today only enables pytest `-v` (test names). Wire it to also print **Setup / Test / Expect / Teardown** transcripts with Rich, matching the old [`harness/lib.sh`](black-box-tests/harness/lib.sh) color roles. Do not edit the 18 tests.
+`./black-box-tests/run.sh -v` today only enables pytest `-v` (test names). Print a **structured Rich transcript** for each test, including a plain-language description and syntax-highlighted blocks.
+
+## Layout (what `-v` prints)
+
+```text
+# test_200_select_hash_key          ← heading (test function name, no [dql])
+
+Query a table by hash key.          ← docstring (plain text)
+
+## dql                              ← binary subheading
+
+- Setup                             ← list item
+      CREATE TABLE ...              ← Syntax("sql")
+- Output
+      (CLI stdout; json lexer if --json)
+- Test
+      SELECT * FROM ...             ← Syntax("sql")
+- Output
+      [{"id": "a", "n": 1}]         ← Syntax("json")
+- Expect
+      [{"id": "a", "n": 1}]         ← Syntax("json")
+- Teardown
+      DROP TABLE IF EXISTS ...      ← Syntax("sql")
+- Output
+      Dropped table                 ← Syntax("text")
+```
+
+Then pytest’s usual `PASSED` / `FAILED` line.
+
+Rich mapping:
+
+- Heading: `console.rule` + bold yellow `# test_…` (or `Markdown` `#`)
+- Description: unstyled / dim paragraph under the heading (`inspect.cleandoc` of the test docstring)
+- Binary: magenta `## dql` / `## dqlrs`
+- Steps: bullet (`• Setup`) in bold blue
+- Bodies: `rich.syntax.Syntax(code, lexer, theme="ansi_dark", word_wrap=True)` indented under the bullet
+  - DQL input (`Setup` / `Test` / `Teardown`) → `sql`
+  - `--json` stdout and JSON expect → `json`
+  - other stdout / text expect → `text`
+
+`NO_COLOR` disables Rich color. Child CLIs still get `NO_COLOR=1` so highlighted blocks are the harness’s, not the CLI’s own ANSI.
 
 ## When it prints
 
-- Enable when pytest verbosity `>= 1` (`-v`).
-- [`run.sh`](black-box-tests/run.sh) `-v` passes **both** `-v` and `-s` (disable capture so transcripts show on **passing** tests). Without `-s`, pytest swallows `Console.print` until a failure.
-- `NO_COLOR` still disables harness color (Rich `no_color=True`). Child CLIs keep `NO_COLOR=1` in [`spawn_env`](black-box-tests/conftest.py) so transcripts stay uncolored DQL output inside dim blocks.
+- Pytest verbosity `>= 1` (`-v`).
+- [`run.sh`](black-box-tests/run.sh) `-v` passes **`-v -s`**. Without `-s`, pytest captures `Console.print` on passing tests.
 
-## Color map (old SGR → Rich)
+## Who prints what
 
-Same roles as the bash runner:
+[`conftest.py`](black-box-tests/conftest.py) `cli` fixture (start of each test):
 
-- Test/case heading: yellow `Rule` + bold yellow title (`test_200_select_hash_key[dql]`)
-- Binary: bold magenta (`dql` / `dqlrs`)
-- Step labels (`Setup:`, `Test:`, `Expect:`, `Teardown:`): bold blue; dim `·` prefix
-- DQL body / stdout body: dim
-- Subheads `stdout` / `stderr`: grey / red; omit empty stderr when exit is 0
-- Exit non-zero: red note
+- Heading = function name (`test_200_select_hash_key`)
+- Description = that function’s docstring (required; see below)
+- Binary subheading = `cli.label`
 
-## Infer steps without changing tests
+[`cli.py`](black-box-tests/cli.py) after each spawn / assert, when `verbose`:
 
-In [`cli.py`](black-box-tests/cli.py) `oneshot` / `assert_json` / `assert_stdout`, when `verbose`:
+- `oneshot(json=False)` → **Setup** (input sql) + **Output**
+- `assert_json` / `assert_stdout` → **Test** (input sql) + **Output** + **Expect**
+- Fixture `DROP TABLE IF EXISTS` → **Teardown** (input sql) + **Output**
+- `--skip-teardown` → **Teardown** list item with note `skipped (--skip-teardown)` (no code block)
 
-- `oneshot(..., json=False)` → **Setup** (DQL + stdout)
-- `assert_json` / `assert_stdout` → **Test** (DQL + stdout) then **Expect** (JSON pretty or expected substring)
-- Fixture teardown `DROP TABLE IF EXISTS` (`check=False`) → **Teardown**
-- `--skip-teardown`: **Teardown** note `skipped (--skip-teardown)` (same as old harness)
+Empty stdout: show a dim `(empty)` instead of a blank Syntax block. Omit stderr unless exit is non-zero (then a **stderr** list item, `text` lexer).
 
-Print a heading once per `Cli` instance (first spawn) so pytest’s own `PASSED` line stays; we do not reimplement PASS/FAIL banners.
+## Docstrings
+
+The 18 tests currently have no docstrings. Add one sentence each (from the old case READMEs / [ordering.md](black-box-tests/ordering.md)), e.g.:
+
+```python
+def test_200_select_hash_key(cli: Cli) -> None:
+    """Query a table by hash key through the CLI against DynamoDB Local."""
+```
+
+If a docstring is missing at runtime, print `(no description)` in dim so `-v` never crashes.
 
 ## Files
 
-- Add `rich` to [`black-box-tests/pyproject.toml`](black-box-tests/pyproject.toml) and refresh `uv.lock`.
-- New [`black-box-tests/report.py`](black-box-tests/report.py): `Console` + `print_heading` / `print_step(name, dql, stdout, exitstatus, notes)` / `print_expect(text)`.
-- [`Cli`](black-box-tests/cli.py): `verbose: bool`; after each spawn (and after expect in assert_*), call `report` if verbose. Pass `verbose` from the [`cli` fixture](black-box-tests/conftest.py) via `request.config.option.verbose >= 1`.
-- [`run.sh`](black-box-tests/run.sh) + [`README.md`](black-box-tests/README.md): `-v` means pytest `-v -s` **and** CLI transcripts (not “later”).
+- `rich` in [`pyproject.toml`](black-box-tests/pyproject.toml); `uv lock`
+- New [`black-box-tests/report.py`](black-box-tests/report.py): `print_test_header(name, description, binary)`, `print_step(title, code, lexer)`
+- Wire `Cli.verbose` from `request.config.option.verbose >= 1`
+- README / `run.sh` help: `-v` is transcripts, not “later”
 
-Still no `import dql`. Tests stay as they are.
+Still no `import dql`.
