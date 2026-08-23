@@ -4,34 +4,34 @@ overview: Replace the bash folder-per-case harness with pytest + pexpect. Each o
 todos:
   - id: pyproject
     content: Add black-box-tests/pyproject.toml (pytest, pexpect) + uv.lock; thin run.sh that maps --bin, --start-local, --group 1xx onto pytest
-    status: pending
+    status: completed
   - id: commit-pyproject
     content: "Commit: test(black-box-tests): add pytest+pexpect project skeleton and run.sh"
-    status: pending
+    status: completed
   - id: cli-helper
     content: conftest.py + Cli helper (pexpect.spawn -c, unique tables, isolated HOME, Local check, DROP teardown fixture)
-    status: pending
+    status: completed
   - id: commit-cli-helper
     content: "Commit: test(black-box-tests): add Cli helper and conftest for Local and both binaries"
-    status: pending
+    status: completed
   - id: port-tests
     content: Port 18 cases to tests/test_NNN_*.py; move ordering.md; keep shared JSON fixtures; delete cases/ and the bash harness
-    status: pending
+    status: completed
   - id: commit-port-tests
     content: "Commit: test(black-box-tests): replace case folders with test_NNN pytest modules"
-    status: pending
+    status: completed
   - id: docs
     content: Rewrite black-box-tests/README.md; update VERIFICATION.md and rust-plans/testing-strategy.md
-    status: pending
+    status: completed
   - id: commit-docs
     content: "Commit: docs(black-box-tests): document pytest harness and diagnostic groups"
-    status: pending
+    status: completed
   - id: verify
     content: Run full suite and --group 1xx against dql and dqlrs with Local up; fix any oracle/PTY issues
-    status: pending
+    status: completed
   - id: commit-verify
-    content: "Commit PTY/oracle fixes if verify changed files; skip if the working tree is clean"
-    status: pending
+    content: Commit PTY/oracle fixes if verify changed files; skip if the working tree is clean
+    status: completed
 isProject: false
 ---
 
