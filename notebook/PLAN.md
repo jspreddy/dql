@@ -149,6 +149,8 @@ Connection defaults for DQL kernels (overridable):
 | `AWS_REGION` | `us-west-1` (same as CLI) | Region |
 | `DQL_HOST` / `DQL_PORT` | unset / `8000` | DynamoDB Local when set |
 | `DQL_NOTEBOOK_JSON` | `1` | Prefer `--json` so cells get structured output |
+| `DQL_NOTEBOOK_SERVE` | `1` | Rust kernel / `%%dqlrs` use `dqlrs --serve` |
+| `DQL_PROGRESS_JSON` | `1` in kernels | Python `dql -c` emits `{event:progress}` on stderr |
 
 Credentials stay the existing AWS CLI / `aws-vault` story. Example:
 
@@ -163,7 +165,10 @@ aws-vault exec my-profile -- ./notebook/start.sh
 A small Python wrapper kernel (Jupyter’s documented `ipykernel.kernelbase.Kernel` pattern):
 
 - Cell source is DQL (and DQL meta commands that work with `-c`, e.g. `ls`, `help`).
-- `do_execute` runs the selected binary with `-c` and the kernel’s host/region/json flags.
+- Rust: `do_execute` talks to a long-lived `dqlrs --serve` worker and renders
+  `{event:progress}` lines as an HTML `<progress>` bar during bulk writes.
+- Python: `do_execute` runs `dql -c` with `DQL_PROGRESS_JSON=1` and streams
+  stderr progress the same way.
 - stdout/stderr become the cell output. `--json` results can be pretty-printed as a table when possible.
 - Multi-statement cells: pass the whole cell to `-c` (both CLIs already accept a script).
 - Errors: non-zero exit → failed cell, show stderr.

@@ -111,6 +111,16 @@ in v1). Each reply is one envelope:
 {"id":"1","ok":true,"kind":"items","items":[{"id":"a"}],"affected":null,"message":null,"partial":false}
 ```
 
+During `exec`, the worker may emit **progress** lines *before* the envelope
+(no `ok` field — older clients skip them):
+
+```json
+{"id":"1","event":"progress","done":25,"total":1000,"phase":"write"}
+```
+
+`phase` is `write` (INSERT / LOAD / UPDATE / DELETE) or `read` (paged SCAN /
+SELECT). INSERT/LOAD emit at least `0`, each 25-item chunk, and the final count.
+
 `kind` is `none` / `items` / `affected` / `status` / `schema` / `text`. Errors
 use `"ok": false`, `"kind": "error"`, and `"error": {"code":"...","message":"..."}`
 with `code` of `parse` | `runtime` | `unsupported` | `protocol`. The process
@@ -119,8 +129,9 @@ stays up.
 Unsupported meta (envelope `unsupported`, no crash): `watch`, `clear` / `cls` /
 `c`, `exit` / `quit` (use `op: shutdown`), `shell`.
 
-This is **Rust-only**. Python `dql --serve` and Jupyter kernel attach are
-follow-ups. `-c --json` stays concatenated item objects (not this envelope).
+This is **Rust-only**. Python `dql` has no `--serve`; notebook Python cells set
+`DQL_PROGRESS_JSON=1` so `dql -c` prints the same progress events on stderr.
+`-c --json` stays concatenated item objects (not this envelope).
 
 ## SAVE / LOAD
 

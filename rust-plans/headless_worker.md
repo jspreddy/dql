@@ -1,7 +1,7 @@
 # Plan: headless `dqlrs` worker (`--serve`)
 
-**Status:** implemented in `dql-cli` (`dqlrs --serve` / `--bind`). Notebook
-kernel attach is a follow-up (do not block on Jupyter).
+**Status:** implemented in `dql-cli` (`dqlrs --serve` / `--bind`), including
+progress events. The DQL (Rust) notebook kernel attaches over stdio `--serve`.
 
 **Consumer:** JupyterLab under `notebook/` (DQL Rust kernel today spawns `dqlrs -c` per cell). This plan is **Rust-only**. A Python `dql --serve` is a later sibling, not a prerequisite.
 
@@ -61,7 +61,6 @@ This is the Rust half of “continuous evaluation”: one process, many execs, o
 - Multi-client fan-out, auth, TLS, **bind-to-world** (non-loopback).
 - Parallel exec on one session (`Engine` is `&mut`).
 - Live `watch` dashboard or Rich bars.
-- Progress events on the wire (follow-up; INSERT/LOAD still have no counters).
 - SoS / cross-kernel variable transfer.
 - `dqlrs notebook` subcommand.
 - Compiling the engine into evcxr.
@@ -149,7 +148,7 @@ Error (process stays up):
 
 `code`: `parse` | `runtime` | `unsupported` | `protocol`.
 
-Progress (not v1 — no write counters yet):
+Progress (INSERT / LOAD / UPDATE / DELETE / paged reads):
 
 ```json
 {"id": "1", "event": "progress", "done": 200, "total": 1000, "phase": "write"}
@@ -243,9 +242,8 @@ Do not require Jupyter in Rust CI.
 5. **Bind tests** — ephemeral port, second-client refuse, `0.0.0.0` rejected. Commit.
 6. **Local smoke** — optional test when port 8000 is up. Commit.
 7. **Docs** — `rust-docs/README.md` + `dqlrs --help`. Commit.
-8. **Notebook attach** — out of this crate; follow-up in `notebook/` (stdio *or* `--bind`). Do not block serve on Lab.
-
-Progress events stay a later follow-up (need write counters in the engine).
+8. **Notebook attach** — DQL (Rust) kernel and `%%dqlrs` use stdio `--serve`
+   and render progress HTML. Python cells use `DQL_PROGRESS_JSON` on `dql -c`.
 
 Each phase is its own commit.
 

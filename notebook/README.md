@@ -4,8 +4,8 @@ JupyterLab configured for this repo so you can run **DQL in notebook cells** aga
 
 | Launcher tile | Cell language | Backend |
 | --- | --- | --- |
-| **DQL (Python)** | DQL | `dql -c` |
-| **DQL (Rust)** | DQL | `dqlrs -c` |
+| **DQL (Python)** | DQL | `dql -c` (JSON progress on stderr for bulk writes) |
+| **DQL (Rust)** | DQL | `dqlrs --serve` (live progress); `DQL_NOTEBOOK_SERVE=0` falls back to `-c` |
 | **Python (dql)** | Python | in-process `from dql import Engine`, plus `%%dql` / `%%dqlrs` magics |
 
 Design notes: [`PLAN.md`](PLAN.md).
@@ -58,6 +58,8 @@ cd rust-impl && cargo install --path crates/dql-cli --locked --root ~/.local
 | `AWS_REGION` | `us-west-1` | Region passed as `-r` |
 | `DQL_HOST` / `DQL_PORT` | unset / `8000` | When host is set, kernels add `-H` / `-p` |
 | `DQL_NOTEBOOK_JSON` | `1` | Pass `--json` so SELECT results can render as a table |
+| `DQL_NOTEBOOK_SERVE` | `1` | Rust kernel / `%%dqlrs` use `dqlrs --serve` (set `0` for one-shot `-c`) |
+| `DQL_PROGRESS_JSON` | `1` in kernels | Python `dql` emits `{event:progress,...}` lines on stderr during bulk writes |
 | `DQL_NOTEBOOK_PORT` | Jupyter default | Lab port |
 
 `--local` sets `DQL_HOST=localhost`, `DQL_PORT=8000`, and dummy `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` if those are unset.
