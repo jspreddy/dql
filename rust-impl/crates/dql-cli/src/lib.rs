@@ -4,6 +4,7 @@ pub mod error;
 pub mod help;
 pub mod history;
 pub mod meta;
+pub mod notebook;
 pub mod repl;
 pub mod serve;
 pub mod session;
@@ -36,6 +37,9 @@ const KNOWN_FLAGS: &[&str] = &[
 
 pub fn run() -> color_eyre::Result<()> {
     let argv: Vec<String> = std::env::args().collect();
+    if notebook::is_notebook_invocation(&argv) {
+        return notebook::run(&argv);
+    }
     let mut args_iter = argv.iter().skip(1);
     while let Some(arg) = args_iter.next() {
         if arg.starts_with('-') {
