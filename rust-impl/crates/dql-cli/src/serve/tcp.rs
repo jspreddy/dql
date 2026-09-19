@@ -1,6 +1,6 @@
 use super::{run_framed, Control};
 use crate::session::Session;
-use std::io::{self, BufReader};
+use std::io::{self, BufReader, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -61,21 +61,34 @@ pub fn parse_bind(spec: &str) -> Result<SocketAddr, BindError> {
 pub fn run(session: &mut Session, addr: SocketAddr) -> io::Result<()> {
     let listener = TcpListener::bind(addr)?;
     let local = listener.local_addr()?;
-    eprintln!("dqlrs serve listen {local}");
+    {
+        let mut stderr = io::stderr();
+        writeln!(stderr, "dqlrs serve listen {local}")?;
+        stderr.flush()?;
+    }
 
     let busy = Arc::new(AtomicBool::new(false));
+    let shutdown = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel::<TcpStream>();
     let busy_accept = Arc::clone(&busy);
+    let shutdown_accept = Arc::clone(&shutdown);
 
-    let _accept = thread::Builder::new()
+    let accept = thread::Builder::new()
         .name("dqlrs-serve-accept".into())
         .spawn(move || {
             for incoming in listener.incoming() {
+                if shutdown_accept.load(Ordering::SeqCst) {
+                    break;
+                }
                 let Ok(stream) = incoming else {
                     continue;
                 };
+                if shutdown_accept.load(Ordering::SeqCst) {
+                    break;
+                }
                 if busy_accept.swap(true, Ordering::SeqCst) {
                     eprintln!("dqlrs serve refuse: already connected");
+                    let _ = io::stderr().flush();
                     drop(stream);
                     continue;
                 }
@@ -92,9 +105,13 @@ pub fn run(session: &mut Session, addr: SocketAddr) -> io::Result<()> {
         let control = serve_client(session, stream).unwrap_or(Control::Disconnect);
         busy.store(false, Ordering::SeqCst);
         if matches!(control, Control::Shutdown) {
-            return Ok(());
+            break;
         }
     }
+
+    shutdown.store(true, Ordering::SeqCst);
+    let _ = TcpStream::connect(local);
+    let _ = accept.join();
     Ok(())
 }
 
@@ -161,11 +178,41 @@ mod tests {
     }
 
     fn read_json_line(stream: &mut TcpStream) -> serde_json::Value {
+        try_read_json(stream).unwrap()
+    }
+
+    fn try_read_json(stream: &mut TcpStream) -> io::Result<serde_json::Value> {
         use std::io::BufRead;
-        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut reader = BufReader::new(stream.try_clone()?);
         let mut line = String::new();
-        reader.read_line(&mut line).unwrap();
-        serde_json::from_str(line.trim()).unwrap()
+        let n = reader.read_line(&mut line)?;
+        if n == 0 {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "eof"));
+        }
+        serde_json::from_str(line.trim())
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
+    }
+
+    fn reconnect(addr: SocketAddr) -> TcpStream {
+        use std::io::Write;
+        use std::time::Duration;
+        for _ in 0..50 {
+            let mut stream = wait_connect(addr);
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+            if writeln!(stream, r#"{{"op":"ping"}}"#).is_err() {
+                continue;
+            }
+            if stream.flush().is_err() {
+                continue;
+            }
+            if let Ok(reply) = try_read_json(&mut stream) {
+                if reply["ok"] == true {
+                    return stream;
+                }
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        panic!("could not reconnect to {addr}");
     }
 
     #[test]
@@ -235,7 +282,7 @@ mod tests {
         assert_eq!(created["ok"], true);
         drop(client);
 
-        let mut client = wait_connect(addr);
+        let mut client = reconnect(addr);
         writeln!(
             client,
             r#"{{"op":"exec","dql":"SELECT * FROM t WHERE id = 'a';"}}"#
