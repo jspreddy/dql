@@ -75,6 +75,7 @@ pub fn help_text() -> String {
            --json               When used with --command, format results as JSON\n\
            --serve              Headless JSON-lines worker (stdio, or --bind on loopback). Not a TTY REPL.\n\
            --bind <ADDR>        With --serve, listen on loopback HOST:PORT (or PORT as 127.0.0.1:PORT)\n\
+           notebook, --notebook Start JupyterLab with a DQL (Rust) kernel (this binary)\n\
            --version            Print the version and exit\n\n\
      Environment:\n\
        AWS_REGION               Default region (else us-west-1)\n\
