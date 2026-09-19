@@ -132,6 +132,22 @@ export DQLRS_BIN="$PWD/rust-impl/target/release/dqlrs"
 
 ---
 
+## Notebook UI (`notebook/`)
+
+Requires uv. Does not need DynamoDB Local for the dry-run.
+
+```bash
+./notebook/start.sh --dry-run
+```
+
+That syncs the notebook env (Python 3.11), registers project-local kernels, and lists `dql-python`, `dql-rust`, and `python-dql`. To open Lab against Local:
+
+```bash
+./notebook/start.sh --local --start-local
+```
+
+---
+
 ## Results from this checkout (2026-08-20)
 
 | Step | Result |
