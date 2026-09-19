@@ -15,6 +15,17 @@ fn dql_bin() -> PathBuf {
     target.join(profile).join("dqlrs")
 }
 
+fn read_envelope(stdout: &mut BufReader<impl std::io::Read>) -> serde_json::Value {
+    loop {
+        let mut line = String::new();
+        stdout.read_line(&mut line).unwrap();
+        let value: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+        if value.get("ok").is_some() {
+            return value;
+        }
+    }
+}
+
 #[test]
 fn stdio_ping_exec_shutdown() {
     let mut child = Command::new(dql_bin())
@@ -42,9 +53,7 @@ fn stdio_ping_exec_shutdown() {
     )
     .unwrap();
     stdin.flush().unwrap();
-    line.clear();
-    stdout.read_line(&mut line).unwrap();
-    let exec: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+    let exec = read_envelope(&mut stdout);
     assert_eq!(exec["ok"], true, "{exec}");
     assert_eq!(exec["kind"], "items");
     assert_eq!(exec["items"][0]["id"], "a");
