@@ -30,6 +30,6 @@ isProject: false
 
 Canonical write-up: [`rust-plans/headless_worker.md`](../../rust-plans/headless_worker.md).
 
-`--bind` is **v1** (loopback TCP, same JSON-lines as stdio). Progress events are not.
-
-Notebook kernel attach is a follow-up PR; do not mix it into the Rust serve crate.
+`--bind` is **v1** (loopback TCP, same JSON-lines as stdio). Progress events
+stream during bulk `exec`. The DQL (Rust) notebook kernel attaches over stdio
+`--serve`.
