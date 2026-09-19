@@ -63,6 +63,8 @@ You can use `$HOME/.aws/credentials` or `AWS_ACCESS_KEY_ID` /
 -H, --host <host>        Local DynamoDB host
 -p, --port <port>        Local DynamoDB port (default 8000)
     --json               With -c, print results as JSON
+    --serve              Headless JSON-lines worker (stdio, or --bind on loopback)
+    --bind <ADDR>        With --serve, listen on loopback HOST:PORT (or PORT as 127.0.0.1:PORT)
     --version            Print version and exit
 -h, --help               Print help
 ```
@@ -79,6 +81,46 @@ In the REPL, type `help` or `help <statement>`. Meta-commands include `opt`,
 
 Output formats (via `opt format`): `smart`, `column`, `expanded`, `json`,
 `rich`. Non-TUI paths can page with `opt display less`.
+
+## Headless worker (`--serve`)
+
+`dqlrs --serve` keeps one `Session` and speaks **JSON-lines** (one JSON object
+per line). It is not a TTY REPL: no ratatui, no pager, no `~/.dql_history`.
+`--json` is implied. Mutually exclusive with `-c`.
+
+```bash
+# stdio (tests, embedding)
+DQL_BACKEND=memory dqlrs --serve
+
+# loopback TCP (notebook kernels and other tools)
+dqlrs --serve --bind 127.0.0.1:7400
+dqlrs --serve --bind 127.0.0.1:0    # prints `dqlrs serve listen 127.0.0.1:<port>` on stderr
+dqlrs --serve --bind 7400           # same as 127.0.0.1:7400
+```
+
+`--bind` requires `--serve` and **refuses non-loopback** addresses (`0.0.0.0`,
+public IPs) before listen. One TCP client at a time; extra connections are
+dropped with `dqlrs serve refuse: already connected` on stderr. Disconnecting
+keeps the process and session (reconnect is allowed). `{"op":"shutdown"}` exits
+0.
+
+Client ops: `exec` (DQL or meta text), `ping`, `shutdown`, `interrupt` (no-op
+in v1). Each reply is one envelope:
+
+```json
+{"id":"1","ok":true,"kind":"items","items":[{"id":"a"}],"affected":null,"message":null,"partial":false}
+```
+
+`kind` is `none` / `items` / `affected` / `status` / `schema` / `text`. Errors
+use `"ok": false`, `"kind": "error"`, and `"error": {"code":"...","message":"..."}`
+with `code` of `parse` | `runtime` | `unsupported` | `protocol`. The process
+stays up.
+
+Unsupported meta (envelope `unsupported`, no crash): `watch`, `clear` / `cls` /
+`c`, `exit` / `quit` (use `op: shutdown`), `shell`.
+
+This is **Rust-only**. Python `dql --serve` and Jupyter kernel attach are
+follow-ups. `-c --json` stays concatenated item objects (not this envelope).
 
 ## SAVE / LOAD
 
@@ -99,6 +141,7 @@ dqlrs -c "ls"
 dqlrs --json -c "SCAN * FROM mytable LIMIT 5"
 dqlrs -H localhost -p 8000 -c "CREATE TABLE t (id STRING HASH KEY); SCAN * FROM t"
 DQL_BACKEND=memory dqlrs -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"
+printf '%s\n' '{"op":"ping"}' '{"op":"shutdown"}' | DQL_BACKEND=memory dqlrs --serve
 ```
 
 REPL examples:

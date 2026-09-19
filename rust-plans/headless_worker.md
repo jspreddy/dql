@@ -1,6 +1,7 @@
 # Plan: headless `dqlrs` worker (`--serve`)
 
-**Status:** plan only. Review before implementation.
+**Status:** implemented in `dql-cli` (`dqlrs --serve` / `--bind`). Notebook
+kernel attach is a follow-up (do not block on Jupyter).
 
 **Consumer:** JupyterLab under `notebook/` (DQL Rust kernel today spawns `dqlrs -c` per cell). This plan is **Rust-only**. A Python `dql --serve` is a later sibling, not a prerequisite.
 
