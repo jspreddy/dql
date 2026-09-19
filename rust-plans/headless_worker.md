@@ -13,7 +13,7 @@ Notebooks need a **long-lived DQL session** that is not a TTY:
 - `--json` writes one object per item (concatenated), so kernels guess at tables.
 - There is no progress channel; stdout is the result stream.
 
-A headless worker is a third front end next to `-c` and the REPL: same `Session` / `FragmentEngine`, no ratatui, JSON-lines on a pipe.
+A headless worker is a third front end next to `-c` and the REPL: same `Session` / `FragmentEngine`, no ratatui, JSON-lines on stdio **or** a loopback TCP socket.
 
 ```mermaid
 flowchart LR
@@ -22,7 +22,7 @@ flowchart LR
     OneShot --> AWS1[DynamoDB]
   end
   subgraph target [Target]
-    Lab2[Jupyter kernel] --> Worker["dqlrs --serve"]
+    Lab2[Jupyter kernel] --> Worker["dqlrs --serve / --bind"]
     Worker --> Session[Session + Engine]
     Session --> AWS2[DynamoDB]
   end
@@ -51,40 +51,43 @@ This is the Rust half of “continuous evaluation”: one process, many execs, o
 2. Client sends DQL or meta text; worker replies with **one JSON value per request**.
 3. Same connection flags as today: `-r`, `-H`, `-p`, `AWS_REGION`, `DQL_BACKEND=memory`.
 4. No ratatui, no pager, no stdin REPL prompt.
-5. Notebook (and tests) can drive it as a child process with no extra ports in v1.
+5. Clients drive it over **stdio** (child process) **or** **`--bind` on loopback** (TCP JSON-lines). Both ship in v1.
 
 ## Non-goals (v1)
 
 - Python `dql --serve` (document as follow-up).
 - Changing `-c --json` wire format (envelope is serve-only until a later shared-JSON plan).
-- Multi-client fan-out, auth, TLS, bind-to-world.
+- Multi-client fan-out, auth, TLS, **bind-to-world** (non-loopback).
 - Parallel exec on one session (`Engine` is `&mut`).
 - Live `watch` dashboard or Rich bars.
+- Progress events on the wire (follow-up; INSERT/LOAD still have no counters).
 - SoS / cross-kernel variable transfer.
 - `dqlrs notebook` subcommand.
 - Compiling the engine into evcxr.
 
-## Transport (v1): stdio JSON-lines
+## Transport (v1): stdio **and** loopback `--bind`
 
-Primary mode is a **child process**:
+`--serve` always means “JSON-lines worker, not a TTY.” Where those lines go:
 
-```bash
-dqlrs --serve -H localhost -p 8000 -r us-west-1
-```
+| Invocation | I/O |
+| --- | --- |
+| `dqlrs --serve` | stdin / stdout (child process; default) |
+| `dqlrs --serve --bind 127.0.0.1:7400` | one TCP client at a time, same framing |
+| `dqlrs --serve --bind 127.0.0.1:0` | ephemeral port; print `dqlrs serve listen 127.0.0.1:<port>` on **stderr** |
 
-- stdin: one JSON object per line (request)
-- stdout: one JSON object per line (result or event)
-- stderr: human diagnostics only (start log, panic). Not the protocol.
+Same protocol on both. `--bind` without `--serve` is an error. `--serve` and `-c` are mutually exclusive. `--json` is implied (ignore or reject if passed).
 
-Why stdio first:
+### `--bind` rules
 
-- Jupyter already owns the subprocess (same as a kernel).
-- No port races, no leftover listeners, no dummy auth.
-- Tests spawn the binary and write lines.
+- Accept `HOST:PORT` (`127.0.0.1:7400`, `[::1]:7400`, `localhost:7400`).
+- Also accept `--bind 7400` as `127.0.0.1:7400`.
+- **Refuse** any bind address that is not loopback (`127.0.0.1`, `::1`, `localhost` resolving to those). Exit non-zero before listen.
+- **One client at a time.** While a connection is open, additional accepts wait or are refused (prefer **refuse** with a one-line stderr note). After the client disconnects, accept the next.
+- Disconnect = end of that client’s session **views** only; the `Session` / engine **stay** in the process until `shutdown` or SIGTERM. (So a notebook kernel can reconnect. Review if you instead want disconnect = process exit.)
+- No TLS, no token in v1. Loopback is the access control.
+- Do not print protocol lines on stderr; only listen address, refuse-non-loopback, and panics.
 
-**v1.1 (optional in the same plan, later commit):** `--bind 127.0.0.1:PORT` (or `:0` + print the port on stderr). Same framing, one client at a time. Refuse non-loopback unless a future flag says otherwise.
-
-`--serve` and `-c` are mutually exclusive. `--json` is implied by serve (ignore or reject if passed).
+Stdio remains for tests and embedding. `--bind` is for a notebook kernel (or other tool) that should not multiplex Jupyter ZMQ with DQL on the same pipes.
 
 ## Protocol
 
@@ -145,7 +148,7 @@ Error (process stays up):
 
 `code`: `parse` | `runtime` | `unsupported` | `protocol`.
 
-Progress (v1.1, only if an exec is running; can ship empty in v1):
+Progress (not v1 — no write counters yet):
 
 ```json
 {"id": "1", "event": "progress", "done": 200, "total": 1000, "phase": "write"}
@@ -190,13 +193,17 @@ New files (target):
 ```text
 rust-impl/crates/dql-cli/src/serve/mod.rs
 rust-impl/crates/dql-cli/src/serve/protocol.rs
+rust-impl/crates/dql-cli/src/serve/stdio.rs
+rust-impl/crates/dql-cli/src/serve/tcp.rs
 ```
 
-`args.rs`: `--serve`. `KNOWN_FLAGS` and `help_text()` updated. `lib.rs` `run()`:
+`args.rs`: `--serve`, `--bind <ADDR>`. `KNOWN_FLAGS` and `help_text()` updated. `lib.rs` `run()`:
 
 ```text
-if args.serve { serve::run(session) } else if command { ... } else { repl }
+if args.serve { serve::run(session, args.bind) } else if command { ... } else { repl }
 ```
+
+One `serve::run_framed(reader, writer, session)` used by both stdio and TCP. Do not duplicate the exec loop.
 
 Envelope mapping lives in `dql-cli` (or a small `dql-output` helper). Do not teach `dql-engine` about JSON-lines.
 
@@ -205,10 +212,11 @@ Envelope mapping lives in `dql-cli` (or a small `dql-output` helper). Do not tea
 ```bash
 dqlrs --serve
 dqlrs --serve -H localhost -p 8000
-dqlrs --serve --bind 127.0.0.1:7400    # v1.1
+dqlrs --serve --bind 127.0.0.1:7400
+dqlrs --serve --bind 127.0.0.1:0
 ```
 
-Help blurb: “Headless JSON-lines worker (stdin/stdout). Not a TTY REPL.”
+Help blurb: “Headless JSON-lines worker (stdio, or --bind on loopback). Not a TTY REPL.”
 
 Env unchanged: `AWS_REGION`, `DQL_BACKEND=memory`, dummy keys for Local.
 
@@ -217,23 +225,26 @@ Env unchanged: `AWS_REGION`, `DQL_BACKEND=memory`, dummy keys for Local.
 All of this is `dql-cli` tests plus one binary smoke. Do not import notebook code.
 
 1. **Protocol unit tests** — encode/decode, `StatementResult` → envelope, unknown `op`, bad JSON.
-2. **Serve loop (memory)** — spawn or call `serve::run` on a `Cursor`/pipe: `ping`, `CREATE`+`INSERT`+`SELECT`, `opt`, `ls`, `unsupported` for `watch`, `shutdown`.
-3. **Local (optional, same as other CLI tests)** — `-H` + `--serve` + `SELECT`.
-4. **`package_smoke`** — `dqlrs --help` mentions `--serve`; `--serve` + `-c` fails to start.
-5. **Black-box** — optional later case; not required for v1 if crate tests spawn the binary.
+2. **Serve loop (memory, stdio)** — spawn or call `serve::run` on a pipe: `ping`, `CREATE`+`INSERT`+`SELECT`, `opt`, `ls`, `unsupported` for `watch`, `shutdown`.
+3. **Serve loop (memory, `--bind`)** — listen on `127.0.0.1:0`, connect, same script; refuse `--bind 0.0.0.0:1`.
+4. **Local (optional)** — `-H` + `--serve` + `SELECT` (stdio or bind).
+5. **`package_smoke`** — `--help` mentions `--serve` and `--bind`; `--serve` + `-c` fails to start.
+6. **Black-box** — optional later; crate tests that spawn the binary are enough for v1.
 
 Do not require Jupyter in Rust CI.
 
 ## Implementation phases
 
-1. **Flags + stub** — `--serve` starts, reads stdin, replies to `ping` / `shutdown`, rejects `-c`. Commit.
+1. **Flags + stub** — `--serve` (stdio) and `--serve --bind`; `ping` / `shutdown`; reject `-c` combo and non-loopback bind. Commit.
 2. **Envelope** — map `StatementResult` + `EngineError` to JSON; unit tests. Commit.
 3. **Exec on Session** — `op: exec` through the same session as `-c` (memory). Meta allow/deny list. Commit.
-4. **Loop polish** — one-at-a-time, protocol errors, no history file. Commit.
-5. **Local smoke** — optional test when port 8000 is up. Commit.
-6. **Docs** — `rust-docs/README.md` + `dqlrs --help`. Commit.
-7. **v1.1** — `--bind 127.0.0.1`, progress events (only if INSERT/LOAD/UPDATE grow counters). Separate commits.
-8. **Notebook attach** — out of this crate; follow-up in `notebook/` to keep a worker per DQL (Rust) kernel instead of `-c`. Do not block serve on Lab.
+4. **Shared framed loop** — one-at-a-time, protocol errors, no history file; stdio and TCP both call it. Commit.
+5. **Bind tests** — ephemeral port, second-client refuse, `0.0.0.0` rejected. Commit.
+6. **Local smoke** — optional test when port 8000 is up. Commit.
+7. **Docs** — `rust-docs/README.md` + `dqlrs --help`. Commit.
+8. **Notebook attach** — out of this crate; follow-up in `notebook/` (stdio *or* `--bind`). Do not block serve on Lab.
+
+Progress events stay a later follow-up (need write counters in the engine).
 
 Each phase is its own commit.
 
@@ -244,14 +255,16 @@ Each phase is its own commit.
 | Third execution pipeline | Route through `Session`; unify if serve exposes `-c`/REPL drift |
 | Large `Items` JSON | Same as `-c --json`; no pagination in v1 |
 | Interrupt / AWS SDK | Document as unsupported in v1 |
-| Accidental public bind | v1 stdio only; v1.1 loopback-only |
+| Accidental public bind | Refuse non-loopback **before** listen; tests for `0.0.0.0` |
+| Second TCP client | One at a time; refuse extras while busy |
 | History / config side effects | Serve does not write `~/.dql_history` |
 | Python parity pressure | Protocol is new; Python may implement later, same schema |
 
 ## Review questions
 
-1. Stdio-only for v1, or `--bind` in the first implementation pass?
+1. **`--bind` in v1 — decided.** Stdio remains the default; `--bind` is loopback TCP, same protocol.
 2. Is a serve-only JSON envelope OK, or should `-c --json` switch to the same object in the same change?
 3. Skip `~/.dql_history` in serve (recommended)?
 4. Reject overlapping `exec` (recommended) vs queue?
-5. Should notebook attach be a second PR immediately after serve, or wait?
+5. On TCP disconnect: keep the process + `Session` (recommended) or exit?
+6. Should notebook attach be a second PR immediately after serve, or wait?
