@@ -80,6 +80,46 @@ from .util import open_file_smart_mode, plural, resolve, unwrap
 
 LOG = logging.getLogger(__name__)
 
+PROGRESS_JSON_ENV = "DQL_PROGRESS_JSON"
+WRITE_PROGRESS_CHUNK = 25
+
+
+def progress_json_enabled(env=None) -> bool:
+    """True when DQL should emit JSON progress lines on stderr."""
+    env = os.environ if env is None else env
+    value = (env.get(PROGRESS_JSON_ENV) or "").strip().lower()
+    return value not in {"", "0", "false", "no", "off"}
+
+
+def encode_progress_event(done: int, total: Optional[int], phase: str) -> str:
+    payload: Dict[str, Any] = {
+        "event": "progress",
+        "done": int(done),
+        "phase": phase,
+    }
+    if total is not None:
+        payload["total"] = int(total)
+    return json.dumps(payload, separators=(",", ":"))
+
+
+def _progress_html(done: int, total: Optional[int], phase: str) -> str:
+    label = phase
+    if total:
+        pct = min(100, int(100 * done / total)) if total else 0
+        return (
+            f'<div class="dql-progress">'
+            f'<div style="margin-bottom:4px;font-family:monospace;font-size:13px">'
+            f"{label} {done:,} / {total:,} ({pct}%)</div>"
+            f'<progress value="{done}" max="{total}" style="width:100%;height:12px">'
+            f"</progress></div>"
+        )
+    return (
+        f'<div class="dql-progress">'
+        f'<div style="margin-bottom:4px;font-family:monospace;font-size:13px">'
+        f"{label} {done:,}</div>"
+        f'<progress style="width:100%;height:12px"></progress></div>'
+    )
+
 
 def default(value):
     """Default encoder for JSON"""
@@ -176,8 +216,34 @@ class Engine(object):
         self.rate_limit = None
         self._encoder = json.JSONEncoder(separators=(",", ":"), default=default)
         self.caution_callback: Optional[Callable] = None
+        self.progress_callback: Optional[Callable[[int, Optional[int], str], None]] = None
+        self._progress_display = None
         self._identity = None
         self._parsed_information = {}
+
+    def _report_progress(self, done: int, total: Optional[int], phase: str) -> None:
+        """Notify a callback, stderr JSON, or a Jupyter display of bulk work."""
+        if self.progress_callback is not None:
+            self.progress_callback(done, total, phase)
+            return
+        if progress_json_enabled():
+            sys.stderr.write(encode_progress_event(done, total, phase) + "\n")
+            sys.stderr.flush()
+            return
+        if done == 0:
+            self._progress_display = None
+        try:
+            from IPython import get_ipython
+            from IPython.display import HTML, display
+        except ImportError:
+            return
+        if get_ipython() is None:
+            return
+        html = _progress_html(done, total, phase)
+        if self._progress_display is None:
+            self._progress_display = display(HTML(html), display_id=True)
+        else:
+            self._progress_display.update(HTML(html))
 
     def connect(self, *args, **kwargs):
         """Proxy to DynamoDBConnection.connect."""
@@ -773,6 +839,7 @@ class Engine(object):
 
         CHUNK_SIZE = 2000
         WORKER_COUNT = 20
+        self._report_progress(0, None, "write")
         with (
             Progress(
                 TextColumn("[progress.description]{task.description}"),
@@ -808,6 +875,8 @@ class Engine(object):
                         continue
                     progress.update(chunk_progress_bar, advance=1)
                     count += 1
+                    if count % WRITE_PROGRESS_CHUNK == 0:
+                        self._report_progress(count, None, "write")
                     if res:
                         result.append(res)
                 # spinner.update(text=f"[blue] Total Processed: {count}")
@@ -818,7 +887,7 @@ class Engine(object):
                 )
                 chunk = take(keys_iterable, CHUNK_SIZE)
 
-        # TODO: Change the behaviour to optionally display progress as per a Render class.
+        self._report_progress(count, count if count else None, "write")
         # Old Code
         # for key in keys:
         #     try:
@@ -981,12 +1050,17 @@ class Engine(object):
     def _insert(self, tree):
         """Run an INSERT statement"""
         tablename = tree.table
+        items = list(iter_insert_items(tree))
+        total = len(items)
         count = 0
+        self._report_progress(0, total, "write")
         batch = self.connection.batch_write(tablename)
         with batch:
-            for item in iter_insert_items(tree):
+            for item in items:
                 batch.put(item)
                 count += 1
+                if count % WRITE_PROGRESS_CHUNK == 0 or count == total:
+                    self._report_progress(count, total, "write")
         return count
 
     def _drop(self, tree):
@@ -1103,6 +1177,7 @@ class Engine(object):
 
         batch = self.connection.batch_write(tree.table)
         count = 0
+        self._report_progress(0, None, "write")
         with batch:
             with open_file_smart_mode(filename) as ifile:
                 if ext.lower() == ".csv":
@@ -1117,17 +1192,24 @@ class Engine(object):
                                 item[k] = v
                         batch.put(item)
                         count += 1
+                        if count % WRITE_PROGRESS_CHUNK == 0:
+                            self._report_progress(count, None, "write")
                 elif ext.lower() == ".json":
                     for line in ifile:
                         batch.put(json.loads(line))
                         count += 1
+                        if count % WRITE_PROGRESS_CHUNK == 0:
+                            self._report_progress(count, None, "write")
                 else:
                     try:
                         while True:
                             batch.put(pickle.load(ifile))
                             count += 1
+                            if count % WRITE_PROGRESS_CHUNK == 0:
+                                self._report_progress(count, None, "write")
                     except EOFError:
                         pass
+        self._report_progress(count, count, "write")
         return count
 
 
