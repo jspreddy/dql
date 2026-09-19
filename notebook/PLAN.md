@@ -1,6 +1,6 @@
 # Plan: notebook frontend for DQL
 
-**Status:** plan only. No Jupyter install, kernels, or example notebooks in this change. Review this document, then ask for implementation if it looks right.
+**Status:** implemented on this branch (v1). evcxr Rust language kernel is still deferred.
 
 **Branch target:** `v-rust` (both Python `dql` and Rust `dqlrs` live here).
 
@@ -103,13 +103,9 @@ notebook/
   uv.lock
   jupyter_server_config.py
   start.sh                # CLI entry: sync env, register kernels, launch Lab
-  kernels/                # project-local kernelspecs (not ~/.local)
-    dql-python/kernel.json
-    dql-rust/kernel.json
-    python/kernel.json    # optional; can be generated
-    rust/kernel.json      # evcxr, phase 2
-  kernelsrc/              # thin wrapper-kernel package
-    dql_notebook_kernel/
+  share/jupyter/kernels/  # generated at runtime (gitignored)
+  src/dql_notebook_kernel/  # thin wrapper-kernel package
+  tests/                  # runner / kernelspec unit tests
   examples/
     getting-started-python.ipynb
     getting-started-rust.ipynb
@@ -214,15 +210,15 @@ Do **not** document `:dep dql-engine = { path = ... }` as the happy path (first 
 - `notebook/uv.lock` **is** committed (reproducible Lab + kernel deps).
 - Example notebooks may hit DynamoDB Local; they are demos, not black-box tests. Do not duplicate `black-box-tests/`.
 
-## Implementation phases (when approved)
+## Implementation phases
 
-1. **Scaffold** — `notebook/pyproject.toml` (jupyterlab, ipykernel, ipykernel wrapper deps), `start.sh`, server config, gitignore, README.
-2. **DQL kernels** — wrapper kernel + `DQL (Python)` / `DQL (Rust)` kernelspecs, env-based binary discovery.
-3. **Python kernel + examples** — path-dep on `py-impl`, `examples/getting-started-*.ipynb` against DynamoDB Local (same `scripts/install_dynamodb_local.sh` as the rest of the repo).
-4. **Docs pointer** — one row in root `README.md`; short “Notebook UI” blurb. No Sphinx/rust-docs rewrite unless you want it.
-5. **Optional** — evcxr kernel, `%%dql` magics, `--dry-run` kernel list check, nbstripout hook.
+1. **Scaffold** — `notebook/pyproject.toml` (jupyterlab, ipykernel, path-dep `dql`), `start.sh`, server config, gitignore. **Done.**
+2. **DQL kernels** — wrapper kernel + `DQL (Python)` / `DQL (Rust)` kernelspecs, env-based binary discovery. **Done.**
+3. **Python kernel + examples** — path-dep on `py-impl`, `examples/getting-started-*.ipynb` against DynamoDB Local. **Done.**
+4. **Docs pointer** — root `README.md` row + notebook README. **Done.**
+5. **Optional leftovers** — evcxr kernel and nbstripout hook are still out of scope. `%%dql` / `%%dqlrs` magics and `start.sh --dry-run` shipped with v1.
 
-Each phase is its own commit.
+v1 also includes `./scripts/notebook.sh` (thin wrapper) and `--local` / `--start-local` on `start.sh`.
 
 ## Risks
 
@@ -235,10 +231,10 @@ Each phase is its own commit.
 | Global Jupyter pollution | Project-local `JUPYTER_PATH` / `--config`; never `jupyter kernelspec install --user` by default. |
 | Credentials in notebook output | Examples use Local; README warns not to commit `--json` dumps of real tables. |
 
-## Review questions
+## Review questions (resolved by implement)
 
-1. Is **JupyterLab + two DQL wrapper kernels** (Python binary vs Rust binary) the right product, versus only Python/Rust language kernels?
-2. Is a **`notebook/start.sh`** CLI enough for v1, or do you want `dql notebook` / `dqlrs notebook` aliases immediately?
-3. Should v1 include the **evcxr Rust language kernel**, or wait?
-4. Default target for example notebooks: **DynamoDB Local** (recommended) or live AWS?
-5. Any objection to a **uv project** under `notebook/` (separate from `py-impl/`)?
+1. Wrapper kernels (write DQL in cells) **plus** a Python language kernel.
+2. `notebook/start.sh` only; no `dql notebook` alias.
+3. evcxr waits.
+4. Example notebooks target **DynamoDB Local**.
+5. Separate uv project under `notebook/`.
