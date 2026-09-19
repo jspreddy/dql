@@ -1,4 +1,4 @@
-use dql_engine::{json_util::item_to_json, EngineError, StatementResult};
+use dql_engine::{json_util::item_to_json, EngineError, ProgressEvent, StatementResult};
 use serde::{Deserialize, Serialize};
 
 /// Client → worker request. Unknown fields are ignored.
@@ -67,6 +67,28 @@ impl ServeEnvelope {
     }
 }
 
+/// Mid-exec progress. No `ok` field so clients that only look for envelopes ignore it.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ServeProgress {
+    pub id: Option<serde_json::Value>,
+    pub event: &'static str,
+    pub done: u64,
+    pub total: Option<u64>,
+    pub phase: String,
+}
+
+impl ServeProgress {
+    pub fn from_event(id: Option<serde_json::Value>, event: &ProgressEvent) -> Self {
+        Self {
+            id,
+            event: "progress",
+            done: event.done,
+            total: event.total,
+            phase: event.phase.clone(),
+        }
+    }
+}
+
 pub fn parse_request_line(line: &str) -> Result<ClientRequest, String> {
     serde_json::from_str::<ClientRequest>(line).map_err(|err| format!("invalid JSON: {err}"))
 }
@@ -114,7 +136,7 @@ fn item_to_value(item: &dql_engine::Item) -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dql_engine::Item;
+    use dql_engine::{Item, ProgressEvent};
     use dql_parser::Value;
 
     #[test]
@@ -193,5 +215,20 @@ mod tests {
         assert!(json["message"].is_null());
         assert_eq!(json["partial"], false);
         assert!(json.get("error").is_none());
+    }
+
+    #[test]
+    fn progress_json_has_event_and_no_ok() {
+        let json = serde_json::to_value(ServeProgress::from_event(
+            Some(serde_json::json!("1")),
+            &ProgressEvent::new(5, Some(10), "write"),
+        ))
+        .unwrap();
+        assert_eq!(json["id"], "1");
+        assert_eq!(json["event"], "progress");
+        assert_eq!(json["done"], 5);
+        assert_eq!(json["total"], 10);
+        assert_eq!(json["phase"], "write");
+        assert!(json.get("ok").is_none());
     }
 }

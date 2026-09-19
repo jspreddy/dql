@@ -238,9 +238,14 @@ fn smoke_dynamodb_local_serve_stdio() {
     )
     .unwrap();
     stdin.flush().unwrap();
-    let mut line = String::new();
-    stdout.read_line(&mut line).unwrap();
-    let reply: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+    let reply = loop {
+        let mut line = String::new();
+        stdout.read_line(&mut line).unwrap();
+        let value: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+        if value.get("ok").is_some() {
+            break value;
+        }
+    };
     assert_eq!(reply["ok"], true, "local serve exec failed: {reply}");
     assert_eq!(reply["kind"], "items");
     assert_eq!(reply["items"][0]["id"], "a");
@@ -250,8 +255,8 @@ fn smoke_dynamodb_local_serve_stdio() {
     )
     .unwrap();
     stdin.flush().unwrap();
-    line.clear();
-    stdout.read_line(&mut line).unwrap();
+    let mut drop_line = String::new();
+    stdout.read_line(&mut drop_line).unwrap();
     writeln!(stdin, r#"{{"op":"shutdown"}}"#).unwrap();
     drop(stdin);
     let status = child.wait().unwrap();

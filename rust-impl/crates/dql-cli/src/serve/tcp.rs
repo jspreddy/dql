@@ -181,6 +181,15 @@ mod tests {
         try_read_json(stream).unwrap()
     }
 
+    fn read_envelope(stream: &mut TcpStream) -> serde_json::Value {
+        loop {
+            let value = read_json_line(stream);
+            if value.get("ok").is_some() {
+                return value;
+            }
+        }
+    }
+
     fn try_read_json(stream: &mut TcpStream) -> io::Result<serde_json::Value> {
         use std::io::BufRead;
         let mut reader = BufReader::new(stream.try_clone()?);
@@ -278,7 +287,7 @@ mod tests {
         )
         .unwrap();
         client.flush().unwrap();
-        let created = read_json_line(&mut client);
+        let created = read_envelope(&mut client);
         assert_eq!(created["ok"], true);
         drop(client);
 

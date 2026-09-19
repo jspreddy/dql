@@ -129,6 +129,13 @@ impl RuntimeEngine {
         }
     }
 
+    pub fn progress(&self) -> &dql_engine::ProgressSink {
+        match self {
+            Self::Memory(engine) => engine.inner().progress(),
+            Self::Remote(engine) => engine.inner().progress(),
+        }
+    }
+
     pub fn rich_context(&self) -> Option<RichContext> {
         self.last_query_context().map(rich_context_from_engine)
     }
@@ -343,6 +350,10 @@ impl Session {
             history,
             throttle,
         })
+    }
+
+    pub fn progress(&self) -> &dql_engine::ProgressSink {
+        self.engine.progress()
     }
 
     /// Build a session that always uses the in-memory backend (for unit tests).
