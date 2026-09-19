@@ -10,12 +10,9 @@ HERE = Path(__file__).resolve().parent
 c.ServerApp.ip = "127.0.0.1"
 c.ServerApp.allow_remote_access = False
 c.ServerApp.root_dir = str(HERE)
-c.ServerApp.preferred_dir = str(HERE / "examples")
 c.ServerApp.open_browser = True
+c.FileContentsManager.preferred_dir = str(HERE / "examples")
 
-c.KernelSpecManager.extra_search_paths = [
-    str(HERE / "share" / "jupyter" / "kernels")
-]
 c.KernelSpecManager.allowed_kernelspecs = {
     "dql-python",
     "dql-rust",

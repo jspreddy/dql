@@ -90,6 +90,19 @@ def test_try_parse_json_invalid():
     assert try_parse_json("") is None
 
 
+def test_try_parse_json_concatenated_objects():
+    parsed = try_parse_json(
+        '{\n  "username": "steve"\n}\n\n{\n  "username": "drdice"\n}\n'
+    )
+    assert parsed == [{"username": "steve"}, {"username": "drdice"}]
+    bundle = format_display(
+        '{\n  "username": "steve"\n}\n{\n  "username": "drdice"\n}\n',
+        "",
+    )
+    assert "<table" in bundle["text/html"]
+    assert "drdice" in bundle["text/html"]
+
+
 def test_write_dql_kernels(tmp_path: Path):
     written = write_dql_kernels(tmp_path / "kernels", "/opt/venv/bin/python")
     names = {path.parent.name for path in written}

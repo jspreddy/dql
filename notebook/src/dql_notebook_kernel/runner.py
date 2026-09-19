@@ -115,13 +115,34 @@ def run_dql(
 
 
 def try_parse_json(text: str) -> Any:
+    """Parse one JSON value, or several values written back-to-back (DQL --json)."""
     stripped = text.strip()
     if not stripped:
         return None
     try:
         return json.loads(stripped)
     except json.JSONDecodeError:
+        pass
+    decoder = json.JSONDecoder()
+    values: list[Any] = []
+    idx = 0
+    length = len(stripped)
+    while idx < length:
+        while idx < length and stripped[idx].isspace():
+            idx += 1
+        if idx >= length:
+            break
+        try:
+            value, end = decoder.raw_decode(stripped, idx)
+        except json.JSONDecodeError:
+            return None
+        values.append(value)
+        idx = end
+    if not values:
         return None
+    if len(values) == 1:
+        return values[0]
+    return values
 
 
 def _cell(value: Any) -> str:
