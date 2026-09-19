@@ -44,6 +44,15 @@ The DQL kernels call the **installed programs**, not crate internals.
 
 Lab still starts if one is missing; cells for that kernel fail with an install hint.
 
+**From a cargo-installed `dqlrs` only** (Rust kernel, no repo checkout):
+
+```bash
+dqlrs notebook --local
+```
+
+That extracts the DQL (Rust) kernel from the binary, installs JupyterLab into
+`~/.local/share/dqlrs/notebook`, and starts Lab. See [`rust-docs/README.md`](../rust-docs/README.md).
+
 From a clone:
 
 ```bash
