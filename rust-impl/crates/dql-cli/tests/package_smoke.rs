@@ -108,6 +108,62 @@ fn smoke_memory_json() {
 }
 
 #[test]
+fn smoke_help_mentions_serve_and_bind() {
+    let output = run_raw(&["--help"]);
+    assert_success(&output, "dqlrs --help");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--serve"),
+        "help should mention --serve: {stderr}"
+    );
+    assert!(
+        stderr.contains("--bind"),
+        "help should mention --bind: {stderr}"
+    );
+}
+
+#[test]
+fn smoke_serve_rejects_command() {
+    let output = run(&["--serve", "-c", "opt"]);
+    assert!(
+        !output.status.success(),
+        "--serve -c should fail to start\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("--serve") && (stderr.contains("--command") || stderr.contains("-c")),
+        "expected combo error: {stderr}"
+    );
+}
+
+#[test]
+fn smoke_bind_requires_serve() {
+    let output = run(&["--bind", "127.0.0.1:1"]);
+    assert!(
+        !output.status.success(),
+        "--bind without --serve should fail\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn smoke_bind_refuses_non_loopback() {
+    let output = run(&["--serve", "--bind", "0.0.0.0:1"]);
+    assert!(
+        !output.status.success(),
+        "non-loopback --bind should fail\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("non-loopback") || stderr.contains("refusing"),
+        "expected refuse message: {stderr}"
+    );
+}
+
+#[test]
 fn smoke_default_backend_is_not_silent_memory() {
     // Without DQL_BACKEND=memory and without -H, the CLI constructs an AWS SDK
     // session. Creating a table would hit real AWS, so only assert that a
@@ -142,4 +198,62 @@ fn smoke_dynamodb_local() {
     // Local host overrides DQL_BACKEND; still clear memory env for clarity.
     let output = run_raw(&["-H", &host, "-p", &port, "-c", &script]);
     assert_success(&output, "DynamoDB Local one-shot script");
+}
+
+#[test]
+fn smoke_dynamodb_local_serve_stdio() {
+    if !local_available() {
+        if require_local() {
+            panic!("DQL_REQUIRE_LOCAL is set but DynamoDB Local is not reachable");
+        }
+        eprintln!("skipping: DynamoDB Local not available");
+        return;
+    }
+
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::Stdio;
+
+    let host = std::env::var("DQL_LOCAL_HOST").unwrap_or_else(|_| "localhost".to_string());
+    let port = std::env::var("DQL_LOCAL_PORT").unwrap_or_else(|_| "8000".to_string());
+    let table = unique_table("pkg_local_serve");
+    let mut child = Command::new(dql_bin())
+        .args(["--serve", "-H", &host, "-p", &port])
+        .env_remove("DQL_BACKEND")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn dqlrs --serve");
+    let mut stdin = child.stdin.take().expect("stdin");
+    let mut stdout = BufReader::new(child.stdout.take().expect("stdout"));
+    let script = format!(
+        "CREATE TABLE {table} (id STRING HASH KEY); \
+         INSERT INTO {table} (id) VALUES ('a'); \
+         SELECT * FROM {table} WHERE id = 'a';"
+    );
+    writeln!(
+        stdin,
+        r#"{{"id":"1","op":"exec","dql":{}}}"#,
+        serde_json::to_string(&script).unwrap()
+    )
+    .unwrap();
+    stdin.flush().unwrap();
+    let mut line = String::new();
+    stdout.read_line(&mut line).unwrap();
+    let reply: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+    assert_eq!(reply["ok"], true, "local serve exec failed: {reply}");
+    assert_eq!(reply["kind"], "items");
+    assert_eq!(reply["items"][0]["id"], "a");
+    writeln!(
+        stdin,
+        r#"{{"id":"2","op":"exec","dql":"DROP TABLE {table};"}}"#
+    )
+    .unwrap();
+    stdin.flush().unwrap();
+    line.clear();
+    stdout.read_line(&mut line).unwrap();
+    writeln!(stdin, r#"{{"op":"shutdown"}}"#).unwrap();
+    drop(stdin);
+    let status = child.wait().unwrap();
+    assert!(status.success(), "serve should exit 0 after shutdown");
 }
