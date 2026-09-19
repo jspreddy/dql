@@ -113,8 +113,19 @@ More: [`rust-docs/README.md`](rust-docs/README.md).
 | [`rust-docs/`](rust-docs/) | Markdown user docs for the Rust client |
 | [`rust-plans/`](rust-plans/) | Rust rewrite / architecture notes |
 | [`black-box-tests/`](black-box-tests/) | Black-box acceptance cases (binaries + DynamoDB Local) |
+| [`notebook/`](notebook/) | JupyterLab UI and DQL kernels (`dql` / `dqlrs`), started from the CLI |
 | [`scripts/`](scripts/) | Shared installers, version bump, and language-prefixed helpers |
 | [`.github/workflows/`](.github/workflows/) | Python and Rust CI |
+
+### Notebook UI
+
+JupyterLab with kernels that send cell text to `dql` or `dqlrs`, plus a Python kernel that imports `dql`. From the repository root:
+
+```bash
+./notebook/start.sh --local --start-local
+```
+
+Details: [`notebook/README.md`](notebook/README.md).
 
 ### Local install from a clone
 
