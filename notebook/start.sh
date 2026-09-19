@@ -26,6 +26,8 @@ Environment:
   AWS_REGION              Default us-west-1
   DQL_HOST / DQL_PORT     DynamoDB Local host/port when set
   DQL_NOTEBOOK_JSON       Default 1; set 0 for plain CLI text
+  DQL_NOTEBOOK_SERVE      Default 1; set 0 to run rust cells with dqlrs -c
+  DQL_PROGRESS_JSON       Set by kernels so Python dql emits progress JSON
   DQL_NOTEBOOK_PORT       Jupyter port (Jupyter picks a free one if busy)
   AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
 EOF

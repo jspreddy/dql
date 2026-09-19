@@ -7,11 +7,15 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Callable, Mapping, Optional, Sequence
+
+from .progress import parse_progress_line
 
 DEFAULT_REGION = "us-west-1"
 DEFAULT_PORT = "8000"
+ProgressCallback = Callable[[int, Optional[int], str], None]
 
 
 class BinaryNotFoundError(FileNotFoundError):
@@ -55,6 +59,13 @@ def use_json_output(env: Optional[Mapping[str, str]] = None) -> bool:
     return value not in {"0", "false", "no", "off"}
 
 
+def use_serve(env: Optional[Mapping[str, str]] = None) -> bool:
+    """Rust cells talk to `dqlrs --serve` unless DQL_NOTEBOOK_SERVE is 0."""
+    env = os.environ if env is None else env
+    value = (env.get("DQL_NOTEBOOK_SERVE") or "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
+
+
 def build_argv(
     code: str,
     backend: str,
@@ -81,9 +92,12 @@ class RunResult:
     returncode: int
     stdout: str
     stderr: str
+    envelope: Optional[dict[str, Any]] = None
 
     @property
     def ok(self) -> bool:
+        if self.envelope is not None:
+            return bool(self.envelope.get("ok"))
         return self.returncode == 0
 
 
@@ -93,24 +107,73 @@ def run_dql(
     *,
     env: Optional[Mapping[str, str]] = None,
     timeout: Optional[float] = None,
+    on_progress: Optional[ProgressCallback] = None,
 ) -> RunResult:
     merged = os.environ.copy()
     if env:
         merged.update({key: str(value) for key, value in env.items()})
+    merged.setdefault("DQL_PROGRESS_JSON", "1")
     argv = build_argv(code, backend, env=merged)
-    completed = subprocess.run(
+    if on_progress is None:
+        completed = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            env=merged,
+            timeout=timeout,
+            check=False,
+        )
+        return RunResult(
+            argv=argv,
+            returncode=completed.returncode,
+            stdout=completed.stdout,
+            stderr=completed.stderr,
+        )
+    return _run_dql_streaming(argv, merged, timeout, on_progress)
+
+
+def _run_dql_streaming(
+    argv: list[str],
+    env: Mapping[str, str],
+    timeout: Optional[float],
+    on_progress: ProgressCallback,
+) -> RunResult:
+    proc = subprocess.Popen(
         argv,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        env=merged,
-        timeout=timeout,
-        check=False,
+        env=dict(env),
     )
+    stderr_parts: list[str] = []
+
+    def consume_stderr() -> None:
+        assert proc.stderr is not None
+        for line in proc.stderr:
+            event = parse_progress_line(line)
+            if event is not None:
+                done = int(event.get("done") or 0)
+                total = event.get("total")
+                total_i = int(total) if total is not None else None
+                on_progress(done, total_i, str(event.get("phase") or "write"))
+            else:
+                stderr_parts.append(line)
+
+    reader = threading.Thread(target=consume_stderr, daemon=True)
+    reader.start()
+    assert proc.stdout is not None
+    stdout = proc.stdout.read()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+    reader.join(timeout=2)
     return RunResult(
         argv=argv,
-        returncode=completed.returncode,
-        stdout=completed.stdout,
-        stderr=completed.stderr,
+        returncode=proc.returncode if proc.returncode is not None else 1,
+        stdout=stdout or "",
+        stderr="".join(stderr_parts),
     )
 
 
@@ -199,3 +262,24 @@ def format_display(stdout: str, stderr: str) -> dict[str, str]:
             f"<pre>{html.escape(json.dumps(parsed, indent=2, sort_keys=True))}</pre>"
         )
     return bundle
+
+
+def format_envelope(envelope: Mapping[str, Any]) -> dict[str, str]:
+    """Render a dqlrs --serve reply the same way as `-c --json` output."""
+    kind = envelope.get("kind")
+    if kind == "items":
+        items = envelope.get("items") or []
+        return format_display(json.dumps(items), "")
+    if kind == "affected":
+        count = envelope.get("affected")
+        text = f"{count} affected\n"
+        return {"text/plain": text}
+    if kind in {"status", "schema", "text"}:
+        message = envelope.get("message") or ""
+        text = message if str(message).endswith("\n") else f"{message}\n"
+        return {"text/plain": text} if message else {}
+    if kind == "error":
+        error = envelope.get("error") or {}
+        message = error.get("message") or json.dumps(envelope)
+        return {"text/plain": f"{message}\n"}
+    return {}
