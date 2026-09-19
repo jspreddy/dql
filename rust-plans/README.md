@@ -83,7 +83,7 @@ front end, not a parity gap:
 
 | Plan | Focus |
 | --- | --- |
-| [`headless_worker.md`](headless_worker.md) | `dqlrs --serve` JSON-lines worker (stdio, one `Session`) |
+| [`headless_worker.md`](headless_worker.md) | `dqlrs --serve` JSON-lines worker (stdio **or** loopback `--bind`, one `Session`) |
 | [`.cursor/plans/dqlrs_headless_worker.plan.md`](../.cursor/plans/dqlrs_headless_worker.plan.md) | Implementation todos for the same work |
 
 Related: [`todo_unify_cli_pipelines.md`](todo_unify_cli_pipelines.md) (`-c` / REPL / serve should share one `execute_input`).
