@@ -63,8 +63,11 @@ You can use `$HOME/.aws/credentials` or `AWS_ACCESS_KEY_ID` /
 -H, --host <host>        Local DynamoDB host
 -p, --port <port>        Local DynamoDB port (default 8000)
     --json               With -c, print results as JSON
-    --version            Print version and exit
--h, --help               Print help
+    --serve              Headless JSON-lines worker (stdio, or --bind on loopback)
+    --bind <ADDR>        With --serve, listen on loopback HOST:PORT (or PORT as 127.0.0.1:PORT)
+    notebook             Start JupyterLab with a DQL (Rust) kernel (this binary)
+    --version            Print the version and exit
+    -h, --help           Print help
 ```
 
 ## Statements and meta-commands
@@ -79,6 +82,80 @@ In the REPL, type `help` or `help <statement>`. Meta-commands include `opt`,
 
 Output formats (via `opt format`): `smart`, `column`, `expanded`, `json`,
 `rich`. Non-TUI paths can page with `opt display less`.
+
+## Headless worker (`--serve`)
+
+`dqlrs --serve` keeps one `Session` and speaks **JSON-lines** (one JSON object
+per line). It is not a TTY REPL: no ratatui, no pager, no `~/.dql_history`.
+`--json` is implied. Mutually exclusive with `-c`.
+
+```bash
+# stdio (tests, embedding)
+DQL_BACKEND=memory dqlrs --serve
+
+# loopback TCP (notebook kernels and other tools)
+dqlrs --serve --bind 127.0.0.1:7400
+dqlrs --serve --bind 127.0.0.1:0    # prints `dqlrs serve listen 127.0.0.1:<port>` on stderr
+dqlrs --serve --bind 7400           # same as 127.0.0.1:7400
+```
+
+`--bind` requires `--serve` and **refuses non-loopback** addresses (`0.0.0.0`,
+public IPs) before listen. One TCP client at a time; extra connections are
+dropped with `dqlrs serve refuse: already connected` on stderr. Disconnecting
+keeps the process and session (reconnect is allowed). `{"op":"shutdown"}` exits
+0.
+
+Client ops: `exec` (DQL or meta text), `ping`, `shutdown`, `interrupt` (no-op
+in v1). Each reply is one envelope:
+
+```json
+{"id":"1","ok":true,"kind":"items","items":[{"id":"a"}],"affected":null,"message":null,"partial":false}
+```
+
+During `exec`, the worker may emit **progress** lines *before* the envelope
+(no `ok` field — older clients skip them):
+
+```json
+{"id":"1","event":"progress","done":25,"total":1000,"phase":"write"}
+```
+
+`phase` is `write` (INSERT / LOAD / UPDATE / DELETE) or `read` (paged SCAN /
+SELECT). INSERT/LOAD emit at least `0`, each 25-item chunk, and the final count.
+
+`kind` is `none` / `items` / `affected` / `status` / `schema` / `text`. Errors
+use `"ok": false`, `"kind": "error"`, and `"error": {"code":"...","message":"..."}`
+with `code` of `parse` | `runtime` | `unsupported` | `protocol`. The process
+stays up.
+
+Unsupported meta (envelope `unsupported`, no crash): `watch`, `clear` / `cls` /
+`c`, `exit` / `quit` (use `op: shutdown`), `shell`.
+
+This is **Rust-only**. Python `dql` has no `--serve`; notebook Python cells set
+`DQL_PROGRESS_JSON=1` so `dql -c` prints the same progress events on stderr.
+`-c --json` stays concatenated item objects (not this envelope).
+
+## Notebook (`dqlrs notebook`)
+
+After `cargo install`, the same binary can start JupyterLab:
+
+```bash
+dqlrs notebook --local --no-browser
+# same:
+dqlrs --notebook --local
+```
+
+This does **not** embed Jupyter (too large). On first run it creates
+`~/.local/share/dqlrs/notebook` (override with `DQLRS_NOTEBOOK_HOME`), installs
+JupyterLab + ipykernel into a venv (via `uv` or `python3 -m venv`), writes a
+**DQL (Rust)** kernelspec with `DQLRS_BIN` set to this executable, and launches
+Lab on `127.0.0.1`. Later runs reuse the venv.
+
+Needs Python 3.10+ or [uv](https://docs.astral.sh/uv/). `--local` points cells
+at DynamoDB Local (`localhost:8000`) and sets dummy AWS keys if they are unset.
+Start Local yourself; this command does not bundle it.
+
+Repo checkout alternative (Python + Rust kernels): [`../notebook/README.md`](../notebook/README.md)
+`./notebook/start.sh`.
 
 ## SAVE / LOAD
 
@@ -99,6 +176,7 @@ dqlrs -c "ls"
 dqlrs --json -c "SCAN * FROM mytable LIMIT 5"
 dqlrs -H localhost -p 8000 -c "CREATE TABLE t (id STRING HASH KEY); SCAN * FROM t"
 DQL_BACKEND=memory dqlrs -c "CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a'); SCAN * FROM t"
+printf '%s\n' '{"op":"ping"}' '{"op":"shutdown"}' | DQL_BACKEND=memory dqlrs --serve
 ```
 
 REPL examples:

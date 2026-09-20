@@ -1,10 +1,11 @@
 use crate::convert::keys_in_to_items;
 use crate::file_io::{load_items as load_items_from_file, save_items};
+use crate::progress::ProgressSink;
 use crate::query_context::{query_context_from_read, LastQueryContext};
 use crate::throttle::RateLimit;
 use crate::{
     BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
-    StatementResult,
+    StatementResult, WRITE_PROGRESS_CHUNK,
 };
 use dql_expr::{project_selection, render_condition, render_projection, resolve_timestamp};
 use dql_models::{plan_read, Operation, PlanError, PlanInput, QueryPlan, ReadKind, TableMeta};
@@ -25,10 +26,13 @@ pub struct Engine<B: DynamoBackend> {
     rate_limit: Option<RateLimit>,
     pub cached_descriptions: HashMap<String, TableMeta>,
     last_query_context: Option<LastQueryContext>,
+    progress: ProgressSink,
 }
 
 impl<B: DynamoBackend> Engine<B> {
-    pub fn new(backend: B) -> Self {
+    pub fn new(mut backend: B) -> Self {
+        let progress = ProgressSink::default();
+        backend.set_progress_sink(progress.clone());
         Self {
             backend,
             explain: false,
@@ -39,6 +43,7 @@ impl<B: DynamoBackend> Engine<B> {
             rate_limit: None,
             cached_descriptions: HashMap::new(),
             last_query_context: None,
+            progress,
         }
     }
 
@@ -112,6 +117,130 @@ impl<B: DynamoBackend> Engine<B> {
 
     pub fn last_query_context(&self) -> Option<&LastQueryContext> {
         self.last_query_context.as_ref()
+    }
+
+    pub fn progress(&self) -> &ProgressSink {
+        &self.progress
+    }
+
+    fn report_progress(&self, done: u64, total: Option<u64>, phase: &str) {
+        self.progress.report(done, total, phase);
+    }
+
+    fn write_items(
+        &mut self,
+        table: &str,
+        items: Vec<Item>,
+    ) -> Result<BackendResponse<usize>, EngineError> {
+        let total = items.len();
+        self.report_progress(0, Some(total as u64), "write");
+        if items.is_empty() {
+            return Ok(BackendResponse {
+                output: 0,
+                capacity: None,
+                count: None,
+                updated_items: None,
+            });
+        }
+        let mut written = 0usize;
+        let mut last_capacity = None;
+        for chunk in items.chunks(WRITE_PROGRESS_CHUNK) {
+            let response = self.backend.batch_write(table, chunk.to_vec())?;
+            written += response.output;
+            if let Some(capacity) = response.capacity {
+                self.capture_capacity(Some(capacity.clone()));
+                last_capacity = Some(capacity);
+            }
+            self.report_progress(written as u64, Some(total as u64), "write");
+        }
+        Ok(BackendResponse {
+            output: written,
+            capacity: last_capacity,
+            count: None,
+            updated_items: None,
+        })
+    }
+
+    fn delete_key_chunks(
+        &mut self,
+        table: &str,
+        keys: &[Item],
+        condition: Option<&Condition>,
+    ) -> Result<BackendResponse<usize>, EngineError> {
+        let total = keys.len();
+        self.report_progress(0, Some(total as u64), "write");
+        if keys.is_empty() {
+            return Ok(BackendResponse {
+                output: 0,
+                capacity: None,
+                count: None,
+                updated_items: None,
+            });
+        }
+        let mut deleted = 0usize;
+        let mut last_capacity = None;
+        for chunk in keys.chunks(WRITE_PROGRESS_CHUNK) {
+            let response = self.backend.delete_by_keys(table, chunk, condition)?;
+            deleted += response.output;
+            if let Some(capacity) = response.capacity {
+                self.capture_capacity(Some(capacity.clone()));
+                last_capacity = Some(capacity);
+            }
+            self.report_progress(deleted as u64, Some(total as u64), "write");
+        }
+        Ok(BackendResponse {
+            output: deleted,
+            capacity: last_capacity,
+            count: None,
+            updated_items: None,
+        })
+    }
+
+    fn update_key_chunks(
+        &mut self,
+        table: &str,
+        keys: &[Item],
+        update: &UpdateExpr,
+        condition: Option<&Condition>,
+        return_items: bool,
+    ) -> Result<BackendResponse<usize>, EngineError> {
+        let total = keys.len();
+        self.report_progress(0, Some(total as u64), "write");
+        if keys.is_empty() {
+            return Ok(BackendResponse {
+                output: 0,
+                capacity: None,
+                count: None,
+                updated_items: None,
+            });
+        }
+        let mut updated = 0usize;
+        let mut last_capacity = None;
+        let mut updated_items = Vec::new();
+        for chunk in keys.chunks(WRITE_PROGRESS_CHUNK) {
+            let response =
+                self.backend
+                    .update_by_keys(table, chunk, update, condition, return_items)?;
+            updated += response.output;
+            if let Some(items) = response.updated_items {
+                updated_items.extend(items);
+            }
+            if let Some(capacity) = response.capacity {
+                self.capture_capacity(Some(capacity.clone()));
+                last_capacity = Some(capacity);
+            }
+            self.report_progress(updated as u64, Some(total as u64), "write");
+        }
+        Ok(BackendResponse {
+            output: updated,
+            capacity: last_capacity,
+            count: None,
+            updated_items: if return_items {
+                Some(updated_items)
+            } else {
+                None
+            },
+        })
     }
 
     pub fn execute(&mut self, input: &str) -> Result<StatementResult, EngineError> {
@@ -240,8 +369,7 @@ impl<B: DynamoBackend> Engine<B> {
             }
             items.push(item);
         }
-        let response = self.backend.batch_write(table, items)?;
-        self.capture_capacity(response.capacity);
+        let response = self.write_items(table, items)?;
         Ok(StatementResult::Affected(response.output))
     }
 
@@ -258,8 +386,7 @@ impl<B: DynamoBackend> Engine<B> {
             }
             items.push(item);
         }
-        let response = self.backend.batch_write(table, items)?;
-        self.capture_capacity(response.capacity);
+        let response = self.write_items(table, items)?;
         Ok(StatementResult::Affected(response.output))
     }
 
@@ -273,8 +400,7 @@ impl<B: DynamoBackend> Engine<B> {
             validate_mutation_keys_in(options)?;
             let keys = self.keys_in_items(table, keys_in)?;
             self.record("delete_item", table);
-            let response = self.backend.delete_by_keys(table, &keys, condition)?;
-            self.capture_capacity(response.capacity);
+            let response = self.delete_key_chunks(table, &keys, condition)?;
             return Ok(StatementResult::Affected(response.output));
         }
         let plan = if condition.is_some() || options.using_index.is_some() {
@@ -296,10 +422,16 @@ impl<B: DynamoBackend> Engine<B> {
             self.record("scan", table);
         }
         self.record("delete_item", table);
+        self.report_progress(0, None, "write");
         let response = self
             .backend
             .delete_matching(table, condition, plan.as_ref(), options)?;
         self.capture_capacity(response.capacity);
+        self.report_progress(
+            response.output as u64,
+            Some(response.output as u64),
+            "write",
+        );
         Ok(StatementResult::Affected(response.output))
     }
 
@@ -320,10 +452,7 @@ impl<B: DynamoBackend> Engine<B> {
             validate_mutation_keys_in(options)?;
             let keys = self.keys_in_items(table, keys_in)?;
             self.record("update_item", table);
-            let response =
-                self.backend
-                    .update_by_keys(table, &keys, update, condition, return_items)?;
-            self.capture_capacity(response.capacity.clone());
+            let response = self.update_key_chunks(table, &keys, update, condition, return_items)?;
             return finalize_update_result(response);
         }
         if condition.is_some() {
@@ -332,10 +461,16 @@ impl<B: DynamoBackend> Engine<B> {
             self.record("scan", table);
         }
         self.record("update_item", table);
+        self.report_progress(0, None, "write");
         let response = self
             .backend
             .update_matching(table, update, condition, return_items)?;
         self.capture_capacity(response.capacity.clone());
+        self.report_progress(
+            response.output as u64,
+            Some(response.output as u64),
+            "write",
+        );
         finalize_update_result(response)
     }
 
@@ -528,8 +663,7 @@ impl<B: DynamoBackend> Engine<B> {
         let path = Path::new(file.trim_matches('"').trim_matches('\''));
         let items =
             load_items_from_file(path).map_err(|err| EngineError::Runtime(err.to_string()))?;
-        let response = self.backend.batch_write(table, items)?;
-        self.capture_capacity(response.capacity);
+        let response = self.write_items(table, items)?;
         Ok(StatementResult::Affected(response.output))
     }
 
@@ -1260,5 +1394,40 @@ mod tests {
         let policy = resolve_ordering(&plan, &order_range).unwrap();
         assert_eq!(policy.scan_index_forward, Some(false));
         assert!(policy.client_order_by.is_none());
+    }
+
+    #[test]
+    fn insert_emits_chunked_write_progress() {
+        use std::sync::{Arc, Mutex};
+
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE t (id STRING HASH KEY)")
+            .unwrap();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_cb = Arc::clone(&seen);
+        engine.progress().set(Some(Box::new(move |event| {
+            seen_cb
+                .lock()
+                .unwrap()
+                .push((event.done, event.total, event.phase));
+        })));
+        let mut values = Vec::new();
+        for i in 0..30 {
+            values.push(format!("('{i}')"));
+        }
+        let sql = format!("INSERT INTO t (id) VALUES {}", values.join(", "));
+        let result = engine.execute(&sql).unwrap();
+        assert_eq!(result, StatementResult::Affected(30));
+        engine.progress().clear();
+        let events = seen.lock().unwrap().clone();
+        assert_eq!(
+            events,
+            vec![
+                (0, Some(30), "write".to_string()),
+                (25, Some(30), "write".to_string()),
+                (30, Some(30), "write".to_string()),
+            ]
+        );
     }
 }

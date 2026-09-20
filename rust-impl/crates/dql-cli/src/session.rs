@@ -129,6 +129,13 @@ impl RuntimeEngine {
         }
     }
 
+    pub fn progress(&self) -> &dql_engine::ProgressSink {
+        match self {
+            Self::Memory(engine) => engine.inner().progress(),
+            Self::Remote(engine) => engine.inner().progress(),
+        }
+    }
+
     pub fn rich_context(&self) -> Option<RichContext> {
         self.last_query_context().map(rich_context_from_engine)
     }
@@ -310,11 +317,25 @@ pub struct Session {
 
 impl Session {
     pub fn new(args: &crate::args::CliArgs) -> Result<Self, EngineError> {
+        Self::build_from_args(args, true)
+    }
+
+    /// Headless worker session: same connect flags as `-c`, but skip `~/.dql_history`.
+    pub fn new_for_serve(args: &crate::args::CliArgs) -> Result<Self, EngineError> {
+        Self::build_from_args(args, false)
+    }
+
+    fn build_from_args(
+        args: &crate::args::CliArgs,
+        load_history: bool,
+    ) -> Result<Self, EngineError> {
         let config = CliConfig::load();
         let mut throttle = crate::throttle::TableLimits::default();
         throttle.load(&config.throttle);
         let mut history = crate::history::HistoryManager::new();
-        history.try_to_load_history();
+        if load_history {
+            history.try_to_load_history();
+        }
         let engine = RuntimeEngine::build(
             &args.region,
             args.host.as_deref(),
@@ -331,13 +352,28 @@ impl Session {
         })
     }
 
+    pub fn progress(&self) -> &dql_engine::ProgressSink {
+        self.engine.progress()
+    }
+
     /// Build a session that always uses the in-memory backend (for unit tests).
     pub fn new_memory(region: &str) -> Self {
+        Self::build_memory(region, true)
+    }
+
+    /// In-memory session that does not load or write `~/.dql_history`.
+    pub fn new_memory_headless(region: &str) -> Self {
+        Self::build_memory(region, false)
+    }
+
+    fn build_memory(region: &str, load_history: bool) -> Self {
         let config = CliConfig::load();
         let mut throttle = crate::throttle::TableLimits::default();
         throttle.load(&config.throttle);
         let mut history = crate::history::HistoryManager::new();
-        history.try_to_load_history();
+        if load_history {
+            history.try_to_load_history();
+        }
         Self {
             engine: RuntimeEngine::in_memory(config.allow_select_scan),
             config,
@@ -437,6 +473,97 @@ impl Session {
         self.engine.set_rate_limit_option(limit);
         Ok(())
     }
+
+    /// Execute one serve `exec` payload (DQL or meta) into a machine envelope.
+    ///
+    /// This is the serve-side slice of unifying `-c` / REPL / worker pipelines
+    /// (`todo_unify_cli_pipelines.md`). It reuses `meta::dispatch` and
+    /// `execute_fragment` (including trailing-`;` auto-close) rather than
+    /// buffering `run_command` pretty-print.
+    pub fn execute_for_serve(&mut self, dql: &str) -> crate::serve::protocol::ServeEnvelope {
+        use crate::serve::protocol::{envelope_from_error, envelope_from_result, ServeEnvelope};
+
+        let trimmed = dql.trim();
+        if trimmed.is_empty() {
+            return ServeEnvelope::success("none");
+        }
+
+        let name = first_token(trimmed);
+        if is_unsupported_serve_meta(name) {
+            return ServeEnvelope::err(
+                "unsupported",
+                format!("{name} is not available in --serve (use op shutdown to exit)"),
+            );
+        }
+
+        if crate::meta::is_meta_command(name) {
+            let mut buf = Vec::new();
+            let dispatched = crate::meta::dispatch(self, trimmed, &mut buf, true);
+            let _ = crate::meta::lifecycle::take_exit_request();
+            let _ = crate::meta::lifecycle::take_history_edit_request();
+            return match dispatched {
+                Ok(Some(result)) => envelope_from_result(result, self.engine.partial()),
+                Ok(None) => {
+                    let message = String::from_utf8_lossy(&buf).trim_end().to_string();
+                    if message.is_empty() {
+                        ServeEnvelope::success("none")
+                    } else {
+                        let mut envelope = ServeEnvelope::success("text");
+                        envelope.message = Some(message);
+                        envelope
+                    }
+                }
+                Err(err) => {
+                    self.engine.reset_fragment();
+                    envelope_from_error(err)
+                }
+            };
+        }
+
+        if let Err(err) = self.apply_rate_limit() {
+            return envelope_from_error(err);
+        }
+        match self.engine.execute_fragment(trimmed) {
+            Ok(Some(result)) => envelope_from_result(result, self.engine.partial()),
+            Ok(None) if self.engine.partial() => {
+                if let Err(err) = self.apply_rate_limit() {
+                    return envelope_from_error(err);
+                }
+                match self.engine.execute_fragment(";") {
+                    Ok(Some(result)) => envelope_from_result(result, self.engine.partial()),
+                    Ok(None) => {
+                        let mut envelope = ServeEnvelope::success("none");
+                        envelope.partial = self.engine.partial();
+                        envelope
+                    }
+                    Err(err) => {
+                        self.engine.reset_fragment();
+                        envelope_from_error(err)
+                    }
+                }
+            }
+            Ok(None) => ServeEnvelope::success("none"),
+            Err(err) => {
+                self.engine.reset_fragment();
+                envelope_from_error(err)
+            }
+        }
+    }
+}
+
+fn first_token(input: &str) -> &str {
+    input
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(';')
+}
+
+fn is_unsupported_serve_meta(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "watch" | "clear" | "cls" | "c" | "exit" | "quit" | "shell"
+    )
 }
 
 impl Session {
@@ -514,6 +641,21 @@ mod tests {
         assert!(session.engine.is_memory());
         assert!(session.local_endpoint.is_none());
         assert_eq!(session.region, "us-west-1");
+    }
+
+    #[test]
+    fn execute_for_serve_keeps_session_and_skips_history() {
+        let mut session = Session::new_memory_headless("us-west-1");
+        let created = session.execute_for_serve("CREATE TABLE t (id STRING HASH KEY);");
+        assert!(created.ok, "{created:?}");
+        assert_eq!(created.kind, "status");
+        let scanned = session.execute_for_serve("SCAN * FROM t;");
+        assert!(scanned.ok, "{scanned:?}");
+        assert_eq!(scanned.kind, "items");
+        assert!(session.history.entries().is_empty());
+        let watch = session.execute_for_serve("watch");
+        assert!(!watch.ok);
+        assert_eq!(watch.error.as_ref().unwrap().code, "unsupported");
     }
 
     #[test]

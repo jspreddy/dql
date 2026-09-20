@@ -4,7 +4,8 @@ use crate::convert::{
 };
 use crate::throttle::RateLimit;
 use crate::{
-    BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
+    BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ProgressSink, ReadOperation,
+    ReadRequest,
 };
 use aws_sdk_dynamodb::types::{
     BillingMode as AwsBillingMode, GlobalSecondaryIndexUpdate, KeySchemaElement,
@@ -64,6 +65,7 @@ pub struct SdkBackend {
     rate_limit: Option<RateLimit>,
     region: String,
     config: SdkConfig,
+    progress: ProgressSink,
 }
 
 impl SdkBackend {
@@ -83,6 +85,7 @@ impl SdkBackend {
             rate_limit: None,
             region,
             config,
+            progress: ProgressSink::default(),
         })
     }
 
@@ -151,6 +154,11 @@ impl SdkBackend {
 
     fn block_on<F: std::future::Future>(&self, future: F) -> F::Output {
         self.runtime.block_on(future)
+    }
+
+    fn report_progress(&self, done: usize, total: Option<usize>, phase: &str) {
+        self.progress
+            .report(done as u64, total.map(|value| value as u64), phase);
     }
 
     fn invalidate_cache(&mut self, table: &str) {
@@ -400,6 +408,8 @@ impl DynamoBackend for SdkBackend {
         _options: &QueryOptions,
     ) -> Result<BackendResponse<usize>, EngineError> {
         let keys = self.keys_for_condition(table, condition)?;
+        let total = keys.len();
+        self.report_progress(0, Some(total), "write");
         let mut deleted = 0usize;
         let mut read_units = 0.0;
         let mut write_units = 0.0;
@@ -420,6 +430,7 @@ impl DynamoBackend for SdkBackend {
                 write_units += capacity.write_capacity_units().unwrap_or(0.0);
             }
             deleted += 1;
+            self.report_progress(deleted, Some(total), "write");
         }
         let capacity = Self::capacity_from("delete_item", table, read_units, write_units);
         self.apply_throttle(&capacity)?;
@@ -445,6 +456,8 @@ impl DynamoBackend for SdkBackend {
             .transpose()
             .map_err(|err| EngineError::Runtime(err.to_string()))?;
         let keys = self.keys_for_condition(table, condition)?;
+        let total = keys.len();
+        self.report_progress(0, Some(total), "write");
         let mut updated = 0usize;
         let mut read_units = 0.0;
         let mut write_units = 0.0;
@@ -467,6 +480,7 @@ impl DynamoBackend for SdkBackend {
                 }
             }
             updated += 1;
+            self.report_progress(updated, Some(total), "write");
         }
         let capacity = Self::capacity_from("update_item", table, read_units, write_units);
         self.apply_throttle(&capacity)?;
@@ -531,6 +545,7 @@ impl DynamoBackend for SdkBackend {
                 write_units += capacity.write_capacity_units().unwrap_or(0.0);
             }
             deleted += 1;
+            self.report_progress(deleted, Some(keys.len()), "write");
         }
         let capacity = Self::capacity_from("delete_item", table, read_units, write_units);
         self.apply_throttle(&capacity)?;
@@ -582,6 +597,7 @@ impl DynamoBackend for SdkBackend {
                 }
             }
             updated += 1;
+            self.report_progress(updated, Some(keys.len()), "write");
         }
         let capacity = Self::capacity_from("update_item", table, read_units, write_units);
         self.apply_throttle(&capacity)?;
@@ -754,6 +770,10 @@ impl DynamoBackend for SdkBackend {
         self.invalidate_cache(table);
         Ok(BackendResponse::new("update_table", table, message))
     }
+
+    fn set_progress_sink(&mut self, sink: ProgressSink) {
+        self.progress = sink;
+    }
 }
 
 impl SdkBackend {
@@ -918,6 +938,7 @@ impl SdkBackend {
             }
             last_key = response.last_evaluated_key().cloned();
             let fetched = if is_count { total_count } else { items.len() };
+            self.report_progress(fetched, options.limit, "read");
             if fetched >= item_limit || last_key.is_none() || scanned >= scan_limit {
                 break;
             }
@@ -999,6 +1020,7 @@ impl SdkBackend {
             }
             last_key = response.last_evaluated_key().cloned();
             let fetched = if is_count { total_count } else { items.len() };
+            self.report_progress(fetched, options.limit, "read");
             if fetched >= item_limit || last_key.is_none() || scanned >= scan_limit {
                 break;
             }

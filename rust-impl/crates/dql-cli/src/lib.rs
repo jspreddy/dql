@@ -4,13 +4,15 @@ pub mod error;
 pub mod help;
 pub mod history;
 pub mod meta;
+pub mod notebook;
 pub mod repl;
+pub mod serve;
 pub mod session;
 pub mod throttle;
 
 use args::{help_text, CliArgs};
 use clap::Parser;
-use color_eyre::eyre::WrapErr;
+use color_eyre::eyre::{bail, WrapErr};
 use session::Session;
 use std::io::{self, Write};
 
@@ -26,6 +28,8 @@ const KNOWN_FLAGS: &[&str] = &[
     "-p",
     "--port",
     "--json",
+    "--serve",
+    "--bind",
     "--version",
     "-h",
     "--help",
@@ -33,6 +37,9 @@ const KNOWN_FLAGS: &[&str] = &[
 
 pub fn run() -> color_eyre::Result<()> {
     let argv: Vec<String> = std::env::args().collect();
+    if notebook::is_notebook_invocation(&argv) {
+        return notebook::run(&argv);
+    }
     let mut args_iter = argv.iter().skip(1);
     while let Some(arg) = args_iter.next() {
         if arg.starts_with('-') {
@@ -42,7 +49,14 @@ pub fn run() -> color_eyre::Result<()> {
             }
             if matches!(
                 arg.as_str(),
-                "-c" | "--command" | "-r" | "--region" | "-H" | "--host" | "-p" | "--port"
+                "-c" | "--command"
+                    | "-r"
+                    | "--region"
+                    | "-H"
+                    | "--host"
+                    | "-p"
+                    | "--port"
+                    | "--bind"
             ) {
                 args_iter.next();
             }
@@ -59,6 +73,25 @@ pub fn run() -> color_eyre::Result<()> {
 
     if args.version {
         println!("{VERSION}");
+        return Ok(());
+    }
+
+    if args.bind.is_some() && !args.serve {
+        bail!("--bind requires --serve");
+    }
+    if args.serve && args.command.is_some() {
+        bail!("--serve cannot be used with -c/--command");
+    }
+
+    if args.serve {
+        let bind = match args.bind.as_deref() {
+            Some(spec) => {
+                Some(serve::parse_bind(spec).map_err(|err| color_eyre::eyre::eyre!("{err}"))?)
+            }
+            None => None,
+        };
+        let mut session = Session::new_for_serve(&args).wrap_err("failed to start session")?;
+        serve::run(&mut session, bind)?;
         return Ok(());
     }
 
