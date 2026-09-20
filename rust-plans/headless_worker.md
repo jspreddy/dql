@@ -62,7 +62,6 @@ This is the Rust half of “continuous evaluation”: one process, many execs, o
 - Parallel exec on one session (`Engine` is `&mut`).
 - Live `watch` dashboard or Rich bars.
 - SoS / cross-kernel variable transfer.
-- `dqlrs notebook` subcommand.
 - Compiling the engine into evcxr.
 
 ## Transport (v1): stdio **and** loopback `--bind`

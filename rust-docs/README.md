@@ -65,8 +65,9 @@ You can use `$HOME/.aws/credentials` or `AWS_ACCESS_KEY_ID` /
     --json               With -c, print results as JSON
     --serve              Headless JSON-lines worker (stdio, or --bind on loopback)
     --bind <ADDR>        With --serve, listen on loopback HOST:PORT (or PORT as 127.0.0.1:PORT)
-    --version            Print version and exit
--h, --help               Print help
+    notebook             Start JupyterLab with a DQL (Rust) kernel (this binary)
+    --version            Print the version and exit
+    -h, --help           Print help
 ```
 
 ## Statements and meta-commands
@@ -132,6 +133,29 @@ Unsupported meta (envelope `unsupported`, no crash): `watch`, `clear` / `cls` /
 This is **Rust-only**. Python `dql` has no `--serve`; notebook Python cells set
 `DQL_PROGRESS_JSON=1` so `dql -c` prints the same progress events on stderr.
 `-c --json` stays concatenated item objects (not this envelope).
+
+## Notebook (`dqlrs notebook`)
+
+After `cargo install`, the same binary can start JupyterLab:
+
+```bash
+dqlrs notebook --local --no-browser
+# same:
+dqlrs --notebook --local
+```
+
+This does **not** embed Jupyter (too large). On first run it creates
+`~/.local/share/dqlrs/notebook` (override with `DQLRS_NOTEBOOK_HOME`), installs
+JupyterLab + ipykernel into a venv (via `uv` or `python3 -m venv`), writes a
+**DQL (Rust)** kernelspec with `DQLRS_BIN` set to this executable, and launches
+Lab on `127.0.0.1`. Later runs reuse the venv.
+
+Needs Python 3.10+ or [uv](https://docs.astral.sh/uv/). `--local` points cells
+at DynamoDB Local (`localhost:8000`) and sets dummy AWS keys if they are unset.
+Start Local yourself; this command does not bundle it.
+
+Repo checkout alternative (Python + Rust kernels): [`../notebook/README.md`](../notebook/README.md)
+`./notebook/start.sh`.
 
 ## SAVE / LOAD
 

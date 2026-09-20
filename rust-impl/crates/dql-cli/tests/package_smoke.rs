@@ -120,6 +120,37 @@ fn smoke_help_mentions_serve_and_bind() {
         stderr.contains("--bind"),
         "help should mention --bind: {stderr}"
     );
+    assert!(
+        stderr.contains("notebook"),
+        "help should mention notebook: {stderr}"
+    );
+}
+
+#[test]
+fn smoke_notebook_help() {
+    let output = run_raw(&["notebook", "--help"]);
+    assert_success(&output, "dqlrs notebook --help");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("JupyterLab") && stderr.contains("DQL"),
+        "notebook help should describe JupyterLab: {stderr}"
+    );
+}
+
+#[test]
+fn smoke_notebook_flag_help() {
+    let output = run_raw(&["--notebook", "--help"]);
+    assert_success(&output, "dqlrs --notebook --help");
+}
+
+#[test]
+fn smoke_notebook_rejects_serve() {
+    let output = run(&["--notebook", "--serve"]);
+    assert!(
+        !output.status.success(),
+        "--notebook --serve should fail\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
