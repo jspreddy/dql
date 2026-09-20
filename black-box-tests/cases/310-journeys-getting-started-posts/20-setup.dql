@@ -1,2 +1,0 @@
-CREATE TABLE {{TABLE}} (username STRING HASH KEY, postid NUMBER RANGE KEY, ts NUMBER INDEX('ts-index'), THROUGHPUT (5, 5));
-INSERT INTO {{TABLE}} (username, postid, ts, text) VALUES ('steve', 1, 1386413481, 'Hey guys!'), ('steve', 2, 1386413516, 'Guys?'), ('drdice', 1, 1386413575, 'No one here');

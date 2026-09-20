@@ -1,1 +1,0 @@
-SELECT * FROM {{TABLE}} WHERE pk = 'acct-00' AND begins_with(sk, 'item#00') AND status = 'active' AND region = 'us-west';

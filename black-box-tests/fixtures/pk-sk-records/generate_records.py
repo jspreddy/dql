@@ -38,11 +38,8 @@ PLANTED = {
 }
 
 HERE = Path(__file__).resolve().parent
-SUITE_ROOT = HERE.parent.parent
 SEED_PATH = HERE / "seed.json"
-SELECT_EXPECTED_PATH = (
-    SUITE_ROOT / "cases" / "200-select-pk-sk-filters" / "40-expected.json"
-)
+SELECT_EXPECTED_PATH = HERE / "select_expected.json"
 
 
 def matches_select_query(row: dict) -> bool:

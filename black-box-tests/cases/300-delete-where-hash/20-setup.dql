@@ -1,2 +1,0 @@
-CREATE TABLE {{TABLE}} (id STRING HASH KEY);
-INSERT INTO {{TABLE}} (id) VALUES ('a'), ('b');
