@@ -250,7 +250,18 @@ def cli(request: pytest.FixtureRequest, isolation_home: Path, suite_root: Path) 
             report.print_note_step("Teardown", "skipped (--skip-teardown)")
             report.print_test_footer()
         return
+    errors: list[str] = []
     for name in helper.tables:
-        helper.oneshot("DROP TABLE IF EXISTS %s;" % name, check=False)
+        result = helper.oneshot(
+            "DROP TABLE IF EXISTS %s;" % name,
+            check=False,
+            step="Teardown",
+        )
+        if result.exitstatus != 0:
+            errors.append(
+                "%s exited %s\n%s" % (name, result.exitstatus, result.stdout)
+            )
     if verbose:
         report.print_test_footer()
+    if errors:
+        pytest.fail("teardown failed\n" + "\n".join(errors))
