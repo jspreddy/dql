@@ -9,5 +9,6 @@ dynamodb-local-metadata.json
 .venv
 .mypy_cache
 .pytest_cache
+__pycache__/
 /dist/
 /build/

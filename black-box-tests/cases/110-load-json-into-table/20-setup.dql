@@ -1,2 +1,0 @@
-CREATE TABLE {{TABLE}} (id STRING HASH KEY);
-LOAD 'seed.json' INTO {{TABLE}};
