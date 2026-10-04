@@ -191,13 +191,32 @@ mod tests {
     }
 
     fn try_read_json(stream: &mut TcpStream) -> io::Result<serde_json::Value> {
-        use std::io::BufRead;
-        let mut reader = BufReader::new(stream.try_clone()?);
-        let mut line = String::new();
-        let n = reader.read_line(&mut line)?;
-        if n == 0 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "eof"));
+        // Read one byte at a time. A BufReader would pull later lines into its
+        // buffer (progress events, then the envelope) and drop them on the
+        // next call, so the following read blocks until the suite times out.
+        use std::io::Read;
+        let mut line = Vec::new();
+        let mut byte = [0u8; 1];
+        loop {
+            match stream.read(&mut byte) {
+                Ok(0) => {
+                    if line.is_empty() {
+                        return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "eof"));
+                    }
+                    break;
+                }
+                Ok(_) => {
+                    if byte[0] == b'\n' {
+                        break;
+                    }
+                    line.push(byte[0]);
+                }
+                Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+                Err(err) => return Err(err),
+            }
         }
+        let line = String::from_utf8(line)
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
         serde_json::from_str(line.trim())
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
     }
@@ -270,6 +289,7 @@ mod tests {
     #[test]
     fn tcp_disconnect_keeps_session() {
         use std::io::Write;
+        use std::time::Duration;
 
         let probe = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = probe.local_addr().unwrap();
@@ -281,6 +301,9 @@ mod tests {
         });
 
         let mut client = wait_connect(addr);
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
         writeln!(
             client,
             r#"{{"op":"exec","dql":"CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a');"}}"#
@@ -298,7 +321,7 @@ mod tests {
         )
         .unwrap();
         client.flush().unwrap();
-        let selected = read_json_line(&mut client);
+        let selected = read_envelope(&mut client);
         assert_eq!(selected["ok"], true);
         assert_eq!(selected["kind"], "items");
         assert_eq!(selected["items"][0]["id"], "a");
