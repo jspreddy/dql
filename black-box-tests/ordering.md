@@ -56,15 +56,21 @@ fail, believe `create` first.
 flowchart TB
   subgraph g0 ["0xx — no case deps"]
     v["test_000_cli_version"]
+    serveHelp["test_000_cli_serve_help"]
+    nbHelp["test_000_cli_notebook_help"]
+    servePing["test_000_cli_serve_ping"]
     c["test_010_create_hash_key_table"]
   end
 
   subgraph g1 ["1xx — needs CREATE"]
     drop["test_100_drop_existing_table"]
+    dropIf["test_100_drop_if_exists_missing_table"]
     dump["test_100_dump_schema"]
     ls["test_100_cli_ls"]
     ins["test_110_insert_multiple_values"]
     load["test_110_load_json_into_table"]
+    bulk["test_110_insert_bulk_progress"]
+    jsonNoProg["test_110_insert_json_omits_progress"]
   end
 
   subgraph g2 ["2xx — needs group 1"]
@@ -85,10 +91,13 @@ flowchart TB
   end
 
   c --> drop
+  c --> dropIf
   c --> dump
   c --> ls
   c --> ins
   c --> load
+  c --> bulk
+  ins --> jsonNoProg
   ins --> selk
   ins --> selr
   ins --> scan
@@ -113,11 +122,17 @@ the `SELECT` tests it explains. `ANALYZE` actually runs `SELECT`, so it sits in
 | Test | Depends on |
 | --- | --- |
 | `test_000_cli_version` | — |
+| `test_000_cli_serve_help` | — (dqlrs only) |
+| `test_000_cli_notebook_help` | — (dqlrs only) |
+| `test_000_cli_serve_ping` | — (dqlrs only) |
 | `test_010_create_hash_key_table` | — |
 | `test_100_drop_existing_table` | `create` |
+| `test_100_drop_if_exists_missing_table` | `create` (CREATE after DROP IF EXISTS) |
 | `test_100_dump_schema` | `create` |
 | `test_100_cli_ls` | `create` |
 | `test_110_insert_multiple_values` | `create` |
+| `test_110_insert_bulk_progress` | `create` |
+| `test_110_insert_json_omits_progress` | `insert` |
 | `test_110_load_json_into_table` | `create` |
 | `test_200_select_hash_key` | `insert` |
 | `test_200_select_hash_range` | `insert` |
@@ -138,6 +153,14 @@ the `SELECT` tests it explains. `ANALYZE` actually runs `SELECT`, so it sits in
 - Setup: none. Test: `version`.
 - No tables, no DQL statements. First check that the binary runs.
 
+### `000` — serve and notebook flags (`dqlrs` only; Python `dql` skips)
+
+| Test | Test command | Notes |
+| --- | --- | --- |
+| `test_000_cli_serve_help` | `--help`; `--serve -c opt` | Help lists `--serve` / `--bind` / `notebook`; combo is rejected. |
+| `test_000_cli_notebook_help` | `notebook --help`; `--notebook --serve` | Help mentions JupyterLab; combo is rejected. |
+| `test_000_cli_serve_ping` | `dqlrs --serve` JSON-lines `ping` | No tables. Confirms the worker starts against Local. |
+
 ### `010` — `test_010_create_hash_key_table`
 
 - Test: `CREATE` + `INSERT` + `SELECT`. Expected output: the inserted row.
@@ -151,6 +174,7 @@ Same group. Each setup is only `CREATE TABLE`.
 | Test | Test command | Why after create |
 | --- | --- | --- |
 | `test_100_drop_existing_table` | `DROP TABLE` | Table must exist. |
+| `test_100_drop_if_exists_missing_table` | `DROP TABLE IF EXISTS` then `CREATE` in one `-c` | Missing table must not abort the CREATE (notebook starter cell). |
 | `test_100_dump_schema` | `DUMP SCHEMA` | Table must exist. |
 | `test_100_cli_ls` | `ls` | Lists the table created in setup. |
 
@@ -162,6 +186,8 @@ Same group. Write paths after `CREATE`. Neither needs the other. Both use
 | Test | Setup | Asserted command |
 | --- | --- | --- |
 | `test_110_insert_multiple_values` | `CREATE` | `INSERT` (multi-row) then `SELECT` |
+| `test_110_insert_bulk_progress` | `CREATE` | `INSERT` 30 rows; progress at 0 / 25 / 30 (`dqlrs --serve` or `DQL_PROGRESS_JSON=1`) |
+| `test_110_insert_json_omits_progress` | `CREATE` + `INSERT` | `-c --json` stdout has no `event:progress` lines |
 | `test_110_load_json_into_table` | `CREATE` + `LOAD` `fixtures/load-users/seed.json` | `SELECT` |
 
 ### `200` — select, scan

@@ -5,15 +5,17 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping, Optional
 
 import pexpect
 import pytest
 
 import report
-from compare import json_equal, parse_cli_json, stdout_matches
+from compare import json_equal, parse_cli_json, parse_progress_lines, stdout_matches
 
 ANSI_RE = re.compile(
     r"\x1b\[[0-9;?]*[ -/]*[@-~]"
@@ -193,3 +195,195 @@ class Cli:
                 % (result.stdout, expected)
             )
         return result
+
+    def require_dqlrs(self) -> None:
+        if self.label != "dqlrs":
+            pytest.skip("requires dqlrs")
+
+    def run_args(self, args: list[str], *, check: bool = True) -> Result:
+        """Spawn the binary with extra argv. stdout is stdout+stderr (help is often stderr)."""
+        argv = [str(self.binary)] + list(args)
+        try:
+            completed = subprocess.run(
+                argv,
+                capture_output=True,
+                text=True,
+                env=dict(self.env),
+                cwd=str(self.cwd),
+                timeout=self.timeout,
+            )
+        except subprocess.TimeoutExpired as err:
+            pytest.fail("timed out running %s" % " ".join(argv))
+            raise err
+        combined = "%s%s" % (completed.stdout or "", completed.stderr or "")
+        result = Result(
+            stdout=strip_ansi(combined),
+            exitstatus=completed.returncode,
+            argv=argv,
+        )
+        if self.verbose:
+            report.print_step("Test", " ".join(argv), "text")
+            report.print_step("Output", result.stdout, "text")
+        if check and result.exitstatus != 0:
+            pytest.fail(
+                "CLI exited %s\nargv: %s\n--- output ---\n%s"
+                % (result.exitstatus, " ".join(argv), result.stdout)
+            )
+        return result
+
+    def progress_json_oneshot(self, script: str) -> tuple[list[Any], Result]:
+        """Run `-c` with DQL_PROGRESS_JSON=1 (Python notebook path). Progress is on stderr."""
+        env = dict(self.env)
+        env["DQL_PROGRESS_JSON"] = "1"
+        argv = [
+            str(self.binary),
+            "-H",
+            self.host,
+            "-p",
+            str(self.port),
+            "-r",
+            self.region,
+            "-c",
+            script,
+        ]
+        try:
+            completed = subprocess.run(
+                argv,
+                capture_output=True,
+                text=True,
+                env=env,
+                cwd=str(self.cwd),
+                timeout=self.timeout,
+            )
+        except subprocess.TimeoutExpired as err:
+            pytest.fail("timed out running progress -c")
+            raise err
+        stdout = strip_ansi(completed.stdout or "")
+        stderr = strip_ansi(completed.stderr or "")
+        result = Result(stdout=stdout, exitstatus=completed.returncode, argv=argv)
+        events = parse_progress_lines(stderr)
+        if self.verbose:
+            report.print_step("Test", script, "sql")
+            report.print_step("Output", stdout, "text")
+            report.print_step("stderr", stderr, "json" if events else "text")
+        if result.exitstatus != 0:
+            pytest.fail(
+                "CLI exited %s\nargv: %s\n--- stdout ---\n%s\n--- stderr ---\n%s"
+                % (result.exitstatus, " ".join(argv), stdout, stderr)
+            )
+        return events, result
+
+    @contextmanager
+    def serve(self) -> Iterator["ServeSession"]:
+        self.require_dqlrs()
+        session = ServeSession(self)
+        try:
+            yield session
+        finally:
+            session.close()
+
+
+class ServeSession:
+    """One `dqlrs --serve` child. JSON-lines on stdio; not a TTY."""
+
+    def __init__(self, cli: Cli) -> None:
+        self.cli = cli
+        self._next_id = 1
+        self._closed = False
+        argv = [
+            str(cli.binary),
+            "--serve",
+            "-H",
+            cli.host,
+            "-p",
+            str(cli.port),
+            "-r",
+            cli.region,
+        ]
+        try:
+            self.proc = subprocess.Popen(
+                argv,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=dict(cli.env),
+                cwd=str(cli.cwd),
+                bufsize=1,
+            )
+        except OSError as exc:
+            pytest.fail("failed to spawn dqlrs --serve: %s" % exc)
+        ping = self.request("ping")
+        if not ping.get("ok"):
+            self.close()
+            pytest.fail("dqlrs --serve ping failed: %s" % ping)
+
+    def request(self, op: str, dql: Optional[str] = None) -> dict[str, Any]:
+        _progress, envelope = self._exchange(op, dql)
+        return envelope
+
+    def exec_dql(self, dql: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        return self._exchange("exec", dql)
+
+    def _exchange(
+        self, op: str, dql: Optional[str]
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        if self.proc.stdin is None or self.proc.stdout is None:
+            pytest.fail("dqlrs --serve has no stdio")
+        payload: dict[str, Any] = {"id": str(self._next_id), "op": op}
+        self._next_id += 1
+        if dql is not None:
+            payload["dql"] = dql
+        self.proc.stdin.write(json.dumps(payload) + "\n")
+        self.proc.stdin.flush()
+        progress: list[dict[str, Any]] = []
+        while True:
+            line = self.proc.stdout.readline()
+            if line == "":
+                stderr = ""
+                if self.proc.stderr:
+                    stderr = self.proc.stderr.read() or ""
+                pytest.fail(
+                    "dqlrs --serve exited %s: %s" % (self.proc.poll(), stderr.strip())
+                )
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError as exc:
+                pytest.fail("invalid serve line %r: %s" % (line, exc))
+            if not isinstance(obj, dict):
+                pytest.fail("serve line is not an object: %r" % line)
+            if obj.get("event") == "progress":
+                progress.append(obj)
+                continue
+            if "ok" in obj:
+                if self.cli.verbose:
+                    if dql:
+                        report.print_step("Test", dql, "sql")
+                    if progress:
+                        report.print_step(
+                            "Output",
+                            "\n".join(json.dumps(item) for item in progress),
+                            "json",
+                        )
+                    report.print_step("Output", json.dumps(obj), "json")
+                return progress, obj
+            pytest.fail("unexpected serve line: %s" % line.strip())
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        proc = self.proc
+        if proc.poll() is not None:
+            return
+        try:
+            if proc.stdin:
+                proc.stdin.write(json.dumps({"op": "shutdown"}) + "\n")
+                proc.stdin.flush()
+        except OSError:
+            pass
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
