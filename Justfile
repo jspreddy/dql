@@ -159,6 +159,6 @@ notebook-test *args:
         ./notebook-tests/run.sh
     fi
 
-# Python, Rust, and black-box checks from VERIFICATION.md
+# Python, Rust, black-box, and Playwright notebook checks from VERIFICATION.md
 [group('tests')]
-verify: dynamo py rust black-box
+verify: dynamo py rust black-box notebook-test
