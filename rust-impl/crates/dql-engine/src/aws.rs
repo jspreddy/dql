@@ -7,6 +7,7 @@ use crate::{
     BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ProgressSink, ReadOperation,
     ReadRequest,
 };
+use aws_sdk_dynamodb::error::ProvideErrorMetadata;
 use aws_sdk_dynamodb::types::{
     BillingMode as AwsBillingMode, GlobalSecondaryIndexUpdate, KeySchemaElement,
     KeyType as AwsKeyType, Projection, ProjectionType, ProvisionedThroughput,
@@ -190,8 +191,40 @@ impl SdkBackend {
         }
     }
 
-    fn aws_error(err: impl std::fmt::Display) -> EngineError {
-        EngineError::Runtime(err.to_string())
+    fn aws_error<E>(err: E) -> EngineError
+    where
+        E: ProvideErrorMetadata + std::fmt::Display + std::fmt::Debug,
+    {
+        EngineError::Runtime(aws_error_text(&err))
+    }
+
+    fn aws_code_is<E>(err: &E, code: &str) -> bool
+    where
+        E: ProvideErrorMetadata + std::fmt::Display + std::fmt::Debug,
+    {
+        err.code() == Some(code)
+            || err.message().is_some_and(|message| message.contains(code))
+            || format!("{err:?}").contains(code)
+    }
+
+    fn aws_message_contains<E>(err: &E, needle: &str) -> bool
+    where
+        E: ProvideErrorMetadata + std::fmt::Display + std::fmt::Debug,
+    {
+        err.message().is_some_and(|message| message.contains(needle))
+            || format!("{err:?}").contains(needle)
+    }
+}
+
+fn aws_error_text<E>(err: &E) -> String
+where
+    E: ProvideErrorMetadata + std::fmt::Display,
+{
+    match (err.code(), err.message()) {
+        (Some(code), Some(message)) => format!("{code}: {message}"),
+        (Some(code), None) => code.to_string(),
+        (None, Some(message)) => message.to_string(),
+        (None, None) => err.to_string(),
     }
 }
 
@@ -229,7 +262,7 @@ impl DynamoBackend for SdkBackend {
                     })?;
                     Ok(Some(table_meta_from_description(description)?))
                 }
-                Err(err) if err.to_string().contains("ResourceNotFoundException") => Ok(None),
+                Err(err) if Self::aws_code_is(&err, "ResourceNotFoundException") => Ok(None),
                 Err(err) => Err(Self::aws_error(err)),
             }
         })
@@ -252,7 +285,7 @@ impl DynamoBackend for SdkBackend {
                     format!("Created table '{name}'"),
                 ))
             }
-            Err(err) if if_not_exists && err.to_string().contains("ResourceInUseException") => {
+            Err(err) if if_not_exists && Self::aws_code_is(&err, "ResourceInUseException") => {
                 Ok(BackendResponse::new(
                     "create_table",
                     &name,
@@ -279,7 +312,7 @@ impl DynamoBackend for SdkBackend {
                     format!("Dropped table '{table}'"),
                 ))
             }
-            Err(err) if if_exists && err.to_string().contains("ResourceNotFoundException") => {
+            Err(err) if if_exists && Self::aws_code_is(&err, "ResourceNotFoundException") => {
                 Ok(BackendResponse::new(
                     "delete_table",
                     table,
@@ -676,8 +709,8 @@ impl DynamoBackend for SdkBackend {
                     Ok(_) => format!("Dropped index '{name}' from '{table}'"),
                     Err(err)
                         if *if_exists
-                            && (err.to_string().contains("ResourceNotFoundException")
-                                || err.to_string().contains("does not exist")) =>
+                            && (Self::aws_code_is(&err, "ResourceNotFoundException")
+                                || Self::aws_message_contains(&err, "does not exist")) =>
                     {
                         format!("Index '{name}' did not exist on '{table}'")
                     }
@@ -760,7 +793,11 @@ impl DynamoBackend for SdkBackend {
                 });
                 match result {
                     Ok(_) => format!("Created global index '{}' on '{table}'", index.name),
-                    Err(err) if *if_not_exists && err.to_string().contains("already exists") => {
+                    Err(err)
+                        if *if_not_exists
+                            && (Self::aws_code_is(&err, "ResourceInUseException")
+                                || Self::aws_message_contains(&err, "already exists")) =>
+                    {
                         format!("Index '{}' already exists on '{table}'", index.name)
                     }
                     Err(err) => return Err(Self::aws_error(err)),

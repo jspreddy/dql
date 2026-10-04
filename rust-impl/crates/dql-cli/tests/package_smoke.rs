@@ -293,3 +293,57 @@ fn smoke_dynamodb_local_serve_stdio() {
     let status = child.wait().unwrap();
     assert!(status.success(), "serve should exit 0 after shutdown");
 }
+
+#[test]
+fn smoke_dynamodb_local_drop_if_exists_missing() {
+    if !local_available() {
+        if require_local() {
+            panic!("DQL_REQUIRE_LOCAL is set but DynamoDB Local is not reachable");
+        }
+        eprintln!("skipping: DynamoDB Local not available");
+        return;
+    }
+
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::Stdio;
+
+    let host = std::env::var("DQL_LOCAL_HOST").unwrap_or_else(|_| "localhost".to_string());
+    let port = std::env::var("DQL_LOCAL_PORT").unwrap_or_else(|_| "8000".to_string());
+    let table = unique_table("pkg_drop_if");
+    let mut child = Command::new(dql_bin())
+        .args(["--serve", "-H", &host, "-p", &port])
+        .env_remove("DQL_BACKEND")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn dqlrs --serve");
+    let mut stdin = child.stdin.take().expect("stdin");
+    let mut stdout = BufReader::new(child.stdout.take().expect("stdout"));
+    let dql = format!(
+        "DROP TABLE IF EXISTS {table};\nCREATE TABLE {table} (id STRING HASH KEY);\nDROP TABLE IF EXISTS {table};"
+    );
+    writeln!(
+        stdin,
+        r#"{{"id":"1","op":"exec","dql":{}}}"#,
+        serde_json::to_string(&dql).unwrap()
+    )
+    .unwrap();
+    stdin.flush().unwrap();
+    let reply = loop {
+        let mut line = String::new();
+        stdout.read_line(&mut line).unwrap();
+        let value: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+        if value.get("ok").is_some() {
+            break value;
+        }
+    };
+    assert_eq!(
+        reply["ok"], true,
+        "DROP IF EXISTS of a missing table should succeed: {reply}"
+    );
+    writeln!(stdin, r#"{{"op":"shutdown"}}"#).unwrap();
+    drop(stdin);
+    let status = child.wait().unwrap();
+    assert!(status.success(), "serve should exit 0 after shutdown");
+}

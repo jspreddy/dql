@@ -33,3 +33,29 @@ fn create_insert_select_drop_against_local() {
         "table {table} should be dropped"
     );
 }
+
+#[test]
+fn drop_if_exists_missing_then_create_against_local() {
+    if skip_if_no_local() {
+        return;
+    }
+    let Some(mut harness) = LocalHarness::try_new() else {
+        return;
+    };
+    let table = LocalHarness::unique_table_name("dql_drop_if");
+    harness
+        .query(&format!(
+            "DROP TABLE IF EXISTS {table};
+             CREATE TABLE {table} (id STRING HASH KEY);
+             DROP TABLE IF EXISTS {table};"
+        ))
+        .expect("DROP IF EXISTS of a missing table should not fail");
+    let names = harness
+        .engine
+        .table_names()
+        .expect("list tables should succeed");
+    assert!(
+        !names.iter().any(|name| name == &table),
+        "table {table} should be dropped"
+    );
+}
