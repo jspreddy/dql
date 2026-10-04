@@ -34,6 +34,11 @@ py-test:
 py-build:
     cd "{{justfile_directory()}}/py-impl" && uv build
 
+# Install dql as an editable uv tool (~/.local/bin/dql)
+[group('python')]
+py-install:
+    cd "{{justfile_directory()}}/py-impl" && uv tool install --python 3.9 --editable --force .
+
 # Sync, lint, test, and build the Python package
 [group('python')]
 py: py-sync py-lint py-test py-build
@@ -67,6 +72,11 @@ rust-local:
 [group('rust')]
 rust-build:
     cd "{{justfile_directory()}}/rust-impl" && cargo build --release -p dql-cli
+
+# Install dqlrs to ~/.local/bin
+[group('rust')]
+rust-install:
+    cd "{{justfile_directory()}}/rust-impl" && cargo install --path crates/dql-cli --locked --force --root "{{home_directory()}}/.local"
 
 # Smoke-test the release dqlrs binary (fails if DynamoDB Local is down)
 [group('rust')]
@@ -179,3 +189,9 @@ notebook-test-slow *args:
 # Python, Rust, black-box, and Playwright notebook checks from VERIFICATION.md
 [group('tests')]
 verify: dynamo py rust black-box notebook-test
+
+# Sync, lint, test, and build Python and Rust
+prep: py rust
+
+# Install dql and dqlrs onto ~/.local/bin
+install: py-install rust-install
