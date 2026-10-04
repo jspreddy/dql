@@ -1,0 +1,7 @@
+.venv/
+.pytest_cache/
+__pycache__/
+test-results/
+playwright-report/
+.jupyter-runtime/
+*.log

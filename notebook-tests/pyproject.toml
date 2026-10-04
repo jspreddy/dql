@@ -1,0 +1,19 @@
+[project]
+name = "dql-notebook-tests"
+version = "0.0.0"
+description = "Playwright tests for the DQL JupyterLab notebook"
+requires-python = ">=3.10"
+dependencies = [
+    "playwright>=1.49",
+    "pytest>=8",
+    "pytest-playwright>=0.6",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --browser chromium --screenshot=only-on-failure --video=retain-on-failure"
+norecursedirs = [".venv", "test-results", "playwright-report", "fixtures"]
