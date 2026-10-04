@@ -99,7 +99,7 @@ Details and how to add a test: [`black-box-tests/README.md`](black-box-tests/REA
 
 ## One-shot (copy-paste from repo root)
 
-Foreground Local would block, so this starts Java in the same shell, waits for port 8000, then runs both trees and the black-box acceptance suite:
+The same sequence is `just verify` ([`Justfile`](Justfile)). Foreground Local would block, so this starts Java in the same shell, waits for port 8000, then runs both trees and the black-box acceptance suite:
 
 ```bash
 set -euo pipefail

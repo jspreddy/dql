@@ -149,4 +149,4 @@ cd rust-impl
 cargo install --path crates/dql-cli --locked --root ~/.local
 ```
 
-Run local verifications: [`VERIFICATION.md`](VERIFICATION.md).
+Run local verifications: [`VERIFICATION.md`](VERIFICATION.md). From the repo root, [`just`](https://just.systems/) is the entry point for those tasks (`just` lists them, `just verify` runs the full check).

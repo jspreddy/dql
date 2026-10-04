@@ -10,6 +10,9 @@ Requires [uv](https://docs.astral.sh/uv/), a built `dqlrs`, and DynamoDB Local
 on port 8000.
 
 ```bash
+just notebook-test -- --list
+just notebook-test -- --headed -- tests/test_dql_notebook.py::test_launcher_lists_dql_kernels
+
 ./notebook-tests/run.sh --start-local
 ./notebook-tests/run.sh --list            # print each test id
 ./notebook-tests/run.sh --headed          # show the Chrome window

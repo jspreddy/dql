@@ -1,0 +1,164 @@
+# Dev tasks for the DQL repo. Run `just` from anywhere in the checkout.
+
+# List dev tasks
+default:
+    @just --list
+
+# Start DynamoDB Local in the background when port 8000 is down
+[group('local')]
+dynamo:
+    cd "{{justfile_directory()}}" && ./scripts/install_dynamodb_local.sh background
+
+# Sync the Python dev environment
+[group('python')]
+py-sync:
+    cd "{{justfile_directory()}}/py-impl" && uv sync --dev
+
+# Lint Python (mypy, isort, black, pylint)
+[group('python')]
+py-lint:
+    cd "{{justfile_directory()}}/py-impl" && uv run task lint
+
+# Format Python with isort and black
+[group('python')]
+py-fix:
+    cd "{{justfile_directory()}}/py-impl" && uv run task fix
+
+# Run Python tests (DynamoDB Local on port 8000)
+[group('python')]
+py-test:
+    cd "{{justfile_directory()}}/py-impl" && uv run task test
+
+# Build the Python sdist and wheel
+[group('python')]
+py-build:
+    cd "{{justfile_directory()}}/py-impl" && uv build
+
+# Sync, lint, test, and build the Python package
+[group('python')]
+py: py-sync py-lint py-test py-build
+
+# Fetch Rust crates from Cargo.lock
+[group('rust')]
+rust-fetch:
+    cd "{{justfile_directory()}}/rust-impl" && cargo fetch --locked
+
+# Check Rust formatting
+[group('rust')]
+rust-fmt:
+    cd "{{justfile_directory()}}/rust-impl" && cargo fmt --check
+
+# Lint Rust with clippy
+[group('rust')]
+rust-clippy:
+    cd "{{justfile_directory()}}/rust-impl" && cargo clippy --workspace --all-targets -- -D warnings
+
+# Run Rust workspace tests (DynamoDB Local on port 8000 for integration tests)
+[group('rust')]
+rust-test:
+    cd "{{justfile_directory()}}/rust-impl" && cargo test --workspace
+
+# Run Rust DynamoDB Local smoke and parity tests
+[group('rust')]
+rust-local:
+    cd "{{justfile_directory()}}/rust-impl" && cargo test -p dql-engine --test dynamodb_local_smoke && cargo test -p dql-engine --test dynamodb_local_parity
+
+# Build the release dqlrs binary
+[group('rust')]
+rust-build:
+    cd "{{justfile_directory()}}/rust-impl" && cargo build --release -p dql-cli
+
+# Smoke-test the release dqlrs binary (fails if DynamoDB Local is down)
+[group('rust')]
+rust-smoke:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    export DQL_BIN="{{justfile_directory()}}/rust-impl/target/release/dqlrs"
+    export DQL_REQUIRE_LOCAL=1
+    ./scripts/rust-smoke-test.sh
+
+# Fetch, lint, test, build, and smoke-test Rust
+[group('rust')]
+rust: rust-fetch rust-fmt rust-clippy rust-test rust-local rust-build rust-smoke
+
+# Run black-box acceptance tests. Extra args are passed to black-box-tests/run.sh.
+[group('tests')]
+black-box *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    root="{{justfile_directory()}}"
+    if [[ -x "$root/py-impl/.venv/bin/dql" ]]; then
+        export DQL_BIN="$root/py-impl/.venv/bin/dql"
+    fi
+    if [[ -x "$root/rust-impl/target/release/dqlrs" ]]; then
+        export DQLRS_BIN="$root/rust-impl/target/release/dqlrs"
+    fi
+    # `just recipe -- --flag` includes the separator in the variadic args.
+    args=({{args}})
+    if [[ ${#args[@]} -gt 1 && "${args[0]}" == "--" ]]; then
+        args=("${args[@]:1}")
+    elif [[ ${#args[@]} -eq 1 && "${args[0]}" == "--" ]]; then
+        args=()
+    fi
+    if [[ ${#args[@]} -gt 0 ]]; then
+        ./black-box-tests/run.sh "${args[@]}"
+    else
+        ./black-box-tests/run.sh
+    fi
+
+# Dry-run the notebook env and kernel registration
+[group('notebook')]
+notebook-dry-run:
+    cd "{{justfile_directory()}}" && ./notebook/start.sh --dry-run
+
+# Start JupyterLab. Extra args are passed to notebook/start.sh.
+[group('notebook')]
+notebook *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    args=({{args}})
+    if [[ ${#args[@]} -gt 1 && "${args[0]}" == "--" ]]; then
+        args=("${args[@]:1}")
+    elif [[ ${#args[@]} -eq 1 && "${args[0]}" == "--" ]]; then
+        args=()
+    fi
+    if [[ ${#args[@]} -gt 0 ]]; then
+        ./notebook/start.sh "${args[@]}"
+    else
+        ./notebook/start.sh
+    fi
+
+# Playwright notebook tests. Flags need a `--` separator: just notebook-test -- --headed -- tests/test_dql_notebook.py::test_launcher_lists_dql_kernels
+[group('notebook')]
+notebook-test *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    root="{{justfile_directory()}}"
+    if [[ -x "$root/py-impl/.venv/bin/dql" ]]; then
+        export DQL_BIN="$root/py-impl/.venv/bin/dql"
+    fi
+    if [[ -x "$root/rust-impl/target/release/dqlrs" ]]; then
+        export DQLRS_BIN="$root/rust-impl/target/release/dqlrs"
+    elif [[ -x "$root/rust-impl/target/debug/dqlrs" ]]; then
+        export DQLRS_BIN="$root/rust-impl/target/debug/dqlrs"
+    fi
+    # `just recipe -- --flag` includes the separator in the variadic args.
+    args=({{args}})
+    if [[ ${#args[@]} -gt 1 && "${args[0]}" == "--" ]]; then
+        args=("${args[@]:1}")
+    elif [[ ${#args[@]} -eq 1 && "${args[0]}" == "--" ]]; then
+        args=()
+    fi
+    if [[ ${#args[@]} -gt 0 ]]; then
+        ./notebook-tests/run.sh "${args[@]}"
+    else
+        ./notebook-tests/run.sh
+    fi
+
+# Python, Rust, and black-box checks from VERIFICATION.md
+[group('tests')]
+verify: dynamo py rust black-box
