@@ -22,6 +22,7 @@ from typing import (
     Callable,
     Dict,
     List,
+    Mapping,
     Optional,
     Tuple,
     Union,
@@ -84,7 +85,7 @@ PROGRESS_JSON_ENV = "DQL_PROGRESS_JSON"
 WRITE_PROGRESS_CHUNK = 25
 
 
-def progress_json_enabled(env=None) -> bool:
+def progress_json_enabled(env: Optional[Mapping[str, str]] = None) -> bool:
     """True when DQL should emit JSON progress lines on stderr."""
     env = os.environ if env is None else env
     value = (env.get(PROGRESS_JSON_ENV) or "").strip().lower()
@@ -216,8 +217,10 @@ class Engine(object):
         self.rate_limit = None
         self._encoder = json.JSONEncoder(separators=(",", ":"), default=default)
         self.caution_callback: Optional[Callable] = None
-        self.progress_callback: Optional[Callable[[int, Optional[int], str], None]] = None
-        self._progress_display = None
+        self.progress_callback: Optional[Callable[[int, Optional[int], str], None]] = (
+            None
+        )
+        self._progress_display: Any = None
         self._identity = None
         self._parsed_information = {}
 

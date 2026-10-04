@@ -33,8 +33,14 @@ def cli():
 @pytest.fixture(scope="session", autouse=True)
 def cli_window_size():
     """
-    Set the console width to 200 characters for test consistency.
+    Set the console size to 200x50 for test consistency.
+
+    Rich ignores a width override unless height is set as well, and otherwise
+    falls back to the real terminal width.
     """
-    rich.get_console().width = 200
+    console = rich.get_console()
+    console.width = 200
+    console.height = 50
     yield
-    rich.get_console().width = None  # type: ignore[assignment]
+    console.width = None  # type: ignore[assignment]
+    console.height = None  # type: ignore[assignment]
