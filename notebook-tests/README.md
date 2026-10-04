@@ -15,9 +15,12 @@ on port 8000.
 ./notebook-tests/run.sh --skip-install    # envs and Chromium already installed
 ```
 
-`run.sh` syncs the notebook env, registers the DQL kernels, installs the
-Playwright Chromium build, and runs pytest. Screenshots and videos are kept
-for failures under `notebook-tests/test-results/`.
+`run.sh` syncs the notebook env, registers the DQL kernels, and runs pytest
+through Playwright. When Google Chrome is installed, tests use that browser
+(`--browser-channel chrome`). Otherwise `run.sh` downloads Playwright's
+Chromium build (`uv run playwright install chromium`). Failure screenshots
+are kept under `notebook-tests/test-results/`. Video needs
+`uv run playwright install ffmpeg` and `--video=retain-on-failure`.
 
 ## What a test can do
 

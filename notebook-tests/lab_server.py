@@ -127,6 +127,7 @@ def _ensure_kernels(python: Path) -> None:
         check=True,
         cwd=NOTEBOOK_DIR,
         stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
 
 

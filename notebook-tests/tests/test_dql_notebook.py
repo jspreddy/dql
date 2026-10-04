@@ -11,9 +11,9 @@ def test_launcher_lists_dql_kernels(lab_page, lab) -> None:
     open_lab(lab_page, lab)
     launcher = lab_page.locator(".jp-Launcher")
     expect(launcher).to_be_visible()
-    expect(launcher.get_by_text("DQL (Rust)", exact=True)).to_be_visible()
-    expect(launcher.get_by_text("DQL (Python)", exact=True)).to_be_visible()
-    expect(launcher.get_by_text("Python (dql)", exact=True)).to_be_visible()
+    # Notebook and Console sections each list the kernel.
+    for name in ("DQL (Rust)", "DQL (Python)", "Python (dql)"):
+        expect(launcher.get_by_text(name, exact=True).first).to_be_visible()
 
 
 def test_rust_kernel_runs_select(lab_page, lab) -> None:

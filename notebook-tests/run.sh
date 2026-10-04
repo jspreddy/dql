@@ -84,11 +84,24 @@ if [[ -z "${DQL_BIN:-}" && -x "$REPO_ROOT/py-impl/.venv/bin/dql" ]]; then
   export DQL_BIN="$REPO_ROOT/py-impl/.venv/bin/dql"
 fi
 
+# Prefer installed Google Chrome. Playwright's CDN is blocked in some environments.
+BROWSER_ARGS=()
+if command -v google-chrome >/dev/null 2>&1 || command -v google-chrome-stable >/dev/null 2>&1; then
+  BROWSER_ARGS=(--browser-channel chrome)
+fi
+
 if [[ "$SKIP_INSTALL" -eq 0 ]]; then
   "$REPO_ROOT/notebook/start.sh" --dry-run --local
   cd "$SUITE_ROOT"
   uv sync
-  uv run playwright install chromium
+  if [[ ${#BROWSER_ARGS[@]} -eq 0 ]]; then
+    uv run playwright install chromium
+  else
+    echo "Using installed Google Chrome (Playwright --browser-channel chrome)."
+  fi
+elif [[ ${#BROWSER_ARGS[@]} -eq 0 ]]; then
+  echo "Google Chrome was not found. Install it, or run without --skip-install so Playwright can download Chromium." >&2
+  exit 1
 fi
 
 cd "$SUITE_ROOT"
@@ -96,4 +109,4 @@ if [[ "$HEADED" -eq 1 ]]; then
   PYTEST_ARGS+=(--headed)
 fi
 
-exec uv run pytest "${PYTEST_ARGS[@]}"
+exec uv run pytest "${BROWSER_ARGS[@]}" "${PYTEST_ARGS[@]}"

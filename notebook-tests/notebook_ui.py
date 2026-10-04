@@ -62,7 +62,7 @@ def run_code_cell(page: Page, index: int) -> str:
     page.keyboard.press("Shift+Enter")
     prompt = cell.locator(".jp-InputPrompt")
     expect(prompt).to_have_text(re.compile(r"\[\d+\]"), timeout=90_000)
-    output = cell.locator(".jp-OutputArea-output")
-    if output.count() == 0:
+    area = cell.locator(".jp-OutputArea")
+    if area.count() == 0:
         return ""
-    return output.inner_text()
+    return area.first.inner_text()

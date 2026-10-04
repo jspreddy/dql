@@ -15,5 +15,5 @@ package = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-ra --browser chromium --screenshot=only-on-failure --video=retain-on-failure"
+addopts = "-ra --browser chromium --screenshot=only-on-failure --video=off"
 norecursedirs = [".venv", "test-results", "playwright-report", "fixtures"]
