@@ -323,7 +323,7 @@ wheels = [
 
 [[package]]
 name = "dql"
-version = "0.6.4.dev12"
+version = "0.6.5.dev0"
 source = { editable = "../py-impl" }
 dependencies = [
     { name = "botocore" },

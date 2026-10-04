@@ -24,7 +24,7 @@ copyright = u'2013, Steven Arcangeli'
 # Sphinx linkcode points at this fork (jspreddy/dql), not upstream stevearc/dql.
 github_user = u'jspreddy'
 
-release = '0.6.4-dev12'
+release = '0.6.5-dev0'
 version = '.'.join(release.split('.')[:2])
 
 exclude_patterns = ['_build']

@@ -8,7 +8,7 @@ module-root = ""
 
 [project]
 name = "dql"
-version = "0.6.4-dev12"
+version = "0.6.5-dev0"
 description = "DynamoDB Query Language"
 authors = [{ name = "Steven Arcangeli", email = "stevearc@stevearc.com" }]
 maintainers = [{ name = "Sai Jonnala", email = "jspreddy@users.noreply.github.com" }]
