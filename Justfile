@@ -159,6 +159,23 @@ notebook-test *args:
         ./notebook-tests/run.sh
     fi
 
+# Playwright notebook tests marked slow. Headed, with 500ms between actions unless --slowmo is set.
+[group('notebook')]
+notebook-test-slow *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # `just recipe -- --flag` includes the separator in the variadic args.
+    args=({{args}})
+    if [[ ${#args[@]} -gt 0 && "${args[0]}" == "--" ]]; then
+        args=("${args[@]:1}")
+    fi
+    # --slowmo implies --headed. A later --slowmo in args replaces 500.
+    if [[ ${#args[@]} -gt 0 ]]; then
+        just notebook-test -- --slowmo 500 "${args[@]}" -m slow
+    else
+        just notebook-test -- --slowmo 500 -m slow
+    fi
+
 # Python, Rust, black-box, and Playwright notebook checks from VERIFICATION.md
 [group('tests')]
 verify: dynamo py rust black-box notebook-test

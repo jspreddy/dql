@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from playwright.sync_api import expect
 
 from notebook_ui import open_lab, open_smoke_notebook, run_code_cell
@@ -16,6 +17,7 @@ def test_launcher_lists_dql_kernels(lab_page, lab) -> None:
         expect(launcher.get_by_text(name, exact=True).first).to_be_visible()
 
 
+@pytest.mark.slow
 def test_rust_kernel_runs_select(lab_page, lab) -> None:
     open_smoke_notebook(lab_page, lab)
 
