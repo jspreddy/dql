@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from dql_notebook_kernel.progress import parse_progress_line, progress_bundle
+from dql_notebook_kernel.progress import (
+    ProgressUpdater,
+    complete_counts,
+    parse_progress_line,
+    progress_bundle,
+)
 from dql_notebook_kernel.runner import format_envelope, use_serve
 from dql_notebook_kernel.serve_client import ServeSession
 
@@ -26,6 +31,44 @@ def test_progress_bundle_has_html_bar():
     assert "25" in bundle["text/plain"]
     assert "<progress" in bundle["text/html"]
     assert 'value="25"' in bundle["text/html"]
+
+
+def test_indeterminate_html_has_no_value():
+    html = progress_bundle(33, None, "read")["text/html"]
+    assert "<progress " in html
+    assert "value=" not in html
+
+
+def test_complete_counts_makes_unknown_total_determinate():
+    assert complete_counts(33, None) == (33, 33)
+    assert complete_counts(25, 30) == (25, 30)
+    assert complete_counts(40, 30) == (30, 30)
+    assert complete_counts(0, None) == (0, 1)
+
+
+def test_progress_updater_finish_stops_indeterminate_bar():
+    emitted: list[tuple[bool, str]] = []
+
+    def emit(update: bool, bundle: dict) -> None:
+        emitted.append((update, bundle["text/html"]))
+
+    updater = ProgressUpdater(emit)
+    updater(33, None, "read")
+    assert emitted[0][0] is False
+    assert "value=" not in emitted[0][1]
+    updater.finish()
+    assert emitted[-1][0] is True
+    assert 'value="33"' in emitted[-1][1]
+    assert 'max="33"' in emitted[-1][1]
+
+
+def test_progress_updater_finish_skips_already_complete_write():
+    emitted: list[bool] = []
+    updater = ProgressUpdater(lambda update, _bundle: emitted.append(update))
+    updater(0, 30, "write")
+    updater(30, 30, "write")
+    updater.finish()
+    assert emitted == [False, True]
 
 
 def test_use_serve_defaults_on(monkeypatch):

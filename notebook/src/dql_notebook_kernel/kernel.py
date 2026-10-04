@@ -6,7 +6,7 @@ import os
 
 from ipykernel.kernelbase import Kernel
 
-from .progress import progress_bundle
+from .progress import ProgressUpdater
 from .runner import (
     BinaryNotFoundError,
     backend_binary_name,
@@ -69,9 +69,15 @@ class DqlKernel(Kernel):
         try:
             bundle, ok, error_message = self._run_cell(code, on_progress)
         except BinaryNotFoundError as exc:
+            if on_progress is not None:
+                on_progress.finish()
             return self._error(type(exc).__name__, str(exc), silent)
         except Exception as exc:  # noqa: BLE001 — surface unexpected runner failures
+            if on_progress is not None:
+                on_progress.finish()
             return self._error(type(exc).__name__, str(exc), silent)
+        if on_progress is not None:
+            on_progress.finish()
 
         if not silent and any(bundle.values()):
             self.send_response(
@@ -113,18 +119,13 @@ class DqlKernel(Kernel):
         )
         return bundle, result.ok, None if result.ok else message
 
-    def _progress_updater(self):
+    def _progress_updater(self) -> ProgressUpdater:
         display_id = f"dql-progress-{id(self)}-{self.execution_count}"
-        shown = False
 
-        def on_progress(done: int, total, phase: str) -> None:
-            nonlocal shown
-            bundle = progress_bundle(done, total, phase)
-            msg = "update_display_data" if shown else "display_data"
-            shown = True
+        def emit(update: bool, bundle: dict) -> None:
             self.send_response(
                 self.iopub_socket,
-                msg,
+                "update_display_data" if update else "display_data",
                 {
                     "data": bundle,
                     "metadata": {},
@@ -132,7 +133,7 @@ class DqlKernel(Kernel):
                 },
             )
 
-        return on_progress
+        return ProgressUpdater(emit)
 
     def _error(self, ename: str, evalue: str, silent: bool):
         tb = [f"{ename}: {evalue}"]

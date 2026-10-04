@@ -78,6 +78,7 @@ flowchart TB
     selr["test_200_select_hash_range"]
     selfilt["test_200_select_pk_sk_filters"]
     scan["test_200_scan_all_items"]
+    selPage["test_200_select_single_page_omits_progress"]
     alt["test_210_alter_set_throughput"]
     exp["test_210_explain_select_query"]
   end
@@ -101,6 +102,7 @@ flowchart TB
   ins --> selk
   ins --> selr
   ins --> scan
+  ins --> selPage
   load --> selfilt
   dump --> alt
   selk --> exp
@@ -138,6 +140,7 @@ the `SELECT` tests it explains. `ANALYZE` actually runs `SELECT`, so it sits in
 | `test_200_select_hash_range` | `insert` |
 | `test_200_select_pk_sk_filters` | `load` |
 | `test_200_scan_all_items` | `insert` |
+| `test_200_select_single_page_omits_progress` | `insert` (dqlrs `--serve`) |
 | `test_210_alter_set_throughput` | `dump` |
 | `test_210_explain_select_query` | `insert` (setup); sorts after `SELECT` |
 | `test_300_analyze_select` | `select` |
@@ -200,6 +203,7 @@ Same group. Read paths after a successful write.
 | `test_200_select_hash_range` | `CREATE` (hash+range) + `INSERT` | `SELECT` by hash and range |
 | `test_200_select_pk_sk_filters` | `CREATE` (hash+range) + `LOAD` shared 1000-row fixture | `SELECT` by hash, sort-key prefix, and extra filters |
 | `test_200_scan_all_items` | `CREATE` + `INSERT` | `SCAN *` |
+| `test_200_select_single_page_omits_progress` | `CREATE` + `INSERT` | `dqlrs --serve` SELECT/SCAN emit no read progress for a one-page result |
 
 `test_200_select_hash_range` does not need `test_200_select_hash_key` to pass;
 both need `INSERT`. `test_200_select_pk_sk_filters` uses `LOAD` instead of

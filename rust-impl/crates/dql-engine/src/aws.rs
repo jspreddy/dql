@@ -162,6 +162,23 @@ impl SdkBackend {
             .report(done as u64, total.map(|value| value as u64), phase);
     }
 
+    /// Skip a one-page read (no bar that would sit indeterminate after the cell).
+    /// Multi-page reads emit after each page; the last page sets total = fetched
+    /// so clients can draw a completed bar instead of an endless spinner.
+    fn report_read_page_progress(
+        &self,
+        page_index: usize,
+        fetched: usize,
+        more: bool,
+        limit: Option<usize>,
+    ) {
+        if page_index == 0 && !more {
+            return;
+        }
+        let total = if more { limit } else { Some(fetched) };
+        self.report_progress(fetched, total, "read");
+    }
+
     fn invalidate_cache(&mut self, table: &str) {
         self.cache.remove(table);
     }
@@ -211,7 +228,8 @@ impl SdkBackend {
     where
         E: ProvideErrorMetadata + std::fmt::Display + std::fmt::Debug,
     {
-        err.message().is_some_and(|message| message.contains(needle))
+        err.message()
+            .is_some_and(|message| message.contains(needle))
             || format!("{err:?}").contains(needle)
     }
 }
@@ -900,6 +918,7 @@ impl SdkBackend {
         let scan_limit = options.scan_limit.unwrap_or(usize::MAX);
         let mut scanned = 0usize;
         let mut total_count = 0usize;
+        let mut page_index = 0usize;
         loop {
             let mut query = self
                 .client
@@ -975,10 +994,12 @@ impl SdkBackend {
             }
             last_key = response.last_evaluated_key().cloned();
             let fetched = if is_count { total_count } else { items.len() };
-            self.report_progress(fetched, options.limit, "read");
-            if fetched >= item_limit || last_key.is_none() || scanned >= scan_limit {
+            let more = last_key.is_some() && fetched < item_limit && scanned < scan_limit;
+            self.report_read_page_progress(page_index, fetched, more, options.limit);
+            if !more {
                 break;
             }
+            page_index += 1;
         }
         if is_count {
             items = (0..total_count).map(|_| Item::new()).collect();
@@ -1001,6 +1022,7 @@ impl SdkBackend {
         let scan_limit = options.scan_limit.unwrap_or(usize::MAX);
         let mut scanned = 0usize;
         let mut total_count = 0usize;
+        let mut page_index = 0usize;
         loop {
             let mut scan = self
                 .client
@@ -1057,10 +1079,12 @@ impl SdkBackend {
             }
             last_key = response.last_evaluated_key().cloned();
             let fetched = if is_count { total_count } else { items.len() };
-            self.report_progress(fetched, options.limit, "read");
-            if fetched >= item_limit || last_key.is_none() || scanned >= scan_limit {
+            let more = last_key.is_some() && fetched < item_limit && scanned < scan_limit;
+            self.report_read_page_progress(page_index, fetched, more, options.limit);
+            if !more {
                 break;
             }
+            page_index += 1;
         }
         if is_count {
             items = (0..total_count).map(|_| Item::new()).collect();

@@ -5,7 +5,7 @@ from __future__ import annotations
 from IPython.core.magic import Magics, cell_magic, magics_class
 from IPython.display import HTML, display
 
-from .progress import progress_html
+from .progress import ProgressUpdater
 from .runner import (
     backend_binary_name,
     format_display,
@@ -34,17 +34,17 @@ class DqlMagics(Magics):
         return _run_magic("rust", cell)
 
 
-def _progress_updater():
+def _progress_updater() -> ProgressUpdater:
     handle = {"display": None}
 
-    def on_progress(done: int, total, phase: str) -> None:
-        markup = progress_html(done, total, phase)
+    def emit(_update: bool, bundle: dict) -> None:
+        markup = bundle.get("text/html") or ""
         if handle["display"] is None:
             handle["display"] = display(HTML(markup), display_id=True)
         else:
             handle["display"].update(HTML(markup))
 
-    return on_progress
+    return ProgressUpdater(emit)
 
 
 def _run_magic(backend: str, cell: str):
@@ -52,31 +52,34 @@ def _run_magic(backend: str, cell: str):
     if not code:
         return None
     on_progress = _progress_updater()
-    if backend == "rust" and use_serve():
-        global _SERVE, _SERVE_FAILED
-        if not _SERVE_FAILED:
-            try:
-                if _SERVE is None:
-                    _SERVE = ServeSession()
-                envelope = _SERVE.exec_dql(code, on_progress=on_progress)
-                bundle = format_envelope(envelope)
-                _show_bundle(bundle)
-                if not envelope.get("ok"):
-                    error = envelope.get("error") or {}
-                    raise RuntimeError(error.get("message") or "dqlrs --serve exec failed")
-                return None
-            except ServeError:
-                _SERVE_FAILED = True
-                _SERVE = None
-    result = run_dql(code, backend, on_progress=on_progress)
-    bundle = format_display(result.stdout, result.stderr)
-    _show_bundle(bundle)
-    if not result.ok:
-        binary = backend_binary_name(backend)
-        raise RuntimeError(
-            f"{binary} exited with status {result.returncode}"
-        )
-    return None
+    try:
+        if backend == "rust" and use_serve():
+            global _SERVE, _SERVE_FAILED
+            if not _SERVE_FAILED:
+                try:
+                    if _SERVE is None:
+                        _SERVE = ServeSession()
+                    envelope = _SERVE.exec_dql(code, on_progress=on_progress)
+                    bundle = format_envelope(envelope)
+                    _show_bundle(bundle)
+                    if not envelope.get("ok"):
+                        error = envelope.get("error") or {}
+                        raise RuntimeError(error.get("message") or "dqlrs --serve exec failed")
+                    return None
+                except ServeError:
+                    _SERVE_FAILED = True
+                    _SERVE = None
+        result = run_dql(code, backend, on_progress=on_progress)
+        bundle = format_display(result.stdout, result.stderr)
+        _show_bundle(bundle)
+        if not result.ok:
+            binary = backend_binary_name(backend)
+            raise RuntimeError(
+                f"{binary} exited with status {result.returncode}"
+            )
+        return None
+    finally:
+        on_progress.finish()
 
 
 def _show_bundle(bundle: dict[str, str]) -> None:

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import html
 import json
-from typing import Any, Optional
+from typing import Any, Callable, Optional
+
+EmitFn = Callable[[bool, dict[str, str]], None]
 
 
 def parse_progress_line(line: str) -> Optional[dict[str, Any]]:
@@ -54,3 +56,37 @@ def progress_bundle(done: int, total: Optional[int], phase: str) -> dict[str, st
         "text/plain": progress_text(done, total, phase) + "\n",
         "text/html": progress_html(done, total, phase),
     }
+
+
+def complete_counts(done: int, total: Optional[int]) -> tuple[int, int]:
+    """Counts for a finished bar: always determinate so the HTML control stops."""
+    if total is not None and total > 0:
+        clamped = min(max(int(done), 0), int(total))
+        return clamped, int(total)
+    finished = max(int(done), 0)
+    return finished, max(finished, 1)
+
+
+class ProgressUpdater:
+    """Live notebook bar. `finish()` turns an indeterminate bar into a completed one."""
+
+    def __init__(self, emit: EmitFn) -> None:
+        self._emit = emit
+        self.shown = False
+        self.last: Optional[tuple[int, Optional[int], str]] = None
+
+    def __call__(self, done: int, total: Optional[int], phase: str) -> None:
+        total_i = int(total) if total is not None else None
+        self.last = (int(done), total_i, str(phase or "write"))
+        self._emit(self.shown, progress_bundle(*self.last))
+        self.shown = True
+
+    def finish(self) -> None:
+        if not self.shown or self.last is None:
+            return
+        done, total, phase = self.last
+        if total is not None and done >= total:
+            return
+        completed_done, completed_total = complete_counts(done, total)
+        self.last = (completed_done, completed_total, phase)
+        self._emit(True, progress_bundle(completed_done, completed_total, phase))
