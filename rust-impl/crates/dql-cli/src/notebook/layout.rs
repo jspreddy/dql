@@ -122,6 +122,7 @@ fn write_jupyter_config(
          c.ServerApp.allow_remote_access = False\n\
          c.ServerApp.open_browser = {open_browser}\n\
          c.ServerApp.root_dir = '{root}'\n\
+         c.JupyterApp.answer_yes = True\n\
          c.KernelSpecManager.allowed_kernelspecs = {{'dql-rust'}}\n"
     );
     fs::write(config_path(data_dir), body)?;
@@ -176,6 +177,7 @@ mod tests {
         assert!(spec.contains("DQL_NOTEBOOK_SERVE"));
         let config = fs::read_to_string(data.join("jupyter_server_config.py")).unwrap();
         assert!(config.contains("127.0.0.1"));
+        assert!(config.contains("answer_yes = True"));
         assert!(config.contains("dql-rust"));
         assert!(!config.contains("preferred_dir"));
     }

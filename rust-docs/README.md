@@ -142,7 +142,13 @@ After `cargo install`, the same binary can start JupyterLab:
 dqlrs notebook --local --no-browser
 # same:
 dqlrs --notebook --local
+# from another terminal:
+dqlrs notebook --shutdown
 ```
+
+Ctrl-C in the terminal that started Lab shuts the server down. `--shutdown`
+stops a notebook server this command left running. If several are running, it
+lists them and asks which ones to stop.
 
 This does **not** embed Jupyter (too large). On first run it creates
 `~/.local/share/dqlrs/notebook` (override with `DQLRS_NOTEBOOK_HOME`), installs

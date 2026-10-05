@@ -13,8 +13,8 @@ pub use args::{help_text, is_notebook_invocation, parse_args, NotebookArgs};
 
 use color_eyre::eyre::{bail, WrapErr};
 use std::io::{self, Write};
-use std::path::PathBuf;
-use std::process::Command;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 pub fn run(argv: &[String]) -> color_eyre::Result<()> {
     let args = parse_args(argv).map_err(|err| color_eyre::eyre::eyre!("{err}"))?;
@@ -26,6 +26,9 @@ pub fn run(argv: &[String]) -> color_eyre::Result<()> {
     }
     if args.conflict_with_serve_or_command {
         bail!("notebook cannot be used with --serve or -c/--command");
+    }
+    if args.shutdown {
+        return shutdown_notebook_servers(&layout::data_dir());
     }
 
     let dqlrs = std::env::current_exe().wrap_err("could not resolve this dqlrs binary")?;
@@ -85,6 +88,7 @@ pub fn run(argv: &[String]) -> color_eyre::Result<()> {
     let jupyter = venv::jupyter_bin(&data_dir);
     let mut cmd = Command::new(&jupyter);
     cmd.arg("lab");
+    cmd.arg("-y");
     cmd.arg("--config");
     cmd.arg(layout::config_path(&data_dir));
     cmd.arg("--notebook-dir");
@@ -179,5 +183,220 @@ fn print_banner(
     let starter = notebook_dir.join("getting-started-dqlrs.ipynb");
     if starter.is_file() {
         println!("starter:   {}", starter.display());
+    }
+    println!("stop:      Ctrl-C, or `dqlrs notebook --shutdown` from another terminal");
+}
+
+#[derive(Clone)]
+struct RunningServer {
+    pid: u32,
+    port: u16,
+    root_dir: Option<String>,
+}
+
+fn running_notebook_servers(runtime_dir: &Path) -> io::Result<Vec<RunningServer>> {
+    let mut servers = Vec::new();
+    let entries = match std::fs::read_dir(runtime_dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(servers),
+        Err(err) => return Err(err),
+    };
+    for entry in entries {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !(name.starts_with("jpserver-") && name.ends_with(".json")) {
+            continue;
+        }
+        let text = std::fs::read_to_string(entry.path())?;
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        let Some(pid) = value.get("pid").and_then(serde_json::Value::as_u64) else {
+            continue;
+        };
+        let Some(port) = value.get("port").and_then(serde_json::Value::as_u64) else {
+            continue;
+        };
+        let pid = u32::try_from(pid).unwrap_or(0);
+        let Ok(port) = u16::try_from(port) else {
+            continue;
+        };
+        if pid == 0 || !pid_is_running(pid) {
+            continue;
+        }
+        let root_dir = value
+            .get("root_dir")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        servers.push(RunningServer {
+            pid,
+            port,
+            root_dir,
+        });
+    }
+    servers.sort_by_key(|server| server.port);
+    Ok(servers)
+}
+
+fn pid_is_running(pid: u32) -> bool {
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn parse_server_selection(input: &str, count: usize) -> Result<Vec<usize>, String> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Ok(Vec::new());
+    }
+    if input.eq_ignore_ascii_case("a") || input.eq_ignore_ascii_case("all") {
+        return Ok((0..count).collect());
+    }
+    let mut chosen = Vec::new();
+    for part in input
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|part| !part.is_empty())
+    {
+        let number: usize = part
+            .parse()
+            .map_err(|_| format!("'{part}' is not a number"))?;
+        if number == 0 || number > count {
+            return Err(format!("choose a number from 1 to {count}"));
+        }
+        let index = number - 1;
+        if !chosen.contains(&index) {
+            chosen.push(index);
+        }
+    }
+    Ok(chosen)
+}
+
+fn choose_servers(servers: Vec<RunningServer>) -> color_eyre::Result<Vec<RunningServer>> {
+    if servers.len() <= 1 {
+        return Ok(servers);
+    }
+    if !io::IsTerminal::is_terminal(&io::stdin()) {
+        bail!(
+            "several notebook servers are running; run `dqlrs notebook --shutdown` in a terminal to choose which ones to stop"
+        );
+    }
+    println!("Notebook servers:");
+    for (index, server) in servers.iter().enumerate() {
+        match &server.root_dir {
+            Some(root) => println!(
+                "  {}) port {}  pid {}  {root}",
+                index + 1,
+                server.port,
+                server.pid
+            ),
+            None => println!("  {}) port {}  pid {}", index + 1, server.port, server.pid),
+        }
+    }
+    print!("Shut down which servers? Numbers (1,2), 'a' for all, or Enter to cancel: ");
+    io::stdout().flush()?;
+    let mut line = String::new();
+    io::stdin().read_line(&mut line)?;
+    let indexes = parse_server_selection(&line, servers.len())
+        .map_err(|err| color_eyre::eyre::eyre!("{err}"))?;
+    Ok(indexes
+        .into_iter()
+        .filter_map(|index| servers.get(index).cloned())
+        .collect())
+}
+
+fn shutdown_notebook_servers(data_dir: &Path) -> color_eyre::Result<()> {
+    let runtime = data_dir.join("jupyter-runtime");
+    let servers = running_notebook_servers(&runtime)?;
+    if servers.is_empty() {
+        println!("No notebook servers are running.");
+        return Ok(());
+    }
+    let servers = choose_servers(servers)?;
+    if servers.is_empty() {
+        println!("Nothing selected.");
+        return Ok(());
+    }
+    let jupyter = venv::jupyter_bin(data_dir);
+    let mut failed = false;
+    for server in servers {
+        println!(
+            "Shutting down notebook server on port {} (pid {})",
+            server.port, server.pid
+        );
+        let stopped = if jupyter.is_file() {
+            Command::new(&jupyter)
+                .args(["server", "stop", &server.port.to_string()])
+                .env("JUPYTER_RUNTIME_DIR", &runtime)
+                .status()
+                .wrap_err("failed to run jupyter server stop")?
+                .success()
+        } else {
+            false
+        };
+        if stopped {
+            continue;
+        }
+        let signaled = Command::new("kill")
+            .args(["-TERM", &server.pid.to_string()])
+            .status()
+            .wrap_err("failed to signal notebook server")?
+            .success();
+        if !signaled {
+            eprintln!(
+                "could not stop notebook server on port {} (pid {})",
+                server.port, server.pid
+            );
+            failed = true;
+        }
+    }
+    if failed {
+        bail!("one or more notebook servers did not stop");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+
+    #[test]
+    fn lists_live_server_and_skips_dead_pid_and_kernel_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let live = std::process::id();
+        std::fs::write(
+            dir.path().join(format!("jpserver-{live}.json")),
+            format!(r#"{{"pid":{live},"port":8888,"token":"secret"}}"#),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("jpserver-999999.json"),
+            r#"{"pid":999999,"port":8889}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("kernel-abc.json"), r#"{"pid":1,"port":1}"#).unwrap();
+        let servers = running_notebook_servers(dir.path()).unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].pid, live);
+        assert_eq!(servers[0].port, 8888);
+    }
+
+    #[test]
+    fn selection_accepts_numbers_all_and_blank() {
+        assert_eq!(parse_server_selection("", 2).unwrap(), Vec::<usize>::new());
+        assert_eq!(
+            parse_server_selection("  ", 2).unwrap(),
+            Vec::<usize>::new()
+        );
+        assert_eq!(parse_server_selection("a", 3).unwrap(), vec![0, 1, 2]);
+        assert_eq!(parse_server_selection("ALL", 2).unwrap(), vec![0, 1]);
+        assert_eq!(parse_server_selection("2, 1", 2).unwrap(), vec![1, 0]);
+        assert_eq!(parse_server_selection("1 1", 2).unwrap(), vec![0]);
+        assert!(parse_server_selection("3", 2).is_err());
+        assert!(parse_server_selection("x", 2).is_err());
     }
 }

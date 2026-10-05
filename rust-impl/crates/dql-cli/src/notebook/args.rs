@@ -6,6 +6,7 @@ pub struct NotebookArgs {
     pub local: bool,
     pub no_browser: bool,
     pub dry_run: bool,
+    pub shutdown: bool,
     pub jupyter_port: Option<u16>,
     pub region: Option<String>,
     pub host: Option<String>,
@@ -42,13 +43,16 @@ pub fn help_text() -> String {
        --local              DynamoDB Local (localhost:8000) and dummy AWS keys if unset\n\
        --no-browser         Do not open a browser\n\
        --dry-run            Write kernel files, ensure Jupyter, list kernels, exit\n\
+       --shutdown           Stop notebook servers started by dqlrs (from another terminal;\n\
+                            if several are running, choose which ones)\n\
        --jupyter-port PORT  Jupyter port (else Jupyter picks one)\n\
        --port PORT          Same as --jupyter-port\n\
        -r, --region REGION  AWS region (default AWS_REGION or us-west-1)\n\
        -H, --host HOST      DynamoDB host (implies local-style -p)\n\
        -p PORT              DynamoDB port (default 8000, with -H or --local)\n\
        -h, --help           Show this help\n\n\
-     Extra arguments after -- are passed to jupyter lab.\n\n\
+     Extra arguments after -- are passed to jupyter lab.\n\
+     Ctrl-C shuts the server down. From another terminal: dqlrs notebook --shutdown\n\n\
      JupyterLab is downloaded into ~/.local/share/dqlrs/notebook on first run\n\
      (needs Python 3.10+ or uv). This binary is not Jupyter; it only ships the\n\
      DQL kernel and then starts Lab pointed at DQLRS_BIN."
@@ -65,6 +69,7 @@ pub fn parse_args(argv: &[String]) -> Result<NotebookArgs, String> {
             "--local" => args.local = true,
             "--no-browser" => args.no_browser = true,
             "--dry-run" => args.dry_run = true,
+            "--shutdown" => args.shutdown = true,
             "--serve" | "-c" | "--command" => args.conflict_with_serve_or_command = true,
             "--jupyter-port" | "--port" => {
                 let value = iter.next().ok_or_else(|| format!("{arg} needs a value"))?;
@@ -159,6 +164,12 @@ mod tests {
     fn extra_after_double_dash() {
         let parsed = parse_args(&argv(&["--notebook", "--", "--debug"])).unwrap();
         assert_eq!(parsed.jupyter_extra, vec!["--debug"]);
+    }
+
+    #[test]
+    fn parses_shutdown() {
+        let parsed = parse_args(&argv(&["notebook", "--shutdown"])).unwrap();
+        assert!(parsed.shutdown);
     }
 
     #[test]

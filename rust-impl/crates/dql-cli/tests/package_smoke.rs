@@ -135,6 +135,10 @@ fn smoke_notebook_help() {
         stderr.contains("JupyterLab") && stderr.contains("DQL"),
         "notebook help should describe JupyterLab: {stderr}"
     );
+    assert!(
+        stderr.contains("--shutdown"),
+        "notebook help should describe --shutdown: {stderr}"
+    );
 }
 
 #[test]
