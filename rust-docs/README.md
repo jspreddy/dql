@@ -136,6 +136,9 @@ This is **Rust-only**. Python `dql` has no `--serve`; notebook Python cells set
 
 ## Notebook (`dqlrs notebook`)
 
+How install, configuration, and kernel launch fit together:
+[notebook.html](notebook.html).
+
 After `cargo install`, the same binary can start JupyterLab:
 
 ```bash
