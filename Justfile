@@ -9,6 +9,11 @@ default:
 dynamo:
     cd "{{justfile_directory()}}" && ./scripts/install_dynamodb_local.sh background
 
+# List running DynamoDB Local processes and stop the ones you choose
+[group('local')]
+dynamo-stop:
+    "{{justfile_directory()}}/scripts/stop_dynamodb_local.sh"
+
 # Sync the Python dev environment
 [group('python')]
 py-sync:
