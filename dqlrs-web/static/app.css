@@ -243,10 +243,20 @@ main { flex: 1; min-width: 0; min-height: 0; display: flex; }
   min-height: 0;
 }
 
-/* Drawn behind the glyphs so the syntax color stays. Native selection stays clear. */
+/* One background behind the glyphs. Native selection stays clear so syntax colors remain. */
 .cm-editor .cm-selectionBackground {
-  background-color: rgba(0, 0, 0, 0.25) !important;
+  background-color: transparent !important;
 }
+
+.cm-run-fill {
+  background-color: rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+}
+
+.cm-band-alt { background-color: #f4f7f8; }
+.cm-band-write { background-color: #fdecec; }
+.cm-band-write-even { background-color: #f3c4c4; }
+.cm-band-layer, .cm-run-fill-layer { pointer-events: none; }
 
 .cm-editor .cm-line::selection,
 .cm-editor .cm-line ::selection,

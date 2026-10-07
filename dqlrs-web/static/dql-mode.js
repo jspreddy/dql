@@ -4,7 +4,7 @@
  */
 import { StreamLanguage } from "@codemirror/language";
 import { Facet, RangeSet, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
-import { Decoration, GutterMarker, ViewPlugin, gutter } from "@codemirror/view";
+import { Decoration, GutterMarker, RectangleMarker, ViewPlugin, gutter, layer } from "@codemirror/view";
 import { bandAppearance, queryBands, runTarget, startState, tokenDql } from "./dql-tokens.js";
 
 export const dqlLanguage = StreamLanguage.define({
@@ -103,32 +103,104 @@ export function queryHighlight(options) {
   return extensions;
 }
 
-const runLine = Decoration.line({ class: "cm-run-line" });
-const runTop = Decoration.line({ class: "cm-run-line cm-run-top" });
-const runBottom = Decoration.line({ class: "cm-run-line cm-run-bottom" });
-const runOnly = Decoration.line({ class: "cm-run-line cm-run-top cm-run-bottom" });
-const runMark = Decoration.mark({ class: "cm-run-mark" });
+const bandClass = {
+  alt: "cm-band-alt",
+  write: "cm-band-write",
+  "write-even": "cm-band-write-even",
+};
 
-function coversWholeLines(doc, from, to) {
-  if (from >= to) return false;
-  const start = doc.lineAt(from);
-  const end = doc.lineAt(Math.min(to - 1, doc.length));
-  return from === start.from && to >= end.to;
+function layerOrigin(view) {
+  const rect = view.scrollDOM.getBoundingClientRect();
+  return {
+    left: rect.left - view.scrollDOM.scrollLeft * view.scaleX,
+    top: rect.top - view.scrollDOM.scrollTop * view.scaleY,
+  };
 }
 
-/** Border around the query or selection that Run will execute. */
-export const runFrame = ViewPlugin.fromClass(
-  class {
-    constructor(view) {
-      this.decorations = frame(view.state);
+/** Even/odd and write colors, behind the run-range fill so that fill stays visible. */
+function bandMarkers(view) {
+  const options = view.state.facet(highlightOptions);
+  const origin = layerOrigin(view);
+  const content = view.contentDOM.getBoundingClientRect();
+  const left = content.left - origin.left;
+  const width = Math.max(0, content.right - content.left);
+  const docTop = view.documentTop;
+  const doc = view.state.doc;
+  const markers = [];
+  for (const band of queryBands(doc.toString())) {
+    const className = bandClass[bandAppearance(band, options)];
+    if (!className) continue;
+    for (let number = band.lineFrom; number <= band.lineTo; number += 1) {
+      const line = doc.line(number);
+      if (line.to < view.viewport.from || line.from > view.viewport.to) continue;
+      const block = view.lineBlockAt(line.from);
+      markers.push(
+        new RectangleMarker(
+          className,
+          left,
+          docTop + block.top - origin.top,
+          width,
+          Math.max(0, block.bottom - block.top),
+        ),
+      );
     }
+  }
+  return markers;
+}
 
-    update(update) {
-      if (update.docChanged || update.selectionSet) this.decorations = frame(update.state);
-    }
+export const bandLayer = layer({
+  above: false,
+  class: "cm-band-layer",
+  markers: bandMarkers,
+  update(update) {
+    const previous = update.startState.facet(highlightOptions);
+    const next = update.state.facet(highlightOptions);
+    return (
+      update.docChanged ||
+      update.viewportChanged ||
+      previous.minimalWrite !== next.minimalWrite ||
+      previous.evenOdd !== next.evenOdd
+    );
   },
-  { decorations: (plugin) => plugin.decorations },
-);
+});
+
+function boundsOf(rects) {
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+  for (const rect of rects) {
+    const width = rect.width == null ? 0 : rect.width;
+    left = Math.min(left, rect.left);
+    top = Math.min(top, rect.top);
+    right = Math.max(right, rect.left + width);
+    bottom = Math.max(bottom, rect.top + rect.height);
+  }
+  return new RectangleMarker("cm-run-fill", left, top, Math.max(0, right - left), Math.max(0, bottom - top));
+}
+
+/** One background for the query or selection that Run will execute. */
+function runFillMarkers(view) {
+  const selection = view.state.selection.main;
+  const target = runTarget(view.state.doc.toString(), selection.head, selection.anchor);
+  if (!target || target.from >= target.to) return [];
+  const rects = RectangleMarker.forRange(view, "cm-run-fill", {
+    from: target.from,
+    to: target.to,
+    empty: false,
+  });
+  if (rects.length <= 1) return rects;
+  return [boundsOf(rects)];
+}
+
+export const runFrame = layer({
+  above: false,
+  class: "cm-run-fill-layer",
+  markers: runFillMarkers,
+  update(update) {
+    return update.docChanged || update.selectionSet || update.viewportChanged;
+  },
+});
 
 class RunStatusMarker extends GutterMarker {
   constructor(status) {
@@ -198,20 +270,3 @@ export const runStatusGutter = gutter({
   },
 });
 
-function frame(state) {
-  const selection = state.selection.main;
-  const target = runTarget(state.doc.toString(), selection.head, selection.anchor);
-  if (!target) return Decoration.none;
-  const doc = state.doc;
-  if (!coversWholeLines(doc, target.from, target.to)) {
-    return Decoration.set([runMark.range(target.from, target.to)]);
-  }
-  const start = doc.lineAt(target.from).number;
-  const end = doc.lineAt(Math.min(Math.max(target.from, target.to - 1), doc.length)).number;
-  const ranges = [];
-  for (let number = start; number <= end; number += 1) {
-    const deco = number === start && number === end ? runOnly : number === start ? runTop : number === end ? runBottom : runLine;
-    ranges.push(deco.range(doc.line(number).from));
-  }
-  return Decoration.set(ranges);
-}

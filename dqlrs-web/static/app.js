@@ -11,7 +11,7 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { dqlLanguage, markersForRunStatus, queryHighlight, runFrame, runStatusField, runStatusGutter, setRunStatuses } from "./dql-mode.js";
+import { bandLayer, dqlLanguage, markersForRunStatus, queryHighlight, runFrame, runStatusField, runStatusGutter, setRunStatuses } from "./dql-mode.js";
 import { runTarget, statementSpans } from "./dql-tokens.js";
 
 const dqlHighlight = HighlightStyle.define([
@@ -80,6 +80,7 @@ const editor = new EditorView({
       dqlLanguage,
       highlightCompartment.of(queryHighlight(highlightOptions)),
       runFrame,
+      bandLayer,
       syntaxHighlighting(dqlHighlight),
       placeholder("Open a .dql file, or create one."),
       EditorView.lineWrapping,
@@ -87,7 +88,10 @@ const editor = new EditorView({
       drawSelection(),
       Prec.highest(EditorView.theme({
         ".cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground": {
-          backgroundColor: "rgba(0, 0, 0, 0.25) !important",
+          backgroundColor: "transparent !important",
+        },
+        ".cm-run-fill": {
+          backgroundColor: "rgba(0, 0, 0, 0.25)",
         },
         "&.cm-focused .cm-content ::selection, &.cm-focused .cm-content::selection, .cm-line ::selection, .cm-line::selection": {
           backgroundColor: "transparent !important",
@@ -104,9 +108,9 @@ const editor = new EditorView({
         ".cm-gutters": { background: "#fafbfc", color: "#8b97a3", border: "none" },
         ".cm-run-status-gutter": { width: "16px" },
         ".cm-run-status-gutter .cm-gutterElement": { padding: "0 1px" },
-        ".cm-line.cm-dql-alt": { backgroundColor: "#f4f7f8" },
-        ".cm-line.cm-dql-write": { backgroundColor: "#fdecec" },
-        ".cm-line.cm-dql-write-even": { backgroundColor: "#f3c4c4" },
+        ".cm-band-alt": { backgroundColor: "#f4f7f8" },
+        ".cm-band-write": { backgroundColor: "#fdecec" },
+        ".cm-band-write-even": { backgroundColor: "#f3c4c4" },
         ".cm-dql-gutter": { width: "8px", background: "#fafbfc" },
         ".cm-dql-gutter .cm-gutterElement": { padding: "0 0 0 3px" },
         ".cm-write-bar": {
@@ -117,15 +121,10 @@ const editor = new EditorView({
           backgroundColor: "#fb7185",
         },
         ".cm-write-bar-even": { backgroundColor: "#be123c" },
-        ".cm-line.cm-run-line": { boxShadow: "inset 1px 0 0 rgba(0, 0, 0, 0.5), inset -1px 0 0 rgba(0, 0, 0, 0.5)" },
-        ".cm-line.cm-run-top": { boxShadow: "inset 1px 0 0 rgba(0, 0, 0, 0.5), inset -1px 0 0 rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(0, 0, 0, 0.5)" },
-        ".cm-line.cm-run-bottom": { boxShadow: "inset 1px 0 0 rgba(0, 0, 0, 0.5), inset -1px 0 0 rgba(0, 0, 0, 0.5), inset 0 -1px 0 rgba(0, 0, 0, 0.5)" },
-        ".cm-line.cm-run-top.cm-run-bottom": { boxShadow: "inset 0 0 0 1px rgba(0, 0, 0, 0.5)" },
-        ".cm-run-mark": { outline: "1px solid rgba(0, 0, 0, 0.5)", outlineOffset: "0" },
         ".cm-activeLine": { backgroundColor: "transparent" },
         ".cm-activeLineGutter": { background: "#f3f5f7" },
         ".cm-content": { padding: "4px 0" },
-        ".cm-line": { padding: "0 8px" },
+        ".cm-line": { padding: "0 8px", backgroundColor: "transparent" },
         ".cm-placeholder": { color: "#8b97a3", fontStyle: "italic" },
       }),
       EditorView.updateListener.of((update) => {
