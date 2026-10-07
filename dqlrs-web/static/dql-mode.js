@@ -17,12 +17,13 @@ export const dqlLanguage = StreamLanguage.define({
 
 const altLine = Decoration.line({ class: "cm-dql-alt" });
 const writeLine = Decoration.line({ class: "cm-dql-write" });
+const writeEvenLine = Decoration.line({ class: "cm-dql-write-even" });
 
 function bandDecorations(doc) {
   const ranges = [];
   for (const band of queryBands(doc.toString())) {
     if (band.band === "plain") continue;
-    const deco = band.band === "write" ? writeLine : altLine;
+    const deco = band.band === "write-even" ? writeEvenLine : band.band === "write" ? writeLine : altLine;
     const fromLine = doc.lineAt(band.from).number;
     const toLine = doc.lineAt(Math.max(band.from, band.to - 1)).number;
     for (let number = fromLine; number <= toLine; number += 1) {
@@ -32,7 +33,7 @@ function bandDecorations(doc) {
   return Decoration.set(ranges, true);
 }
 
-/** Light stripe on every other query, and a reddish stripe on writes. */
+/** Light stripe on even reads. Writes are red, and even writes are a darker red. */
 export const dqlQueryBands = ViewPlugin.fromClass(
   class {
     constructor(view) {

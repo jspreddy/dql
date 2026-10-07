@@ -124,9 +124,9 @@ const WRITE_ACTIONS = new Set([
 const ACTION_PREFIX = new Set(["EXPLAIN", "ANALYZE"]);
 
 /**
- * One entry per query. `band` is `write` (reddish), `alt` (very light stripe
- * on even queries), or `plain`. Offsets cover the query from its first code
- * character through the terminating semicolon.
+ * One entry per query. `band` is `write` (light red), `write-even` (a darker
+ * red on even queries), `alt` (very light stripe on even reads), or `plain`.
+ * Offsets cover the query from its first code character through the semicolon.
  */
 export function queryBands(text) {
   const src = String(text);
@@ -143,7 +143,9 @@ export function queryBands(text) {
       to: end,
       write,
       index: bands.length,
-      band: write ? "write" : bands.length % 2 === 0 ? "alt" : "plain",
+      band: write
+        ? bands.length % 2 === 0 ? "write-even" : "write"
+        : bands.length % 2 === 0 ? "alt" : "plain",
     });
     codeStart = -1;
     action = "";

@@ -65,6 +65,7 @@ const editor = new EditorView({
         ".cm-gutters": { background: "#fafbfc", color: "#8b97a3", border: "none" },
         ".cm-line.cm-dql-alt": { backgroundColor: "#f4f7f8" },
         ".cm-line.cm-dql-write": { backgroundColor: "#fdecec" },
+        ".cm-line.cm-dql-write-even": { backgroundColor: "#f3c4c4" },
         ".cm-activeLine": { backgroundColor: "transparent" },
         ".cm-activeLineGutter": { background: "#f3f5f7" },
         ".cm-content": { padding: "4px 0" },

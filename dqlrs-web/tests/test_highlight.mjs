@@ -82,7 +82,10 @@ DELETE FROM t WHERE id = 1;
 drop table t;
 `;
   const bands = queryBands(text);
-  assert.deepEqual(bands.map((band) => band.band), ["alt", "write", "alt", "write", "write"]);
+  assert.deepEqual(
+    bands.map((band) => band.band),
+    ["alt", "write", "alt", "write", "write-even"],
+  );
   assert.equal(text.slice(bands[0].from, bands[0].to).startsWith("SELECT"), true);
   assert.equal(text.slice(bands[0].from, bands[0].to).includes("--"), false);
   assert.equal(text.slice(bands[0].from, bands[0].to).includes("'a;b'"), true);
