@@ -5,6 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DQLRS Web</title>
   <link rel="stylesheet" href="/app.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "@codemirror/state": "/vendor/codemirror-state.js",
+      "@codemirror/view": "/vendor/codemirror-view.js",
+      "@codemirror/language": "/vendor/codemirror-language.js",
+      "@codemirror/commands": "/vendor/codemirror-commands.js",
+      "@codemirror/streamparser": "/vendor/streamparser.js",
+      "@lezer/common": "/vendor/lezer-common.js",
+      "@lezer/highlight": "/vendor/lezer-highlight.js",
+      "@marijn/find-cluster-break": "/vendor/find-cluster-break.js",
+      "crelt": "/vendor/crelt.js",
+      "style-mod": "/vendor/style-mod.js",
+      "w3c-keyname": "/vendor/w3c-keyname.js"
+    }
+  }
+  </script>
 </head>
 <body>
   <header class="top">
@@ -30,8 +47,7 @@
           <button type="button" id="run" class="primary">Run selection</button>
         </div>
         <div class="editor">
-          <pre id="gutter" class="gutter" aria-hidden="true">1</pre>
-          <textarea id="editor" spellcheck="false" placeholder="Open a .dql file, or create one."></textarea>
+          <div id="editor"></div>
         </div>
         <section class="results">
           <div class="pane-head">
@@ -65,6 +81,6 @@
       </section>
     </main>
   </div>
-  <script src="/app.js"></script>
+  <script type="module" src="/app.js"></script>
 </body>
 </html>

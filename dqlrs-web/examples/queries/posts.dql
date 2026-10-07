@@ -1,3 +1,4 @@
+-- posts for one username, then a full scan
 DROP TABLE IF EXISTS nb_posts;
 CREATE TABLE nb_posts (
   username STRING HASH KEY,

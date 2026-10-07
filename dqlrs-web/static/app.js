@@ -1,3 +1,29 @@
+import { EditorState } from "@codemirror/state";
+import {
+  EditorView,
+  highlightActiveLine,
+  highlightActiveLineGutter,
+  keymap,
+  lineNumbers,
+  placeholder,
+} from "@codemirror/view";
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
+import { dqlLanguage } from "./dql-mode.js";
+
+const dqlHighlight = HighlightStyle.define([
+  { tag: tags.keyword, color: "#0f766e", fontWeight: "650" },
+  { tag: tags.typeName, color: "#1d4ed8" },
+  { tag: tags.function(tags.variableName), color: "#6d28d9" },
+  { tag: tags.bool, color: "#0369a1", fontWeight: "650" },
+  { tag: tags.null, color: "#0369a1", fontWeight: "650" },
+  { tag: tags.string, color: "#9f1239" },
+  { tag: tags.number, color: "#b45309" },
+  { tag: tags.comment, color: "#6b7280", fontStyle: "italic" },
+  { tag: tags.operator, color: "#334155" },
+]);
+
 const state = {
   mode: "query",
   path: "",
@@ -8,11 +34,45 @@ const state = {
   table: "",
   page: 0,
   hasMore: false,
+  suppressSave: false,
 };
 
-const editor = document.querySelector("#editor");
-const gutter = document.querySelector("#gutter");
 const treeEl = document.querySelector("#tree");
+const editor = new EditorView({
+  parent: document.querySelector("#editor"),
+  state: EditorState.create({
+    doc: "",
+    extensions: [
+      lineNumbers(),
+      highlightActiveLine(),
+      highlightActiveLineGutter(),
+      history(),
+      keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
+      dqlLanguage,
+      syntaxHighlighting(dqlHighlight),
+      placeholder("Open a .dql file, or create one."),
+      EditorView.lineWrapping,
+      EditorView.contentAttributes.of({ spellcheck: "false" }),
+      EditorView.theme({
+        "&": { height: "100%", fontSize: "12.5px" },
+        "&.cm-focused": { outline: "none" },
+        ".cm-scroller": {
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+          lineHeight: "1.4",
+        },
+        ".cm-gutters": { background: "#fafbfc", color: "#8b97a3", border: "none" },
+        ".cm-activeLine": { background: "#f7faf9" },
+        ".cm-activeLineGutter": { background: "#f3f5f7" },
+        ".cm-content": { padding: "4px 0" },
+        ".cm-line": { padding: "0 8px" },
+        ".cm-placeholder": { color: "#8b97a3", fontStyle: "italic" },
+      }),
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged && !state.suppressSave) scheduleSave();
+      }),
+    ],
+  }),
+});
 const resultBody = document.querySelector("#result-body");
 const resultMeta = document.querySelector("#result-meta");
 
@@ -20,13 +80,6 @@ document.querySelector("#mode-query").addEventListener("click", () => setMode("q
 document.querySelector("#mode-tables").addEventListener("click", () => setMode("tables"));
 document.querySelector("#new-file").addEventListener("click", createFile);
 document.querySelector("#run").addEventListener("click", runSelection);
-editor.addEventListener("input", () => {
-  paintGutter();
-  scheduleSave();
-});
-editor.addEventListener("scroll", () => {
-  gutter.scrollTop = editor.scrollTop;
-});
 document.querySelector("#table-search").addEventListener("input", () => {
   clearTimeout(state.searchTimer);
   state.searchTimer = setTimeout(loadTables, 250);
@@ -121,9 +174,8 @@ async function openFile(path) {
   await flushSave();
   const file = await api("/api/file?path=" + encodeURIComponent(path));
   state.path = file.path;
-  editor.value = file.text;
+  setEditorText(file.text);
   document.querySelector("#file-name").textContent = file.path.split("/").pop();
-  paintGutter();
   setMode("query");
   await refreshTree();
 }
@@ -145,19 +197,27 @@ function scheduleSave() {
 async function flushSave() {
   clearTimeout(state.saveTimer);
   if (!state.path) return;
-  await api("/api/file", { method: "PUT", body: { path: state.path, text: editor.value } });
+  await api("/api/file", { method: "PUT", body: { path: state.path, text: editorText() } });
 }
 
-function paintGutter() {
-  const count = Math.max(1, editor.value.split("\n").length);
-  gutter.textContent = Array.from({ length: count }, (_, i) => String(i + 1)).join("\n");
-  gutter.scrollTop = editor.scrollTop;
+function editorText() {
+  return editor.state.doc.toString();
+}
+
+function setEditorText(text) {
+  state.suppressSave = true;
+  editor.dispatch({
+    changes: { from: 0, to: editor.state.doc.length, insert: text },
+    selection: { anchor: 0 },
+  });
+  state.suppressSave = false;
 }
 
 async function runSelection() {
   await flushSave();
-  const selected = editor.value.slice(editor.selectionStart, editor.selectionEnd);
-  const dql = selected.trim() ? selected : editor.value;
+  const selection = editor.state.selection.main;
+  const selected = selection.empty ? "" : editor.state.sliceDoc(selection.from, selection.to);
+  const dql = selected.trim() ? selected : editorText();
   const run = document.querySelector("#run");
   run.disabled = true;
   resultMeta.textContent = "Running…";
