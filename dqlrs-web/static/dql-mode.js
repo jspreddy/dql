@@ -24,9 +24,7 @@ function bandDecorations(doc) {
   for (const band of queryBands(doc.toString())) {
     if (band.band === "plain") continue;
     const deco = band.band === "write-even" ? writeEvenLine : band.band === "write" ? writeLine : altLine;
-    const fromLine = doc.lineAt(band.from).number;
-    const toLine = doc.lineAt(Math.max(band.from, band.to - 1)).number;
-    for (let number = fromLine; number <= toLine; number += 1) {
+    for (let number = band.lineFrom; number <= band.lineTo; number += 1) {
       ranges.push(deco.range(doc.line(number).from));
     }
   }

@@ -236,6 +236,6 @@ function expandQueryBands(src, bands) {
       claimed[end] = true;
     }
     const to = end + 1 < lines.length ? starts[end + 1] : src.length;
-    return { ...band, from: starts[start], to };
+    return { ...band, from: starts[start], to, lineFrom: start + 1, lineTo: end + 1 };
   });
 }

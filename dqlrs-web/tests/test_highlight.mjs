@@ -120,4 +120,6 @@ test("blank lines bound a highlight and comments stick to the touching query", (
   const leading = "\n\nSELECT 1;\n";
   const leadingBands = queryBands(leading);
   assert.equal(leading.slice(leadingBands[0].from, leadingBands[0].to), "SELECT 1;\n");
+  assert.equal(leadingBands[0].lineFrom, 3);
+  assert.equal(leadingBands[0].lineTo, 4);
 });
