@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>What this branch adds</title>
+  <style>
+    :root {
+      --bg: #f4f1ea;
+      --card: #fffcf7;
+      --ink: #1c1915;
+      --muted: #5e584e;
+      --line: #e3ddd2;
+      --accent: #1d4a38;
+      --soft: #efeae1;
+      color-scheme: light dark;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #12110f;
+        --card: #1c1a17;
+        --ink: #f4f0e8;
+        --muted: #b7b0a4;
+        --line: #34302a;
+        --accent: #9dceb4;
+        --soft: #26231f;
+      }
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 17px/1.45 "Iowan Old Style", Palatino, Georgia, serif;
+    }
+    main {
+      max-width: 40rem;
+      margin: 0 auto;
+      padding: 1.25rem 1rem 3rem;
+    }
+    h1 {
+      font-size: 1.7rem;
+      line-height: 1.15;
+      font-weight: 650;
+      margin: 0 0 0.6rem;
+    }
+    .lead { margin: 0 0 1rem; }
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0.5rem;
+      margin: 0 0 1.25rem;
+    }
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.7rem 0.55rem 0.6rem;
+    }
+    .stat b {
+      display: block;
+      font-size: 1.15rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat span {
+      display: block;
+      margin-top: 0.15rem;
+      color: var(--muted);
+      font: 12px/1.3 ui-sans-serif, system-ui, sans-serif;
+    }
+    p { margin: 0.55rem 0; }
+    details {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      margin: 0.55rem 0;
+    }
+    details details {
+      background: transparent;
+      border: 0;
+      border-left: 2px solid var(--line);
+      border-radius: 0;
+      margin: 0.35rem 0 0.35rem 0.7rem;
+    }
+    summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 0.85rem 0.9rem;
+      font: 600 16px/1.3 ui-sans-serif, system-ui, sans-serif;
+      display: flex;
+      gap: 0.55rem;
+      align-items: baseline;
+    }
+    details details > summary { padding: 0.65rem 0.7rem; font-weight: 600; }
+    summary::-webkit-details-marker { display: none; }
+    summary::before {
+      content: "▸";
+      color: var(--accent);
+      flex: none;
+      font-size: 0.85rem;
+    }
+    details[open] > summary::before { content: "▾"; }
+    summary .hint {
+      margin-left: auto;
+      color: var(--muted);
+      font-weight: 450;
+      font-size: 12px;
+      text-align: right;
+    }
+    .body {
+      padding: 0 0.95rem 0.9rem;
+      color: var(--ink);
+    }
+    details details > .body { padding: 0 0.75rem 0.7rem; }
+    .note {
+      color: var(--muted);
+      font: 14px/1.4 ui-sans-serif, system-ui, sans-serif;
+    }
+    ul { margin: 0.4rem 0; padding-left: 1.1rem; }
+    li { margin: 0.28rem 0; }
+    code {
+      font: 0.86em/1.3 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: var(--soft);
+      padding: 0.05em 0.28em;
+      border-radius: 4px;
+    }
+    ol.steps { margin: 0.4rem 0; padding-left: 1.2rem; }
+    ol.steps li { margin: 0.45rem 0; }
+    .file {
+      font: 13px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>What this branch adds</h1>
+  <p class="lead">Compared with its parent, <code>cursor/notebook-playwright-tests-91a1</code>, this branch does not change the notebook, the Rust CLI, or the Python CLI. It adds one folder: a local web app for <code>.dql</code> files.</p>
+  <div class="stats">
+    <div class="stat"><b>1</b><span>new folder</span></div>
+    <div class="stat"><b>30</b><span>new files</span></div>
+    <div class="stat"><b>0</b><span>existing files edited</span></div>
+  </div>
+  <p class="note">Tap a row to go one level down. Close it to come back up.</p>
+
+  <details>
+    <summary>The app, in one screen <span class="hint">start here</span></summary>
+    <div class="body">
+      <p>You run it on your machine. A browser tab shows the folder you started in. The top bar switches two views. The left side is the files.</p>
+      <details>
+        <summary>Query</summary>
+        <div class="body">
+          <p>Open a <code>.dql</code> file. The editor colors the language. Each query gets a light band. Writes are red, and neighboring writes use two reds so they stay separate.</p>
+          <p>A thin black border marks what <b>Run selection</b> will execute. A highlight runs that highlight. A cursor with no highlight runs the query it is sitting in. <code>Ctrl+Enter</code> does the same thing while the editor is focused (<code>⌘Enter</code> on a Mac). The shortcut is written under the button.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Tables</summary>
+        <div class="body">
+          <p>The same list as <code>ls</code>, with the same globs (<code>nb_*</code>, <code>*foo*</code>). Open a table and it shows 50 rows at a time, with Previous and Next.</p>
+        </div>
+      </details>
+      <details>
+        <summary>Files</summary>
+        <div class="body">
+          <p>The tree is nested folders plus <code>.dql</code> files. Right-click to create, duplicate, rename, move, or delete. Drag onto a folder to move. Double-click a name to rename it. Typing in the editor writes the whole file back to disk.</p>
+        </div>
+      </details>
+    </div>
+  </details>
+
+  <details>
+    <summary>The new folder <span class="hint">dqlrs-web/</span></summary>
+    <div class="body">
+      <p>About 2,700 lines are this app. About 24,000 lines are a copy of the CodeMirror editor, vendored so the page does not need a network or a build step. Four pictures are the earlier mockups.</p>
+
+      <details>
+        <summary><span class="file">README.md</span> <span class="hint">13 lines</span></summary>
+        <div class="body">
+          <p>How to start the app, and a short description of the editor, the highlight rules, the run shortcut, and the file tree.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary><span class="file">run.sh</span> <span class="hint">24 lines</span></summary>
+        <div class="body">
+          <p>Starts the server. By default it talks to DynamoDB Local on <code>localhost:8000</code> with dummy AWS keys, and looks for a <code>dqlrs</code> binary you already built. <code>--aws</code> talks to AWS instead. <code>--dir</code> is the folder the tree shows.</p>
+        </div>
+      </details>
+
+      <details>
+        <summary>Python <span class="hint">4 files</span></summary>
+        <div class="body">
+          <p>The server is the standard library only. No new packages.</p>
+          <details>
+            <summary><span class="file">server.py</span> <span class="hint">227 lines</span></summary>
+            <div class="body">
+              <p>Listens on <code>127.0.0.1:8765</code>. It serves the page, and a JSON API for the tree, reading and saving a file, creating a file or folder, duplicate, move, delete, running a script, listing tables, and paging rows.</p>
+            </div>
+          </details>
+          <details>
+            <summary><span class="file">engine.py</span> <span class="hint">239 lines</span></summary>
+            <div class="body">
+              <p>Holds one <code>dqlrs --serve</code> process open. That command returns only the last statement, so a script is split and each statement is run on its own. The table list is <code>ls</code>. A page of rows is a <code>SCAN</code> with a rising <code>LIMIT</code>, then the last 50 rows.</p>
+            </div>
+          </details>
+          <details>
+            <summary><span class="file">files.py</span> <span class="hint">228 lines</span></summary>
+            <div class="body">
+              <p>Every path stays inside the folder you started in. The tree shows directories and <code>.dql</code> files. Empty folders stay visible. Folders that only contain other kinds of files stay hidden. This file creates, saves, moves, duplicates, and deletes. A folder delete stops if it would remove something that is not a <code>.dql</code> file. A duplicate is named <code>name copy</code>, then <code>name copy 2</code>.</p>
+            </div>
+          </details>
+          <details>
+            <summary><span class="file">statements.py</span> <span class="hint">55 lines</span></summary>
+            <div class="body">
+              <p>Splits a script on semicolons. Quotes and <code>--</code> comments are left intact. A comment-only fragment is dropped.</p>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <details>
+        <summary>The page <span class="hint">static/</span></summary>
+        <div class="body">
+          <p>Plain files the browser loads. No bundler.</p>
+          <details>
+            <summary><span class="file">index.html</span> <span class="hint">94 lines</span></summary>
+            <div class="body">
+              <p>The shell: top bar, file tree, query editor, results, and the tables view. The highlight checkboxes and the run button live in the query header. A hidden menu element is used for the right-click menu.</p>
+            </div>
+          </details>
+          <details>
+            <summary><span class="file">app.css</span> <span class="hint">319 lines</span></summary>
+            <div class="body">
+              <p>A dense layout. The window does not scroll as a page. The editor, the results, and the table rows each scroll inside their own pane. Also the file menu, the drop highlight, and the rename field.</p>
+            </div>
+          </details>
+          <details>
+            <summary><span class="file">app.js</span> <span class="hint">772 lines</span></summary>
+            <div class="body">
+              <p>All of the behavior in the browser.</p>
+              <details>
+                <summary>Editor and highlight toggles</summary>
+                <div class="body">
+                  <p>CodeMirror is set up here, with DQL colors. Two checkboxes: <b>Minimal write highlight</b> (a red bar in the gutter instead of a red background) and <b>Even/odd highlight</b> (the alternating bands). Both are saved in the browser under <code>dqlrs-web.highlight</code>. Even/odd starts on. Minimal starts off.</p>
+                </div>
+              </details>
+              <details>
+                <summary>What Run executes</summary>
+                <div class="body">
+                  <p>The border and the button use the same range. A non-empty selection is that selection. Otherwise it is the query around the cursor, including a comment that touches it and the blank line that closes it. The border is black, 1px, at 50% opacity.</p>
+                </div>
+              </details>
+              <details>
+                <summary>Saving</summary>
+                <div class="body">
+                  <p>There is no save button. After you stop typing for 400ms, the whole editor text is sent back and replaces the open file. Opening another file, running, moving, or duplicating also saves first. Loading a file into the editor does not count as an edit.</p>
+                </div>
+              </details>
+              <details>
+                <summary>The file tree</summary>
+                <div class="body">
+                  <p>A click opens a file or expands a folder, after a short pause so a double-click can rename instead. The right-click menu is New file, New folder, Duplicate, Rename, Move to…, and Delete. Dragging onto a folder moves the entry there. Dropping on the empty part of the tree moves it to the workspace root. If you rename or move the file that is open, the editor follows it.</p>
+                </div>
+              </details>
+            </div>
+          </details>
+          <details>
+            <summary><span class="file">dql-tokens.js</span> <span class="hint">280 lines</span></summary>
+            <div class="body">
+              <p>The word lists: statements, schema words, types, functions, and the command words such as <code>LS</code> and <code>HELP</code>. <code>DROP</code> and <code>DELETE</code> are the red words. Adding a word here extends the highlighter.</p>
+              <p>It also finds each query. A blank line ends one and keeps the previous color. A comment with no blank line between it and a query uses that query’s color. A comment sandwiched between two queries stays with the earlier one. <code>runTarget</code> is the range Run will execute.</p>
+            </div>
+          </details>
+          <details>
+            <summary><span class="file">dql-mode.js</span> <span class="hint">149 lines</span></summary>
+            <div class="body">
+              <p>Connects those rules to CodeMirror. Line backgrounds for the bands. Gutter bars when minimal write highlight is on. The black border around the run range.</p>
+            </div>
+          </details>
+          <details>
+            <summary>Editor library <span class="hint">static/vendor/</span></summary>
+            <div class="body">
+              <p>A copy of CodeMirror 6 and the small libraries it needs, checked in as plain scripts. This is not project logic. It is why the branch looks large.</p>
+              <ul>
+                <li><code>codemirror-view.js</code> — 11,945 lines</li>
+                <li><code>codemirror-state.js</code> — 3,949</li>
+                <li><code>codemirror-language.js</code> — 2,516</li>
+                <li><code>lezer-common.js</code> — 2,202</li>
+                <li><code>codemirror-commands.js</code> — 1,826</li>
+                <li><code>lezer-highlight.js</code> — 927</li>
+                <li><code>streamparser.js</code> — 180</li>
+                <li><code>style-mod.js</code> — 177</li>
+                <li><code>w3c-keyname.js</code> — 119</li>
+                <li><code>find-cluster-break.js</code> — 87</li>
+                <li><code>crelt.js</code> — 28</li>
+              </ul>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <details>
+        <summary>Examples <span class="hint">examples/</span></summary>
+        <div class="body">
+          <details>
+            <summary><span class="file">queries/posts.dql</span> <span class="hint">33 lines</span></summary>
+            <div class="body">
+              <p>A sample script for one table, <code>nb_posts</code>. It walks drop, create, select, scan, insert, update, delete, explain, and dump. Comments sit above, inside, and below queries, with blank lines between some of them, so the highlight bands are easy to see. Running the whole file would drop and recreate that table.</p>
+            </div>
+          </details>
+          <details>
+            <summary><span class="file">scans/recent.dql</span> <span class="hint">1 line</span></summary>
+            <div class="body">
+              <p>A single <code>SCAN * FROM nb_posts;</code></p>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <details>
+        <summary>Mockups <span class="hint">4 pictures</span></summary>
+        <div class="body">
+          <p>Drawings from before the app was built. Two of the first layout (query, tables) and two of the denser layout. They are not the running UI.</p>
+          <ul>
+            <li><code>mockups/query.jpg</code></li>
+            <li><code>mockups/tables.jpg</code></li>
+            <li><code>mockups/query-dense.jpg</code></li>
+            <li><code>mockups/tables-dense.jpg</code></li>
+          </ul>
+        </div>
+      </details>
+
+      <details>
+        <summary>Tests <span class="hint">tests/</span></summary>
+        <div class="body">
+          <details>
+            <summary><span class="file">test_app.py</span> <span class="hint">114 lines</span></summary>
+            <div class="body">
+              <p>Statement splitting, the path jail, the tree (empty folders show, source-only folders do not), create, save, move, duplicate, and delete. Also the <code>ls</code> text parser used for the table list.</p>
+            </div>
+          </details>
+          <details>
+            <summary><span class="file">test_highlight.mjs</span> <span class="hint">178 lines</span></summary>
+            <div class="body">
+              <p>Keyword coverage, a sample tokenize, the band colors, comment and blank-line boundaries, the two highlight toggles, and which range Run will use.</p>
+            </div>
+          </details>
+        </div>
+      </details>
+    </div>
+  </details>
+
+  <details>
+    <summary>The order it was built</summary>
+    <div class="body">
+      <p class="note">Oldest first. This is the shape of the work, not a release list.</p>
+      <ol class="steps">
+        <li>Picture mockups of a query screen and a tables screen.</li>
+        <li>A second, denser pair of mockups, with a nested tree and <code>ls</code>-style search.</li>
+        <li>The real app: tree, editor, run, results, tables, 50-row pages.</li>
+        <li>DQL syntax colors, using CodeMirror.</li>
+        <li>A light band on alternate queries, and red on writes. <code>DROP</code> and <code>DELETE</code> are red words.</li>
+        <li>Even writes use a darker red than odd writes.</li>
+        <li>A blank line ends a band and keeps the previous color. A touching comment joins the query.</li>
+        <li>The sample <code>posts.dql</code> grows to show those cases.</li>
+        <li>Toggles for a gutter-only write mark, and for turning even/odd bands off. Both are remembered in the browser.</li>
+        <li>A border around the query or selection that Run will execute, and <code>Ctrl+Enter</code> in the editor.</li>
+        <li>That border becomes 1px, black, at half opacity.</li>
+        <li>Right-click, drag, and double-click for files and folders.</li>
+      </ol>
+    </div>
+  </details>
+</main>
+</body>
+</html>
