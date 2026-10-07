@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DQLRS Web</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">DQLRS Web</div>
+    <div class="modes" role="tablist">
+      <button type="button" id="mode-query" class="active" role="tab" aria-selected="true">Query</button>
+      <button type="button" id="mode-tables" role="tab" aria-selected="false">Tables</button>
+    </div>
+    <div class="endpoint" id="endpoint">localhost:8000</div>
+  </header>
+  <div class="body">
+    <aside class="side">
+      <div class="side-head">
+        <span>Files</span>
+        <button type="button" id="new-file" title="New .dql file">+</button>
+      </div>
+      <div id="tree" class="tree"></div>
+    </aside>
+    <main>
+      <section id="query-view" class="view">
+        <div class="pane-head">
+          <span id="file-name">No file open</span>
+          <button type="button" id="run" class="primary">Run selection</button>
+        </div>
+        <div class="editor">
+          <pre id="gutter" class="gutter" aria-hidden="true">1</pre>
+          <textarea id="editor" spellcheck="false" placeholder="Open a .dql file, or create one."></textarea>
+        </div>
+        <section class="results">
+          <div class="pane-head">
+            <span>Results</span>
+            <span id="result-meta" class="meta"></span>
+          </div>
+          <div id="result-body" class="result-body"></div>
+        </section>
+      </section>
+      <section id="tables-view" class="view hidden">
+        <div class="pane-head">
+          <span>Tables</span>
+        </div>
+        <div class="search-row">
+          <input id="table-search" type="search" placeholder="nb_*" spellcheck="false" aria-label="ls glob" />
+          <span class="meta">ls glob</span>
+        </div>
+        <div id="table-list" class="table-list"></div>
+        <div class="rows-head">
+          <span id="rows-title"></span>
+          <span id="rows-meta" class="meta"></span>
+        </div>
+        <div id="rows-body" class="result-body"></div>
+        <div class="pager">
+          <span id="page-label" class="meta"></span>
+          <span>
+            <button type="button" id="page-prev">Previous</button>
+            <button type="button" id="page-next">Next</button>
+          </span>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

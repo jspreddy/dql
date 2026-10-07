@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS nb_posts;
+CREATE TABLE nb_posts (
+  username STRING HASH KEY,
+  postid NUMBER RANGE KEY
+);
+
+SELECT * FROM nb_posts
+WHERE username = 'steve';
+
+SCAN * FROM nb_posts;
