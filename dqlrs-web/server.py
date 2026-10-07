@@ -116,13 +116,7 @@ class App(BaseHTTPRequestHandler):
             self._json({"ok": True})
             return
         if parsed.path == "/api/run":
-            try:
-                results = ENGINE.run_script(str(body.get("dql") or ""))
-            except EngineError as exc:
-                self._error(502, str(exc))
-                return
-            ok = all(item.get("ok") for item in results)
-            self._json({"ok": ok, "results": results})
+            self._run(str(body.get("dql") or ""))
             return
         self._error(404, "not found")
 
@@ -154,6 +148,49 @@ class App(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return {}
         return value if isinstance(value, dict) else {}
+
+    def _run(self, dql: str) -> None:
+        events = ENGINE.iter_script(dql)
+        try:
+            try:
+                first = next(events)
+            except StopIteration:
+                self._json({"ok": True, "results": []})
+                return
+            except EngineError as exc:
+                self._error(502, str(exc))
+                return
+            self.protocol_version = "HTTP/1.1"
+            self.close_connection = True
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            try:
+                self._chunk(first)
+                for event in events:
+                    self._chunk(event)
+                self._end_chunks()
+            except EngineError as exc:
+                try:
+                    self._chunk({"event": "error", "error": str(exc)})
+                    self._end_chunks()
+                except OSError:
+                    return
+            except OSError:
+                return
+        finally:
+            events.close()
+
+    def _chunk(self, payload: dict) -> None:
+        data = (json.dumps(payload) + "\n").encode("utf-8")
+        self.wfile.write(f"{len(data):X}\r\n".encode("ascii") + data + b"\r\n")
+        self.wfile.flush()
+
+    def _end_chunks(self) -> None:
+        self.wfile.write(b"0\r\n\r\n")
+        self.wfile.flush()
 
     def _json(self, payload: dict, status: int = 200) -> None:
         data = json.dumps(payload).encode("utf-8")

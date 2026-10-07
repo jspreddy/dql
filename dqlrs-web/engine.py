@@ -54,16 +54,49 @@ class Engine:
             proc.kill()
 
     def run_script(self, dql: str) -> list[dict]:
+        results = []
+        for event in self.iter_script(dql):
+            if event.get("event") == "result":
+                results.append(event["result"])
+            if event.get("event") == "result" and not event["result"].get("ok"):
+                break
+        return results
+
+    def iter_script(self, dql: str):
+        """Yield statement, progress, and result events for one script.
+
+        Progress events arrive while a statement is still running. The caller
+        has to consume the generator for the engine lock to be released.
+        """
         statements = split_statements(dql)
         if not statements:
             raise EngineError("nothing to run")
-        results = []
-        for statement in statements:
-            envelope = self._exec(statement)
-            results.append(_public_result(statement, envelope))
-            if not envelope.get("ok"):
-                break
-        return results
+        with self._lock:
+            proc = self._ensure_locked()
+            for index, statement in enumerate(statements):
+                yield {"event": "statement", "index": index}
+                envelope = None
+                for value in self._exec_values(proc, statement):
+                    interpreted = interpret_serve_value(value)
+                    if interpreted is None:
+                        continue
+                    if interpreted["event"] == "progress":
+                        yield {
+                            "event": "progress",
+                            "index": index,
+                            "done": interpreted["done"],
+                            "total": interpreted["total"],
+                            "phase": interpreted["phase"],
+                        }
+                        continue
+                    envelope = interpreted["envelope"]
+                    break
+                if envelope is None:
+                    raise EngineError("dqlrs --serve ended without a result")
+                result = _public_result(statement, envelope)
+                yield {"event": "result", "index": index, "result": result}
+                if not result.get("ok"):
+                    return
 
     def list_tables(self, pattern: str) -> list[dict]:
         summary = self._exec("ls")
@@ -103,15 +136,14 @@ class Engine:
 
     def _exec(self, dql: str) -> dict:
         with self._lock:
-            proc = self._ensure()
-            request_id = str(self._next_id)
-            self._next_id += 1
-            assert proc.stdin is not None
-            proc.stdin.write(json.dumps({"id": request_id, "op": "exec", "dql": dql}) + "\n")
-            proc.stdin.flush()
-            return self._read_envelope(proc)
+            proc = self._ensure_locked()
+            for value in self._exec_values(proc, dql):
+                interpreted = interpret_serve_value(value)
+                if interpreted is not None and interpreted["event"] == "envelope":
+                    return interpreted["envelope"]
+        raise EngineError("dqlrs --serve ended without a result")
 
-    def _ensure(self) -> subprocess.Popen[str]:
+    def _ensure_locked(self) -> subprocess.Popen[str]:
         if self._proc is not None and self._proc.poll() is None:
             return self._proc
         argv = [self.binary, "--serve", "-r", self.region]
@@ -132,14 +164,28 @@ class Engine:
         assert proc.stdin is not None
         proc.stdin.write(json.dumps({"id": "0", "op": "ping"}) + "\n")
         proc.stdin.flush()
-        reply = self._read_envelope(proc)
-        if not reply.get("ok"):
+        reply = None
+        for value in self._read_values(proc):
+            interpreted = interpret_serve_value(value)
+            if interpreted is not None and interpreted["event"] == "envelope":
+                reply = interpreted["envelope"]
+                break
+        if reply is None or not reply.get("ok"):
             self._proc = None
             proc.kill()
-            raise EngineError(f"dqlrs --serve ping failed: {_error_message(reply)}")
+            detail = _error_message(reply) if reply else "no reply"
+            raise EngineError(f"dqlrs --serve ping failed: {detail}")
         return proc
 
-    def _read_envelope(self, proc: subprocess.Popen[str]) -> dict:
+    def _exec_values(self, proc: subprocess.Popen[str], dql: str):
+        request_id = str(self._next_id)
+        self._next_id += 1
+        assert proc.stdin is not None
+        proc.stdin.write(json.dumps({"id": request_id, "op": "exec", "dql": dql}) + "\n")
+        proc.stdin.flush()
+        yield from self._read_values(proc)
+
+    def _read_values(self, proc: subprocess.Popen[str]):
         stdout = proc.stdout
         if stdout is None:
             raise EngineError("dqlrs --serve has no stdout")
@@ -154,8 +200,35 @@ class Engine:
                 value = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise EngineError(f"invalid serve line: {line!r}") from exc
-            if isinstance(value, dict) and "ok" in value:
-                return value
+            if isinstance(value, dict):
+                yield value
+                if "ok" in value:
+                    return
+
+
+def interpret_serve_value(value: object) -> dict | None:
+    """Classify one dqlrs stdout object.
+
+    Progress lines have no `ok` field. Envelopes do. Anything else is ignored.
+    """
+    if not isinstance(value, dict):
+        return None
+    if value.get("event") == "progress" and "ok" not in value:
+        total = value.get("total")
+        done = value.get("done")
+        return {
+            "event": "progress",
+            "done": done if _json_int(done) else 0,
+            "total": total if _json_int(total) else None,
+            "phase": str(value.get("phase") or ""),
+        }
+    if "ok" in value:
+        return {"event": "envelope", "envelope": value}
+    return None
+
+
+def _json_int(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def find_dqlrs() -> str:

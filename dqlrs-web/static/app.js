@@ -10,8 +10,8 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { dqlLanguage, queryHighlight, runFrame } from "./dql-mode.js";
-import { runTarget } from "./dql-tokens.js";
+import { dqlLanguage, markersForRunStatus, queryHighlight, runFrame, runStatusField, runStatusGutter, setRunStatuses } from "./dql-mode.js";
+import { runTarget, statementSpans } from "./dql-tokens.js";
 
 const dqlHighlight = HighlightStyle.define([
   { tag: tags.keyword, color: "#0f766e", fontWeight: "650" },
@@ -25,6 +25,8 @@ const dqlHighlight = HighlightStyle.define([
   { tag: tags.comment, color: "#6b7280", fontStyle: "italic" },
   { tag: tags.operator, color: "#334155" },
 ]);
+
+let runMarks = [];
 
 const state = {
   mode: "query",
@@ -67,6 +69,8 @@ const editor = new EditorView({
     doc: "",
     extensions: [
       lineNumbers(),
+      runStatusField,
+      runStatusGutter,
       highlightActiveLine(),
       highlightActiveLineGutter(),
       history(),
@@ -87,6 +91,8 @@ const editor = new EditorView({
           lineHeight: "1.4",
         },
         ".cm-gutters": { background: "#fafbfc", color: "#8b97a3", border: "none" },
+        ".cm-run-status-gutter": { width: "16px" },
+        ".cm-run-status-gutter .cm-gutterElement": { padding: "0 1px" },
         ".cm-line.cm-dql-alt": { backgroundColor: "#f4f7f8" },
         ".cm-line.cm-dql-write": { backgroundColor: "#fdecec" },
         ".cm-line.cm-dql-write-even": { backgroundColor: "#f3c4c4" },
@@ -113,11 +119,15 @@ const editor = new EditorView({
       }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged && !state.suppressSave) scheduleSave();
+        if (update.docChanged && runMarks.length) {
+          runMarks = runMarks.map((mark) => ({ ...mark, from: update.changes.mapPos(mark.from, 1) }));
+        }
       }),
     ],
   }),
 });
 const resultBody = document.querySelector("#result-body");
+const runProgress = document.querySelector("#run-progress");
 const resultMeta = document.querySelector("#result-meta");
 
 document.querySelector("#mode-query").addEventListener("click", () => setMode("query"));
@@ -603,6 +613,62 @@ function currentRunRange() {
   return runTarget(editor.state.doc.toString(), selection.head, selection.anchor);
 }
 
+function paintRunMarks() {
+  editor.dispatch({
+    effects: setRunStatuses.of(markersForRunStatus(editor.state.doc, runMarks)),
+  });
+}
+
+function markStatement(from, status) {
+  if (typeof from !== "number") return;
+  const existing = runMarks.find((mark) => mark.from === from);
+  if (existing) existing.status = status;
+  else runMarks.push({ from, status });
+  paintRunMarks();
+}
+
+function showProgress(done, total) {
+  runProgress.hidden = false;
+  if (typeof total === "number" && total > 0) {
+    runProgress.max = total;
+    runProgress.value = Math.min(Math.max(0, done || 0), total);
+    resultMeta.textContent = runProgress.value + " / " + total;
+  } else {
+    runProgress.removeAttribute("value");
+    runProgress.removeAttribute("max");
+    resultMeta.textContent = "Running…";
+  }
+}
+
+function hideProgress() {
+  runProgress.hidden = true;
+  runProgress.removeAttribute("value");
+  runProgress.removeAttribute("max");
+}
+
+async function readNdjson(response, onEvent) {
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || response.statusText);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+    let newline = buffer.indexOf("\n");
+    while (newline >= 0) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      if (line) onEvent(JSON.parse(line));
+      newline = buffer.indexOf("\n");
+    }
+    if (done) break;
+  }
+  if (buffer.trim()) onEvent(JSON.parse(buffer.trim()));
+}
+
 async function runSelection() {
   await flushSave();
   const range = currentRunRange();
@@ -610,20 +676,52 @@ async function runSelection() {
   if (!dql.trim()) {
     resultMeta.textContent = "Nothing to run";
     resultBody.replaceChildren();
+    hideProgress();
     return;
   }
-  const run = runButton;
-  run.disabled = true;
+  const origins = statementSpans(dql).map((span) => range.from + span.from);
+  runMarks = origins.length ? [{ from: origins[0], status: "running" }] : [];
+  paintRunMarks();
+  runButton.disabled = true;
   resultMeta.textContent = "Running…";
   resultBody.replaceChildren();
+  showProgress(null, null);
+  const results = [];
   try {
-    const payload = await api("/api/run", { method: "POST", body: { dql } });
-    renderResults(payload.results || []);
+    const response = await fetch("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dql }),
+    });
+    await readNdjson(response, (event) => {
+      if (event.event === "error") throw new Error(event.error || "failed");
+      if (event.event === "statement") {
+        markStatement(origins[event.index], "running");
+        showProgress(null, null);
+        return;
+      }
+      if (event.event === "progress") {
+        showProgress(event.done, event.total);
+        return;
+      }
+      if (event.event === "result") {
+        const result = event.result || {};
+        results.push(result);
+        markStatement(origins[event.index], result.ok ? "ok" : "error");
+      }
+    });
+    renderResults(results);
   } catch (error) {
     resultMeta.textContent = "";
     resultBody.append(note(error.message, true));
+    const running = runMarks.find((mark) => mark.status === "running");
+    if (running) {
+      running.status = "error";
+      paintRunMarks();
+    }
   } finally {
-    run.disabled = false;
+    hideProgress();
+    runButton.disabled = false;
   }
 }
 

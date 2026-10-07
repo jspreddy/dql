@@ -216,6 +216,63 @@ export function bandAppearance(band, options = {}) {
  * Otherwise the query band containing `head` is the current query.
  * Returns null when the cursor is outside every query.
  */
+/**
+ * Semicolon-separated statements in `text`, as offsets into that string.
+ * A comment-only fragment is omitted. `from` is the first non-space
+ * character, so a gutter mark lands on the query's first line.
+ */
+export function statementSpans(text) {
+  const src = String(text);
+  const spans = [];
+  let bufStart = 0;
+  let quote = null;
+  let i = 0;
+  while (i < src.length) {
+    const ch = src[i];
+    const nxt = src[i + 1] || "";
+    if (quote === null && ch === "-" && nxt === "-") {
+      i += 2;
+      while (i < src.length && src[i] !== "\n") i += 1;
+      continue;
+    }
+    if (quote !== null) {
+      if (ch === quote && src[i - 1] !== "\\") quote = null;
+      i += 1;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      i += 1;
+      continue;
+    }
+    if (ch === ";") {
+      pushStatementSpan(src, spans, bufStart, i + 1);
+      bufStart = i + 1;
+      i += 1;
+      continue;
+    }
+    i += 1;
+  }
+  pushStatementSpan(src, spans, bufStart, src.length);
+  return spans;
+}
+
+function pushStatementSpan(src, spans, from, to) {
+  const raw = src.slice(from, to);
+  if (!statementHasCode(raw)) return;
+  const lead = raw.length - raw.trimStart().length;
+  const end = from + raw.trimEnd().length;
+  spans.push({ from: from + lead, to: Math.max(from + lead, end) });
+}
+
+function statementHasCode(statement) {
+  for (const line of statement.split("\n")) {
+    const stripped = line.trim();
+    if (stripped && !stripped.startsWith("--")) return true;
+  }
+  return false;
+}
+
 export function runTarget(text, head, anchor = head) {
   const src = String(text);
   const from = Math.max(0, Math.min(head, anchor, src.length));

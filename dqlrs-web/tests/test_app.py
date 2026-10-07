@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from engine import _ls_keys, _ls_names, _safe_table_name  # noqa: E402
+from engine import _ls_keys, _ls_names, _safe_table_name, interpret_serve_value  # noqa: E402
 from files import (  # noqa: E402
     PathError,
     create_file,
@@ -24,6 +24,34 @@ from files import (  # noqa: E402
     write_text,
 )
 from statements import split_statements  # noqa: E402
+
+
+class ServeLineTests(unittest.TestCase):
+    def test_progress_is_separate_from_the_result_envelope(self) -> None:
+        progress = interpret_serve_value(
+            {"id": "1", "event": "progress", "done": 25, "total": 30, "phase": "write"}
+        )
+        assert progress is not None
+        self.assertEqual(progress["event"], "progress")
+        self.assertEqual(progress["done"], 25)
+        self.assertEqual(progress["total"], 30)
+        self.assertNotIn("ok", progress)
+
+        unknown = interpret_serve_value(
+            {"id": "2", "event": "progress", "done": 33, "total": None, "phase": "read"}
+        )
+        assert unknown is not None
+        self.assertIsNone(unknown["total"])
+        self.assertEqual(unknown["done"], 33)
+
+        envelope = interpret_serve_value({"ok": True, "kind": "affected", "affected": 30})
+        assert envelope is not None
+        self.assertEqual(envelope["event"], "envelope")
+        self.assertTrue(envelope["envelope"]["ok"])
+        self.assertIsNone(interpret_serve_value("nope"))
+        mixed = interpret_serve_value({"event": "progress", "ok": False})
+        assert mixed is not None
+        self.assertEqual(mixed["event"], "envelope")
 
 
 class StatementTests(unittest.TestCase):

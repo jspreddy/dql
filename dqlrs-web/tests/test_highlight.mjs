@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { bandAppearance, highlightSource, knownWords, queryBands, runTarget, styleForWord } from "../static/dql-tokens.js";
+import { bandAppearance, highlightSource, knownWords, queryBands, runTarget, statementSpans, styleForWord } from "../static/dql-tokens.js";
 
 const required = {
   keyword: [
@@ -143,6 +143,16 @@ test("highlight toggles choose a fill or a gutter bar", () => {
   assert.equal(bandAppearance(writeOdd, flat), "bar");
   assert.equal(bandAppearance(readEven, flat), "plain");
   assert.equal(bandAppearance(readOdd, { minimalWrite: false, evenOdd: false }), "plain");
+});
+
+test("statement spans mark each query that will run", () => {
+  const src = "-- head\nSELECT * FROM t WHERE name = 'a;b';\n\nSCAN * FROM t;\n-- only\n";
+  const spans = statementSpans(src);
+  assert.equal(spans.length, 2);
+  assert.equal(src.slice(spans[0].from, spans[0].to), "-- head\nSELECT * FROM t WHERE name = 'a;b';");
+  assert.equal(src.slice(spans[1].from, spans[1].to), "SCAN * FROM t;");
+  assert.deepEqual(statementSpans("-- just a comment\n"), []);
+  assert.equal(statementSpans("SELECT 1").length, 1);
 });
 
 test("run target is the selection, or the query at the cursor", () => {

@@ -3,7 +3,7 @@
  * Keyword coverage lives in dql-tokens.js; add words there.
  */
 import { StreamLanguage } from "@codemirror/language";
-import { Facet, RangeSet, RangeSetBuilder } from "@codemirror/state";
+import { Facet, RangeSet, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, GutterMarker, ViewPlugin, gutter } from "@codemirror/view";
 import { bandAppearance, queryBands, runTarget, startState, tokenDql } from "./dql-tokens.js";
 
@@ -129,6 +129,74 @@ export const runFrame = ViewPlugin.fromClass(
   },
   { decorations: (plugin) => plugin.decorations },
 );
+
+class RunStatusMarker extends GutterMarker {
+  constructor(status) {
+    super();
+    this.status = status;
+  }
+
+  eq(other) {
+    return other instanceof RunStatusMarker && other.status === this.status;
+  }
+
+  toDOM() {
+    const mark = document.createElement("span");
+    mark.className = "run-status run-status-" + this.status;
+    const label = this.status === "running" ? "Running" : this.status === "ok" ? "Succeeded" : "Failed";
+    mark.title = label;
+    mark.setAttribute("role", "img");
+    mark.setAttribute("aria-label", label);
+    if (this.status === "ok") mark.textContent = "✓";
+    if (this.status === "error") mark.textContent = "×";
+    return mark;
+  }
+}
+
+const statusMarker = {
+  running: new RunStatusMarker("running"),
+  ok: new RunStatusMarker("ok"),
+  error: new RunStatusMarker("error"),
+};
+
+/** Replace the gutter marks for the queries in the latest run. */
+export const setRunStatuses = StateEffect.define();
+
+export const runStatusField = StateField.define({
+  create() {
+    return RangeSet.empty;
+  },
+  update(markers, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setRunStatuses)) return effect.value;
+    }
+    return markers.map(transaction.changes);
+  },
+});
+
+export function markersForRunStatus(doc, marks) {
+  const byLine = new Map();
+  for (const mark of marks) {
+    if (typeof mark.from !== "number" || mark.from < 0) continue;
+    const marker = statusMarker[mark.status];
+    if (!marker) continue;
+    const line = doc.lineAt(Math.min(mark.from, doc.length));
+    byLine.set(line.from, marker);
+  }
+  const builder = new RangeSetBuilder();
+  for (const from of [...byLine.keys()].sort((left, right) => left - right)) {
+    builder.add(from, from, byLine.get(from));
+  }
+  return builder.finish();
+}
+
+/** Blue spinner, green check, or red cross on the query that ran. */
+export const runStatusGutter = gutter({
+  class: "cm-run-status-gutter",
+  markers(view) {
+    return view.state.field(runStatusField);
+  },
+});
 
 function frame(state) {
   const selection = state.selection.main;
