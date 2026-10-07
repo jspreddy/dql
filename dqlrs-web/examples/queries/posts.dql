@@ -1,11 +1,33 @@
 -- posts for one username, then a full scan
 DROP TABLE IF EXISTS nb_posts;
+-- the create below is the next query; this note stays with drop
 CREATE TABLE nb_posts (
   username STRING HASH KEY,
   postid NUMBER RANGE KEY
 );
 
+-- a blank line above gives this comment to the select
 SELECT * FROM nb_posts
+-- only steve's rows
+WHERE username = 'steve';
+-- trailing note stays with the select
+
+-- header for the scan
+SCAN * FROM nb_posts;
+
+INSERT INTO nb_posts (username, postid, body)
+VALUES ('steve', 3, 'third');
+-- saved with the insert
+UPDATE nb_posts
+SET body = 'revised'
+WHERE username = 'steve' AND postid = 3;
+-- still the update, because no blank line follows
+DELETE FROM nb_posts
+WHERE username = 'ada' AND postid = 1;
+
+-- explain prints the read plan and keeps this header
+EXPLAIN SELECT * FROM nb_posts
 WHERE username = 'steve';
 
-SCAN * FROM nb_posts;
+
+DUMP SCHEMA nb_posts;
