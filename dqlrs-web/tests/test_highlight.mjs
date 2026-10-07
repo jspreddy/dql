@@ -86,12 +86,38 @@ drop table t;
     bands.map((band) => band.band),
     ["alt", "write", "alt", "write", "write-even"],
   );
-  assert.equal(text.slice(bands[0].from, bands[0].to).startsWith("SELECT"), true);
-  assert.equal(text.slice(bands[0].from, bands[0].to).includes("--"), false);
+  assert.equal(text.slice(bands[0].from, bands[0].to).startsWith("-- header"), true);
   assert.equal(text.slice(bands[0].from, bands[0].to).includes("'a;b'"), true);
+  assert.equal(text.slice(0, bands[0].from), "\n");
   assert.equal(bands[3].write, true);
   assert.equal(bands[4].write, true);
   const tokens = highlightSource("DROP TABLE t; DELETE FROM t;");
   assert.equal(tokens.find((token) => token.text === "DROP").style, "deleted");
   assert.equal(tokens.find((token) => token.text === "DELETE").style, "deleted");
+});
+
+test("blank lines bound a highlight and comments stick to the touching query", () => {
+  const before = "-- head\nSELECT 1;\n\nSCAN 2;\n";
+  const beforeBands = queryBands(before);
+  assert.equal(before.slice(beforeBands[0].from, beforeBands[0].to), "-- head\nSELECT 1;\n\n");
+  assert.equal(before.slice(beforeBands[1].from, beforeBands[1].to), "SCAN 2;\n");
+
+  const after = "SELECT 1;\n-- tail\n\nSCAN 2;";
+  const afterBands = queryBands(after);
+  assert.equal(after.slice(afterBands[0].from, afterBands[0].to), "SELECT 1;\n-- tail\n\n");
+  assert.equal(after.slice(afterBands[1].from, afterBands[1].to), "SCAN 2;");
+
+  const between = "SELECT 1;\n\n-- next\nDROP TABLE t;";
+  const betweenBands = queryBands(between);
+  assert.equal(between.slice(betweenBands[0].from, betweenBands[0].to), "SELECT 1;\n\n");
+  assert.equal(between.slice(betweenBands[1].from, betweenBands[1].to), "-- next\nDROP TABLE t;");
+
+  const sandwiched = "SELECT 1;\n-- mid\nDELETE FROM t;";
+  const sandwichedBands = queryBands(sandwiched);
+  assert.equal(sandwiched.slice(sandwichedBands[0].from, sandwichedBands[0].to), "SELECT 1;\n-- mid\n");
+  assert.equal(sandwiched.slice(sandwichedBands[1].from, sandwichedBands[1].to), "DELETE FROM t;");
+
+  const leading = "\n\nSELECT 1;\n";
+  const leadingBands = queryBands(leading);
+  assert.equal(leading.slice(leadingBands[0].from, leadingBands[0].to), "SELECT 1;\n");
 });

@@ -126,7 +126,10 @@ const ACTION_PREFIX = new Set(["EXPLAIN", "ANALYZE"]);
 /**
  * One entry per query. `band` is `write` (light red), `write-even` (a darker
  * red on even queries), `alt` (very light stripe on even reads), or `plain`.
- * Offsets cover the query from its first code character through the semicolon.
+ *
+ * The colored range starts at a comment that touches the query and runs
+ * through the query, a comment after it, and the blank lines that follow.
+ * A blank line is the boundary and keeps the previous query's color.
  */
 export function queryBands(text) {
   const src = String(text);
@@ -187,5 +190,52 @@ export function queryBands(text) {
     if (codeStart < 0 && !/\s/.test(ch)) codeStart = i;
   }
   finish(src.length);
-  return bands;
+  return expandQueryBands(src, bands);
+}
+
+function expandQueryBands(src, bands) {
+  if (!bands.length) return bands;
+  const lines = src.split("\n");
+  const starts = [];
+  let cursor = 0;
+  for (const line of lines) {
+    starts.push(cursor);
+    cursor += line.length + 1;
+  }
+  const lineIndexAt = (offset) => {
+    let index = 0;
+    for (let i = 0; i < starts.length; i += 1) {
+      if (starts[i] <= offset) index = i;
+      else break;
+    }
+    return index;
+  };
+  const isComment = (index) => lines[index].trim().startsWith("--");
+  const isEmpty = (index) => lines[index].trim() === "";
+  const claimed = new Array(lines.length).fill(false);
+  const code = bands.map((band) => ({
+    from: lineIndexAt(band.from),
+    to: lineIndexAt(Math.max(band.from, band.to - 1)),
+  }));
+  for (const span of code) {
+    for (let i = span.from; i <= span.to; i += 1) claimed[i] = true;
+  }
+  return bands.map((band, index) => {
+    let start = code[index].from;
+    let end = code[index].to;
+    while (start > 0 && !claimed[start - 1] && isComment(start - 1)) {
+      start -= 1;
+      claimed[start] = true;
+    }
+    while (end + 1 < lines.length && !claimed[end + 1] && isComment(end + 1)) {
+      end += 1;
+      claimed[end] = true;
+    }
+    while (end + 1 < lines.length && !claimed[end + 1] && isEmpty(end + 1)) {
+      end += 1;
+      claimed[end] = true;
+    }
+    const to = end + 1 < lines.length ? starts[end + 1] : src.length;
+    return { ...band, from: starts[start], to };
+  });
 }
