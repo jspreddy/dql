@@ -3,8 +3,9 @@
  * Keyword coverage lives in dql-tokens.js; add words there.
  */
 import { StreamLanguage } from "@codemirror/language";
-import { Decoration, ViewPlugin } from "@codemirror/view";
-import { queryBands, startState, tokenDql } from "./dql-tokens.js";
+import { Facet, RangeSet, RangeSetBuilder } from "@codemirror/state";
+import { Decoration, GutterMarker, ViewPlugin, gutter } from "@codemirror/view";
+import { bandAppearance, queryBands, startState, tokenDql } from "./dql-tokens.js";
 
 export const dqlLanguage = StreamLanguage.define({
   name: "dql",
@@ -18,29 +19,86 @@ export const dqlLanguage = StreamLanguage.define({
 const altLine = Decoration.line({ class: "cm-dql-alt" });
 const writeLine = Decoration.line({ class: "cm-dql-write" });
 const writeEvenLine = Decoration.line({ class: "cm-dql-write-even" });
+const lineDecoration = {
+  alt: altLine,
+  write: writeLine,
+  "write-even": writeEvenLine,
+};
 
-function bandDecorations(doc) {
-  const ranges = [];
-  for (const band of queryBands(doc.toString())) {
-    if (band.band === "plain") continue;
-    const deco = band.band === "write-even" ? writeEvenLine : band.band === "write" ? writeLine : altLine;
-    for (let number = band.lineFrom; number <= band.lineTo; number += 1) {
-      ranges.push(deco.range(doc.line(number).from));
-    }
+class WriteBar extends GutterMarker {
+  constructor(even) {
+    super();
+    this.even = even;
   }
-  return Decoration.set(ranges, true);
+
+  eq(other) {
+    return other instanceof WriteBar && other.even === this.even;
+  }
+
+  toDOM() {
+    const mark = document.createElement("span");
+    mark.className = "cm-write-bar" + (this.even ? " cm-write-bar-even" : "");
+    return mark;
+  }
 }
 
-/** Light stripe on even reads. Writes are red, and even writes are a darker red. */
+const writeBar = new WriteBar(false);
+const writeBarEven = new WriteBar(true);
+
+export const highlightOptions = Facet.define({
+  combine(values) {
+    return values.length ? values[values.length - 1] : { minimalWrite: false, evenOdd: true };
+  },
+});
+
+function paint(doc, options) {
+  const ranges = [];
+  const markers = new RangeSetBuilder();
+  for (const band of queryBands(doc.toString())) {
+    const appearance = bandAppearance(band, options);
+    const deco = lineDecoration[appearance];
+    const marker = appearance === "bar-even" ? writeBarEven : appearance === "bar" ? writeBar : null;
+    for (let number = band.lineFrom; number <= band.lineTo; number += 1) {
+      const line = doc.line(number);
+      if (deco) ranges.push(deco.range(line.from));
+      if (marker) markers.add(line.from, line.from, marker);
+    }
+  }
+  return { decorations: Decoration.set(ranges, true), markers: markers.finish() };
+}
+
+/** Line bands, or red gutter bars when minimal write highlight is on. */
 export const dqlQueryBands = ViewPlugin.fromClass(
   class {
     constructor(view) {
-      this.decorations = bandDecorations(view.state.doc);
+      const painted = paint(view.state.doc, view.state.facet(highlightOptions));
+      this.decorations = painted.decorations;
+      this.markers = painted.markers;
     }
 
     update(update) {
-      if (update.docChanged) this.decorations = bandDecorations(update.state.doc);
+      const previous = update.startState.facet(highlightOptions);
+      const next = update.state.facet(highlightOptions);
+      if (update.docChanged || previous.minimalWrite !== next.minimalWrite || previous.evenOdd !== next.evenOdd) {
+        const painted = paint(update.state.doc, next);
+        this.decorations = painted.decorations;
+        this.markers = painted.markers;
+      }
     }
   },
   { decorations: (plugin) => plugin.decorations },
 );
+
+const writeGutter = gutter({
+  class: "cm-dql-gutter",
+  markers(view) {
+    return view.plugin(dqlQueryBands)?.markers ?? RangeSet.empty;
+  },
+  initialSpacer: () => writeBar,
+});
+
+export function queryHighlight(options) {
+  const extensions = [highlightOptions.of(options), dqlQueryBands];
+  if (options.minimalWrite) extensions.push(writeGutter);
+  return extensions;
+}

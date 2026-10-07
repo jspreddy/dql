@@ -91,6 +91,23 @@ button, input, textarea { font: inherit; color: inherit; }
 
 .side-head { font-weight: 650; }
 
+.toggles {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.toggles label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 .side-head button, .pager button, #page-prev, #page-next {
   border: 1px solid #cfd6de;
   background: white;

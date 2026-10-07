@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { highlightSource, knownWords, queryBands, styleForWord } from "../static/dql-tokens.js";
+import { bandAppearance, highlightSource, knownWords, queryBands, styleForWord } from "../static/dql-tokens.js";
 
 const required = {
   keyword: [
@@ -122,4 +122,25 @@ test("blank lines bound a highlight and comments stick to the touching query", (
   assert.equal(leading.slice(leadingBands[0].from, leadingBands[0].to), "SELECT 1;\n");
   assert.equal(leadingBands[0].lineFrom, 3);
   assert.equal(leadingBands[0].lineTo, 4);
+});
+
+test("highlight toggles choose a fill or a gutter bar", () => {
+  const writeEven = { write: true, index: 0 };
+  const writeOdd = { write: true, index: 1 };
+  const readEven = { write: false, index: 2 };
+  const readOdd = { write: false, index: 3 };
+  const full = { minimalWrite: false, evenOdd: true };
+  assert.equal(bandAppearance(writeEven, full), "write-even");
+  assert.equal(bandAppearance(writeOdd, full), "write");
+  assert.equal(bandAppearance(readEven, full), "alt");
+  assert.equal(bandAppearance(readOdd, full), "plain");
+  const minimal = { minimalWrite: true, evenOdd: true };
+  assert.equal(bandAppearance(writeEven, minimal), "bar-even");
+  assert.equal(bandAppearance(writeOdd, minimal), "bar");
+  assert.equal(bandAppearance(readEven, minimal), "alt");
+  const flat = { minimalWrite: true, evenOdd: false };
+  assert.equal(bandAppearance(writeEven, flat), "bar");
+  assert.equal(bandAppearance(writeOdd, flat), "bar");
+  assert.equal(bandAppearance(readEven, flat), "plain");
+  assert.equal(bandAppearance(readOdd, { minimalWrite: false, evenOdd: false }), "plain");
 });

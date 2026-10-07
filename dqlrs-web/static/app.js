@@ -1,4 +1,4 @@
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import {
   EditorView,
   highlightActiveLine,
@@ -10,7 +10,7 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { dqlLanguage, dqlQueryBands } from "./dql-mode.js";
+import { dqlLanguage, queryHighlight } from "./dql-mode.js";
 
 const dqlHighlight = HighlightStyle.define([
   { tag: tags.keyword, color: "#0f766e", fontWeight: "650" },
@@ -38,6 +38,26 @@ const state = {
   suppressSave: false,
 };
 
+const HIGHLIGHT_KEY = "dqlrs-web.highlight";
+
+function loadHighlightOptions() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(HIGHLIGHT_KEY) || "{}");
+    return {
+      minimalWrite: Boolean(parsed.minimalWrite),
+      evenOdd: parsed.evenOdd !== false,
+    };
+  } catch {
+    return { minimalWrite: false, evenOdd: true };
+  }
+}
+
+function saveHighlightOptions(options) {
+  localStorage.setItem(HIGHLIGHT_KEY, JSON.stringify(options));
+}
+
+const highlightOptions = loadHighlightOptions();
+const highlightCompartment = new Compartment();
 const treeEl = document.querySelector("#tree");
 const editor = new EditorView({
   parent: document.querySelector("#editor"),
@@ -50,7 +70,7 @@ const editor = new EditorView({
       history(),
       keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
       dqlLanguage,
-      dqlQueryBands,
+      highlightCompartment.of(queryHighlight(highlightOptions)),
       syntaxHighlighting(dqlHighlight),
       placeholder("Open a .dql file, or create one."),
       EditorView.lineWrapping,
@@ -66,6 +86,16 @@ const editor = new EditorView({
         ".cm-line.cm-dql-alt": { backgroundColor: "#f4f7f8" },
         ".cm-line.cm-dql-write": { backgroundColor: "#fdecec" },
         ".cm-line.cm-dql-write-even": { backgroundColor: "#f3c4c4" },
+        ".cm-dql-gutter": { width: "8px", background: "#fafbfc" },
+        ".cm-dql-gutter .cm-gutterElement": { padding: "0 0 0 3px" },
+        ".cm-write-bar": {
+          display: "block",
+          width: "3px",
+          height: "100%",
+          borderRadius: "1px",
+          backgroundColor: "#fb7185",
+        },
+        ".cm-write-bar-even": { backgroundColor: "#be123c" },
         ".cm-activeLine": { backgroundColor: "transparent" },
         ".cm-activeLineGutter": { background: "#f3f5f7" },
         ".cm-content": { padding: "4px 0" },
@@ -85,6 +115,23 @@ document.querySelector("#mode-query").addEventListener("click", () => setMode("q
 document.querySelector("#mode-tables").addEventListener("click", () => setMode("tables"));
 document.querySelector("#new-file").addEventListener("click", createFile);
 document.querySelector("#run").addEventListener("click", runSelection);
+const minimalWriteInput = document.querySelector("#opt-minimal-write");
+const evenOddInput = document.querySelector("#opt-even-odd");
+minimalWriteInput.checked = highlightOptions.minimalWrite;
+evenOddInput.checked = highlightOptions.evenOdd;
+minimalWriteInput.addEventListener("change", applyHighlightToggles);
+evenOddInput.addEventListener("change", applyHighlightToggles);
+
+function applyHighlightToggles() {
+  const options = {
+    minimalWrite: minimalWriteInput.checked,
+    evenOdd: evenOddInput.checked,
+  };
+  saveHighlightOptions(options);
+  editor.dispatch({
+    effects: highlightCompartment.reconfigure(queryHighlight(options)),
+  });
+}
 document.querySelector("#table-search").addEventListener("input", () => {
   clearTimeout(state.searchTimer);
   state.searchTimer = setTimeout(loadTables, 250);

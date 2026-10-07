@@ -193,6 +193,23 @@ export function queryBands(text) {
   return expandQueryBands(src, bands);
 }
 
+/**
+ * How one query should be painted.
+ * `write` / `write-even` fill the line. `bar` / `bar-even` are gutter marks.
+ * `alt` is the light even-read stripe. `plain` draws nothing.
+ */
+export function bandAppearance(band, options = {}) {
+  const evenOdd = options.evenOdd !== false;
+  const minimalWrite = Boolean(options.minimalWrite);
+  if (band.write) {
+    const even = evenOdd && band.index % 2 === 0;
+    if (minimalWrite) return even ? "bar-even" : "bar";
+    return even ? "write-even" : "write";
+  }
+  if (evenOdd && band.index % 2 === 0) return "alt";
+  return "plain";
+}
+
 function expandQueryBands(src, bands) {
   if (!bands.length) return bands;
   const lines = src.split("\n");
