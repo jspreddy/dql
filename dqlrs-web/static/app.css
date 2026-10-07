@@ -243,6 +243,25 @@ main { flex: 1; min-width: 0; min-height: 0; display: flex; }
   min-height: 0;
 }
 
+/* Drawn behind the glyphs so the syntax color stays. Native selection stays clear. */
+.cm-editor .cm-selectionBackground {
+  background-color: rgba(0, 0, 0, 0.25) !important;
+}
+
+.cm-editor .cm-line::selection,
+.cm-editor .cm-line ::selection,
+.cm-editor.cm-focused .cm-scroller .cm-content::selection,
+.cm-editor.cm-focused .cm-scroller .cm-content ::selection {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+
+.cm-editor .cm-line::-moz-selection,
+.cm-editor .cm-line ::-moz-selection {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+
 .results {
   height: 46%;
   flex: none;

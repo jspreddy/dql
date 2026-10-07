@@ -1,5 +1,6 @@
 import { Compartment, EditorState, Prec } from "@codemirror/state";
 import {
+  drawSelection,
   EditorView,
   highlightActiveLine,
   highlightActiveLineGutter,
@@ -83,6 +84,16 @@ const editor = new EditorView({
       placeholder("Open a .dql file, or create one."),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "false" }),
+      drawSelection(),
+      Prec.highest(EditorView.theme({
+        ".cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground": {
+          backgroundColor: "rgba(0, 0, 0, 0.25) !important",
+        },
+        "&.cm-focused .cm-content ::selection, &.cm-focused .cm-content::selection, .cm-line ::selection, .cm-line::selection": {
+          backgroundColor: "transparent !important",
+          color: "inherit !important",
+        },
+      })),
       EditorView.theme({
         "&": { height: "100%", fontSize: "12.5px" },
         "&.cm-focused": { outline: "none" },
