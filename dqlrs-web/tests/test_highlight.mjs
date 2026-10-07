@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { highlightSource, knownWords, styleForWord } from "../static/dql-tokens.js";
+import { highlightSource, knownWords, queryBands, styleForWord } from "../static/dql-tokens.js";
 
 const required = {
   keyword: [
-    "SELECT", "SCAN", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER",
+    "SELECT", "SCAN", "INSERT", "UPDATE", "CREATE", "ALTER",
     "DUMP", "LOAD", "EXPLAIN", "ANALYZE",
     "FROM", "WHERE", "INTO", "VALUES", "SET", "ADD", "REMOVE", "USING",
     "LIMIT", "ORDER", "BY", "ASC", "DESC", "AS", "KEYS", "IN", "CONSISTENT",
@@ -16,6 +16,7 @@ const required = {
     "NONE", "UPDATED", "OLD", "NEW",
     "LS", "OPT", "OPTIONS", "HELP", "USE", "WATCH",
   ],
+  deleted: ["DROP", "DELETE"],
   typeName: ["STRING", "NUMBER", "BINARY", "BOOL", "BOOLEAN"],
   "variableName.function": [
     "COUNT", "SIZE", "BEGINS_WITH", "CONTAINS",
@@ -69,4 +70,25 @@ UPDATE t SET name = if_not_exists(name, 'x') WHERE id = b'abc';
   assert.ok(tokens.some((token) => token.text === '"he"' && token.style === "string"));
   assert.ok(tokens.some((token) => token.text === "b'abc'" && token.style === "string"));
   assert.equal(tokens.filter((token) => token.text === "SELECT").length, 1);
+});
+
+test("queries alternate a light band and writes are marked", () => {
+  const text = `
+-- header stays outside the first query
+SELECT * FROM t WHERE name = 'a;b';
+INSERT INTO t (id) VALUES (1);
+SCAN * FROM t;
+DELETE FROM t WHERE id = 1;
+drop table t;
+`;
+  const bands = queryBands(text);
+  assert.deepEqual(bands.map((band) => band.band), ["alt", "write", "alt", "write", "write"]);
+  assert.equal(text.slice(bands[0].from, bands[0].to).startsWith("SELECT"), true);
+  assert.equal(text.slice(bands[0].from, bands[0].to).includes("--"), false);
+  assert.equal(text.slice(bands[0].from, bands[0].to).includes("'a;b'"), true);
+  assert.equal(bands[3].write, true);
+  assert.equal(bands[4].write, true);
+  const tokens = highlightSource("DROP TABLE t; DELETE FROM t;");
+  assert.equal(tokens.find((token) => token.text === "DROP").style, "deleted");
+  assert.equal(tokens.find((token) => token.text === "DELETE").style, "deleted");
 });

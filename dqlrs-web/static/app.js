@@ -10,10 +10,11 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { dqlLanguage } from "./dql-mode.js";
+import { dqlLanguage, dqlQueryBands } from "./dql-mode.js";
 
 const dqlHighlight = HighlightStyle.define([
   { tag: tags.keyword, color: "#0f766e", fontWeight: "650" },
+  { tag: tags.deleted, color: "#dc2626", fontWeight: "700" },
   { tag: tags.typeName, color: "#1d4ed8" },
   { tag: tags.function(tags.variableName), color: "#6d28d9" },
   { tag: tags.bool, color: "#0369a1", fontWeight: "650" },
@@ -49,6 +50,7 @@ const editor = new EditorView({
       history(),
       keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
       dqlLanguage,
+      dqlQueryBands,
       syntaxHighlighting(dqlHighlight),
       placeholder("Open a .dql file, or create one."),
       EditorView.lineWrapping,
@@ -61,7 +63,9 @@ const editor = new EditorView({
           lineHeight: "1.4",
         },
         ".cm-gutters": { background: "#fafbfc", color: "#8b97a3", border: "none" },
-        ".cm-activeLine": { background: "#f7faf9" },
+        ".cm-line.cm-dql-alt": { backgroundColor: "#f4f7f8" },
+        ".cm-line.cm-dql-write": { backgroundColor: "#fdecec" },
+        ".cm-activeLine": { backgroundColor: "transparent" },
         ".cm-activeLineGutter": { background: "#f3f5f7" },
         ".cm-content": { padding: "4px 0" },
         ".cm-line": { padding: "0 8px" },

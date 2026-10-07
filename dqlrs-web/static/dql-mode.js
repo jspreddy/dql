@@ -3,7 +3,8 @@
  * Keyword coverage lives in dql-tokens.js; add words there.
  */
 import { StreamLanguage } from "@codemirror/language";
-import { startState, tokenDql } from "./dql-tokens.js";
+import { Decoration, ViewPlugin } from "@codemirror/view";
+import { queryBands, startState, tokenDql } from "./dql-tokens.js";
 
 export const dqlLanguage = StreamLanguage.define({
   name: "dql",
@@ -13,3 +14,34 @@ export const dqlLanguage = StreamLanguage.define({
     commentTokens: { line: "--" },
   },
 });
+
+const altLine = Decoration.line({ class: "cm-dql-alt" });
+const writeLine = Decoration.line({ class: "cm-dql-write" });
+
+function bandDecorations(doc) {
+  const ranges = [];
+  for (const band of queryBands(doc.toString())) {
+    if (band.band === "plain") continue;
+    const deco = band.band === "write" ? writeLine : altLine;
+    const fromLine = doc.lineAt(band.from).number;
+    const toLine = doc.lineAt(Math.max(band.from, band.to - 1)).number;
+    for (let number = fromLine; number <= toLine; number += 1) {
+      ranges.push(deco.range(doc.line(number).from));
+    }
+  }
+  return Decoration.set(ranges, true);
+}
+
+/** Light stripe on every other query, and a reddish stripe on writes. */
+export const dqlQueryBands = ViewPlugin.fromClass(
+  class {
+    constructor(view) {
+      this.decorations = bandDecorations(view.state.doc);
+    }
+
+    update(update) {
+      if (update.docChanged) this.decorations = bandDecorations(update.state.doc);
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);

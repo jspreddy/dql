@@ -9,7 +9,7 @@ import { StringStream } from "./vendor/streamparser.js";
 
 const groups = {
   keyword: [
-    "SELECT", "SCAN", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER",
+    "SELECT", "SCAN", "INSERT", "UPDATE", "CREATE", "ALTER",
     "DUMP", "LOAD", "EXPLAIN", "ANALYZE",
     "FROM", "WHERE", "INTO", "VALUES", "SET", "ADD", "REMOVE", "USING",
     "LIMIT", "ORDER", "BY", "ASC", "DESC", "AS", "KEYS", "IN", "CONSISTENT",
@@ -20,6 +20,8 @@ const groups = {
     "NONE", "UPDATED", "OLD", "NEW",
     "LS", "OPT", "OPTIONS", "HELP", "USE", "WATCH",
   ],
+  /* DROP and DELETE are destructive, so they render red rather than teal. */
+  deleted: ["DROP", "DELETE"],
   typeName: ["STRING", "NUMBER", "BINARY", "BOOL", "BOOLEAN"],
   "variableName.function": [
     "COUNT", "SIZE", "BEGINS_WITH", "CONTAINS",
@@ -114,4 +116,74 @@ export function highlightSource(text) {
     }
   }
   return tokens;
+}
+
+const WRITE_ACTIONS = new Set([
+  "INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "LOAD",
+]);
+const ACTION_PREFIX = new Set(["EXPLAIN", "ANALYZE"]);
+
+/**
+ * One entry per query. `band` is `write` (reddish), `alt` (very light stripe
+ * on even queries), or `plain`. Offsets cover the query from its first code
+ * character through the terminating semicolon.
+ */
+export function queryBands(text) {
+  const src = String(text);
+  const bands = [];
+  let quote = null;
+  let codeStart = -1;
+  let action = "";
+
+  function finish(end) {
+    if (codeStart < 0) return;
+    const write = WRITE_ACTIONS.has(action);
+    bands.push({
+      from: codeStart,
+      to: end,
+      write,
+      index: bands.length,
+      band: write ? "write" : bands.length % 2 === 0 ? "alt" : "plain",
+    });
+    codeStart = -1;
+    action = "";
+  }
+
+  for (let i = 0; i < src.length; i += 1) {
+    const ch = src[i];
+    const nxt = src[i + 1] || "";
+    if (quote) {
+      if (ch === "\\") {
+        i += 1;
+        continue;
+      }
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "-" && nxt === "-") {
+      while (i < src.length && src[i] !== "\n") i += 1;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      if (codeStart < 0) codeStart = i;
+      quote = ch;
+      continue;
+    }
+    if (/[A-Za-z_]/.test(ch)) {
+      if (codeStart < 0) codeStart = i;
+      let j = i + 1;
+      while (j < src.length && /[A-Za-z0-9_.-]/.test(src[j])) j += 1;
+      const word = src.slice(i, j).toUpperCase();
+      if (!action || ACTION_PREFIX.has(action)) action = word;
+      i = j - 1;
+      continue;
+    }
+    if (ch === ";") {
+      finish(i + 1);
+      continue;
+    }
+    if (codeStart < 0 && !/\s/.test(ch)) codeStart = i;
+  }
+  finish(src.length);
+  return bands;
 }
