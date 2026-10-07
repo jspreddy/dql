@@ -37,6 +37,7 @@ const state = {
   page: 0,
   hasMore: false,
   suppressSave: false,
+  dragPath: "",
 };
 
 const HIGHLIGHT_KEY = "dqlrs-web.highlight";
@@ -202,24 +203,13 @@ function renderDir(node, isRoot) {
   const list = document.createElement("ul");
   for (const child of node.children || []) {
     const item = document.createElement("li");
-    if (child.type === "dir") {
-      const open = state.expanded.has(child.path);
-      const button = nodeButton(open ? "▾" : "▸", child.name, false);
-      button.dataset.kind = "dir";
-      button.addEventListener("click", () => {
-        if (state.expanded.has(child.path)) state.expanded.delete(child.path);
-        else state.expanded.add(child.path);
-        refreshTree();
-      });
-      item.append(button);
-      if (open) item.append(renderDir(child, false));
-    } else {
-      const button = nodeButton("", child.name, child.path === state.path);
-      button.dataset.kind = "file";
-      button.dataset.path = child.path;
-      button.addEventListener("click", () => openFile(child.path));
-      item.append(button);
-    }
+    const open = child.type === "dir" && state.expanded.has(child.path);
+    const button = nodeButton(child.type === "dir" ? (open ? "▾" : "▸") : "", child.name, child.path === state.path);
+    button.dataset.kind = child.type;
+    button.dataset.path = child.path;
+    bindNode(button, child);
+    item.append(button);
+    if (open) item.append(renderDir(child, false));
     list.append(item);
   }
   if (isRoot && !(node.children || []).length) {
@@ -229,6 +219,102 @@ function renderDir(node, isRoot) {
     list.append(empty);
   }
   return list;
+}
+
+function bindNode(button, child) {
+  let clickTimer = 0;
+  button.addEventListener("click", () => {
+    if (button.querySelector("input")) return;
+    clearTimeout(clickTimer);
+    clickTimer = window.setTimeout(() => {
+      if (child.type === "dir") toggleDir(child.path);
+      else openFile(child.path);
+    }, 220);
+  });
+  button.addEventListener("dblclick", (event) => {
+    event.preventDefault();
+    clearTimeout(clickTimer);
+    beginRename(child.path);
+  });
+  button.addEventListener("contextmenu", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    showMenu(event.clientX, event.clientY, menuItems(child));
+  });
+  button.draggable = true;
+  button.addEventListener("dragstart", (event) => {
+    if (button.querySelector("input")) {
+      event.preventDefault();
+      return;
+    }
+    state.dragPath = child.path;
+    event.dataTransfer.setData("text/plain", child.path);
+    event.dataTransfer.effectAllowed = "move";
+  });
+  button.addEventListener("dragend", () => {
+    state.dragPath = "";
+    clearDropTargets();
+  });
+  button.addEventListener("dragover", (event) => {
+    if (!state.dragPath) return;
+    event.stopPropagation();
+    if (!canDropOn(child)) return;
+    event.preventDefault();
+    button.classList.add("drop-target");
+    event.dataTransfer.dropEffect = "move";
+  });
+  button.addEventListener("dragleave", () => button.classList.remove("drop-target"));
+  button.addEventListener("drop", (event) => {
+    if (!state.dragPath) return;
+    event.preventDefault();
+    event.stopPropagation();
+    button.classList.remove("drop-target");
+    if (!canDropOn(child)) return;
+    const destDir = child.type === "dir" ? child.path : parentOf(child.path);
+    dropOnto(state.dragPath, destDir);
+  });
+}
+
+function toggleDir(path) {
+  if (state.expanded.has(path)) state.expanded.delete(path);
+  else state.expanded.add(path);
+  refreshTree();
+}
+
+function parentOf(path) {
+  const index = path.lastIndexOf("/");
+  return index < 0 ? "." : path.slice(0, index);
+}
+
+function joinPath(dir, name) {
+  const clean = name.replace(/^[/\\]+/, "");
+  return !dir || dir === "." ? clean : dir + "/" + clean;
+}
+
+function canDropOn(child) {
+  const from = state.dragPath;
+  if (!from || from === child.path) return false;
+  const destDir = child.type === "dir" ? child.path : parentOf(child.path);
+  if (parentOf(from) === destDir) return false;
+  if (destDir === from || destDir.startsWith(from + "/")) return false;
+  return true;
+}
+
+function clearDropTargets() {
+  treeEl.classList.remove("drop-target");
+  for (const node of treeEl.querySelectorAll(".drop-target")) node.classList.remove("drop-target");
+}
+
+async function dropOnto(from, destDir) {
+  if (!from) return;
+  const name = from.split("/").pop();
+  const to = destDir === "." ? name : destDir + "/" + name;
+  if (to === from) return;
+  try {
+    await relocate(from, to);
+  } catch (error) {
+    window.alert(error.message);
+  }
 }
 
 function nodeButton(twist, label, selected) {
@@ -253,13 +339,240 @@ async function openFile(path) {
 }
 
 async function createFile() {
-  const entered = window.prompt("New file path", "queries/notes.dql");
-  if (!entered) return;
-  const created = await api("/api/file", { method: "POST", body: { path: entered } });
-  const parent = created.path.includes("/") ? created.path.slice(0, created.path.lastIndexOf("/")) : ".";
-  state.expanded.add(parent);
-  await openFile(created.path);
+  await createNamedFile(".");
 }
+
+async function createNamedFile(dir) {
+  const entered = window.prompt(dir === "." ? "New file path" : "New file name", dir === "." ? "queries/notes.dql" : "notes.dql");
+  if (!entered || !entered.trim()) return;
+  const path = dir === "." ? entered.trim() : joinPath(dir, entered.trim());
+  try {
+    const created = await api("/api/file", { method: "POST", body: { path } });
+    expandParents(parentOf(created.path));
+    await openFile(created.path);
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+async function createNamedFolder(dir) {
+  const entered = window.prompt("New folder name", "folder");
+  if (!entered || !entered.trim()) return;
+  const path = dir === "." ? entered.trim() : joinPath(dir, entered.trim());
+  try {
+    const created = await api("/api/mkdir", { method: "POST", body: { path } });
+    expandParents(created.path);
+    state.expanded.add(created.path);
+    await refreshTree();
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+async function duplicateEntry(path) {
+  try {
+    await flushSave();
+    const created = await api("/api/duplicate", { method: "POST", body: { path } });
+    expandParents(parentOf(created.path));
+    if (created.kind === "file") await openFile(created.path);
+    else {
+      state.expanded.add(created.path);
+      await refreshTree();
+    }
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+async function moveEntry(path) {
+  const entered = window.prompt("Move to", path);
+  if (!entered || !entered.trim() || entered.trim() === path) return;
+  try {
+    await relocate(path, entered.trim());
+  } catch (error) {
+    window.alert(error.message);
+  }
+}
+
+async function deleteEntry(path, kind) {
+  const label = path.split("/").pop();
+  const message = kind === "dir" ? "Delete folder " + label + " and the .dql files inside it?" : "Delete " + label + "?";
+  if (!window.confirm(message)) return;
+  clearTimeout(state.saveTimer);
+  const removingOpen = state.path === path || (kind === "dir" && state.path.startsWith(path + "/"));
+  if (removingOpen) {
+    state.path = "";
+    setEditorText("");
+    document.querySelector("#file-name").textContent = "No file open";
+  }
+  try {
+    await api("/api/delete", { method: "POST", body: { path } });
+    await refreshTree();
+  } catch (error) {
+    window.alert(error.message);
+    await refreshTree();
+  }
+}
+
+async function relocate(from, to) {
+  await flushSave();
+  const moved = await api("/api/move", { method: "POST", body: { from, to } });
+  if (state.path === from || state.path.startsWith(from + "/")) {
+    state.path = moved.path + state.path.slice(from.length);
+    document.querySelector("#file-name").textContent = state.path.split("/").pop();
+  }
+  remapExpanded(from, moved.path);
+  expandParents(parentOf(moved.path));
+  if (moved.kind === "dir") state.expanded.add(moved.path);
+  await refreshTree();
+}
+
+function remapExpanded(from, to) {
+  const next = new Set();
+  for (const path of state.expanded) {
+    if (path === from) next.add(to);
+    else if (path.startsWith(from + "/")) next.add(to + path.slice(from.length));
+    else next.add(path);
+  }
+  state.expanded = next;
+}
+
+function expandParents(path) {
+  if (!path || path === ".") {
+    state.expanded.add(".");
+    return;
+  }
+  const parts = path.split("/");
+  for (let i = 0; i < parts.length; i += 1) state.expanded.add(parts.slice(0, i + 1).join("/"));
+}
+
+function beginRename(path) {
+  const button = [...treeEl.querySelectorAll(".node")].find((node) => node.dataset.path === path);
+  if (!button || button.querySelector("input")) return;
+  const name = path.split("/").pop();
+  const input = document.createElement("input");
+  input.className = "rename";
+  input.value = name;
+  input.spellcheck = false;
+  input.setAttribute("aria-label", "Rename");
+  const twist = button.querySelector(".twist");
+  button.draggable = false;
+  button.replaceChildren(twist, input);
+  input.focus();
+  const dot = name.lastIndexOf(".");
+  if (button.dataset.kind === "file" && dot > 0) input.setSelectionRange(0, dot);
+  else input.select();
+  let settled = false;
+  const finish = async (commit) => {
+    if (settled) return;
+    settled = true;
+    const nextName = input.value.trim();
+    if (!commit || !nextName || nextName === name || /[\\/]/.test(nextName)) {
+      await refreshTree();
+      return;
+    }
+    try {
+      await relocate(path, joinPath(parentOf(path), nextName));
+    } catch (error) {
+      window.alert(error.message);
+      await refreshTree();
+    }
+  };
+  input.addEventListener("keydown", (event) => {
+    event.stopPropagation();
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finish(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      finish(false);
+    }
+  });
+  input.addEventListener("blur", () => finish(true));
+  input.addEventListener("click", (event) => event.stopPropagation());
+  input.addEventListener("dblclick", (event) => event.stopPropagation());
+  input.addEventListener("mousedown", (event) => event.stopPropagation());
+}
+
+function menuItems(target) {
+  const dir = target.type === "dir" ? target.path : parentOf(target.path || ".");
+  const items = [
+    { label: "New file", run: () => createNamedFile(dir) },
+    { label: "New folder", run: () => createNamedFolder(dir) },
+  ];
+  if (!target.path || target.type === "root") return items;
+  items.push(
+    "-",
+    { label: "Duplicate", run: () => duplicateEntry(target.path) },
+    { label: "Rename", run: () => beginRename(target.path) },
+    { label: "Move to…", run: () => moveEntry(target.path) },
+    "-",
+    { label: "Delete", danger: true, run: () => deleteEntry(target.path, target.type) },
+  );
+  return items;
+}
+
+const menuEl = document.querySelector("#file-menu");
+
+function showMenu(x, y, items) {
+  menuEl.replaceChildren();
+  for (const item of items) {
+    if (item === "-") {
+      menuEl.append(document.createElement("hr"));
+      continue;
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.role = "menuitem";
+    button.textContent = item.label;
+    if (item.danger) button.className = "danger";
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      hideMenu();
+      item.run();
+    });
+    menuEl.append(button);
+  }
+  menuEl.hidden = false;
+  menuEl.style.left = "0px";
+  menuEl.style.top = "0px";
+  const rect = menuEl.getBoundingClientRect();
+  menuEl.style.left = Math.max(4, Math.min(x, window.innerWidth - rect.width - 8)) + "px";
+  menuEl.style.top = Math.max(4, Math.min(y, window.innerHeight - rect.height - 8)) + "px";
+}
+
+function hideMenu() {
+  menuEl.hidden = true;
+}
+
+document.addEventListener("click", (event) => {
+  if (!menuEl.contains(event.target)) hideMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") hideMenu();
+});
+document.querySelector(".side").addEventListener("contextmenu", (event) => {
+  if (event.target.closest(".node")) return;
+  event.preventDefault();
+  showMenu(event.clientX, event.clientY, menuItems({ type: "root", path: "." }));
+});
+treeEl.addEventListener("scroll", hideMenu);
+treeEl.addEventListener("dragover", (event) => {
+  if (!state.dragPath || (event.target.closest && event.target.closest(".node"))) return;
+  if (parentOf(state.dragPath) === ".") return;
+  event.preventDefault();
+  treeEl.classList.add("drop-target");
+  event.dataTransfer.dropEffect = "move";
+});
+treeEl.addEventListener("dragleave", (event) => {
+  if (!treeEl.contains(event.relatedTarget)) treeEl.classList.remove("drop-target");
+});
+treeEl.addEventListener("drop", (event) => {
+  if (event.target.closest && event.target.closest(".node")) return;
+  event.preventDefault();
+  treeEl.classList.remove("drop-target");
+  dropOnto(state.dragPath || event.dataTransfer.getData("text/plain"), ".");
+});
 
 function scheduleSave() {
   clearTimeout(state.saveTimer);

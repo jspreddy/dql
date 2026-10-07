@@ -1,6 +1,6 @@
 # DQLRS Web
 
-A compact local UI for `.dql` files. The left side is the folder tree of the directory you start in. The top bar switches between a query editor and a table browser.
+A compact local UI for `.dql` files. The left side is the folder tree of the directory you start in. Right-click a file or folder there to create, duplicate, rename, move, or delete it. Drag an entry onto a folder to move it, or double-click its name to rename it. The top bar switches between a query editor and a table browser.
 
 ```bash
 ./dqlrs-web/run.sh --dir /path/to/queries

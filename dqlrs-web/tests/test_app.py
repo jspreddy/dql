@@ -11,7 +11,18 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from engine import _ls_keys, _ls_names, _safe_table_name  # noqa: E402
-from files import PathError, create_file, read_text, resolve_inside, tree, write_text  # noqa: E402
+from files import (  # noqa: E402
+    PathError,
+    create_file,
+    delete_path,
+    duplicate_path,
+    make_dir,
+    move_path,
+    read_text,
+    resolve_inside,
+    tree,
+    write_text,
+)
 from statements import split_statements  # noqa: E402
 
 
@@ -35,13 +46,46 @@ class FileTests(unittest.TestCase):
             (root / "queries" / "posts.dql").write_text("SCAN * FROM t;\n", encoding="utf-8")
             (root / "empty").mkdir()
             (root / "notes.txt").write_text("nope", encoding="utf-8")
+            (root / "src").mkdir()
+            (root / "src" / "main.py").write_text("x", encoding="utf-8")
             node = tree(root)
-            self.assertEqual([child["name"] for child in node["children"]], ["queries"])
+            self.assertEqual([child["name"] for child in node["children"]], ["empty", "queries"])
             queries = next(child for child in node["children"] if child["name"] == "queries")
             self.assertEqual(queries["type"], "dir")
             self.assertEqual(queries["children"][0]["path"], "queries/posts.dql")
             with self.assertRaises(PathError):
                 resolve_inside(root, "../secret.dql")
+
+    def test_move_duplicate_and_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            create_file(root, "queries/posts.dql")
+            write_text(root, "queries/posts.dql", "SCAN * FROM t;\n")
+            folder = make_dir(root, "archive")
+            self.assertEqual(folder, "archive")
+            self.assertIn("archive", [child["name"] for child in tree(root)["children"]])
+            moved, kind = move_path(root, "queries/posts.dql", "archive/posts.dql")
+            self.assertEqual((moved, kind), ("archive/posts.dql", "file"))
+            self.assertEqual(read_text(root, moved), "SCAN * FROM t;\n")
+            copy, copy_kind = duplicate_path(root, moved)
+            self.assertEqual((copy, copy_kind), ("archive/posts copy.dql", "file"))
+            again, _kind = duplicate_path(root, moved)
+            self.assertEqual(again, "archive/posts copy 2.dql")
+            folder_copy, folder_kind = duplicate_path(root, "archive")
+            self.assertEqual((folder_copy, folder_kind), ("archive copy", "dir"))
+            self.assertTrue((root / "archive copy" / "posts.dql").is_file())
+            with self.assertRaises(PathError):
+                move_path(root, "archive", "archive/nested")
+            with self.assertRaises(PathError):
+                move_path(root, "archive/posts.dql", "../out.dql")
+            (root / "archive" / "notes.txt").write_text("keep", encoding="utf-8")
+            with self.assertRaises(PathError):
+                delete_path(root, "archive")
+            (root / "archive" / "notes.txt").unlink()
+            delete_path(root, "archive/posts copy.dql")
+            self.assertFalse((root / "archive" / "posts copy.dql").exists())
+            delete_path(root, "archive copy")
+            self.assertFalse((root / "archive copy").exists())
 
     def test_create_and_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

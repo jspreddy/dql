@@ -10,7 +10,17 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from engine import PAGE_SIZE, Engine, EngineError, find_dqlrs
-from files import PathError, create_file, read_text, tree, write_text
+from files import (
+    PathError,
+    create_file,
+    delete_path,
+    duplicate_path,
+    make_dir,
+    move_path,
+    read_text,
+    tree,
+    write_text,
+)
 
 STATIC = Path(__file__).resolve().parent / "static"
 ROOT: Path
@@ -72,6 +82,38 @@ class App(BaseHTTPRequestHandler):
                 self._error(400, str(exc))
                 return
             self._json({"path": path, "text": ""})
+            return
+        if parsed.path == "/api/mkdir":
+            try:
+                path = make_dir(ROOT, str(body.get("path") or ""))
+            except PathError as exc:
+                self._error(400, str(exc))
+                return
+            self._json({"path": path, "kind": "dir"})
+            return
+        if parsed.path == "/api/duplicate":
+            try:
+                path, kind = duplicate_path(ROOT, str(body.get("path") or ""))
+            except PathError as exc:
+                self._error(400, str(exc))
+                return
+            self._json({"path": path, "kind": kind})
+            return
+        if parsed.path == "/api/move":
+            try:
+                path, kind = move_path(ROOT, str(body.get("from") or ""), str(body.get("to") or ""))
+            except PathError as exc:
+                self._error(400, str(exc))
+                return
+            self._json({"path": path, "kind": kind})
+            return
+        if parsed.path == "/api/delete":
+            try:
+                delete_path(ROOT, str(body.get("path") or ""))
+            except PathError as exc:
+                self._error(400, str(exc))
+                return
+            self._json({"ok": True})
             return
         if parsed.path == "/api/run":
             try:
