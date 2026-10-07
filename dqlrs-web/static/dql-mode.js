@@ -5,7 +5,7 @@
 import { StreamLanguage } from "@codemirror/language";
 import { Facet, RangeSet, RangeSetBuilder } from "@codemirror/state";
 import { Decoration, GutterMarker, ViewPlugin, gutter } from "@codemirror/view";
-import { bandAppearance, queryBands, startState, tokenDql } from "./dql-tokens.js";
+import { bandAppearance, queryBands, runTarget, startState, tokenDql } from "./dql-tokens.js";
 
 export const dqlLanguage = StreamLanguage.define({
   name: "dql",
@@ -101,4 +101,49 @@ export function queryHighlight(options) {
   const extensions = [highlightOptions.of(options), dqlQueryBands];
   if (options.minimalWrite) extensions.push(writeGutter);
   return extensions;
+}
+
+const runLine = Decoration.line({ class: "cm-run-line" });
+const runTop = Decoration.line({ class: "cm-run-line cm-run-top" });
+const runBottom = Decoration.line({ class: "cm-run-line cm-run-bottom" });
+const runOnly = Decoration.line({ class: "cm-run-line cm-run-top cm-run-bottom" });
+const runMark = Decoration.mark({ class: "cm-run-mark" });
+
+function coversWholeLines(doc, from, to) {
+  if (from >= to) return false;
+  const start = doc.lineAt(from);
+  const end = doc.lineAt(Math.min(to - 1, doc.length));
+  return from === start.from && to >= end.to;
+}
+
+/** Border around the query or selection that Run will execute. */
+export const runFrame = ViewPlugin.fromClass(
+  class {
+    constructor(view) {
+      this.decorations = frame(view.state);
+    }
+
+    update(update) {
+      if (update.docChanged || update.selectionSet) this.decorations = frame(update.state);
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+);
+
+function frame(state) {
+  const selection = state.selection.main;
+  const target = runTarget(state.doc.toString(), selection.head, selection.anchor);
+  if (!target) return Decoration.none;
+  const doc = state.doc;
+  if (!coversWholeLines(doc, target.from, target.to)) {
+    return Decoration.set([runMark.range(target.from, target.to)]);
+  }
+  const start = doc.lineAt(target.from).number;
+  const end = doc.lineAt(Math.min(Math.max(target.from, target.to - 1), doc.length)).number;
+  const ranges = [];
+  for (let number = start; number <= end; number += 1) {
+    const deco = number === start && number === end ? runOnly : number === start ? runTop : number === end ? runBottom : runLine;
+    ranges.push(deco.range(doc.line(number).from));
+  }
+  return Decoration.set(ranges);
 }

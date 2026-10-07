@@ -210,6 +210,28 @@ export function bandAppearance(band, options = {}) {
   return "plain";
 }
 
+/**
+ * The text Run will execute.
+ * A selection that contains non-whitespace is returned as-is.
+ * Otherwise the query band containing `head` is the current query.
+ * Returns null when the cursor is outside every query.
+ */
+export function runTarget(text, head, anchor = head) {
+  const src = String(text);
+  const from = Math.max(0, Math.min(head, anchor, src.length));
+  const to = Math.max(0, Math.min(Math.max(head, anchor), src.length));
+  if (from < to && src.slice(from, to).trim()) {
+    return { from, to, kind: "selection" };
+  }
+  const pos = Math.max(0, Math.min(head, src.length));
+  for (const band of queryBands(src)) {
+    if (pos >= band.from && (pos < band.to || (pos === band.to && band.to === src.length))) {
+      return { from: band.from, to: band.to, kind: "query" };
+    }
+  }
+  return null;
+}
+
 function expandQueryBands(src, bands) {
   if (!bands.length) return bands;
   const lines = src.split("\n");

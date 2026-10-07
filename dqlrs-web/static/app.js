@@ -1,4 +1,4 @@
-import { Compartment, EditorState } from "@codemirror/state";
+import { Compartment, EditorState, Prec } from "@codemirror/state";
 import {
   EditorView,
   highlightActiveLine,
@@ -10,7 +10,8 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { dqlLanguage, queryHighlight } from "./dql-mode.js";
+import { dqlLanguage, queryHighlight, runFrame } from "./dql-mode.js";
+import { runTarget } from "./dql-tokens.js";
 
 const dqlHighlight = HighlightStyle.define([
   { tag: tags.keyword, color: "#0f766e", fontWeight: "650" },
@@ -69,8 +70,10 @@ const editor = new EditorView({
       highlightActiveLineGutter(),
       history(),
       keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
+      Prec.high(keymap.of([{ key: "Mod-Enter", run: runFromEditor }])),
       dqlLanguage,
       highlightCompartment.of(queryHighlight(highlightOptions)),
+      runFrame,
       syntaxHighlighting(dqlHighlight),
       placeholder("Open a .dql file, or create one."),
       EditorView.lineWrapping,
@@ -96,6 +99,11 @@ const editor = new EditorView({
           backgroundColor: "#fb7185",
         },
         ".cm-write-bar-even": { backgroundColor: "#be123c" },
+        ".cm-line.cm-run-line": { boxShadow: "inset 2px 0 0 #0f766e, inset -2px 0 0 #0f766e" },
+        ".cm-line.cm-run-top": { boxShadow: "inset 2px 0 0 #0f766e, inset -2px 0 0 #0f766e, inset 0 2px 0 #0f766e" },
+        ".cm-line.cm-run-bottom": { boxShadow: "inset 2px 0 0 #0f766e, inset -2px 0 0 #0f766e, inset 0 -2px 0 #0f766e" },
+        ".cm-line.cm-run-top.cm-run-bottom": { boxShadow: "inset 0 0 0 2px #0f766e" },
+        ".cm-run-mark": { outline: "2px solid #0f766e", outlineOffset: "1px", borderRadius: "2px" },
         ".cm-activeLine": { backgroundColor: "transparent" },
         ".cm-activeLineGutter": { background: "#f3f5f7" },
         ".cm-content": { padding: "4px 0" },
@@ -114,7 +122,19 @@ const resultMeta = document.querySelector("#result-meta");
 document.querySelector("#mode-query").addEventListener("click", () => setMode("query"));
 document.querySelector("#mode-tables").addEventListener("click", () => setMode("tables"));
 document.querySelector("#new-file").addEventListener("click", createFile);
-document.querySelector("#run").addEventListener("click", runSelection);
+const runButton = document.querySelector("#run");
+const runShortcut = document.querySelector("#run-shortcut");
+const runShortcutLabel = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent) ? "⌘Enter" : "Ctrl+Enter";
+runShortcut.textContent = runShortcutLabel;
+runButton.title = "Run selection (" + runShortcutLabel + ")";
+runButton.setAttribute("aria-keyshortcuts", "Control+Enter");
+runButton.addEventListener("click", runSelection);
+
+function runFromEditor() {
+  if (runButton.disabled) return true;
+  runSelection();
+  return true;
+}
 const minimalWriteInput = document.querySelector("#opt-minimal-write");
 const evenOddInput = document.querySelector("#opt-even-odd");
 minimalWriteInput.checked = highlightOptions.minimalWrite;
@@ -265,12 +285,21 @@ function setEditorText(text) {
   state.suppressSave = false;
 }
 
+function currentRunRange() {
+  const selection = editor.state.selection.main;
+  return runTarget(editor.state.doc.toString(), selection.head, selection.anchor);
+}
+
 async function runSelection() {
   await flushSave();
-  const selection = editor.state.selection.main;
-  const selected = selection.empty ? "" : editor.state.sliceDoc(selection.from, selection.to);
-  const dql = selected.trim() ? selected : editorText();
-  const run = document.querySelector("#run");
+  const range = currentRunRange();
+  const dql = range ? editor.state.sliceDoc(range.from, range.to) : "";
+  if (!dql.trim()) {
+    resultMeta.textContent = "Nothing to run";
+    resultBody.replaceChildren();
+    return;
+  }
+  const run = runButton;
   run.disabled = true;
   resultMeta.textContent = "Running…";
   resultBody.replaceChildren();

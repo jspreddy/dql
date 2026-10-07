@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { bandAppearance, highlightSource, knownWords, queryBands, styleForWord } from "../static/dql-tokens.js";
+import { bandAppearance, highlightSource, knownWords, queryBands, runTarget, styleForWord } from "../static/dql-tokens.js";
 
 const required = {
   keyword: [
@@ -143,4 +143,36 @@ test("highlight toggles choose a fill or a gutter bar", () => {
   assert.equal(bandAppearance(writeOdd, flat), "bar");
   assert.equal(bandAppearance(readEven, flat), "plain");
   assert.equal(bandAppearance(readOdd, { minimalWrite: false, evenOdd: false }), "plain");
+});
+
+test("run target is the selection, or the query at the cursor", () => {
+  const src = "-- head\nSELECT 1;\n\nSCAN 2;\n";
+  const selectAt = src.indexOf("SELECT");
+  const atSelect = runTarget(src, selectAt);
+  assert.equal(atSelect.kind, "query");
+  assert.equal(src.slice(atSelect.from, atSelect.to), "-- head\nSELECT 1;\n\n");
+
+  const onBlank = runTarget(src, src.indexOf(";\n\n") + 2);
+  assert.equal(src.slice(onBlank.from, onBlank.to), "-- head\nSELECT 1;\n\n");
+
+  const atScan = runTarget(src, src.indexOf("SCAN"));
+  assert.equal(atScan.kind, "query");
+  assert.equal(src.slice(atScan.from, atScan.to), "SCAN 2;\n");
+  assert.deepEqual(runTarget(src, src.length), atScan);
+
+  const leading = "\n\nSELECT 1;\n";
+  assert.equal(runTarget(leading, 0), null);
+  assert.equal(leading.slice(runTarget(leading, leading.indexOf("SELECT")).from), "SELECT 1;\n");
+
+  const sandwiched = "SELECT 1;\n-- mid\nDELETE FROM t;";
+  const onMid = runTarget(sandwiched, sandwiched.indexOf("-- mid"));
+  assert.equal(sandwiched.slice(onMid.from, onMid.to), "SELECT 1;\n-- mid\n");
+
+  const selected = runTarget(src, src.indexOf("1"), src.indexOf("SCAN") + 4);
+  assert.equal(selected.kind, "selection");
+  assert.equal(src.slice(selected.from, selected.to), src.slice(src.indexOf("1"), src.indexOf("SCAN") + 4));
+
+  const whitespace = runTarget("SELECT 1;\n", 6, 7);
+  assert.equal(whitespace.kind, "query");
+  assert.equal("SELECT 1;\n".slice(whitespace.from, whitespace.to), "SELECT 1;\n");
 });
