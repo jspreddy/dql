@@ -93,6 +93,7 @@ const editor = new EditorView({
         ".cm-run-fill": {
           backgroundColor: "rgba(16, 42, 96, 0.05)",
           border: "1px solid #2563eb",
+          borderRadius: "2px",
           boxSizing: "content-box",
         },
         "&.cm-focused .cm-content ::selection, &.cm-focused .cm-content::selection, .cm-line ::selection, .cm-line::selection": {
