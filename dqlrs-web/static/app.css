@@ -250,7 +250,7 @@ main { flex: 1; min-width: 0; min-height: 0; display: flex; }
 
 .cm-run-fill {
   box-sizing: content-box;
-  background-color: rgba(16, 42, 96, 0.1);
+  background-color: rgba(16, 42, 96, 0.05);
   border: 1px solid #2563eb;
   pointer-events: none;
 }

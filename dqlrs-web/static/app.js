@@ -91,7 +91,7 @@ const editor = new EditorView({
           backgroundColor: "transparent !important",
         },
         ".cm-run-fill": {
-          backgroundColor: "rgba(16, 42, 96, 0.1)",
+          backgroundColor: "rgba(16, 42, 96, 0.05)",
           border: "1px solid #2563eb",
           boxSizing: "content-box",
         },
