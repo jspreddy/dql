@@ -193,14 +193,28 @@ function withGap(box) {
   );
 }
 
+/**
+ * A query band ends at the first character of the following line. A rectangle
+ * drawn at that position is as tall as the next line, so the box would cover
+ * it. Stop on the previous line instead. A range that ends at the end of the
+ * document stays put, so a trailing blank line at the end of the file remains
+ * inside the box.
+ */
+function paintEnd(doc, from, to) {
+  if (to > from && to < doc.length && doc.lineAt(to).from === to) return to - 1;
+  return to;
+}
+
 /** One background for the query or selection that Run will execute. */
 function runFillMarkers(view) {
   const selection = view.state.selection.main;
   const target = runTarget(view.state.doc.toString(), selection.head, selection.anchor);
   if (!target || target.from >= target.to) return [];
+  const to = paintEnd(view.state.doc, target.from, target.to);
+  if (target.from >= to) return [];
   const rects = RectangleMarker.forRange(view, "cm-run-fill", {
     from: target.from,
-    to: target.to,
+    to,
     empty: false,
   });
   if (!rects.length) return [];
