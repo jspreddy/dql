@@ -164,7 +164,9 @@ export const bandLayer = layer({
   },
 });
 
-function boundsOf(rects) {
+const runGap = 10;
+
+function tightBounds(rects) {
   let left = Infinity;
   let top = Infinity;
   let right = -Infinity;
@@ -176,7 +178,19 @@ function boundsOf(rects) {
     right = Math.max(right, rect.left + width);
     bottom = Math.max(bottom, rect.top + rect.height);
   }
-  return new RectangleMarker("cm-run-fill", left, top, Math.max(0, right - left), Math.max(0, bottom - top));
+  return { left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
+}
+
+/** Grow the box so the 1px border's inner edge sits 10px out from the text. */
+function withGap(box) {
+  const border = 1;
+  return new RectangleMarker(
+    "cm-run-fill",
+    box.left - runGap - border,
+    box.top - runGap - border,
+    box.width + runGap * 2,
+    box.height + runGap * 2,
+  );
 }
 
 /** One background for the query or selection that Run will execute. */
@@ -189,8 +203,8 @@ function runFillMarkers(view) {
     to: target.to,
     empty: false,
   });
-  if (rects.length <= 1) return rects;
-  return [boundsOf(rects)];
+  if (!rects.length) return [];
+  return [withGap(tightBounds(rects))];
 }
 
 export const runFrame = layer({

@@ -91,7 +91,9 @@ const editor = new EditorView({
           backgroundColor: "transparent !important",
         },
         ".cm-run-fill": {
-          backgroundColor: "rgba(0, 0, 0, 0.25)",
+          backgroundColor: "rgba(0, 0, 0, 0.1)",
+          border: "1px solid #2563eb",
+          boxSizing: "content-box",
         },
         "&.cm-focused .cm-content ::selection, &.cm-focused .cm-content::selection, .cm-line ::selection, .cm-line::selection": {
           backgroundColor: "transparent !important",
