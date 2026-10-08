@@ -164,7 +164,7 @@ export const bandLayer = layer({
   },
 });
 
-const runGap = 10;
+const runGap = 5;
 
 function tightBounds(rects) {
   let left = Infinity;
@@ -181,7 +181,7 @@ function tightBounds(rects) {
   return { left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
 }
 
-/** Grow the box so the 1px border's inner edge sits 10px out from the text. */
+/** Grow the box so the 1px border's inner edge sits 5px out from the text. */
 function withGap(box) {
   const border = 1;
   return new RectangleMarker(
