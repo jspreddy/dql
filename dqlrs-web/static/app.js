@@ -126,7 +126,7 @@ const editor = new EditorView({
         ".cm-write-bar-even": { backgroundColor: "#be123c" },
         ".cm-activeLine": { backgroundColor: "transparent" },
         ".cm-activeLineGutter": { background: "#f3f5f7" },
-        ".cm-content": { padding: "4px 0" },
+        ".cm-content": { padding: "1lh 0 5lh" },
         ".cm-line": { padding: "0 8px", backgroundColor: "transparent" },
         ".cm-placeholder": { color: "#8b97a3", fontStyle: "italic" },
       }),
