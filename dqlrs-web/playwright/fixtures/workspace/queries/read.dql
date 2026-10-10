@@ -1,0 +1,9 @@
+
+-- header stays with the select
+SELECT * FROM pw_missing_table
+WHERE id = 'a';
+
+-- next
+SCAN * FROM pw_missing_table;
+
+INSERT INTO pw_missing_table (id) VALUES ('a');

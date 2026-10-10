@@ -99,7 +99,7 @@ Details and how to add a test: [`black-box-tests/README.md`](black-box-tests/REA
 
 ## One-shot (copy-paste from repo root)
 
-Foreground Local would block, so this starts Java in the same shell, waits for port 8000, then runs both trees and the black-box acceptance suite:
+The same sequence is `just verify` ([`Justfile`](Justfile)). Foreground Local would block, so this starts Java in the same shell, waits for port 8000, then runs both trees, the black-box acceptance suite, and the Playwright notebook tests:
 
 ```bash
 set -euo pipefail
@@ -128,6 +128,23 @@ nc -z localhost 8000
 export DQL_BIN="$PWD/py-impl/.venv/bin/dql"
 export DQLRS_BIN="$PWD/rust-impl/target/release/dqlrs"
 ./black-box-tests/run.sh
+./notebook-tests/run.sh
+```
+
+---
+
+## Notebook UI (`notebook/`)
+
+Requires uv. Does not need DynamoDB Local for the dry-run.
+
+```bash
+./notebook/start.sh --dry-run
+```
+
+That syncs the notebook env (Python 3.11), registers project-local kernels, and lists `dql-python`, `dql-rust`, and `python-dql`. To open Lab against Local:
+
+```bash
+./notebook/start.sh --local --start-local
 ```
 
 ---

@@ -1,0 +1,8 @@
+-- one table for galaxies, systems, stars, planets, moons, and smaller bodies
+-- pk is the parent, sk is the child, prefixed by what it is
+DROP TABLE IF EXISTS sample_cosmos;
+
+CREATE TABLE sample_cosmos (
+  pk STRING HASH KEY,
+  sk STRING RANGE KEY
+) GLOBAL INDEX ('by-kind', kind STRING, name STRING);

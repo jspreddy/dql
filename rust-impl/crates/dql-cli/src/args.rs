@@ -41,6 +41,19 @@ pub struct CliArgs {
     )]
     pub json: bool,
 
+    #[arg(
+        long = "serve",
+        help = "Headless JSON-lines worker (stdio, or --bind on loopback). Not a TTY REPL."
+    )]
+    pub serve: bool,
+
+    #[arg(
+        long = "bind",
+        value_name = "ADDR",
+        help = "With --serve, listen on loopback HOST:PORT (or PORT as 127.0.0.1:PORT)"
+    )]
+    pub bind: Option<String>,
+
     #[arg(long = "version", help = "Print the version and exit")]
     pub version: bool,
 
@@ -60,6 +73,9 @@ pub fn help_text() -> String {
        -H, --host <host>        Host to connect to if using a local instance\n\
        -p, --port <port>        Port to connect to\n\
            --json               When used with --command, format results as JSON\n\
+           --serve              Headless JSON-lines worker (stdio, or --bind on loopback). Not a TTY REPL.\n\
+           --bind <ADDR>        With --serve, listen on loopback HOST:PORT (or PORT as 127.0.0.1:PORT)\n\
+           notebook, --notebook Start JupyterLab with a DQL (Rust) kernel (this binary)\n\
            --version            Print the version and exit\n\n\
      Environment:\n\
        AWS_REGION               Default region (else us-west-1)\n\
@@ -97,5 +113,16 @@ mod tests {
         assert_eq!(args.region, "us-east-1");
         assert_eq!(args.command, Some("SCAN * FROM t".to_string()));
         assert!(args.json);
+        assert!(!args.serve);
+        assert!(args.bind.is_none());
+    }
+
+    #[test]
+    fn parses_serve_and_bind() {
+        let args =
+            CliArgs::try_parse_from(["dqlrs", "--serve", "--bind", "127.0.0.1:7400"]).unwrap();
+        assert!(args.serve);
+        assert_eq!(args.bind.as_deref(), Some("127.0.0.1:7400"));
+        assert!(args.command.is_none());
     }
 }

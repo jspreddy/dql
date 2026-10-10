@@ -67,9 +67,9 @@ Unit and crate tests stay in `py-impl/tests/` and `rust-impl/crates/*/tests/`.
 black-box-tests/
   run.sh            # maps --bin / --group / --start-local onto pytest
   conftest.py       # Local, binaries, diagnostic groups, Cli fixture
-  cli.py            # pexpect.spawn of dql/dqlrs -c
+  cli.py            # pexpect.spawn of dql/dqlrs -c; dqlrs --serve JSON-lines
   report.py         # Rich transcripts for -v
-  compare.py        # JSON / stdout match helpers
+  compare.py        # JSON / stdout / progress-line match helpers
   tests/test_NNN_*.py
   fixtures/         # shared LOAD datasets
   ordering.md       # diagnostic groups (0xx / 1xx / 2xx / 3xx)
@@ -92,6 +92,13 @@ default both; a missing binary is skipped unless `--bin` named it).
   order-insensitive.
 - `cli.assert_stdout(dql, expected)` — exact match, else substring / collapsed
   whitespace (DUMP SCHEMA wrapping).
+- `cli.require_dqlrs()` — skip when the parametrized binary is `dql` (`--serve`
+  and `notebook` are Rust-only).
+- `cli.run_args(argv)` — spawn without `-c` (help and illegal flag combos).
+- `cli.serve()` — one `dqlrs --serve` stdio session; `exec_dql` returns
+  progress events plus the final envelope.
+- `cli.progress_json_oneshot(dql)` — Python `dql -c` with `DQL_PROGRESS_JSON=1`;
+  progress JSON-lines are on stderr.
 
 Teardown is `DROP TABLE IF EXISTS` for every name from `cli.table()`, unless
 `--skip-teardown`. Relative `LOAD` paths are resolved from the **suite root**.

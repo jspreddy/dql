@@ -1,0 +1,96 @@
+-- products that share a key and little else
+DROP TABLE IF EXISTS sample_catalog;
+
+CREATE TABLE sample_catalog (
+  sku STRING HASH KEY,
+  revision NUMBER RANGE KEY
+) GLOBAL INDEX ('by-status', status STRING, revision NUMBER);
+
+-- keys only
+INSERT INTO sample_catalog (sku='SEED-0', revision=0);
+
+-- a short priced row
+INSERT INTO sample_catalog (
+  sku='MUG-BLUE',
+  revision=1,
+  title='Blue mug',
+  status='active',
+  price_cents=1299,
+  in_stock=TRUE
+);
+
+-- wide: sets, a decimal, a hyphenated name, a map, and a list of maps
+INSERT INTO sample_catalog (
+  sku='LAMP-ARC',
+  revision=3,
+  title='Arc floor lamp',
+  status='active',
+  price_cents=18900,
+  weight_kg=4.25,
+  in_stock=FALSE,
+  made_in='DK',
+  tags=('lighting', 'metal', 'floor'),
+  voltages=(120, 230),
+  dimensions={'width_cm': 40, 'depth_cm': 40, 'height_cm': 210, 'shade': {'shape': 'dome', 'diameter_cm': 45, 'finish': 'brass'}},
+  gallery=[{'kind': 'hero', 'url': 'https://cdn.example/lamp/hero.jpg', 'w': 1600, 'h': 2000}, {'kind': 'detail', 'url': 'https://cdn.example/lamp/cord.jpg', 'w': 800, 'h': 800}],
+  care='Wipe with a dry cloth. The brass joint marks if it is polished. Keep the cord clear of the base so the lamp can swing.',
+  discontinued_at=NULL,
+  thumbnail=b'lamp'
+);
+
+-- deep and sparse, with names the other rows do not use
+INSERT INTO sample_catalog (
+  sku='NOTE-7',
+  revision=7,
+  status='draft',
+  working-title='Field notes, vol. 7',
+  author={'given': 'Mina', 'family': 'Okada', 'pen_names': ['M. Okada', 'Northwind']},
+  page_count=0,
+  chapters=[],
+  extras={},
+  flags={'preorder': TRUE, 'embargo': NULL, 'regions': ['US', 'JP', 'DE']},
+  isbn13='9780000000000',
+  list_price={'currency': 'JPY', 'amount': 2400, 'tax_included': FALSE}
+);
+
+-- a longer blurb, a negative count, and a one-element set
+INSERT INTO sample_catalog (
+  sku='CABLE-USBC',
+  revision=2,
+  title='USB-C cable, 2 m',
+  status='active',
+  price_cents=890,
+  length_m=2,
+  colors=('black', 'white', 'sage'),
+  certifications=('USB-IF'),
+  specs={'connector_a': 'USB-C', 'connector_b': 'USB-C', 'usb_version': '3.2', 'pd_watts': 100, 'emarker': TRUE, 'bend_radius_mm': 30},
+  warnings='Rated 100 W. This is not a charge-only cable. Do not coil it tighter than the printed bend radius, and do not run it under a rug.',
+  stock_delta=-12
+);
+
+SELECT * FROM sample_catalog
+WHERE sku = 'LAMP-ARC';
+
+SELECT title, price_cents, status
+FROM sample_catalog
+WHERE sku = 'MUG-BLUE' AND revision = 1;
+
+SCAN * FROM sample_catalog
+WHERE status = 'active';
+
+SCAN * FROM sample_catalog
+WHERE dimensions.height_cm > 100;
+
+SELECT count(*) FROM sample_catalog
+WHERE sku = 'NOTE-7';
+
+EXPLAIN SELECT * FROM sample_catalog
+WHERE status = 'active' AND revision > 0
+USING by-status;
+
+UPDATE sample_catalog
+SET stock_delta = stock_delta + 12, price_cents = 790
+WHERE sku = 'CABLE-USBC' AND revision = 2;
+
+DELETE FROM sample_catalog
+WHERE sku = 'SEED-0' AND revision = 0;

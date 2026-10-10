@@ -1,0 +1,468 @@
+-- load the cosmos table; pk is the parent and sk is the child
+CREATE TABLE IF NOT EXISTS sample_cosmos (
+  pk STRING HASH KEY,
+  sk STRING RANGE KEY
+) GLOBAL INDEX ('by-kind', kind STRING, name STRING);
+
+-- three galaxies, three shapes
+INSERT INTO sample_cosmos (
+  pk='UNIVERSE',
+  sk='GALAXY#milky-way',
+  kind='galaxy',
+  name='Milky Way',
+  morphology='barred-spiral',
+  star-count=100000000000,
+  diameter_ly=105700,
+  age_gyr=13.6,
+  arms=('Perseus', 'Scutum-Centaurus', 'Norma', 'Sagittarius'),
+  center={'object': 'Sgr A*', 'ra_h': 17.76, 'dec_deg': -29.0}
+);
+
+INSERT INTO sample_cosmos (
+  pk='UNIVERSE',
+  sk='GALAXY#andromeda',
+  kind='galaxy',
+  name='Andromeda',
+  morphology='spiral',
+  catalog='M31',
+  distance_ly=2500000,
+  approaching=TRUE,
+  apparent-magnitude=3.44
+);
+
+INSERT INTO sample_cosmos (
+  pk='UNIVERSE',
+  sk='GALAXY#draco',
+  kind='galaxy',
+  name='Draco Dwarf',
+  morphology='dwarf-spheroidal',
+  star-count=300000
+);
+
+-- systems hang off a galaxy
+INSERT INTO sample_cosmos (
+  pk='GALAXY#milky-way',
+  sk='SYSTEM#sol',
+  kind='system',
+  name='Sol',
+  stars=1,
+  age_gyr=4.6,
+  habitable=TRUE,
+  planet_count=8
+);
+
+INSERT INTO sample_cosmos (
+  pk='GALAXY#milky-way',
+  sk='SYSTEM#alpha-centauri',
+  kind='system',
+  name='Alpha Centauri',
+  stars=3,
+  distance_ly=4.37,
+  components=['Rigil Kentaurus', 'Toliman', 'Proxima'],
+  habitable=NULL
+);
+
+INSERT INTO sample_cosmos (
+  pk='GALAXY#milky-way',
+  sk='SYSTEM#orion',
+  kind='system',
+  name='Orion',
+  constellation='Orion',
+  distance_ly=548
+);
+
+INSERT INTO sample_cosmos (
+  pk='GALAXY#milky-way',
+  sk='SYSTEM#vela',
+  kind='system',
+  name='Vela',
+  remnant=TRUE
+);
+
+INSERT INTO sample_cosmos (
+  pk='GALAXY#andromeda',
+  sk='SYSTEM#m31-core',
+  kind='system',
+  name='M31 core',
+  crowded=TRUE
+);
+
+-- stars: a quiet sun, a flare star, a supergiant, a pulsar
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#sol',
+  sk='STAR#sun',
+  kind='star',
+  name='Sun',
+  spectral='G2V',
+  mass_solar=1,
+  radius_solar=1,
+  lum_solar=1,
+  surface_k=5772,
+  spectrum=b'sun'
+);
+
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#alpha-centauri',
+  sk='STAR#rigil',
+  kind='star',
+  name='Rigil Kentaurus',
+  spectral='G2V',
+  mass_solar=1.079,
+  planets=0
+);
+
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#alpha-centauri',
+  sk='STAR#toliman',
+  kind='star',
+  name='Toliman',
+  spectral='K1V',
+  mass_solar=0.909
+);
+
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#alpha-centauri',
+  sk='STAR#proxima',
+  kind='star',
+  name='Proxima Centauri',
+  spectral='M5.5Ve',
+  mass_solar=0.122,
+  flare-star=TRUE,
+  known-planet='Proxima b'
+);
+
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#orion',
+  sk='STAR#betelgeuse',
+  kind='star',
+  name='Betelgeuse',
+  spectral='M1-2Ia-Iab',
+  mass_solar=16.5,
+  radius_solar=764,
+  variable=TRUE,
+  stage='supergiant'
+);
+
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#vela',
+  sk='STAR#vela',
+  kind='neutron-star',
+  name='Vela Pulsar',
+  period_ms=89.3,
+  radius_km=12,
+  mass_solar=1.4,
+  beacons=('radio', 'x-ray', 'gamma')
+);
+
+-- the galaxy itself also holds things that are not systems
+INSERT INTO sample_cosmos (
+  pk='GALAXY#milky-way',
+  sk='BLACKHOLE#sgr-a',
+  kind='black-hole',
+  name='Sgr A*',
+  mass_solar=4100000,
+  schwarzschild_au=0.08,
+  accretion={'state': 'quiet', 'last-flare': 2019}
+);
+
+INSERT INTO sample_cosmos (
+  pk='GALAXY#milky-way',
+  sk='NEBULA#orion',
+  kind='nebula',
+  name='Orion Nebula',
+  catalog='M42',
+  distance_ly=1344,
+  form='emission',
+  size_ly=24,
+  stars_forming=TRUE
+);
+
+-- planets share a key prefix and little else
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#sol',
+  sk='PLANET#mercury',
+  kind='planet',
+  name='Mercury',
+  class='terrestrial',
+  radius_km=2440,
+  moons=[]
+);
+
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#sol',
+  sk='PLANET#venus',
+  kind='planet',
+  name='Venus',
+  class='terrestrial',
+  radius_km=6052,
+  retrograde=TRUE,
+  atmosphere={'co2': 0.965, 'pressure_bar': 92, 'surface_k': 737},
+  moons=0
+);
+
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#sol',
+  sk='PLANET#earth',
+  kind='planet',
+  name='Earth',
+  class='terrestrial',
+  radius_km=6371,
+  mass_earth=1,
+  gravity_ms2=9.81,
+  habitable=TRUE,
+  atmosphere={'n2': 0.78, 'o2': 0.21, 'ar': 0.009, 'pressure_bar': 1},
+  oceans=TRUE,
+  continents=['Africa', 'Antarctica', 'Asia', 'Europe', 'North America', 'Oceania', 'South America'],
+  biosphere={'known-life': TRUE, 'kingdoms': 5}
+);
+
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#sol',
+  sk='PLANET#mars',
+  kind='planet',
+  name='Mars',
+  class='terrestrial',
+  radius_km=3390,
+  moons=2,
+  day_hr=24.6,
+  features=['Olympus Mons', 'Valles Marineris']
+);
+
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#sol',
+  sk='PLANET#jupiter',
+  kind='planet',
+  name='Jupiter',
+  class='gas-giant',
+  radius_km=69911,
+  mass_earth=317.8,
+  bands=('NEB', 'SEB', 'NTB'),
+  great-red-spot={'width_km': 16350, 'color': 'ochre', 'persistent': TRUE},
+  moons_known=95,
+  composition={'h': 0.9, 'he': 0.1}
+);
+
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#sol',
+  sk='PLANET#saturn',
+  kind='planet',
+  name='Saturn',
+  class='gas-giant',
+  radius_km=58232,
+  density_water=0.69,
+  rings={'span_km': 282000, 'groups': ['D', 'C', 'B', 'A', 'F', 'G', 'E'], 'visible': TRUE}
+);
+
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#sol',
+  sk='PLANET#uranus',
+  kind='planet',
+  name='Uranus',
+  class='ice-giant',
+  radius_km=25362,
+  axial-tilt_deg=97.8,
+  color='cyan'
+);
+
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#sol',
+  sk='PLANET#neptune',
+  kind='planet',
+  name='Neptune',
+  class='ice-giant',
+  radius_km=24622,
+  winds_ms=560
+);
+
+-- listed with the planets, typed as a dwarf on the kind index
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#sol',
+  sk='PLANET#pluto',
+  kind='dwarf-planet',
+  name='Pluto',
+  class='ice-dwarf',
+  radius_km=1188,
+  orbit={'period_yr': 248, 'eccentricity': 0.2488, 'resonance': '3:2'},
+  heart={'name': 'Tombaugh Regio', 'nitrogen-ice': TRUE}
+);
+
+-- moons live under the planet, not under the system
+INSERT INTO sample_cosmos (
+  pk='PLANET#earth',
+  sk='MOON#luna',
+  kind='moon',
+  name='Luna',
+  radius_km=1737,
+  tidally-locked=TRUE,
+  maria=['Tranquillitatis', 'Serenitatis', 'Imbrium'],
+  landing={'program': 'Apollo', 'first': 1969, 'samples_kg': 382}
+);
+
+INSERT INTO sample_cosmos (
+  pk='PLANET#mars',
+  sk='MOON#phobos',
+  kind='moon',
+  name='Phobos',
+  radius_km=11.2,
+  period_hr=7.66,
+  doomed=TRUE
+);
+
+INSERT INTO sample_cosmos (
+  pk='PLANET#mars',
+  sk='MOON#deimos',
+  kind='moon',
+  name='Deimos',
+  radius_km=6.2
+);
+
+INSERT INTO sample_cosmos (
+  pk='PLANET#jupiter',
+  sk='MOON#io',
+  kind='moon',
+  name='Io',
+  radius_km=1821,
+  volcanoes=400,
+  surface='sulfur',
+  plasma-torus=TRUE
+);
+
+INSERT INTO sample_cosmos (
+  pk='PLANET#jupiter',
+  sk='MOON#europa',
+  kind='moon',
+  name='Europa',
+  radius_km=1560.8,
+  ice-shell_km=20,
+  ocean={'suspected': TRUE, 'depth_km': 100, 'salty': TRUE},
+  habitability='candidate'
+);
+
+INSERT INTO sample_cosmos (
+  pk='PLANET#jupiter',
+  sk='MOON#ganymede',
+  kind='moon',
+  name='Ganymede',
+  radius_km=2634,
+  magnetic-field=TRUE,
+  larger-than='Mercury'
+);
+
+INSERT INTO sample_cosmos (
+  pk='PLANET#jupiter',
+  sk='MOON#callisto',
+  kind='moon',
+  name='Callisto',
+  radius_km=2410,
+  cratered=TRUE,
+  ocean={'suspected': TRUE, 'depth_km': NULL}
+);
+
+INSERT INTO sample_cosmos (
+  pk='PLANET#saturn',
+  sk='MOON#titan',
+  kind='moon',
+  name='Titan',
+  radius_km=2575,
+  atmosphere={'n2': 0.95, 'ch4': 0.05, 'pressure_bar': 1.5, 'lakes': 'methane'},
+  landed={'probe': 'Huygens', 'year': 2005}
+);
+
+INSERT INTO sample_cosmos (
+  pk='PLANET#saturn',
+  sk='MOON#enceladus',
+  kind='moon',
+  name='Enceladus',
+  radius_km=252,
+  geysers=TRUE,
+  ocean={'suspected': TRUE, 'global': TRUE}
+);
+
+-- the belt is a child of Sol and the parent of the asteroids
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#sol',
+  sk='BELT#main',
+  kind='belt',
+  name='Main Belt',
+  inner_au=2.2,
+  outer_au=3.2,
+  members_estimate=1000000,
+  families=('Flora', 'Vesta', 'Themis')
+);
+
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#sol',
+  sk='BELT#kuiper',
+  kind='belt',
+  name='Kuiper Belt',
+  inner_au=30,
+  outer_au=50
+);
+
+INSERT INTO sample_cosmos (
+  pk='BELT#main',
+  sk='ASTEROID#ceres',
+  kind='asteroid',
+  name='Ceres',
+  designation='1 Ceres',
+  radius_km=473,
+  class='C',
+  dwarf=TRUE,
+  features={'bright-spots': 'Occator', 'ice': TRUE}
+);
+
+INSERT INTO sample_cosmos (
+  pk='BELT#main',
+  sk='ASTEROID#vesta',
+  kind='asteroid',
+  name='Vesta',
+  designation='4 Vesta',
+  radius_km=262,
+  class='V',
+  differentiated=TRUE
+);
+
+INSERT INTO sample_cosmos (
+  pk='BELT#main',
+  sk='ASTEROID#psyche',
+  kind='asteroid',
+  name='Psyche',
+  designation='16 Psyche',
+  class='M',
+  metal-fraction=0.82,
+  mission={'name': 'Psyche', 'arrival': 2029}
+);
+
+INSERT INTO sample_cosmos (
+  pk='BELT#main',
+  sk='ASTEROID#bennu',
+  kind='asteroid',
+  name='Bennu',
+  designation='101955 Bennu',
+  class='B',
+  radius_km=0.245,
+  hazard=TRUE,
+  sample-return=TRUE
+);
+
+INSERT INTO sample_cosmos (
+  pk='BELT#kuiper',
+  sk='ASTEROID#arrokoth',
+  kind='asteroid',
+  name='Arrokoth',
+  designation='486958 Arrokoth',
+  shape='bilobed',
+  lobes=[{'name': 'Wenu', 'radius_km': 10}, {'name': 'Weeyo', 'radius_km': 7}]
+);
+
+INSERT INTO sample_cosmos (
+  pk='SYSTEM#sol',
+  sk='COMET#halley',
+  kind='comet',
+  name='Halley',
+  designation='1P/Halley',
+  period_yr=75.3,
+  nucleus_km={'length': 15, 'width': 8},
+  last-perihelion=1986,
+  tail={'ion': TRUE, 'dust': TRUE}
+);

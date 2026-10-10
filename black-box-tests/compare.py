@@ -96,6 +96,22 @@ def _normalize(value: Any) -> Any:
     return value
 
 
+def parse_progress_lines(text: str) -> list[Any]:
+    """JSON-lines with event=progress; other lines are ignored."""
+    events: list[Any] = []
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and value.get("event") == "progress" and "done" in value:
+            events.append(value)
+    return events
+
+
 def stdout_matches(actual: str, expected: str) -> bool:
     actual_n = actual.replace("\r\n", "\n")
     expected_n = expected.replace("\r\n", "\n")
@@ -140,6 +156,18 @@ def self_test() -> list[str]:
     check(
         "unordered items",
         json_equal([{"id": "b"}, {"id": "a"}], [{"id": "a"}, {"id": "b"}]),
+    )
+    check(
+        "progress lines",
+        parse_progress_lines(
+            '{"event":"progress","done":0,"total":30,"phase":"write"}\n'
+            '{"ok":true,"kind":"affected","affected":30}\n'
+            '{"event":"progress","done":25,"total":30,"phase":"write"}\n'
+        )
+        == [
+            {"event": "progress", "done": 0, "total": 30, "phase": "write"},
+            {"event": "progress", "done": 25, "total": 30, "phase": "write"},
+        ],
     )
     check("stdout substring", stdout_matches("hello world\n", "world"))
     check("stdout exact", stdout_matches("hello\n", "hello\n"))

@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>How dqlrs notebook works</title>
+  <style>
+    :root {
+      --bg: #f3efe6;
+      --paper: #fffdf8;
+      --ink: #1c1915;
+      --muted: #5e564c;
+      --line: #e3d9c8;
+      --accent: #9a3412;
+      --accent-soft: #f6e6dc;
+      --code: #f6f1e8;
+      --jupyter: #1e3a5f;
+      --kernel: #1f5c45;
+      --serve: #7c4a12;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 17px/1.55 "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+    }
+    a { color: var(--accent); }
+    code, pre, .path, .mono {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.86em;
+    }
+    code {
+      background: var(--code);
+      padding: 0.1em 0.35em;
+      border-radius: 3px;
+    }
+    pre {
+      background: #231e18;
+      color: #f6f0e6;
+      padding: 1rem 1.1rem;
+      overflow-x: auto;
+      border-radius: 8px;
+      line-height: 1.45;
+    }
+    pre code { background: transparent; padding: 0; color: inherit; font-size: 0.92em; }
+    .layout {
+      display: grid;
+      grid-template-columns: 16rem minmax(0, 46rem);
+      gap: 2.5rem;
+      max-width: 72rem;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+    }
+    nav {
+      position: sticky;
+      top: 1.25rem;
+      align-self: start;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-size: 0.84rem;
+      line-height: 1.35;
+    }
+    nav p {
+      margin: 0 0 0.6rem;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+    }
+    nav ol { margin: 0; padding: 0; list-style: none; }
+    nav li { margin: 0.35rem 0; }
+    nav a { color: var(--ink); text-decoration: none; }
+    nav a:hover { color: var(--accent); }
+    nav .sub { padding-left: 0.9rem; color: var(--muted); }
+    header h1 {
+      font-weight: 600;
+      font-size: 2.15rem;
+      line-height: 1.15;
+      margin: 0 0 0.6rem;
+    }
+    header .lead { font-size: 1.12rem; margin: 0 0 1rem; }
+    .kicker {
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 0 0 0.4rem;
+    }
+    h2 {
+      font-size: 1.55rem;
+      font-weight: 600;
+      margin: 2.4rem 0 0.6rem;
+      padding-top: 0.4rem;
+    }
+    h3 { font-size: 1.15rem; margin: 1.6rem 0 0.4rem; }
+    p { margin: 0.7rem 0; }
+    .note {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      padding: 0.8rem 1rem;
+      margin: 1rem 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--paper);
+      font-size: 0.95rem;
+      margin: 0.8rem 0 1rem;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+      padding: 0.45rem 0.6rem;
+    }
+    th {
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-size: 0.78rem;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    figure.diagram {
+      margin: 1rem 0 1.25rem;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.75rem 0.6rem 0.55rem;
+      overflow-x: auto;
+    }
+    figure.diagram svg {
+      display: block;
+      width: 100%;
+      min-width: 640px;
+      height: auto;
+    }
+    figure.diagram figcaption {
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin: 0.45rem 0.45rem 0.15rem;
+      line-height: 1.4;
+    }
+    .pipeline {
+      list-style: none;
+      margin: 0.9rem 0 1.1rem;
+      padding: 0.2rem 0 0;
+    }
+    .pipeline li {
+      display: grid;
+      grid-template-columns: 1.7rem 1fr;
+      gap: 0.75rem;
+      position: relative;
+      padding-bottom: 0.85rem;
+    }
+    .pipeline li:last-child { padding-bottom: 0; }
+    .pipeline li::before {
+      content: "";
+      position: absolute;
+      left: 0.72rem;
+      top: 1.55rem;
+      bottom: 0;
+      width: 2px;
+      background: var(--line);
+    }
+    .pipeline li:last-child::before { display: none; }
+    .pipeline .n {
+      width: 1.55rem;
+      height: 1.55rem;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fffdf8;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-size: 0.75rem;
+      font-weight: 600;
+      display: grid;
+      place-items: center;
+      position: relative;
+      z-index: 1;
+    }
+    .pipeline strong {
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-size: 0.92rem;
+    }
+    .map {
+      display: grid;
+      grid-template-columns: 1.35fr 0.85fr;
+      gap: 0.75rem;
+    }
+    .map-col {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #faf7f2;
+      padding: 0.7rem 0.75rem 0.85rem;
+    }
+    .map-col h4 {
+      margin: 0 0 0.45rem;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-size: 0.75rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .file {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.74rem;
+      background: #fffdf8;
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--line);
+      border-radius: 4px;
+      padding: 0.38rem 0.5rem;
+      margin: 0.38rem 0 0;
+      line-height: 1.35;
+    }
+    .file span {
+      display: block;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 0.12rem;
+    }
+    .file.bin { border-left-color: var(--accent); }
+    .file.lab { border-left-color: var(--jupyter); }
+    .file.kern { border-left-color: var(--kernel); }
+    .file.run { border-left-color: var(--serve); }
+    ul { margin: 0.4rem 0 0.8rem; padding-left: 1.2rem; }
+    li { margin: 0.25rem 0; }
+    footer {
+      margin-top: 2.5rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    @media (max-width: 860px) {
+      .layout { grid-template-columns: 1fr; padding: 1.2rem 1rem 3rem; }
+      nav { position: static; }
+      .map { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav>
+      <p>On this page</p>
+      <ol>
+        <li><a href="#picture">The whole picture</a></li>
+        <li><a href="#install">1. Install</a>
+          <ol>
+            <li class="sub"><a href="#already-in-the-binary">Already in the binary</a></li>
+            <li class="sub"><a href="#first-run-downloads">What the first run downloads</a></li>
+            <li class="sub"><a href="#venv">How the venv is created</a></li>
+            <li class="sub"><a href="#site-packages">Kernel onto sys.path</a></li>
+            <li class="sub"><a href="#later-runs">Later runs</a></li>
+          </ol>
+        </li>
+        <li><a href="#configure">2. Configure</a>
+          <ol>
+            <li class="sub"><a href="#home">Where files live</a></li>
+            <li class="sub"><a href="#server-config">Jupyter server config</a></li>
+            <li class="sub"><a href="#kernelspec">The kernelspec</a></li>
+            <li class="sub"><a href="#env">Environment</a></li>
+            <li class="sub"><a href="#notebooks">Notebook files</a></li>
+          </ol>
+        </li>
+        <li><a href="#launch">3. Find and run the kernel</a>
+          <ol>
+            <li class="sub"><a href="#search">How Lab finds it</a></li>
+            <li class="sub"><a href="#spawn">How Lab starts it</a></li>
+            <li class="sub"><a href="#python-kernel">Inside the Python kernel</a></li>
+            <li class="sub"><a href="#serve">The dqlrs --serve worker</a></li>
+            <li class="sub"><a href="#cell">A cell, end to end</a></li>
+          </ol>
+        </li>
+        <li><a href="#reference">Reference</a></li>
+      </ol>
+    </nav>
+
+    <main>
+      <header>
+        <p class="kicker">dqlrs notebook</p>
+        <h1>How the notebook flow works</h1>
+        <p class="lead">
+          <code>dqlrs notebook</code> starts JupyterLab with one kernel, <strong>DQL (Rust)</strong>.
+          The <code>dqlrs</code> binary is not Jupyter. It carries a small Python kernel,
+          installs JupyterLab into a directory under your home folder, writes a kernelspec
+          that points back at this same binary, and then launches Lab.
+        </p>
+        <p>
+          A checkout of this repository can also start Lab with
+          <code>./notebook/start.sh</code>. That script uses the repo’s
+          <code>notebook/</code> project and registers Python and Rust kernels together.
+          This page is the installed-binary path: <code>dqlrs notebook</code> and
+          <code>dqlrs --notebook</code>.
+        </p>
+      </header>
+
+      <h2 id="picture">The whole picture</h2>
+      <p>
+        A cell crosses five stops. <code>dqlrs</code> prepares files and environment,
+        then starts JupyterLab. Lab is the UI. When you open a notebook, Lab starts the
+        DQL kernel, which is a Python process. That kernel keeps a child
+        <code>dqlrs --serve</code> for the life of the notebook and sends each code cell
+        to it. The worker talks to DynamoDB.
+      </p>
+
+      <figure class="diagram">
+        <svg viewBox="0 0 700 548" role="img" aria-labelledby="diag-run-title diag-run-desc">
+          <title id="diag-run-title">Processes while a notebook is open</title>
+          <desc id="diag-run-desc">The browser talks HTTP to JupyterLab. Lab talks ZeroMQ to the Python DQL kernel. The kernel talks JSON lines to dqlrs --serve, which calls DynamoDB.</desc>
+          <line x1="28" y1="52" x2="28" y2="492" stroke="#e3d9c8" stroke-width="2"/>
+          <g font-family="Avenir Next, Segoe UI, sans-serif">
+            <g>
+              <rect x="52" y="16" width="624" height="72" rx="8" fill="#f6e6dc" stroke="#9a3412"/>
+              <circle cx="28" cy="52" r="13" fill="#9a3412"/>
+              <text x="28" y="57" text-anchor="middle" fill="#fffdf8" font-size="12" font-weight="600">1</text>
+              <text x="70" y="44" fill="#9a3412" font-size="13" font-weight="600">Browser</text>
+              <text x="70" y="66" fill="#1c1915" font-size="14">Notebook UI. Code cells are DQL text.</text>
+            </g>
+            <text x="70" y="112" fill="#5e564c" font-size="12">HTTP on 127.0.0.1</text>
+            <g>
+              <rect x="52" y="128" width="624" height="72" rx="8" fill="#e7eef6" stroke="#1e3a5f"/>
+              <circle cx="28" cy="164" r="13" fill="#1e3a5f"/>
+              <text x="28" y="169" text-anchor="middle" fill="#fffdf8" font-size="12" font-weight="600">2</text>
+              <text x="70" y="156" fill="#1e3a5f" font-size="13" font-weight="600">JupyterLab</text>
+              <text x="70" y="178" fill="#1c1915" font-size="14">jupyter lab. Child of the dqlrs notebook process.</text>
+            </g>
+            <text x="70" y="224" fill="#5e564c" font-size="12">ZeroMQ, using a connection file in jupyter-runtime/</text>
+            <g>
+              <rect x="52" y="240" width="624" height="72" rx="8" fill="#e5f2ec" stroke="#1f5c45"/>
+              <circle cx="28" cy="276" r="13" fill="#1f5c45"/>
+              <text x="28" y="281" text-anchor="middle" fill="#fffdf8" font-size="12" font-weight="600">3</text>
+              <text x="70" y="268" fill="#1f5c45" font-size="13" font-weight="600">DQL kernel</text>
+              <text x="70" y="290" fill="#1c1915" font-size="14">python -m dql_notebook_kernel --backend rust</text>
+            </g>
+            <text x="70" y="336" fill="#5e564c" font-size="12">JSON lines on stdin and stdout. First cell starts it; later cells reuse it.</text>
+            <g>
+              <rect x="52" y="352" width="624" height="72" rx="8" fill="#f8efe4" stroke="#7c4a12"/>
+              <circle cx="28" cy="388" r="13" fill="#7c4a12"/>
+              <text x="28" y="393" text-anchor="middle" fill="#fffdf8" font-size="12" font-weight="600">4</text>
+              <text x="70" y="380" fill="#7c4a12" font-size="13" font-weight="600">dqlrs --serve</text>
+              <text x="70" y="402" fill="#1c1915" font-size="14">The same binary, via DQLRS_BIN. One worker per kernel.</text>
+            </g>
+            <text x="70" y="456" fill="#5e564c" font-size="12">AWS SDK</text>
+            <g>
+              <rect x="52" y="476" width="624" height="56" rx="8" fill="#fffdf8" stroke="#5e564c"/>
+              <circle cx="28" cy="504" r="13" fill="#5e564c"/>
+              <text x="28" y="509" text-anchor="middle" fill="#fffdf8" font-size="12" font-weight="600">5</text>
+              <text x="70" y="500" fill="#5e564c" font-size="13" font-weight="600">DynamoDB</text>
+              <text x="70" y="518" fill="#1c1915" font-size="14">Local when DQL_HOST is set. Otherwise live AWS.</text>
+            </g>
+          </g>
+        </svg>
+        <figcaption>
+          Request path once a notebook is open. The <code>dqlrs notebook</code> process itself stays in the terminal as Lab’s parent. The worker is a second <code>dqlrs</code> process.
+        </figcaption>
+      </figure>
+
+      <p>
+        Jupyter is downloaded on the first run. The DQL kernel is already inside the
+        binary, copied out every time you start. Cells talk to the <code>dqlrs</code>
+        you invoked, via <code>DQLRS_BIN</code>, so a different <code>dqlrs</code> on
+        <code>PATH</code> is not used.
+      </p>
+
+      <h2 id="install">1. Install</h2>
+      <p>
+        “Install” is two different things. The kernel Python sources ship inside
+        <code>dqlrs</code>. JupyterLab does not. Wheels are large and differ by
+        platform, so the command creates a private virtualenv and installs Jupyter
+        there.
+      </p>
+      <figure class="diagram">
+        <svg viewBox="0 0 720 318" role="img" aria-labelledby="diag-inst-title diag-inst-desc">
+          <title id="diag-inst-title">Where the kernel and Jupyter come from</title>
+          <desc id="diag-inst-desc">build.rs packs the Python kernel into the dqlrs binary, which extracts it on every start. uv or pip installs JupyterLab into a venv on first run. The extracted package is then copied into that venv.</desc>
+          <defs>
+            <marker id="arr-inst" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 Z" fill="#5e564c"/>
+            </marker>
+          </defs>
+          <g font-family="Avenir Next, Segoe UI, sans-serif">
+            <rect x="16" y="12" width="330" height="108" rx="8" fill="#f6e6dc" stroke="#9a3412"/>
+            <text x="32" y="36" fill="#9a3412" font-size="13" font-weight="600">Packed into the binary</text>
+            <text x="32" y="58" fill="#1c1915" font-size="13">build.rs reads the git checkout</text>
+            <text x="32" y="78" fill="#5e564c" font-size="12">notebook/src/dql_notebook_kernel/*.py</text>
+            <text x="32" y="98" fill="#5e564c" font-size="12">examples/getting-started-rust.ipynb</text>
+
+            <rect x="374" y="12" width="330" height="108" rx="8" fill="#e7eef6" stroke="#1e3a5f"/>
+            <text x="390" y="36" fill="#1e3a5f" font-size="13" font-weight="600">Downloaded on first run</text>
+            <text x="390" y="58" fill="#1c1915" font-size="13">uv, or python -m venv, then pip</text>
+            <text x="390" y="78" fill="#5e564c" font-size="12">jupyterlab &gt;= 4.2, &lt; 5</text>
+            <text x="390" y="98" fill="#5e564c" font-size="12">ipykernel &gt;= 6.29</text>
+
+            <line x1="181" y1="120" x2="181" y2="154" stroke="#5e564c" stroke-width="1.5" marker-end="url(#arr-inst)"/>
+            <text x="190" y="142" fill="#5e564c" font-size="12">extract every start</text>
+            <line x1="539" y1="120" x2="539" y2="154" stroke="#5e564c" stroke-width="1.5" marker-end="url(#arr-inst)"/>
+            <text x="548" y="142" fill="#5e564c" font-size="12">install once</text>
+
+            <rect x="16" y="162" width="688" height="140" rx="10" fill="#faf7f2" stroke="#e3d9c8"/>
+            <text x="32" y="186" fill="#5e564c" font-size="12" font-weight="600">~/.local/share/dqlrs/notebook</text>
+
+            <rect x="32" y="200" width="280" height="80" rx="8" fill="#fffdf8" stroke="#9a3412"/>
+            <text x="46" y="228" fill="#9a3412" font-size="13" font-weight="600">src/dql_notebook_kernel/</text>
+            <text x="46" y="250" fill="#5e564c" font-size="12">files pulled out of this dqlrs</text>
+            <text x="46" y="268" fill="#5e564c" font-size="12">rewritten on every launch</text>
+
+            <line x1="312" y1="240" x2="392" y2="240" stroke="#5e564c" stroke-width="1.5" marker-end="url(#arr-inst)"/>
+            <text x="318" y="228" fill="#5e564c" font-size="11">copy</text>
+
+            <rect x="400" y="200" width="280" height="80" rx="8" fill="#fffdf8" stroke="#1e3a5f"/>
+            <text x="414" y="224" fill="#1e3a5f" font-size="13" font-weight="600">venv/</text>
+            <text x="414" y="246" fill="#5e564c" font-size="12">bin/jupyter, bin/python</text>
+            <text x="414" y="266" fill="#5e564c" font-size="12">site-packages/dql_notebook_kernel</text>
+          </g>
+        </svg>
+        <figcaption>
+          Jupyter stays in the venv after the first successful import. The kernel package is extracted and copied again on every <code>dqlrs notebook</code>.
+        </figcaption>
+      </figure>
+      <p>Each launch, before Lab starts:</p>
+      <ol class="pipeline">
+        <li><span class="n">1</span><div>Extract the kernel sources and example notebook from the binary.</div></li>
+        <li><span class="n">2</span><div>Write <code>jupyter_server_config.py</code> and a first <code>kernel.json</code>.</div></li>
+        <li><span class="n">3</span><div>Create the venv and install JupyterLab if <code>import jupyterlab, ipykernel, jupyter_client</code> fails.</div></li>
+        <li><span class="n">4</span><div>Rewrite <code>kernel.json</code> so <code>argv</code> uses the venv Python and <code>DQLRS_BIN</code> is this binary.</div></li>
+        <li><span class="n">5</span><div>Copy <code>dql_notebook_kernel</code> into the venv’s site-packages.</div></li>
+        <li><span class="n">6</span><div>Start <code>venv/bin/jupyter lab</code>.</div></li>
+      </ol>
+
+      <h3 id="already-in-the-binary">Already in the binary</h3>
+      <p>
+        When <code>dql-cli</code> is compiled, <code>rust-impl/crates/dql-cli/build.rs</code>
+        reads the kernel package from the git checkout and turns each file into a
+        string in the binary. A released <code>dqlrs</code> does not need the
+        repository on disk.
+      </p>
+      <p>The packed files are:</p>
+      <ul>
+        <li><code>notebook/src/dql_notebook_kernel/</code> — <code>__init__.py</code>, <code>__main__.py</code>, <code>kernel.py</code>, <code>runner.py</code>, <code>serve_client.py</code>, <code>progress.py</code>, <code>magics.py</code>, <code>install.py</code></li>
+        <li><code>notebook/examples/getting-started-rust.ipynb</code></li>
+      </ul>
+      <p>
+        On startup those sources are written to
+        <code>~/.local/share/dqlrs/notebook/src/dql_notebook_kernel/</code>.
+        <code>magics.py</code> and <code>install.py</code> are for the repo start
+        script (<code>%%dql</code> / <code>%%dqlrs</code>, and writing both kernelspecs).
+        <code>dqlrs notebook</code> still extracts them with the rest of the package.
+        It writes the Rust kernelspec itself, in Rust, and does not call
+        <code>install.py</code>.
+      </p>
+
+      <h3 id="first-run-downloads">What the first run downloads</h3>
+      <p>
+        Into <code>~/.local/share/dqlrs/notebook/venv</code> (override the parent
+        directory with <code>DQLRS_NOTEBOOK_HOME</code>):
+      </p>
+      <table>
+        <thead>
+          <tr><th>Package</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>jupyterlab&gt;=4.2,&lt;5</code></td>
+            <td>The notebook UI and the <code>jupyter</code> command. Pulls in the server, client, and their dependencies.</td>
+          </tr>
+          <tr>
+            <td><code>ipykernel&gt;=6.29</code></td>
+            <td>The kernel base class. <code>DqlKernel</code> subclasses it and <code>IPKernelApp</code> speaks the Jupyter wire protocol.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        The command also checks that <code>jupyter_client</code> imports. That library
+        comes in with Jupyter; it is how Lab manages kernelspecs and connection files.
+        DynamoDB Local, the Python <code>dql</code> package, and any other kernels
+        are left alone.
+      </p>
+
+      <h3 id="venv">How the venv is created</h3>
+      <p>
+        <code>ensure_jupyter</code> skips this work when
+        <code>venv/bin/python</code> already exists and this succeeds:
+      </p>
+      <pre><code>python -c "import jupyterlab, ipykernel, jupyter_client"</code></pre>
+      <p>Otherwise it prints <em>Preparing JupyterLab…</em> and builds the venv.</p>
+      <ol>
+        <li>
+          If <code>uv</code> is on <code>PATH</code>:
+          <pre><code>uv venv --no-project --seed --python 3.11 --allow-existing \
+  ~/.local/share/dqlrs/notebook/venv</code></pre>
+          <code>--seed</code> puts pip into the venv. <code>UV_NO_PROJECT=1</code> keeps uv from attaching the venv to a nearby <code>pyproject.toml</code>.
+        </li>
+        <li>
+          If that fails, or uv is missing, it looks for
+          <code>python3.11</code>, <code>python3.12</code>, <code>python3.10</code>,
+          <code>python3</code>, then <code>python</code>, and keeps the first one
+          whose version is at least 3.10. That interpreter runs
+          <code>python -m venv</code> on the same directory.
+        </li>
+        <li>
+          Packages go in with <code>uv pip install --python &lt;venv python&gt;</code>,
+          and if that fails, with <code>&lt;venv python&gt; -m pip install</code>.
+          The two requirements are <code>jupyterlab&gt;=4.2,&lt;5</code> and
+          <code>ipykernel&gt;=6.29</code>.
+        </li>
+      </ol>
+      <p>
+        There is no Jupyter if neither uv nor Python 3.10+ is available. The error
+        tells you to install <a href="https://docs.astral.sh/uv/">uv</a> or Python 3.11.
+      </p>
+
+      <h3 id="site-packages">Kernel onto sys.path</h3>
+      <p>
+        Lab will start the kernel as <code>python -m dql_notebook_kernel</code>.
+        That only works if the package is importable from the venv interpreter.
+        After Jupyter is ready, <code>dqlrs</code> runs a short Python snippet that
+        deletes and recopies:
+      </p>
+      <pre><code>src  = ~/.local/share/dqlrs/notebook/src/dql_notebook_kernel
+dest = &lt;venv purelib&gt;/dql_notebook_kernel
+       # typically venv/lib/python3.11/site-packages/dql_notebook_kernel</code></pre>
+      <p>
+        <code>sysconfig.get_path("purelib")</code> is the destination, so the copy
+        lands on that interpreter’s default import path. No <code>PYTHONPATH</code>
+        is set.
+      </p>
+
+      <h3 id="later-runs">Later runs</h3>
+      <ul>
+        <li>JupyterLab stays installed as long as the import check passes. Delete the <code>venv</code> directory to force a reinstall.</li>
+        <li>The kernel package is extracted from the binary and copied into site-packages on every start, so a newer <code>dqlrs</code> refreshes the kernel without a separate pip install.</li>
+        <li><code>kernel.json</code> is rewritten every start so its <code>python</code> and <code>DQLRS_BIN</code> match this process.</li>
+      </ul>
+
+      <h2 id="configure">2. Configure</h2>
+      <p>
+        Configuration is files under the notebook home, plus environment variables
+        on the Jupyter process. Nothing is written to
+        <code>~/.local/share/jupyter</code> or <code>~/.jupyter</code>.
+      </p>
+
+      <h3 id="home">Where files live</h3>
+      <p>
+        Default home is <code>$HOME/.local/share/dqlrs/notebook</code>
+        (<code>USERPROFILE</code> on Windows). <code>DQLRS_NOTEBOOK_HOME</code>
+        replaces that path entirely.
+      </p>
+      <figure class="diagram">
+        <div class="map">
+          <div class="map-col">
+            <h4>~/.local/share/dqlrs/notebook</h4>
+            <div class="file bin">src/dql_notebook_kernel/<span>Extracted from the binary, then copied into the venv</span></div>
+            <div class="file lab">venv/bin/jupyter<span>The Lab process</span></div>
+            <div class="file kern">venv/bin/python<span>Interpreter in kernel.json argv</span></div>
+            <div class="file kern">venv/lib/python3.11/site-packages/dql_notebook_kernel/<span>What <code>python -m</code> imports</span></div>
+            <div class="file lab">share/jupyter/kernels/dql-rust/kernel.json<span>JUPYTER_PATH points here</span></div>
+            <div class="file lab">jupyter_server_config.py<span>Passed as jupyter lab --config</span></div>
+            <div class="file run">jupyter-runtime/<span>Connection files and jpserver-*.json</span></div>
+            <div class="file">jupyter-data/<span>JUPYTER_DATA_DIR</span></div>
+            <div class="file">jupyter-config/<span>JUPYTER_CONFIG_DIR</span></div>
+            <div class="file">examples/getting-started-rust.ipynb<span>Example kept inside the notebook home</span></div>
+          </div>
+          <div class="map-col">
+            <h4>Directory you launched from</h4>
+            <div class="file bin">getting-started-dqlrs.ipynb<span>Written when the file is missing</span></div>
+            <div class="file">your other .ipynb files<span>--notebook-dir and ServerApp.root_dir</span></div>
+          </div>
+        </div>
+        <figcaption>
+          Jupyter’s search path, runtime files, and config stay under the notebook home. The notebooks you edit stay in the working directory.
+        </figcaption>
+      </figure>
+      <table>
+        <thead>
+          <tr><th>Path under the notebook home</th><th>Role</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>src/dql_notebook_kernel/*.py</code></td>
+            <td>Kernel sources extracted from the binary. Copied into the venv from here.</td>
+          </tr>
+          <tr>
+            <td><code>venv/</code></td>
+            <td>Private environment. <code>venv/bin/jupyter</code> is what actually starts Lab. <code>venv/bin/python</code> is the kernel interpreter.</td>
+          </tr>
+          <tr>
+            <td><code>share/jupyter/kernels/dql-rust/kernel.json</code></td>
+            <td>The kernelspec. This is the file Lab reads to learn the kernel’s name, label, and command.</td>
+          </tr>
+          <tr>
+            <td><code>jupyter_server_config.py</code></td>
+            <td>Server settings, passed as <code>jupyter lab --config</code>.</td>
+          </tr>
+          <tr>
+            <td><code>jupyter-data/</code></td>
+            <td><code>JUPYTER_DATA_DIR</code>. Jupyter’s own data, kept off the user data dir. The kernelspec is not stored here.</td>
+          </tr>
+          <tr>
+            <td><code>jupyter-runtime/</code></td>
+            <td><code>JUPYTER_RUNTIME_DIR</code>. Connection files for live kernels, and <code>jpserver-*.json</code> records used by <code>dqlrs notebook --shutdown</code>.</td>
+          </tr>
+          <tr>
+            <td><code>jupyter-config/</code></td>
+            <td><code>JUPYTER_CONFIG_DIR</code>. Set so Lab does not read or write your personal Jupyter config. The config file itself is the one next to <code>venv/</code>, passed on the command line.</td>
+          </tr>
+          <tr>
+            <td><code>examples/getting-started-rust.ipynb</code></td>
+            <td>Copy of the example notebook embedded in the binary.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        The working directory you launched from is the notebook root
+        (<code>--notebook-dir</code> and <code>ServerApp.root_dir</code>).
+        If <code>getting-started-dqlrs.ipynb</code> is not already there, one is
+        written. An existing file is left untouched.
+      </p>
+
+      <h3 id="server-config">Jupyter server config</h3>
+      <p>
+        <code>dqlrs</code> generates <code>jupyter_server_config.py</code> on every
+        start. The root directory is the current working directory, with quotes
+        escaped. <code>--no-browser</code> sets <code>open_browser</code> to false.
+      </p>
+      <pre><code>c = get_config()
+c.ServerApp.ip = '127.0.0.1'
+c.ServerApp.allow_remote_access = False
+c.ServerApp.open_browser = True
+c.ServerApp.root_dir = '/path/you/started/from'
+c.JupyterApp.answer_yes = True
+c.KernelSpecManager.allowed_kernelspecs = {'dql-rust'}</code></pre>
+      <p>
+        Lab is also started with <code>-y</code>, <code>--ip 127.0.0.1</code>, and
+        <code>--notebook-dir</code> set to that same directory. The allow-list is
+        the important line: the launcher offers only <strong>DQL (Rust)</strong>,
+        even if other kernelspecs exist on the machine.
+      </p>
+      <p>The process command is:</p>
+      <pre><code>~/.local/share/dqlrs/notebook/venv/bin/jupyter lab \
+  -y \
+  --config ~/.local/share/dqlrs/notebook/jupyter_server_config.py \
+  --notebook-dir "$PWD" \
+  --ip 127.0.0.1</code></pre>
+      <p>
+        <code>--jupyter-port</code> (or <code>--port</code>) adds
+        <code>--port</code>. Arguments after <code>--</code> are appended as extra
+        Jupyter flags.
+      </p>
+
+      <h3 id="kernelspec">The kernelspec</h3>
+      <p>
+        A kernelspec is a directory whose name is the kernel id, containing
+        <code>kernel.json</code>. Here the id is <code>dql-rust</code> and the
+        label on the launcher is <code>DQL (Rust)</code>.
+      </p>
+      <p>
+        The spec is written twice in one run. The first write happens while files
+        are materialized, and the interpreter may still be the placeholder
+        <code>python3</code> if the venv does not exist yet. After Jupyter is
+        installed, <code>refresh_kernelspec</code> rewrites it with the absolute
+        venv interpreter. Lab only starts after that rewrite.
+      </p>
+      <pre><code>{
+  "argv": [
+    "/Users/you/.local/share/dqlrs/notebook/venv/bin/python",
+    "-m",
+    "dql_notebook_kernel",
+    "-f",
+    "{connection_file}",
+    "--backend",
+    "rust"
+  ],
+  "display_name": "DQL (Rust)",
+  "language": "dql",
+  "interrupt_mode": "message",
+  "metadata": { "debugger": false },
+  "env": {
+    "DQLRS_BIN": "/Users/you/.local/bin/dqlrs",
+    "DQL_NOTEBOOK_SERVE": "1",
+    "DQL_NOTEBOOK_JSON": "1"
+  }
+}</code></pre>
+      <p>
+        <code>{connection_file}</code> is a Jupyter placeholder. Lab replaces it
+        with a real path when it spawns the kernel. <code>DQLRS_BIN</code> is
+        <code>std::env::current_exe()</code> for the <code>dqlrs</code> that
+        started the notebook, canonicalized when the OS allows it.
+      </p>
+
+      <h3 id="env">Environment</h3>
+      <p>
+        <code>dqlrs</code> sets variables on itself before it spawns Lab. Rust
+        <code>Command</code> inherits the parent environment, and the kernel
+        inherits Lab’s environment, then applies the <code>env</code> object in
+        <code>kernel.json</code> on top.
+      </p>
+      <ol class="pipeline">
+        <li><span class="n">1</span><div><strong>dqlrs notebook</strong> sets <code>DQLRS_BIN</code>, region, host, port, dummy keys when <code>--local</code> needs them, and the four <code>JUPYTER_*</code> directories.</div></li>
+        <li><span class="n">2</span><div><strong>jupyter lab</strong> inherits that environment.</div></li>
+        <li><span class="n">3</span><div><strong>The kernel</strong> inherits Lab, then <code>kernel.json</code> sets <code>DQLRS_BIN</code>, <code>DQL_NOTEBOOK_SERVE=1</code>, and <code>DQL_NOTEBOOK_JSON=1</code>.</div></li>
+        <li><span class="n">4</span><div><strong>dqlrs --serve</strong> inherits the kernel and uses <code>DQLRS_BIN</code> as the program to run.</div></li>
+      </ol>
+      <table>
+        <thead>
+          <tr><th>Variable</th><th>Set by</th><th>Effect</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>DQLRS_BIN</code></td>
+            <td>process env and <code>kernel.json</code></td>
+            <td>Absolute path of this <code>dqlrs</code>. The kernel runs that file, not whatever <code>dqlrs</code> resolves to on <code>PATH</code>.</td>
+          </tr>
+          <tr>
+            <td><code>DQL_NOTEBOOK_SERVE</code></td>
+            <td>both, value <code>1</code></td>
+            <td>Rust cells use a long-lived <code>dqlrs --serve</code> worker. <code>0</code> would mean one <code>dqlrs -c</code> process per cell. The command always sets <code>1</code>.</td>
+          </tr>
+          <tr>
+            <td><code>DQL_NOTEBOOK_JSON</code></td>
+            <td>both, value <code>1</code></td>
+            <td>The one-shot fallback adds <code>--json</code> so rows can render as a table.</td>
+          </tr>
+          <tr>
+            <td><code>JUPYTER_PATH</code></td>
+            <td>Lab process</td>
+            <td><code>&lt;home&gt;/share/jupyter</code>. This is how Lab finds <code>kernels/dql-rust</code>.</td>
+          </tr>
+          <tr>
+            <td><code>JUPYTER_DATA_DIR</code></td>
+            <td>Lab process</td>
+            <td><code>&lt;home&gt;/jupyter-data</code></td>
+          </tr>
+          <tr>
+            <td><code>JUPYTER_RUNTIME_DIR</code></td>
+            <td>Lab process</td>
+            <td><code>&lt;home&gt;/jupyter-runtime</code>. Connection files and server records.</td>
+          </tr>
+          <tr>
+            <td><code>JUPYTER_CONFIG_DIR</code></td>
+            <td>Lab process</td>
+            <td><code>&lt;home&gt;/jupyter-config</code></td>
+          </tr>
+          <tr>
+            <td><code>AWS_REGION</code></td>
+            <td><code>-r</code> / <code>--region</code>, if passed</td>
+            <td>Forwarded to the worker as <code>-r</code>. Otherwise the worker uses the existing <code>AWS_REGION</code> or <code>us-west-1</code>.</td>
+          </tr>
+          <tr>
+            <td><code>DQL_HOST</code>, <code>DQL_PORT</code></td>
+            <td><code>--local</code>, or <code>-H</code> / <code>-p</code></td>
+            <td>When host is set, the worker is started with <code>-H</code> and <code>-p</code> (port default 8000). Unset host means live AWS.</td>
+          </tr>
+          <tr>
+            <td><code>AWS_ACCESS_KEY_ID</code>, <code>AWS_SECRET_ACCESS_KEY</code></td>
+            <td><code>--local</code>, only if unset</td>
+            <td>Dummy values <code>fakeid</code> / <code>fakekey</code> for DynamoDB Local. Existing credentials are kept.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        <code>--local</code> does not start DynamoDB Local. If nothing is listening
+        on the host and port, the command prints a warning and Lab still starts.
+        Credentials you already have in the environment (or that the AWS SDK can
+        find) are inherited by the worker.
+      </p>
+
+      <h3 id="notebooks">Notebook files</h3>
+      <p>
+        Code cells in a <strong>DQL (Rust)</strong> notebook are DQL statements
+        and meta-commands (<code>SELECT</code>, <code>INSERT</code>, <code>ls</code>,
+        and the rest), not Python. The starter notebook copied into the working
+        directory is the embedded getting-started example: create a table, insert
+        rows, and scan.
+      </p>
+
+      <h2 id="launch">3. How Jupyter finds the kernel and runs it</h2>
+      <p>
+        Lab never searches the filesystem for <code>dqlrs</code>. It searches for
+        kernelspecs. The spec’s <code>argv</code> is the program it executes.
+        That program is Python. Python then starts <code>dqlrs</code>.
+      </p>
+      <figure class="diagram">
+        <svg viewBox="0 0 720 392" role="img" aria-labelledby="diag-find-title diag-find-desc">
+          <title id="diag-find-title">How JupyterLab finds and starts the DQL kernel</title>
+          <desc id="diag-find-desc">Lab follows JUPYTER_PATH to share/jupyter/kernels/dql-rust/kernel.json. The allow-list keeps only that spec. On open, Lab writes a connection file and spawns the argv with that path filled in.</desc>
+          <defs>
+            <marker id="arr-find" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 Z" fill="#5e564c"/>
+            </marker>
+          </defs>
+          <g font-family="Avenir Next, Segoe UI, sans-serif">
+            <rect x="150" y="8" width="420" height="72" rx="8" fill="#e7eef6" stroke="#1e3a5f"/>
+            <text x="360" y="36" text-anchor="middle" fill="#1e3a5f" font-size="14" font-weight="600">JupyterLab</text>
+            <text x="360" y="58" text-anchor="middle" fill="#1c1915" font-size="13">JUPYTER_PATH = &lt;home&gt;/share/jupyter</text>
+
+            <polyline points="360,80 360,98 186,98 186,116" fill="none" stroke="#5e564c" stroke-width="1.5" marker-end="url(#arr-find)"/>
+            <text x="200" y="90" fill="#5e564c" font-size="12">JUPYTER_PATH/kernels</text>
+            <line x1="360" y1="98" x2="534" y2="98" stroke="#c4b8a8" stroke-width="1.5" stroke-dasharray="4 3"/>
+            <line x1="534" y1="98" x2="534" y2="116" stroke="#c4b8a8" stroke-width="1.5" stroke-dasharray="4 3"/>
+
+            <rect x="36" y="116" width="300" height="100" rx="8" fill="#e5f2ec" stroke="#1f5c45"/>
+            <text x="52" y="142" fill="#1f5c45" font-size="13" font-weight="600">dql-rust/kernel.json</text>
+            <text x="52" y="164" fill="#1c1915" font-size="13">Launcher name: DQL (Rust)</text>
+            <text x="52" y="186" fill="#5e564c" font-size="12">allowed_kernelspecs keeps this one</text>
+
+            <rect x="384" y="116" width="300" height="100" rx="8" fill="#faf7f2" stroke="#c4b8a8"/>
+            <text x="400" y="142" fill="#5e564c" font-size="13" font-weight="600">Any other kernelspec</text>
+            <text x="400" y="164" fill="#1c1915" font-size="13">user or system Jupyter dirs</text>
+            <text x="400" y="186" fill="#5e564c" font-size="12">hidden by the allow-list</text>
+
+            <line x1="186" y1="216" x2="186" y2="248" stroke="#5e564c" stroke-width="1.5" marker-end="url(#arr-find)"/>
+            <text x="198" y="238" fill="#5e564c" font-size="12">open a notebook</text>
+
+            <rect x="36" y="256" width="648" height="120" rx="8" fill="#fffdf8" stroke="#1f5c45"/>
+            <text x="52" y="282" fill="#1f5c45" font-size="13" font-weight="600">Lab fills in {connection_file} and spawns argv</text>
+            <text x="52" y="308" fill="#1c1915" font-size="13">venv/bin/python -m dql_notebook_kernel</text>
+            <text x="52" y="330" fill="#1c1915" font-size="13">-f jupyter-runtime/kernel-….json --backend rust</text>
+            <text x="52" y="354" fill="#5e564c" font-size="12">env from the spec: DQLRS_BIN, DQL_NOTEBOOK_SERVE=1, DQL_NOTEBOOK_JSON=1</text>
+          </g>
+        </svg>
+        <figcaption>
+          The kernel id is the directory name <code>dql-rust</code>. Lab does not search <code>PATH</code> for <code>dqlrs</code>. That path is the <code>DQLRS_BIN</code> value stored in the spec.
+        </figcaption>
+      </figure>
+
+      <h3 id="search">How Lab finds it</h3>
+      <p>
+        Jupyter’s kernel-spec manager looks for <code>kernels/&lt;name&gt;/kernel.json</code>
+        under each entry of the data path. <code>JUPYTER_PATH</code> is prepended
+        to that path. This command sets:
+      </p>
+      <pre><code>JUPYTER_PATH=~/.local/share/dqlrs/notebook/share/jupyter</code></pre>
+      <p>
+        so the search hits
+        <code>…/share/jupyter/kernels/dql-rust/kernel.json</code>.
+        The directory name <code>dql-rust</code> is the kernel id.
+        <code>display_name</code> is what the launcher shows.
+      </p>
+      <p>
+        <code>KernelSpecManager.allowed_kernelspecs = {'dql-rust'}</code> drops
+        every other spec, including ones in the default user or system Jupyter
+        directories. The New menu and the launcher have a single tile.
+      </p>
+      <p>
+        <code>--dry-run</code> stops after this setup and runs
+        <code>jupyter kernelspec list</code> with the same <code>JUPYTER_PATH</code>
+        and <code>JUPYTER_DATA_DIR</code>, so you can see <code>dql-rust</code>
+        without opening a browser.
+      </p>
+
+      <h3 id="spawn">How Lab starts it</h3>
+      <p>
+        Choosing the tile, or opening a notebook whose kernel name is
+        <code>dql-rust</code>, does the standard Jupyter kernel startup:
+      </p>
+      <ol>
+        <li>
+          Lab picks five ZeroMQ ports (shell, iopub, stdin, control, heartbeat)
+          and an HMAC key, and writes a connection file under
+          <code>JUPYTER_RUNTIME_DIR</code>
+          (<code>~/.local/share/dqlrs/notebook/jupyter-runtime</code>).
+          The file looks like this:
+          <pre><code>{
+  "ip": "127.0.0.1",
+  "transport": "tcp",
+  "signature_scheme": "hmac-sha256",
+  "key": "&lt;secret&gt;",
+  "shell_port": 54158,
+  "iopub_port": 54159,
+  "stdin_port": 54160,
+  "control_port": 54161,
+  "hb_port": 54162,
+  "kernel_name": "dql-rust"
+}</code></pre>
+        </li>
+        <li>
+          It substitutes that path for <code>{connection_file}</code> in
+          <code>argv</code> and spawns:
+          <pre><code>~/.local/share/dqlrs/notebook/venv/bin/python \
+  -m dql_notebook_kernel \
+  -f ~/.local/share/dqlrs/notebook/jupyter-runtime/kernel-&lt;id&gt;.json \
+  --backend rust</code></pre>
+          The process environment is Lab’s environment plus the spec’s
+          <code>env</code> block (<code>DQLRS_BIN</code>,
+          <code>DQL_NOTEBOOK_SERVE</code>, <code>DQL_NOTEBOOK_JSON</code>).
+        </li>
+        <li>
+          <code>__main__.py</code> sees <code>--backend rust</code>, sets
+          <code>DQL_NOTEBOOK_BACKEND=rust</code>, and hands the remaining
+          arguments (including <code>-f</code>) to ipykernel:
+          <pre><code>IPKernelApp.launch_instance(kernel_class=DqlKernel)</code></pre>
+        </li>
+        <li>
+          <code>IPKernelApp</code> reads the connection file and connects ZeroMQ
+          sockets to those ports. Shell carries execute requests. IOPub carries
+          status, display data, and errors back to the notebook UI. Heartbeat
+          is how Lab knows the kernel is alive.
+        </li>
+      </ol>
+      <p>
+        From here, Jupyter’s job is the wire protocol. It does not parse DQL.
+        A code cell arrives as an <code>execute_request</code> whose
+        <code>code</code> field is the cell text.
+      </p>
+
+      <h3 id="python-kernel">Inside the Python kernel</h3>
+      <p>
+        <code>DqlKernel</code> in <code>kernel.py</code> implements
+        <code>do_execute</code>. The language metadata says <code>dql</code>
+        (SQL-like highlighting). The backend comes from
+        <code>DQL_NOTEBOOK_BACKEND</code>, which <code>--backend rust</code> set.
+      </p>
+      <p>
+        On the first cell, if <code>DQL_NOTEBOOK_SERVE</code> is on, the kernel
+        creates one <code>ServeSession</code>. That object owns the
+        <code>dqlrs --serve</code> child. Later cells reuse it. If the worker
+        fails to start or dies, the kernel marks serve as failed and falls back,
+        for that kernel process, to one-shot <code>dqlrs -c</code>
+        (with <code>--json</code> because <code>DQL_NOTEBOOK_JSON=1</code>).
+      </p>
+      <p>
+        Results go back on IOPub as <code>display_data</code>. Item lists become
+        an HTML table plus plain JSON. Errors go back as an <code>error</code>
+        message. Bulk writes emit progress events; the kernel updates a single
+        display output in place so the notebook shows a progress bar.
+      </p>
+      <p>
+        Shutting the kernel down calls <code>do_shutdown</code>, which sends
+        <code>{"op":"shutdown"}</code> to the worker and waits for it to exit.
+      </p>
+
+      <h3 id="serve">The dqlrs --serve worker</h3>
+      <p>
+        <code>ServeSession</code> resolves the binary from <code>DQLRS_BIN</code>
+        and starts it once:
+      </p>
+      <pre><code>$DQLRS_BIN --serve -r "$AWS_REGION" [-H "$DQL_HOST" -p "$DQL_PORT"]</code></pre>
+      <p>
+        Stdin and stdout are pipes of JSON objects, one per line. The session
+        starts with a ping. A successful reply means the worker is up and its
+        DynamoDB session is ready. Each cell is then:
+      </p>
+      <pre><code>{"id":"1","op":"exec","dql":"SCAN * FROM nb_posts"}</code></pre>
+      <p>
+        The worker may first write progress lines (no <code>ok</code> field),
+        then one result envelope:
+      </p>
+      <pre><code>{"id":"1","event":"progress","done":25,"total":100,"phase":"write"}
+{"id":"1","ok":true,"kind":"items","items":[{"username":"steve","postid":1}],"partial":false}</code></pre>
+      <p>
+        <code>kind</code> is <code>items</code>, <code>affected</code>,
+        <code>status</code>, <code>schema</code>, <code>text</code>, or
+        <code>error</code>. The kernel turns that into the cell output.
+        The worker stays up across cells, so connection setup and session state
+        are not repeated per cell. Region, host, port, and AWS credentials are
+        the environment the kernel inherited from <code>dqlrs notebook</code>.
+      </p>
+
+      <h3 id="cell">A cell, end to end</h3>
+      <figure class="diagram">
+        <svg viewBox="0 0 740 500" role="img" aria-labelledby="diag-cell-title diag-cell-desc">
+          <title id="diag-cell-title">Sequence for one code cell</title>
+          <desc id="diag-cell-desc">The browser sends the cell to JupyterLab, which sends execute_request to the kernel. The kernel pings dqlrs --serve on the first cell, then sends the DQL text. The worker queries DynamoDB and returns a JSON envelope. The kernel publishes display_data back to the notebook.</desc>
+          <defs>
+            <marker id="arr-cell" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0 0 L10 5 L0 10 Z" fill="#5e564c"/>
+            </marker>
+          </defs>
+          <g font-family="Avenir Next, Segoe UI, sans-serif">
+            <rect x="16" y="8" width="128" height="48" rx="8" fill="#f6e6dc" stroke="#9a3412"/>
+            <text x="80" y="30" text-anchor="middle" fill="#9a3412" font-size="13" font-weight="600">Browser</text>
+            <text x="80" y="46" text-anchor="middle" fill="#5e564c" font-size="11">notebook UI</text>
+            <line x1="80" y1="56" x2="80" y2="478" stroke="#e3d9c8" stroke-width="1.5" stroke-dasharray="4 4"/>
+
+            <rect x="176" y="8" width="128" height="48" rx="8" fill="#e7eef6" stroke="#1e3a5f"/>
+            <text x="240" y="30" text-anchor="middle" fill="#1e3a5f" font-size="13" font-weight="600">JupyterLab</text>
+            <text x="240" y="46" text-anchor="middle" fill="#5e564c" font-size="11">server</text>
+            <line x1="240" y1="56" x2="240" y2="478" stroke="#e3d9c8" stroke-width="1.5" stroke-dasharray="4 4"/>
+
+            <rect x="336" y="8" width="148" height="48" rx="8" fill="#e5f2ec" stroke="#1f5c45"/>
+            <text x="410" y="30" text-anchor="middle" fill="#1f5c45" font-size="13" font-weight="600">DQL kernel</text>
+            <text x="410" y="46" text-anchor="middle" fill="#5e564c" font-size="11">Python</text>
+            <line x1="410" y1="56" x2="410" y2="478" stroke="#e3d9c8" stroke-width="1.5" stroke-dasharray="4 4"/>
+
+            <rect x="516" y="8" width="148" height="48" rx="8" fill="#f8efe4" stroke="#7c4a12"/>
+            <text x="590" y="30" text-anchor="middle" fill="#7c4a12" font-size="13" font-weight="600">dqlrs --serve</text>
+            <text x="590" y="46" text-anchor="middle" fill="#5e564c" font-size="11">this binary</text>
+            <line x1="590" y1="56" x2="590" y2="478" stroke="#e3d9c8" stroke-width="1.5" stroke-dasharray="4 4"/>
+
+            <line x1="80" y1="92" x2="232" y2="92" stroke="#5e564c" marker-end="url(#arr-cell)"/>
+            <text x="156" y="84" text-anchor="middle" fill="#1c1915" font-size="12">Run cell</text>
+
+            <line x1="240" y1="132" x2="402" y2="132" stroke="#5e564c" marker-end="url(#arr-cell)"/>
+            <text x="321" y="124" text-anchor="middle" fill="#1c1915" font-size="12">execute_request</text>
+
+            <line x1="410" y1="176" x2="582" y2="176" stroke="#7c4a12" stroke-dasharray="5 4" marker-end="url(#arr-cell)"/>
+            <text x="496" y="168" text-anchor="middle" fill="#7c4a12" font-size="12">start worker and ping</text>
+
+            <line x1="582" y1="212" x2="418" y2="212" stroke="#5e564c" marker-end="url(#arr-cell)"/>
+            <text x="500" y="204" text-anchor="middle" fill="#1c1915" font-size="12">{ok: true}</text>
+
+            <line x1="410" y1="256" x2="582" y2="256" stroke="#5e564c" marker-end="url(#arr-cell)"/>
+            <text x="496" y="248" text-anchor="middle" fill="#1c1915" font-size="12">{"op":"exec","dql":…}</text>
+
+            <rect x="628" y="286" width="96" height="36" rx="8" fill="#fffdf8" stroke="#5e564c"/>
+            <text x="676" y="308" text-anchor="middle" fill="#5e564c" font-size="12">DynamoDB</text>
+            <line x1="590" y1="292" x2="626" y2="292" stroke="#5e564c" marker-end="url(#arr-cell)"/>
+            <line x1="626" y1="316" x2="596" y2="316" stroke="#5e564c" marker-end="url(#arr-cell)"/>
+
+            <line x1="582" y1="360" x2="418" y2="360" stroke="#5e564c" marker-end="url(#arr-cell)"/>
+            <text x="500" y="352" text-anchor="middle" fill="#1c1915" font-size="12">envelope, after progress</text>
+
+            <line x1="402" y1="404" x2="248" y2="404" stroke="#5e564c" marker-end="url(#arr-cell)"/>
+            <text x="325" y="396" text-anchor="middle" fill="#1c1915" font-size="12">display_data on IOPub</text>
+
+            <line x1="232" y1="448" x2="88" y2="448" stroke="#5e564c" marker-end="url(#arr-cell)"/>
+            <text x="160" y="440" text-anchor="middle" fill="#1c1915" font-size="12">table in the cell</text>
+          </g>
+        </svg>
+        <figcaption>
+          The dashed arrow happens once per kernel. Later cells send <code>exec</code> on the same pipes. Progress lines arrive before the envelope and update one output in the cell.
+        </figcaption>
+      </figure>
+      <ol>
+        <li>You run <code>dqlrs notebook --local</code> in a directory of notebooks.</li>
+        <li><code>dqlrs</code> extracts the kernel, ensures the Jupyter venv, rewrites <code>kernel.json</code> with this binary’s path, and starts Lab on <code>127.0.0.1</code>.</li>
+        <li>Lab’s kernel path is <code>JUPYTER_PATH/kernels</code>. The only allowed spec is <code>dql-rust</code>.</li>
+        <li>You open <code>getting-started-dqlrs.ipynb</code>. Lab writes a connection file and runs the venv Python module <code>dql_notebook_kernel</code> with <code>--backend rust</code> and <code>-f</code> pointing at that file.</li>
+        <li>ipykernel connects back to Lab on the ZeroMQ ports in the file.</li>
+        <li>The first code cell starts <code>DQLRS_BIN --serve</code>, pings it, then sends the cell text as <code>{"op":"exec","dql":…}</code>.</li>
+        <li>The reply is rendered in the cell. The next cell reuses the same worker.</li>
+        <li>Ctrl-C in the terminal stops Lab. From another terminal, <code>dqlrs notebook --shutdown</code> reads <code>jpserver-*.json</code> in the runtime directory and stops the servers you choose.</li>
+      </ol>
+
+      <h2 id="reference">Reference</h2>
+      <h3>Commands</h3>
+      <pre><code>dqlrs notebook --local
+dqlrs --notebook --no-browser --jupyter-port 8889
+dqlrs notebook --dry-run
+dqlrs notebook --shutdown</code></pre>
+      <p>
+        <code>notebook</code> cannot be combined with <code>--serve</code> or
+        <code>-c</code>. The notebook command is the parent; <code>--serve</code>
+        is the worker the kernel starts later.
+      </p>
+
+      <h3>Source map</h3>
+      <table>
+        <thead>
+          <tr><th>Piece</th><th>Where</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>CLI entry, Lab spawn, shutdown</td><td><code>rust-impl/crates/dql-cli/src/notebook/mod.rs</code></td></tr>
+          <tr><td>Flags</td><td><code>rust-impl/crates/dql-cli/src/notebook/args.rs</code></td></tr>
+          <tr><td>Extract kernel, write spec and config</td><td><code>rust-impl/crates/dql-cli/src/notebook/layout.rs</code></td></tr>
+          <tr><td>Venv and pip/uv install</td><td><code>rust-impl/crates/dql-cli/src/notebook/venv.rs</code></td></tr>
+          <tr><td>Pack kernel into the binary</td><td><code>rust-impl/crates/dql-cli/build.rs</code></td></tr>
+          <tr><td>Kernel process</td><td><code>notebook/src/dql_notebook_kernel/__main__.py</code>, <code>kernel.py</code></td></tr>
+          <tr><td><code>--serve</code> client</td><td><code>notebook/src/dql_notebook_kernel/serve_client.py</code></td></tr>
+          <tr><td>Repo start script (separate path)</td><td><code>notebook/start.sh</code></td></tr>
+        </tbody>
+      </table>
+
+      <footer>
+        <p>
+          User-facing summary:
+          <a href="README.md">rust-docs/README.md</a>,
+          section “Notebook”.
+        </p>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

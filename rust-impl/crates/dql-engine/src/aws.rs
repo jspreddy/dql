@@ -4,8 +4,10 @@ use crate::convert::{
 };
 use crate::throttle::RateLimit;
 use crate::{
-    BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
+    BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ProgressSink, ReadOperation,
+    ReadRequest,
 };
+use aws_sdk_dynamodb::error::ProvideErrorMetadata;
 use aws_sdk_dynamodb::types::{
     BillingMode as AwsBillingMode, GlobalSecondaryIndexUpdate, KeySchemaElement,
     KeyType as AwsKeyType, Projection, ProjectionType, ProvisionedThroughput,
@@ -64,6 +66,7 @@ pub struct SdkBackend {
     rate_limit: Option<RateLimit>,
     region: String,
     config: SdkConfig,
+    progress: ProgressSink,
 }
 
 impl SdkBackend {
@@ -83,6 +86,7 @@ impl SdkBackend {
             rate_limit: None,
             region,
             config,
+            progress: ProgressSink::default(),
         })
     }
 
@@ -153,6 +157,28 @@ impl SdkBackend {
         self.runtime.block_on(future)
     }
 
+    fn report_progress(&self, done: usize, total: Option<usize>, phase: &str) {
+        self.progress
+            .report(done as u64, total.map(|value| value as u64), phase);
+    }
+
+    /// Skip a one-page read (no bar that would sit indeterminate after the cell).
+    /// Multi-page reads emit after each page; the last page sets total = fetched
+    /// so clients can draw a completed bar instead of an endless spinner.
+    fn report_read_page_progress(
+        &self,
+        page_index: usize,
+        fetched: usize,
+        more: bool,
+        limit: Option<usize>,
+    ) {
+        if page_index == 0 && !more {
+            return;
+        }
+        let total = if more { limit } else { Some(fetched) };
+        self.report_progress(fetched, total, "read");
+    }
+
     fn invalidate_cache(&mut self, table: &str) {
         self.cache.remove(table);
     }
@@ -182,8 +208,41 @@ impl SdkBackend {
         }
     }
 
-    fn aws_error(err: impl std::fmt::Display) -> EngineError {
-        EngineError::Runtime(err.to_string())
+    fn aws_error<E>(err: E) -> EngineError
+    where
+        E: ProvideErrorMetadata + std::fmt::Display + std::fmt::Debug,
+    {
+        EngineError::Runtime(aws_error_text(&err))
+    }
+
+    fn aws_code_is<E>(err: &E, code: &str) -> bool
+    where
+        E: ProvideErrorMetadata + std::fmt::Display + std::fmt::Debug,
+    {
+        err.code() == Some(code)
+            || err.message().is_some_and(|message| message.contains(code))
+            || format!("{err:?}").contains(code)
+    }
+
+    fn aws_message_contains<E>(err: &E, needle: &str) -> bool
+    where
+        E: ProvideErrorMetadata + std::fmt::Display + std::fmt::Debug,
+    {
+        err.message()
+            .is_some_and(|message| message.contains(needle))
+            || format!("{err:?}").contains(needle)
+    }
+}
+
+fn aws_error_text<E>(err: &E) -> String
+where
+    E: ProvideErrorMetadata + std::fmt::Display,
+{
+    match (err.code(), err.message()) {
+        (Some(code), Some(message)) => format!("{code}: {message}"),
+        (Some(code), None) => code.to_string(),
+        (None, Some(message)) => message.to_string(),
+        (None, None) => err.to_string(),
     }
 }
 
@@ -221,7 +280,7 @@ impl DynamoBackend for SdkBackend {
                     })?;
                     Ok(Some(table_meta_from_description(description)?))
                 }
-                Err(err) if err.to_string().contains("ResourceNotFoundException") => Ok(None),
+                Err(err) if Self::aws_code_is(&err, "ResourceNotFoundException") => Ok(None),
                 Err(err) => Err(Self::aws_error(err)),
             }
         })
@@ -244,7 +303,7 @@ impl DynamoBackend for SdkBackend {
                     format!("Created table '{name}'"),
                 ))
             }
-            Err(err) if if_not_exists && err.to_string().contains("ResourceInUseException") => {
+            Err(err) if if_not_exists && Self::aws_code_is(&err, "ResourceInUseException") => {
                 Ok(BackendResponse::new(
                     "create_table",
                     &name,
@@ -271,7 +330,7 @@ impl DynamoBackend for SdkBackend {
                     format!("Dropped table '{table}'"),
                 ))
             }
-            Err(err) if if_exists && err.to_string().contains("ResourceNotFoundException") => {
+            Err(err) if if_exists && Self::aws_code_is(&err, "ResourceNotFoundException") => {
                 Ok(BackendResponse::new(
                     "delete_table",
                     table,
@@ -400,6 +459,8 @@ impl DynamoBackend for SdkBackend {
         _options: &QueryOptions,
     ) -> Result<BackendResponse<usize>, EngineError> {
         let keys = self.keys_for_condition(table, condition)?;
+        let total = keys.len();
+        self.report_progress(0, Some(total), "write");
         let mut deleted = 0usize;
         let mut read_units = 0.0;
         let mut write_units = 0.0;
@@ -420,6 +481,7 @@ impl DynamoBackend for SdkBackend {
                 write_units += capacity.write_capacity_units().unwrap_or(0.0);
             }
             deleted += 1;
+            self.report_progress(deleted, Some(total), "write");
         }
         let capacity = Self::capacity_from("delete_item", table, read_units, write_units);
         self.apply_throttle(&capacity)?;
@@ -445,6 +507,8 @@ impl DynamoBackend for SdkBackend {
             .transpose()
             .map_err(|err| EngineError::Runtime(err.to_string()))?;
         let keys = self.keys_for_condition(table, condition)?;
+        let total = keys.len();
+        self.report_progress(0, Some(total), "write");
         let mut updated = 0usize;
         let mut read_units = 0.0;
         let mut write_units = 0.0;
@@ -467,6 +531,7 @@ impl DynamoBackend for SdkBackend {
                 }
             }
             updated += 1;
+            self.report_progress(updated, Some(total), "write");
         }
         let capacity = Self::capacity_from("update_item", table, read_units, write_units);
         self.apply_throttle(&capacity)?;
@@ -531,6 +596,7 @@ impl DynamoBackend for SdkBackend {
                 write_units += capacity.write_capacity_units().unwrap_or(0.0);
             }
             deleted += 1;
+            self.report_progress(deleted, Some(keys.len()), "write");
         }
         let capacity = Self::capacity_from("delete_item", table, read_units, write_units);
         self.apply_throttle(&capacity)?;
@@ -582,6 +648,7 @@ impl DynamoBackend for SdkBackend {
                 }
             }
             updated += 1;
+            self.report_progress(updated, Some(keys.len()), "write");
         }
         let capacity = Self::capacity_from("update_item", table, read_units, write_units);
         self.apply_throttle(&capacity)?;
@@ -660,8 +727,8 @@ impl DynamoBackend for SdkBackend {
                     Ok(_) => format!("Dropped index '{name}' from '{table}'"),
                     Err(err)
                         if *if_exists
-                            && (err.to_string().contains("ResourceNotFoundException")
-                                || err.to_string().contains("does not exist")) =>
+                            && (Self::aws_code_is(&err, "ResourceNotFoundException")
+                                || Self::aws_message_contains(&err, "does not exist")) =>
                     {
                         format!("Index '{name}' did not exist on '{table}'")
                     }
@@ -744,7 +811,11 @@ impl DynamoBackend for SdkBackend {
                 });
                 match result {
                     Ok(_) => format!("Created global index '{}' on '{table}'", index.name),
-                    Err(err) if *if_not_exists && err.to_string().contains("already exists") => {
+                    Err(err)
+                        if *if_not_exists
+                            && (Self::aws_code_is(&err, "ResourceInUseException")
+                                || Self::aws_message_contains(&err, "already exists")) =>
+                    {
                         format!("Index '{}' already exists on '{table}'", index.name)
                     }
                     Err(err) => return Err(Self::aws_error(err)),
@@ -753,6 +824,10 @@ impl DynamoBackend for SdkBackend {
         };
         self.invalidate_cache(table);
         Ok(BackendResponse::new("update_table", table, message))
+    }
+
+    fn set_progress_sink(&mut self, sink: ProgressSink) {
+        self.progress = sink;
     }
 }
 
@@ -843,6 +918,7 @@ impl SdkBackend {
         let scan_limit = options.scan_limit.unwrap_or(usize::MAX);
         let mut scanned = 0usize;
         let mut total_count = 0usize;
+        let mut page_index = 0usize;
         loop {
             let mut query = self
                 .client
@@ -918,9 +994,12 @@ impl SdkBackend {
             }
             last_key = response.last_evaluated_key().cloned();
             let fetched = if is_count { total_count } else { items.len() };
-            if fetched >= item_limit || last_key.is_none() || scanned >= scan_limit {
+            let more = last_key.is_some() && fetched < item_limit && scanned < scan_limit;
+            self.report_read_page_progress(page_index, fetched, more, options.limit);
+            if !more {
                 break;
             }
+            page_index += 1;
         }
         if is_count {
             items = (0..total_count).map(|_| Item::new()).collect();
@@ -943,6 +1022,7 @@ impl SdkBackend {
         let scan_limit = options.scan_limit.unwrap_or(usize::MAX);
         let mut scanned = 0usize;
         let mut total_count = 0usize;
+        let mut page_index = 0usize;
         loop {
             let mut scan = self
                 .client
@@ -999,9 +1079,12 @@ impl SdkBackend {
             }
             last_key = response.last_evaluated_key().cloned();
             let fetched = if is_count { total_count } else { items.len() };
-            if fetched >= item_limit || last_key.is_none() || scanned >= scan_limit {
+            let more = last_key.is_some() && fetched < item_limit && scanned < scan_limit;
+            self.report_read_page_progress(page_index, fetched, more, options.limit);
+            if !more {
                 break;
             }
+            page_index += 1;
         }
         if is_count {
             items = (0..total_count).map(|_| Item::new()).collect();

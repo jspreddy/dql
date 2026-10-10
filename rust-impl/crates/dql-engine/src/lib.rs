@@ -7,6 +7,7 @@ mod file_io;
 pub mod fragment;
 pub mod json_util;
 mod memory;
+mod progress;
 mod query_context;
 mod throttle;
 
@@ -17,6 +18,7 @@ pub use throttle::RateLimit;
 pub use aws::{SdkBackend, SdkConfig};
 pub use engine::Engine;
 pub use memory::MemoryBackend;
+pub use progress::{ProgressEvent, ProgressSink, WRITE_PROGRESS_CHUNK};
 pub use query_context::{query_context_from_read, LastQueryContext};
 
 use crate::json_util::{item_to_json, string_to_json};
@@ -168,6 +170,9 @@ pub trait DynamoBackend {
     fn table_item_count(&self, table: &str) -> usize {
         let _ = table;
         0
+    }
+    fn set_progress_sink(&mut self, sink: ProgressSink) {
+        let _ = sink;
     }
 }
 
