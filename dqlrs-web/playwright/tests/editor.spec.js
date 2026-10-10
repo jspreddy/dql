@@ -47,9 +47,13 @@ test("resizes the results pane from the top handle", async ({ page }) => {
 });
 
 test("shows the endpoint and the editor shortcut", async ({ page }) => {
+  const mac = process.platform === "darwin";
   await expect(page.locator("#endpoint")).toHaveText("localhost:8000");
-  await expect(page.locator("#run-shortcut")).toHaveText("Ctrl+Enter");
-  await expect(page.locator("#run")).toHaveAttribute("aria-keyshortcuts", "Control+Enter");
+  await expect(page.locator("#run-shortcut")).toHaveText(mac ? "⌘ Enter" : "Ctrl+Enter");
+  await expect(page.locator("#run")).toHaveAttribute(
+    "aria-keyshortcuts",
+    mac ? "Meta+Enter" : "Control+Enter",
+  );
 });
 
 test("pads one line above the editor and five lines below it", async ({ page }) => {

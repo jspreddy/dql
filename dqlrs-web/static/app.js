@@ -239,10 +239,11 @@ document.querySelector("#mode-tables").addEventListener("click", () => setMode("
 document.querySelector("#new-file").addEventListener("click", createFile);
 const runButton = document.querySelector("#run");
 const runShortcut = document.querySelector("#run-shortcut");
-const runShortcutLabel = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent) ? "⌘Enter" : "Ctrl+Enter";
+const macShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+const runShortcutLabel = macShortcut ? "⌘ Enter" : "Ctrl+Enter";
 runShortcut.textContent = runShortcutLabel;
 runButton.title = "Run selection (" + runShortcutLabel + ")";
-runButton.setAttribute("aria-keyshortcuts", "Control+Enter");
+runButton.setAttribute("aria-keyshortcuts", macShortcut ? "Meta+Enter" : "Control+Enter");
 runButton.addEventListener("click", runSelection);
 
 function setRunBusy(busy) {
