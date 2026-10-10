@@ -1,0 +1,69 @@
+-- reads for the single cosmos table; load 10-bodies.dql first
+-- everything stored directly under the Milky Way
+SELECT sk, kind, name FROM sample_cosmos
+WHERE pk = 'GALAXY#milky-way';
+
+-- systems only
+SELECT * FROM sample_cosmos
+WHERE pk = 'GALAXY#milky-way' AND begins_with(sk, 'SYSTEM#');
+
+-- one galaxy
+SELECT * FROM sample_cosmos
+WHERE pk = 'UNIVERSE' AND sk = 'GALAXY#milky-way';
+
+-- every galaxy, parent is the universe
+SELECT name, morphology, star-count, distance_ly FROM sample_cosmos
+WHERE pk = 'UNIVERSE' AND begins_with(sk, 'GALAXY#');
+
+-- stars of a triple system
+SELECT name, spectral, mass_solar FROM sample_cosmos
+WHERE pk = 'SYSTEM#alpha-centauri' AND begins_with(sk, 'STAR#');
+
+-- Sol's planets, including Pluto, which is a dwarf on the kind index
+SELECT name, kind, class, radius_km FROM sample_cosmos
+WHERE pk = 'SYSTEM#sol' AND begins_with(sk, 'PLANET#');
+
+-- terrestrial filter on top of that key
+SELECT name, radius_km, atmosphere FROM sample_cosmos
+WHERE pk = 'SYSTEM#sol' AND begins_with(sk, 'PLANET#') AND class = 'terrestrial';
+
+-- moons are not in the system partition
+SELECT * FROM sample_cosmos
+WHERE pk = 'PLANET#jupiter' AND begins_with(sk, 'MOON#');
+
+SELECT name, radius_km, ocean FROM sample_cosmos
+WHERE pk = 'PLANET#saturn' AND begins_with(sk, 'MOON#');
+
+-- asteroids under the belt, not under Sol
+SELECT name, class, radius_km, designation FROM sample_cosmos
+WHERE pk = 'BELT#main' AND begins_with(sk, 'ASTEROID#');
+
+-- the kind index lists a type no matter which parent holds it
+SELECT pk, sk, name, radius_km FROM sample_cosmos
+WHERE kind = 'moon'
+USING by-kind;
+
+SELECT name, designation, class FROM sample_cosmos
+WHERE kind = 'asteroid' AND begins_with(name, 'P')
+USING by-kind;
+
+-- two planets, fetched by key
+SELECT * FROM sample_cosmos
+KEYS IN ('SYSTEM#sol', 'PLANET#earth'), ('SYSTEM#sol', 'PLANET#jupiter');
+
+SELECT count(*) FROM sample_cosmos
+WHERE pk = 'SYSTEM#sol' AND begins_with(sk, 'PLANET#');
+
+SCAN * FROM sample_cosmos
+WHERE habitable = TRUE;
+
+EXPLAIN SELECT * FROM sample_cosmos
+WHERE pk = 'PLANET#jupiter' AND begins_with(sk, 'MOON#');
+
+EXPLAIN SELECT name, designation FROM sample_cosmos
+WHERE kind = 'asteroid'
+USING by-kind;
+
+UPDATE sample_cosmos
+SET radius_km = 6378
+WHERE pk = 'SYSTEM#sol' AND sk = 'PLANET#earth';
