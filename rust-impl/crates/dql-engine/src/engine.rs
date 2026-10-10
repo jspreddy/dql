@@ -315,6 +315,7 @@ impl<B: DynamoBackend> Engine<B> {
             Statement::AlterTable { table, action } => self.alter_table(table, action),
             Statement::DumpSchema { tables } => self.dump_schema(tables.as_deref()),
             Statement::ShowTables { like } => self.show_tables(like.as_deref()),
+            Statement::Describe { table } => self.describe_statement(table),
             Statement::Load { file, table } => self.load(file, table),
             Statement::Explain(inner) => self.explain(inner),
             Statement::Analyze(inner) => self.analyze(inner),
@@ -684,6 +685,15 @@ impl<B: DynamoBackend> Engine<B> {
             })
             .collect();
         Ok(StatementResult::Items(items))
+    }
+
+    fn describe_statement(&mut self, table: &str) -> Result<StatementResult, EngineError> {
+        self.record("describe_table", table);
+        let meta = self
+            .describe(table, false)?
+            .ok_or_else(|| EngineError::Runtime(format!("Table {table:?} not found")))?;
+        let text = crate::format_table_description(&meta, self.table_item_count(table), 0);
+        Ok(StatementResult::Schema(text))
     }
 
     fn dump_schema(&mut self, tables: Option<&[String]>) -> Result<StatementResult, EngineError> {
@@ -1214,6 +1224,32 @@ mod tests {
             StatementResult::Items(items) => assert_eq!(items.len(), 3),
             other => panic!("unexpected result: {other:?}"),
         }
+    }
+
+    #[test]
+    fn describe_prints_one_table() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute(
+                "CREATE TABLE alpha_desc (id STRING HASH KEY, n NUMBER RANGE KEY);
+                 CREATE TABLE beta_desc (id STRING HASH KEY)",
+            )
+            .unwrap();
+        match engine.execute("DESCRIBE alpha_desc").unwrap() {
+            StatementResult::Schema(text) => {
+                assert!(text.contains("Name: alpha_desc"), "{text}");
+                assert!(text.contains("Hash Key: id (STRING)"), "{text}");
+                assert!(text.contains("Range Key: n (NUMBER)"), "{text}");
+                assert!(text.contains("CREATE TABLE alpha_desc"), "{text}");
+                assert!(!text.contains("beta_desc"), "{text}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        let missing = engine.execute("DESCRIBE missing").unwrap_err();
+        assert!(
+            missing.to_string().contains("not found"),
+            "unexpected error: {missing}"
+        );
     }
 
     #[test]

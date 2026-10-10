@@ -147,6 +147,24 @@ mod test_parser {
     }
 
     #[test]
+    fn test_describe() {
+        assert_eq!(
+            parse_statement("DESCRIBE foobars").unwrap(),
+            Statement::Describe {
+                table: "foobars".to_string()
+            }
+        );
+        assert_eq!(
+            parse_statement("describe foobars;").unwrap(),
+            Statement::Describe {
+                table: "foobars".to_string()
+            }
+        );
+        assert_parse_err("DESCRIBE");
+        assert_parse_err("DESCRIBE foobars extra");
+    }
+
+    #[test]
     fn test_dump() {
         assert_eq!(
             parse_statement("DUMP SCHEMA").unwrap(),

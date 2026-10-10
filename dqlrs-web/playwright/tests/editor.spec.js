@@ -422,6 +422,61 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
   await expect(page.locator("#result-meta")).toHaveText("1 row");
 });
 
+test("describe-table matches ls when one table matches", async ({ page, app }) => {
+  const stem = uniqueTable();
+  const name = `${stem}a`;
+  const other = `${stem}b`;
+  app.trackTable(name);
+  app.trackTable(other);
+
+  async function runEditor(text) {
+    await replaceEditor(page, text);
+    await expect(page.locator("#editor-content")).toContainText(text.split("\n")[0]);
+    await page.keyboard.press("Control+A");
+    await page.locator("#run").click();
+  }
+
+  await runEditor(
+    [
+      `CREATE TABLE ${name} (id STRING HASH KEY, n NUMBER RANGE KEY);`,
+      `CREATE TABLE ${other} (id STRING HASH KEY);`,
+      `DESCRIBE ${name};`,
+    ].join("\n"),
+  );
+  const described = page.locator(".describe").filter({ hasText: "Hash Key" });
+  await expectDescription(described, name);
+  await expect(described).not.toContainText(other);
+
+  await runEditor(`ls ${name}`);
+  const listed = page.locator(".describe").filter({ hasText: "Hash Key" });
+  await expectDescription(listed, name);
+  await expect(listed).not.toContainText(other);
+
+  await runEditor(`ls ${name}*`);
+  const globbed = page.locator(".describe").filter({ hasText: "Hash Key" });
+  await expect(globbed.locator(".describe-name")).toHaveText(name);
+  await expect(globbed).not.toContainText(other);
+
+  await runEditor(`ls ${stem}*`);
+  const summary = page.locator('[data-testid="result-note"]').filter({ hasText: stem });
+  await expect(summary).toContainText(name);
+  await expect(summary).toContainText(other);
+  await expect(summary).not.toContainText("Hash Key");
+});
+
+async function expectDescription(card, tableName) {
+  await expect(card.locator(".describe-name")).toHaveText(tableName);
+  await expect(card.locator(".describe-key[data-key='hash']")).toContainText("Hash Key");
+  await expect(card.locator(".describe-key[data-key='range'] .describe-key-name")).toHaveText("n");
+  await expect(card.locator(".describe-key[data-key='range'] .describe-key-type")).toHaveText("NUMBER");
+  const create = card.locator(".describe-query .tok-keyword", { hasText: "CREATE" });
+  await expect(create).toBeVisible();
+  await expect(card.locator(".describe-query")).toContainText(`CREATE TABLE ${tableName}`);
+  await expect(card.locator(".describe-query .tok-typeName", { hasText: "STRING" }).first()).toBeVisible();
+  const color = await create.evaluate((el) => getComputedStyle(el).color);
+  expect(color).toBe("rgb(15, 118, 110)");
+}
+
 function uniqueTable() {
   return `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }

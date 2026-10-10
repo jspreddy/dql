@@ -9,6 +9,7 @@ pub mod json_util;
 mod memory;
 mod progress;
 mod query_context;
+mod table_text;
 mod throttle;
 
 pub use fragment::FragmentEngine;
@@ -20,6 +21,7 @@ pub use engine::Engine;
 pub use memory::MemoryBackend;
 pub use progress::{ProgressEvent, ProgressSink, WRITE_PROGRESS_CHUNK};
 pub use query_context::{query_context_from_read, LastQueryContext};
+pub use table_text::format_table_description;
 
 use crate::json_util::{item_to_json, string_to_json};
 use dql_parser::{AlterAction, Condition, OrderBy, QueryOptions, Selection, UpdateExpr};

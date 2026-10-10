@@ -37,8 +37,8 @@ mod test_cli {
     #[test]
     fn test_help_docs() {
         for topic in [
-            "alter", "analyze", "create", "delete", "drop", "dump", "explain", "insert", "load",
-            "scan", "select", "show", "update", "options",
+            "alter", "analyze", "create", "delete", "describe", "drop", "dump", "explain",
+            "insert", "load", "scan", "select", "show", "update", "options",
         ] {
             assert!(
                 help::statement_help(topic).is_some(),
@@ -168,6 +168,24 @@ mod current_cli_surface {
         let stdout = String::from_utf8(output.stdout).unwrap();
         assert!(stdout.contains("alpha_show"), "{stdout}");
         assert!(!stdout.contains("beta_show"), "{stdout}");
+    }
+
+    #[test]
+    fn describe_prints_same_text_as_ls_one_table() {
+        let output = dql()
+            .args([
+                "-c",
+                "CREATE TABLE alpha_desc (id STRING HASH KEY, n NUMBER RANGE KEY); \
+                 DESCRIBE alpha_desc",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("Hash Key: id (STRING)"), "{stdout}");
+        assert!(stdout.contains("Range Key: n (NUMBER)"), "{stdout}");
+        assert!(stdout.contains("alpha_desc"), "{stdout}");
+        assert!(stdout.contains("CREATE TABLE alpha_desc"), "{stdout}");
     }
 
     #[test]

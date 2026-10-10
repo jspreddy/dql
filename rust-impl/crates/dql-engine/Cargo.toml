@@ -18,6 +18,7 @@ aws-sdk-sts.workspace = true
 dql-expr = { path = "../dql-expr" }
 dql-models = { path = "../dql-models" }
 dql-parser = { path = "../dql-parser" }
+humansize.workspace = true
 flate2 = "1"
 rmp = "0.8.15"
 rmpv = "1.3.1"

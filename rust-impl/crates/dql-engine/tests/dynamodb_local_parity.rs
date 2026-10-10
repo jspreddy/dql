@@ -204,3 +204,33 @@ fn parity_show_tables_like() {
         other => panic!("unexpected result: {other:?}"),
     }
 }
+
+#[test]
+fn parity_describe_table() {
+    if skip_if_no_local() {
+        return;
+    }
+    let Some(mut harness) = LocalHarness::try_new() else {
+        return;
+    };
+    let table = LocalHarness::unique_table_name("parity_desc");
+    let other = LocalHarness::unique_table_name("parity_other");
+    harness
+        .query(&format!(
+            "CREATE TABLE {table} (id STRING HASH KEY, n NUMBER RANGE KEY);
+             CREATE TABLE {other} (id STRING HASH KEY)"
+        ))
+        .expect("setup should succeed");
+    match harness
+        .query(&format!("DESCRIBE {table}"))
+        .expect("describe should succeed")
+    {
+        StatementResult::Schema(text) => {
+            assert!(text.contains(&format!("Name: {table}")), "{text}");
+            assert!(text.contains("Hash Key: id (STRING)"), "{text}");
+            assert!(text.contains("Range Key: n (NUMBER)"), "{text}");
+            assert!(!text.contains(&other), "{text}");
+        }
+        other => panic!("unexpected result: {other:?}"),
+    }
+}
