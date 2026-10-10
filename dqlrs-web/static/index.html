@@ -35,7 +35,15 @@
   <div class="body">
     <aside class="side">
       <div class="side-head">
-        <span id="side-title">Files</span>
+        <span class="side-heading">
+          <span id="side-title">Files</span>
+          <button type="button" id="refresh-tables" class="hidden" title="Refresh tables" aria-label="Refresh tables">
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M13.2 8A5.2 5.2 0 1 1 11.6 4.3"/>
+              <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M13.4 2.2v3.1H10.3"/>
+            </svg>
+          </button>
+        </span>
         <button type="button" id="new-file" title="New .dql file">+</button>
       </div>
       <div id="tree" class="tree"></div>

@@ -53,9 +53,11 @@ class App(BaseHTTPRequestHandler):
                 self._error(400, str(exc))
             return
         if parsed.path == "/api/tables":
-            pattern = parse_qs(parsed.query).get("pattern", [""])[0]
+            query = parse_qs(parsed.query)
+            pattern = query.get("pattern", [""])[0]
+            refresh = query.get("refresh", [""])[0].strip().lower() in {"1", "true", "yes"}
             try:
-                self._json({"tables": ENGINE.list_tables(pattern)})
+                self._json({"tables": ENGINE.list_tables(pattern, refresh=refresh)})
             except EngineError as exc:
                 self._error(502, str(exc))
             return

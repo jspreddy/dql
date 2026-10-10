@@ -91,6 +91,36 @@ button, input, textarea { font: inherit; color: inherit; }
 
 .side-head { font-weight: 650; }
 
+.side-heading {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+#refresh-tables {
+  width: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+#refresh-tables svg { display: block; }
+
+#refresh-tables:disabled { opacity: 0.5; cursor: default; }
+
+#refresh-tables.is-busy svg {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: refresh-spin 0.7s linear infinite;
+}
+
+@keyframes refresh-spin {
+  to { transform: rotate(360deg); }
+}
+
 .toggles {
   display: flex;
   align-items: center;
