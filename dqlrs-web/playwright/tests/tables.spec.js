@@ -1,5 +1,5 @@
 import { test, expect } from "../support/app.js";
-import { replaceEditor } from "../support/helpers.js";
+import { pressMod, replaceEditor } from "../support/helpers.js";
 
 test("opens the table browser from the #tables hash", async ({ page, app }) => {
   await page.goto(`${app.baseURL}/#tables`);
@@ -64,7 +64,7 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
       `INSERT INTO ${name} (id, n) VALUES ${tuples};`,
     ].join("\n"),
   );
-  await page.keyboard.press("Control+A");
+  await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "51 affected" })).toBeVisible();
 
@@ -118,7 +118,7 @@ test("orders table and result columns by keys, index, then selection or name", a
       `SELECT * FROM ${name} WHERE id = 'a';`,
     ].join("\n"),
   );
-  await page.keyboard.press("Control+A");
+  await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "apple", "n", "zebra"]);
   await expect(page.locator("#result-table thead th").nth(0)).toHaveClass(/col-table/);
@@ -135,12 +135,12 @@ test("orders table and result columns by keys, index, then selection or name", a
   await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("box-shadow", /rgb\(111, 191, 150\)/);
 
   await replaceEditor(page, `SELECT zebra, apple, id FROM ${name} WHERE id = 'a' AND sk = 1;`);
-  await page.keyboard.press("Control+A");
+  await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator("#result-table thead th")).toHaveText(["id", "zebra", "apple"]);
 
   await replaceEditor(page, `SELECT * FROM ${name} WHERE n = 9 AND sk = 2 USING by-n;`);
-  await page.keyboard.press("Control+A");
+  await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "n", "apple", "zebra"]);
   await expect(page.locator("#result-table thead th").nth(0)).toHaveClass(/col-table/);
@@ -198,7 +198,7 @@ test("tables-search-matches-like-ls", async ({ page, app }) => {
       `CREATE TABLE ${shipments} (${key} STRING HASH KEY, shipment_id STRING RANGE KEY);`,
     ].join("\n"),
   );
-  await page.keyboard.press("Control+A");
+  await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(4);
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);

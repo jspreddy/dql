@@ -1,5 +1,5 @@
 import { test, expect } from "../support/app.js";
-import { lineByText, lineOverlaps, node, openApp, replaceEditor } from "../support/helpers.js";
+import { lineByText, lineOverlaps, mod, node, openApp, pressMod, replaceEditor } from "../support/helpers.js";
 
 test.beforeEach(async ({ page, app }) => {
   await openApp(page, app);
@@ -47,7 +47,7 @@ test("resizes the results pane from the top handle", async ({ page }) => {
 });
 
 test("shows the endpoint and the editor shortcut", async ({ page }) => {
-  const mac = process.platform === "darwin";
+  const mac = mod === "Meta";
   await expect(page.locator("#endpoint")).toHaveText("localhost:8000");
   await expect(page.locator("#run-shortcut")).toHaveText(mac ? "⌘ Enter" : "Ctrl+Enter");
   await expect(page.locator("#run")).toHaveAttribute(
@@ -212,7 +212,7 @@ async function visibleWriteBars(page) {
 test("runs the query at the cursor with Ctrl+Enter and marks a failure", async ({ page }) => {
   await node(page, "queries/read.dql").click();
   await page.locator(".cm-line", { hasText: "SELECT * FROM pw_missing_table" }).click();
-  await page.keyboard.press("Control+Enter");
+  await pressMod(page, "Enter");
   const error = page.locator('[data-testid="result-note"].error');
   await expect(error).toBeVisible();
   await expect(error).not.toHaveText("");
@@ -233,7 +233,7 @@ test("runs a selection and shows the result table", async ({ page, app }) => {
       `SELECT * FROM ${name} WHERE id = 'a';`,
     ].join("\n"),
   );
-  await page.keyboard.press("Control+A");
+  await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator("#result-table")).toContainText("alpha");
   await expect(page.locator("#result-meta")).toHaveText("1 row");
@@ -252,12 +252,12 @@ test("shows an explain plan as operations and conditions", async ({ page, app })
       `CREATE TABLE ${name} (id STRING HASH KEY, n NUMBER RANGE KEY);`,
     ].join("\n"),
   );
-  await page.keyboard.press("Control+A");
+  await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
 
   await replaceEditor(page, `EXPLAIN SELECT * FROM ${name} WHERE id = 'a' AND n > 1;`);
-  await page.keyboard.press("Control+A");
+  await pressMod(page, "A");
   await page.locator("#run").click();
 
   const plan = page.locator('[data-testid="explain-plan"]');
@@ -294,7 +294,7 @@ test("shows an explain plan as operations and conditions", async ({ page, app })
   await page.reload();
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
   await replaceEditor(page, `EXPLAIN SELECT * FROM ${name} WHERE id = 'a' AND n > 1;`);
-  await page.keyboard.press("Control+A");
+  await pressMod(page, "A");
   await page.locator("#run").click();
   const again = page.locator('[data-testid="explain-plan"]');
   await expect(again.locator('[data-testid="explain-raw"]')).toBeChecked();
@@ -316,7 +316,7 @@ test("shows a progress bar and a running gutter mark for a throttled insert", as
       `INSERT INTO ${name} (id, n) VALUES ${tuples} THROTTLE 10 10;`,
     ].join("\n"),
   );
-  await page.keyboard.press("Control+A");
+  await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator("#run")).toBeDisabled();
   await expect(page.locator("#run-progress")).toBeVisible();
@@ -388,7 +388,7 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
   async function runEditor(text) {
     await replaceEditor(page, text);
     await expect(page.locator("#editor-content")).toContainText(text.split("\n")[0]);
-    await page.keyboard.press("Control+A");
+    await pressMod(page, "A");
     await page.locator("#run").click();
   }
 
@@ -440,7 +440,7 @@ test("show-tables-like-intelligent-match notes similar names and related keys", 
   async function runEditor(text) {
     await replaceEditor(page, text);
     await expect(page.locator("#editor-content")).toContainText(text.split("\n")[0]);
-    await page.keyboard.press("Control+A");
+    await pressMod(page, "A");
     await page.locator("#run").click();
   }
 
@@ -500,7 +500,7 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   async function runEditor(text) {
     await replaceEditor(page, text);
     await expect(page.locator("#editor-content")).toContainText(text.split("\n")[0]);
-    await page.keyboard.press("Control+A");
+    await pressMod(page, "A");
     await page.locator("#run").click();
   }
 
@@ -564,7 +564,7 @@ test("ls-intelligent-match notes partial names when nothing matches exactly", as
   async function runEditor(text) {
     await replaceEditor(page, text);
     await expect(page.locator("#editor-content")).toContainText(text.split("\n")[0]);
-    await page.keyboard.press("Control+A");
+    await pressMod(page, "A");
     await page.locator("#run").click();
   }
 
@@ -599,7 +599,7 @@ test("ls-related-keys lists tables whose keys match", async ({ page, app }) => {
   async function runEditor(text) {
     await replaceEditor(page, text);
     await expect(page.locator("#editor-content")).toContainText(text.split("\n")[0]);
-    await page.keyboard.press("Control+A");
+    await pressMod(page, "A");
     await page.locator("#run").click();
   }
 
