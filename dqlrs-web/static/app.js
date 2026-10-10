@@ -12,7 +12,8 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { bandLayer, dqlLanguage, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setRunRequest, setRunStatuses } from "./dql-mode.js";
-import { runTarget, statementSpans } from "./dql-tokens.js";
+import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
+import { parseTableDescription } from "./describe-card.js";
 
 const dqlHighlight = HighlightStyle.define([
   { tag: tags.keyword, color: "#0f766e", fontWeight: "650" },
@@ -875,6 +876,14 @@ function renderResults(results) {
       resultBody.append(explainPlan(plan));
       continue;
     }
+    const description = item.ok && (item.kind === "schema" || item.kind === "text")
+      ? parseTableDescription(item.message || "")
+      : null;
+    if (description) {
+      otherNotes += 1;
+      resultBody.append(describeCard(description));
+      continue;
+    }
     otherNotes += 1;
     const row = note(resultLabel(item), !item.ok);
     if (item.ok && item.kind === "affected") row.classList.add("ok");
@@ -1019,6 +1028,108 @@ function resultLabel(item) {
   if (item.kind === "status" || item.kind === "schema" || item.kind === "text") return item.message || item.kind;
   if (item.kind === "items") return ((item.items || []).length) + " rows";
   return item.message || "ok";
+}
+
+function describeCard(description) {
+  const card = document.createElement("section");
+  card.className = "describe";
+  card.dataset.testid = "result-note";
+
+  const head = document.createElement("header");
+  head.className = "describe-head";
+  const title = document.createElement("h2");
+  title.className = "describe-name";
+  title.textContent = description.name;
+  head.append(title);
+  if (description.status) {
+    const status = document.createElement("span");
+    status.className = "describe-status " + statusClass(description.status);
+    status.textContent = description.status;
+    head.append(status);
+  }
+  card.append(head);
+
+  const stats = [
+    ["Items", description.items],
+    ["Size", description.size],
+    ["Read", description.read],
+    ["Write", description.write],
+  ].filter(([, value]) => value);
+  if (stats.length) {
+    const list = document.createElement("dl");
+    list.className = "describe-stats";
+    for (const [label, value] of stats) {
+      const item = document.createElement("div");
+      const term = document.createElement("dt");
+      term.textContent = label;
+      const detail = document.createElement("dd");
+      detail.textContent = value;
+      item.append(term, detail);
+      list.append(item);
+    }
+    card.append(list);
+  }
+
+  const keys = document.createElement("div");
+  keys.className = "describe-keys";
+  if (description.hashKey) keys.append(describeKey("hash", "Hash Key", description.hashKey));
+  if (description.rangeKey) keys.append(describeKey("range", "Range Key", description.rangeKey));
+  if (keys.childNodes.length) card.append(keys);
+
+  if (description.extra) {
+    const extra = document.createElement("pre");
+    extra.className = "describe-extra";
+    extra.textContent = description.extra;
+    card.append(extra);
+  }
+  if (description.schema) card.append(highlightedQuery(description.schema));
+  return card;
+}
+
+function describeKey(role, label, key) {
+  const row = document.createElement("div");
+  row.className = "describe-key";
+  row.dataset.key = role;
+  row.append(keyIcon(role, label));
+  const nameLabel = document.createElement("span");
+  nameLabel.className = "describe-key-label";
+  nameLabel.textContent = label;
+  const name = document.createElement("span");
+  name.className = "describe-key-name";
+  name.textContent = key.name;
+  row.append(nameLabel, name);
+  if (key.type) {
+    const type = document.createElement("span");
+    type.className = "describe-key-type";
+    type.textContent = key.type;
+    row.append(type);
+  }
+  return row;
+}
+
+function statusClass(status) {
+  const key = String(status).toLowerCase();
+  if (key === "active") return "is-active";
+  if (key === "deleting") return "is-deleting";
+  if (key === "creating" || key === "updating") return "is-updating";
+  return "";
+}
+
+function highlightedQuery(text) {
+  const pre = document.createElement("pre");
+  pre.className = "describe-query";
+  pre.dataset.testid = "describe-query";
+  for (const part of highlightParts(text)) {
+    if (!part.style) {
+      pre.append(part.text);
+      continue;
+    }
+    const span = document.createElement("span");
+    span.className = "tok-" + part.style.replaceAll(".", "-");
+    span.textContent = part.text;
+    pre.append(span);
+  }
+  return pre;
 }
 
 function note(text, isError) {

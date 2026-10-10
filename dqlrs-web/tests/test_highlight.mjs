@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { bandAppearance, highlightSource, knownWords, queryBands, runTarget, statementSpans, styleForWord } from "../static/dql-tokens.js";
+import { bandAppearance, highlightParts, highlightSource, knownWords, queryBands, runTarget, statementSpans, styleForWord } from "../static/dql-tokens.js";
 
 const required = {
   keyword: [
@@ -185,4 +185,14 @@ test("run target is the selection, or the query at the cursor", () => {
   const whitespace = runTarget("SELECT 1;\n", 6, 7);
   assert.equal(whitespace.kind, "query");
   assert.equal("SELECT 1;\n".slice(whitespace.from, whitespace.to), "SELECT 1;\n");
+});
+
+test("highlightParts keeps spaces and styles the CREATE query", () => {
+  const query = "CREATE TABLE posts (id STRING HASH KEY, THROUGHPUT (1, 1));";
+  const parts = highlightParts(query);
+  assert.equal(parts.map((part) => part.text).join(""), query);
+  assert.equal(parts.find((part) => part.text === "CREATE").style, "keyword");
+  assert.equal(parts.find((part) => part.text === "STRING").style, "typeName");
+  assert.equal(parts.find((part) => part.text === "1").style, "number");
+  assert.equal(parts.find((part) => part.text === " ").style, "");
 });

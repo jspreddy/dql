@@ -100,8 +100,13 @@ function consumeString(stream, state) {
 
 /** Tokenize source the same way the editor does. Whitespace tokens are omitted. */
 export function highlightSource(text) {
+  return highlightParts(text).filter((part) => part.style);
+}
+
+/** Tokenize source and keep spaces and newlines so a result can be painted. */
+export function highlightParts(text) {
   const state = startState();
-  const tokens = [];
+  const parts = [];
   const lines = String(text).split("\n");
   for (let i = 0; i < lines.length; i += 1) {
     const stream = new StringStream(lines[i], 4, 2, null);
@@ -109,13 +114,11 @@ export function highlightSource(text) {
       const style = tokenDql(stream, state);
       const value = stream.current();
       stream.start = stream.pos;
-      if (value && style) tokens.push({ text: value, style });
+      if (value) parts.push({ text: value, style: style || "" });
     }
-    if (i < lines.length - 1 && state.quote) {
-      /* a newline inside a string stays part of that string on the next line */
-    }
+    if (i < lines.length - 1) parts.push({ text: "\n", style: "" });
   }
-  return tokens;
+  return parts;
 }
 
 const WRITE_ACTIONS = new Set([
