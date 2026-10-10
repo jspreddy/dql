@@ -88,7 +88,7 @@ const editor = new EditorView({
       drawSelection(),
       Prec.highest(EditorView.theme({
         ".cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground": {
-          backgroundColor: "transparent !important",
+          backgroundColor: "rgba(37, 99, 235, 0.28) !important",
         },
         ".cm-run-fill": {
           backgroundColor: "rgba(16, 42, 96, 0.05)",

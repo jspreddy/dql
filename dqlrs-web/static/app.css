@@ -252,9 +252,9 @@ main { flex: 1; min-width: 0; min-height: 0; display: flex; }
   min-height: 0;
 }
 
-/* One background behind the glyphs. Native selection stays clear so syntax colors remain. */
+/* Text selection sits behind the glyphs, so syntax colors stay visible. */
 .cm-editor .cm-selectionBackground {
-  background-color: transparent !important;
+  background-color: rgba(37, 99, 235, 0.28) !important;
 }
 
 .cm-run-fill {
