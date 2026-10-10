@@ -1162,6 +1162,16 @@ function summaryTable(tables) {
   return wrap;
 }
 
+function sidebarMatchNote(text) {
+  const note = document.createElement("p");
+  note.className = "table-match-note";
+  note.dataset.testid = "intelligent-match";
+  note.title = text;
+  const kind = String(text).match(/so showing (similar names and related keys|similar names|related keys)\.$/);
+  note.textContent = kind ? kind[1][0].toUpperCase() + kind[1].slice(1) : text;
+  return note;
+}
+
 function matchNote(text) {
   const note = document.createElement("p");
   note.className = "describe-match-note";
@@ -1404,7 +1414,7 @@ async function loadTables(options = {}) {
     const payload = await api("/api/tables?" + query.toString());
     if (request !== state.tablesRequest) return;
     list.replaceChildren();
-    if (payload.note) list.append(matchNote(payload.note));
+    if (payload.note) list.append(sidebarMatchNote(payload.note));
     if (!payload.tables.length) {
       state.table = "";
       list.append(note(pattern ? "No tables match " + pattern : "No tables", false));

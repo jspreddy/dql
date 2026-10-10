@@ -208,9 +208,8 @@ test("tables-search-matches-like-ls", async ({ page, app }) => {
 
   await page.locator("#table-search").fill(stem);
   const similar = page.locator("#table-list [data-testid='intelligent-match']");
-  await expect(similar).toContainText(`No exact match for "${stem}"`);
-  await expect(similar).toContainText("showing similar names");
-  await expect(similar.locator(".describe-match-pattern")).toHaveText(`"${stem}"`);
+  await expect(similar).toHaveText("Similar names");
+  await expect(similar).toHaveAttribute("title", `No exact match for "${stem}", so showing similar names.`);
   await expect(page.locator(`#table-${catalog}`)).toBeVisible();
   await expect(page.locator(`#table-${editions}`)).toBeVisible();
   await expect(page.locator(`#table-${catalog}`)).toContainText("isbn");
@@ -227,8 +226,8 @@ test("tables-search-matches-like-ls", async ({ page, app }) => {
 
   await page.locator("#table-search").fill(key);
   const related = page.locator("#table-list [data-testid='intelligent-match']");
-  await expect(related).toContainText(`No exact match for "${key}"`);
-  await expect(related).toContainText("related keys");
+  await expect(related).toHaveText("Related keys");
+  await expect(related).toHaveAttribute("title", `No exact match for "${key}", so showing related keys.`);
   await expect(page.locator(`#table-${orders}`)).toBeVisible();
   await expect(page.locator(`#table-${shipments}`)).toBeVisible();
   await expect(page.locator(`#table-${shipments}`)).toContainText(key);
