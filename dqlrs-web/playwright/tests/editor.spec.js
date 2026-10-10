@@ -425,11 +425,12 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
 });
 
 test("show-tables-like-intelligent-match notes similar names and related keys", async ({ page, app }) => {
-  const stem = uniqueTable();
-  const name = `${stem}alpha`;
-  const other = `${stem}beta`;
-  app.trackTable(name);
-  app.trackTable(other);
+  const shop = `bookstore_${Date.now().toString(36).slice(-4)}`;
+  const catalog = `${shop}_catalog`;
+  const editions = `${shop}_editions`;
+  const orders = `${shop}_orders`;
+  const shipments = `${shop}_shipments`;
+  for (const table of [catalog, editions, orders, shipments]) app.trackTable(table);
 
   async function runEditor(text) {
     await replaceEditor(page, text);
@@ -440,41 +441,42 @@ test("show-tables-like-intelligent-match notes similar names and related keys", 
 
   await runEditor(
     [
-      `CREATE TABLE ${name} (id STRING HASH KEY);`,
-      `CREATE TABLE ${other} (id STRING HASH KEY);`,
-      `SHOW TABLES LIKE '${stem}';`,
+      `CREATE TABLE ${catalog} (isbn STRING HASH KEY, title STRING);`,
+      `CREATE TABLE ${editions} (isbn STRING HASH KEY, edition NUMBER RANGE KEY);`,
+      `INSERT INTO ${catalog} (isbn, title) VALUES ('9780131103627', 'The C Programming Language');`,
+      `INSERT INTO ${editions} (isbn, edition) VALUES ('9780131103627', 2);`,
+      `SHOW TABLES LIKE '${shop}';`,
     ].join("\n"),
   );
   const many = page.locator(".describe").filter({ hasText: "similar names" });
-  await expect(many.locator("[data-testid='intelligent-match']")).toContainText(`No exact match for "${stem}"`);
+  await expect(many.locator("[data-testid='intelligent-match']")).toContainText(`No exact match for "${shop}"`);
   await expect(many.locator("[data-testid='intelligent-match']")).toContainText("showing similar names");
-  await expect(many.locator(".describe-match-pattern")).toContainText(`"${stem}"`);
-  await expect(many.locator("#result-table")).toContainText(name);
-  await expect(many.locator("#result-table")).toContainText(other);
-  await expect(many.locator("#result-table")).not.toContainText("Hash Key");
+  await expect(many.locator(".describe-table-name", { hasText: catalog })).toHaveCount(1);
+  await expect(many.locator(".describe-table-name", { hasText: editions })).toHaveCount(1);
+  await expect(many.locator(".describe-status.is-active")).toHaveCount(2);
+  await expect(many.locator("th", { hasText: "Items" })).toBeVisible();
+  await expect(many.locator("#result-table")).toHaveCount(0);
 
-  await runEditor(`SHOW TABLES LIKE '${name}';`);
-  await expect(page.locator("#result-table")).toContainText(name);
-  await expect(page.locator("#result-table")).not.toContainText(other);
+  await runEditor(`SHOW TABLES LIKE '${catalog}';`);
+  await expect(page.locator("#result-table")).toContainText(catalog);
+  await expect(page.locator("#result-table")).not.toContainText(editions);
   await expect(page.locator("[data-testid='intelligent-match']")).toHaveCount(0);
 
-  const orders = `red${uniqueTable()}`;
-  const invoices = `blue${uniqueTable()}`;
-  const key = `zzqq${Math.random().toString(36).slice(2, 8)}`;
-  app.trackTable(orders);
-  app.trackTable(invoices);
   await runEditor(
     [
-      `CREATE TABLE ${orders} (${key} STRING HASH KEY);`,
-      `CREATE TABLE ${invoices} (${key} STRING HASH KEY);`,
-      `SHOW TABLES LIKE '${key}';`,
+      `CREATE TABLE ${orders} (order_id STRING HASH KEY, title STRING);`,
+      `CREATE TABLE ${shipments} (order_id STRING HASH KEY, shipment_id STRING RANGE KEY);`,
+      `INSERT INTO ${orders} (order_id, title) VALUES ('ord-1001', 'The C Programming Language');`,
+      `INSERT INTO ${shipments} (order_id, shipment_id) VALUES ('ord-1001', 'shp-9');`,
+      `SHOW TABLES LIKE 'order_id';`,
     ].join("\n"),
   );
   const related = page.locator(".describe").filter({ hasText: "related keys" });
-  await expect(related.locator("[data-testid='intelligent-match']")).toContainText(`No exact match for "${key}"`);
+  await expect(related.locator("[data-testid='intelligent-match']")).toContainText('No exact match for "order_id"');
   await expect(related.locator("[data-testid='intelligent-match']")).toContainText("showing related keys");
-  await expect(related.locator("#result-table")).toContainText(orders);
-  await expect(related.locator("#result-table")).toContainText(invoices);
+  await expect(related.locator(".describe-table-name", { hasText: orders })).toHaveCount(1);
+  await expect(related.locator(".describe-table-name", { hasText: shipments })).toHaveCount(1);
+  await expect(related.locator(".describe-status.is-active")).toHaveCount(2);
   await expect(related).not.toContainText("similar names");
 
   await runEditor("SHOW TABLES LIKE 'qqqxxyyzz';");

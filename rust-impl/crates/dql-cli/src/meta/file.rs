@@ -23,6 +23,7 @@ pub fn handle(
                 .execute_fragment(line)
                 .map_err(|err| err.to_string())?
             {
+                let result = crate::meta::ls::annotate_table_list(session, result);
                 render_to_buffer(
                     &result,
                     &output_config,
@@ -48,6 +49,7 @@ pub fn handle(
             .execute_fragment(line)
             .map_err(|err| err.to_string())?
         {
+            let result = crate::meta::ls::annotate_table_list(session, result);
             dql_output::render_result(
                 &result,
                 &output_config,

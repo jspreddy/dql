@@ -413,6 +413,7 @@ impl Session {
             self.apply_rate_limit()?;
             let rich_context = self.engine.rich_context();
             if let Some(result) = self.engine.execute_fragment(trimmed)? {
+                let result = crate::meta::ls::annotate_table_list(self, result);
                 render_result(
                     &result,
                     &output_config,
@@ -425,6 +426,7 @@ impl Session {
                 self.apply_rate_limit()?;
                 let rich_context = self.engine.rich_context();
                 if let Some(result) = self.engine.execute_fragment(";")? {
+                    let result = crate::meta::ls::annotate_table_list(self, result);
                     render_result(
                         &result,
                         &output_config,
@@ -504,7 +506,10 @@ impl Session {
             let _ = crate::meta::lifecycle::take_exit_request();
             let _ = crate::meta::lifecycle::take_history_edit_request();
             return match dispatched {
-                Ok(Some(result)) => envelope_from_result(result, self.engine.partial()),
+                Ok(Some(result)) => {
+                    let result = crate::meta::ls::annotate_table_list(self, result);
+                    envelope_from_result(result, self.engine.partial())
+                }
                 Ok(None) => {
                     let message = String::from_utf8_lossy(&buf).trim_end().to_string();
                     if message.is_empty() {
@@ -526,13 +531,19 @@ impl Session {
             return envelope_from_error(err);
         }
         match self.engine.execute_fragment(trimmed) {
-            Ok(Some(result)) => envelope_from_result(result, self.engine.partial()),
+            Ok(Some(result)) => {
+                let result = crate::meta::ls::annotate_table_list(self, result);
+                envelope_from_result(result, self.engine.partial())
+            }
             Ok(None) if self.engine.partial() => {
                 if let Err(err) = self.apply_rate_limit() {
                     return envelope_from_error(err);
                 }
                 match self.engine.execute_fragment(";") {
-                    Ok(Some(result)) => envelope_from_result(result, self.engine.partial()),
+                    Ok(Some(result)) => {
+                        let result = crate::meta::ls::annotate_table_list(self, result);
+                        envelope_from_result(result, self.engine.partial())
+                    }
                     Ok(None) => {
                         let mut envelope = ServeEnvelope::success("none");
                         envelope.partial = self.engine.partial();
@@ -748,19 +759,22 @@ mod tests {
         let similar = session.execute_for_serve("SHOW TABLES LIKE 'post';");
         assert!(similar.ok, "{similar:?}");
         assert_eq!(similar.kind, "items");
-        assert_eq!(
-            similar.message.as_deref(),
-            Some("No exact match for \"post\", so showing similar names.")
-        );
+        let similar_text = similar.message.clone().unwrap();
+        assert!(similar_text.starts_with("No exact match for \"post\", so showing similar names."));
+        assert!(similar_text.contains("Tables"), "{similar_text}");
+        assert!(similar_text.contains("posts_v2"), "{similar_text}");
+        assert!(similar_text.contains("nb_posts"), "{similar_text}");
+        assert!(!similar_text.contains("gamma"), "{similar_text}");
         let names = item_names(&similar);
         assert_eq!(names, vec!["posts_v2".to_string(), "nb_posts".to_string()]);
 
         let related = session.execute_for_serve("SHOW TABLES LIKE 'customer_id';");
         assert!(related.ok, "{related:?}");
-        assert_eq!(
-            related.message.as_deref(),
-            Some("No exact match for \"customer_id\", so showing related keys.")
-        );
+        let related_text = related.message.clone().unwrap();
+        assert!(related_text
+            .starts_with("No exact match for \"customer_id\", so showing related keys."));
+        assert!(related_text.contains("orders"), "{related_text}");
+        assert!(!related_text.contains("gamma"), "{related_text}");
         assert_eq!(item_names(&related), vec!["orders".to_string()]);
 
         let missing = session.execute_for_serve("SHOW TABLES LIKE 'qqqxxyyzz';");

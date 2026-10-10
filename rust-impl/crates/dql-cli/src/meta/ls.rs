@@ -1,6 +1,8 @@
 use crate::session::Session;
+use dql_engine::StatementResult;
 use dql_models::TableMeta;
 use dql_output::{format_table_detail, format_table_summary_table, TableStats};
+use dql_parser::Value;
 use ratatui::text::Line;
 use std::collections::HashMap;
 use std::io::Write;
@@ -167,6 +169,31 @@ fn push_note(lines: &mut Vec<Line<'static>>, note: Option<&str>) {
     if let Some(note) = note {
         lines.push(Line::from(note.to_string()));
         lines.push(Line::from(""));
+    }
+}
+
+/// Turn a `SHOW TABLES LIKE` fallback into the same list `ls` prints.
+pub fn annotate_table_list(session: &mut Session, result: StatementResult) -> StatementResult {
+    let StatementResult::ItemsWithNote { items, note } = result else {
+        return result;
+    };
+    let mut rows = Vec::new();
+    for item in &items {
+        let Some(Value::String(name)) = item.get("name") else {
+            continue;
+        };
+        let Ok(Some(meta)) = session.engine.describe(name, false) else {
+            continue;
+        };
+        rows.push(table_row(session, meta));
+    }
+    if rows.is_empty() {
+        return StatementResult::ItemsWithNote { items, note };
+    }
+    let summary = format_table_summary_table(&rows);
+    StatementResult::ItemsWithNote {
+        items,
+        note: format!("{note}\n\n{}", summary.trim_end()),
     }
 }
 

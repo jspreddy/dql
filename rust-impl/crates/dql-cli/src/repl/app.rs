@@ -663,6 +663,7 @@ impl<'a> ReplApp<'a> {
             match crate::meta::dispatch(self.session, &execute_text, writer.as_mut(), true) {
                 Ok(Some(result)) => {
                     drop(writer);
+                    let result = crate::meta::ls::annotate_table_list(self.session, result);
                     let render = if output_config.format == OutputFormat::Rich {
                         match &result {
                             StatementResult::Items(items) => {
@@ -671,12 +672,10 @@ impl<'a> ReplApp<'a> {
                                     .extend(rich_layout_to_lines(&layout, terminal_width() as u16));
                                 Ok(())
                             }
-                            StatementResult::ItemsWithNote { items, note } => {
-                                self.output_lines.push(Line::from(note.clone()));
-                                self.output_lines.push(Line::from(""));
-                                let layout = build_rich_layout(items, rich_context.as_ref());
-                                self.output_lines
-                                    .extend(rich_layout_to_lines(&layout, terminal_width() as u16));
+                            StatementResult::ItemsWithNote { note, .. } => {
+                                for line in note.lines() {
+                                    self.output_lines.push(Line::from(line.to_string()));
+                                }
                                 Ok(())
                             }
                             _ => render_result(

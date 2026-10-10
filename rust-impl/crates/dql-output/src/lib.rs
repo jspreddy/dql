@@ -33,12 +33,16 @@ pub fn render_result(
             formatter.display(&mut writer)
         }
         StatementResult::ItemsWithNote { items, note } => {
+            let listed = note.contains("\nTables\n");
             if !config.silent {
-                backend.write_line(&format!("{note}\n"))?;
+                backend.write_line(note)?;
             }
-            let mut writer = backend.writer();
-            let formatter = config.formatter(items, rich_context);
-            formatter.display(&mut writer)
+            if config.silent || !listed {
+                let mut writer = backend.writer();
+                let formatter = config.formatter(items, rich_context);
+                formatter.display(&mut writer)?;
+            }
+            Ok(())
         }
         StatementResult::Status(_) | StatementResult::Affected(_) => Ok(()),
     }
