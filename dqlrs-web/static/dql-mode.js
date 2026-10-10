@@ -206,20 +206,122 @@ function paintEnd(doc, from, to) {
 }
 
 /** One background for the query or selection that Run will execute. */
-function runFillMarkers(view) {
+export function runBox(view) {
   const selection = view.state.selection.main;
   const target = runTarget(view.state.doc.toString(), selection.head, selection.anchor);
-  if (!target || target.from >= target.to) return [];
+  if (!target || target.from >= target.to) return null;
   const to = paintEnd(view.state.doc, target.from, target.to);
-  if (target.from >= to) return [];
+  if (target.from >= to) return null;
   const rects = RectangleMarker.forRange(view, "cm-run-fill", {
     from: target.from,
     to,
     empty: false,
   });
-  if (!rects.length) return [];
-  return [withGap(tightBounds(rects))];
+  if (!rects.length) return null;
+  return withGap(tightBounds(rects));
 }
+
+function runFillMarkers(view) {
+  const box = runBox(view);
+  return box ? [box] : [];
+}
+
+const runButtonSize = 22;
+const runButtonGap = 6;
+
+let requestRun = () => {};
+
+/** Called when the floating play button asks to run the outlined range. */
+export function setRunRequest(fn) {
+  requestRun = fn;
+}
+
+function runButtonOrigin(box, view) {
+  let left = box.left - runButtonGap - runButtonSize;
+  const minLeft = view.scrollDOM.scrollLeft + 2;
+  if (left < minLeft) left = minLeft;
+  let top = box.top + (box.height - runButtonSize) / 2;
+  const visibleTop = view.scrollDOM.scrollTop;
+  const visibleBottom = visibleTop + view.scrollDOM.clientHeight;
+  const minTop = Math.max(box.top - 2, visibleTop + 4);
+  const maxTop = Math.min(box.top + Math.max(0, box.height - runButtonSize) + 2, visibleBottom - runButtonSize - 4);
+  if (maxTop >= minTop) top = Math.min(Math.max(top, minTop), maxTop);
+  return { left, top };
+}
+
+class RunButtonMarker {
+  constructor(left, top, disabled) {
+    this.left = left;
+    this.top = top;
+    this.disabled = disabled;
+  }
+
+  eq(other) {
+    return other instanceof RunButtonMarker && other.left === this.left && other.top === this.top && other.disabled === this.disabled;
+  }
+
+  draw() {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "run-float";
+    button.title = "Run selection";
+    button.setAttribute("aria-label", "Run selection");
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 12 12");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("fill", "currentColor");
+    path.setAttribute("d", "M4.1 2.15 9.7 6 4.1 9.85z");
+    svg.append(path);
+    button.append(svg);
+    const hold = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    button.addEventListener("pointerdown", hold);
+    button.addEventListener("mousedown", hold);
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!button.disabled) requestRun();
+    });
+    this.adjust(button);
+    return button;
+  }
+
+  update(elt, prev) {
+    if (!(prev instanceof RunButtonMarker)) return false;
+    this.adjust(elt);
+    return true;
+  }
+
+  adjust(elt) {
+    elt.style.left = this.left + "px";
+    elt.style.top = this.top + "px";
+    elt.disabled = this.disabled;
+  }
+}
+
+function runButtonMarkers(view) {
+  const box = runBox(view);
+  if (!box) return [];
+  const origin = runButtonOrigin(box, view);
+  const busy = document.querySelector("#run")?.disabled === true;
+  return [new RunButtonMarker(origin.left, origin.top, busy)];
+}
+
+/** Play button sitting just left of the outlined run range. */
+export const runButtonLayer = layer({
+  above: true,
+  class: "cm-run-button-layer",
+  markers: runButtonMarkers,
+  update(update) {
+    return update.docChanged || update.selectionSet || update.viewportChanged || update.geometryChanged;
+  },
+  mount(dom) {
+    dom.removeAttribute("aria-hidden");
+  },
+});
 
 export const runFrame = layer({
   above: false,
