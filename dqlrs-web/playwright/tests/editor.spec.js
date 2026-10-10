@@ -375,55 +375,49 @@ test("places a play button on the left of the run box and runs that range", asyn
   await expect(page.locator("#run")).toBeEnabled();
 });
 
-test("show tables like and ls glob refresh list a new table", async ({ page, app }) => {
+test("show-tables-like and ls glob refresh=True reload a changed table", async ({ page, app }) => {
   const name = uniqueTable();
   const other = uniqueTable();
   app.trackTable(name);
   app.trackTable(other);
 
-  await replaceEditor(
-    page,
+  async function runEditor(text) {
+    await replaceEditor(page, text);
+    await expect(page.locator("#editor-content")).toContainText(text.split("\n")[0]);
+    await page.keyboard.press("Control+A");
+    await page.locator("#run").click();
+  }
+
+  await runEditor(
     [
       `CREATE TABLE ${name} (id STRING HASH KEY);`,
       `CREATE TABLE ${other} (id STRING HASH KEY);`,
       `ls ${name}`,
     ].join("\n"),
   );
-  await page.keyboard.press("Control+A");
-  await page.locator("#run").click();
   const cached = page.locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
+  await expect(cached).toContainText("THROUGHPUT (0, 0)");
   await expect(cached).toContainText(name);
-  await expect(cached).not.toContainText("by-n");
 
-  await replaceEditor(page, `ALTER TABLE ${name} CREATE GLOBAL INDEX ('by-n', n NUMBER);`);
-  await page.keyboard.press("Control+A");
-  await page.locator("#run").click();
-  await expect(page.locator("#run")).toBeEnabled();
+  await runEditor(`ALTER TABLE ${name} SET THROUGHPUT (2, 3);`);
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "Updated throughput" })).toBeVisible();
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
 
-  await replaceEditor(page, `ls ${name}`);
-  await page.keyboard.press("Control+A");
-  await page.locator("#run").click();
-  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" })).not.toContainText("by-n");
+  await runEditor(`ls ${name}`);
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" })).toContainText("THROUGHPUT (0, 0)");
 
-  await replaceEditor(page, `ls ${name}* refresh=True`);
-  await page.keyboard.press("Control+A");
-  await page.locator("#run").click();
+  await runEditor(`ls ${name}* refresh=True`);
   const fresh = page.locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
-  await expect(fresh).toContainText("by-n");
+  await expect(fresh).toContainText("THROUGHPUT (2, 3)");
   await expect(fresh).toContainText(name);
   await expect(fresh).not.toContainText(other);
 
-  await replaceEditor(page, `SHOW TABLES LIKE '${name}';`);
-  await page.keyboard.press("Control+A");
-  await page.locator("#run").click();
+  await runEditor(`SHOW TABLES LIKE '${name}';`);
   await expect(page.locator("#result-table")).toContainText(name);
   await expect(page.locator("#result-table")).not.toContainText(other);
   await expect(page.locator("#result-meta")).toHaveText("1 row");
 
-  await replaceEditor(page, `SHOW TABLES LIKE '${name}%';`);
-  await page.keyboard.press("Control+A");
-  await page.locator("#run").click();
+  await runEditor(`SHOW TABLES LIKE '${name}%';`);
   await expect(page.locator("#result-table")).toContainText(name);
   await expect(page.locator("#result-meta")).toHaveText("1 row");
 });
