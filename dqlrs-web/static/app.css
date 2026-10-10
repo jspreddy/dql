@@ -265,6 +265,47 @@ main { flex: 1; min-width: 0; min-height: 0; display: flex; }
   pointer-events: none;
 }
 
+.cm-run-button-layer {
+  z-index: 260 !important;
+  pointer-events: none;
+}
+
+.run-float {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.32);
+  cursor: pointer;
+}
+
+.run-float svg {
+  display: block;
+  width: 11px;
+  height: 11px;
+  margin-left: 1px;
+}
+
+.run-float:hover { background: #1d4ed8; }
+.run-float:active { background: #1e40af; }
+
+.run-float:focus-visible {
+  outline: 2px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.run-float:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .cm-band-alt { background-color: #f4f7f8; }
 .cm-band-write { background-color: #fdecec; }
 .cm-band-write-even { background-color: #f3c4c4; }

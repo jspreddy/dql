@@ -317,6 +317,58 @@ test("shows a progress bar and a running gutter mark for a throttled insert", as
   await expect(page.locator('[data-testid="run-status-error"]')).toHaveCount(0);
 });
 
+test("places a play button on the left of the run box and runs that range", async ({ page, app }) => {
+  await node(page, "queries/read.dql").click();
+  await expect(page.locator(".run-float")).toHaveCount(0);
+
+  await page.locator(".cm-line", { hasText: "SELECT * FROM pw_missing_table" }).click();
+  const button = page.locator(".run-float");
+  await expect(button).toBeVisible();
+  await expect(button).toHaveAttribute("aria-label", "Run selection");
+  const place = await page.evaluate(() => {
+    const buttonBox = document.querySelector(".run-float").getBoundingClientRect();
+    const fill = document.querySelector(".cm-run-fill").getBoundingClientRect();
+    const radius = parseFloat(getComputedStyle(document.querySelector(".run-float")).borderRadius);
+    return {
+      buttonRight: buttonBox.right,
+      fillLeft: fill.left,
+      buttonMidY: buttonBox.top + buttonBox.height / 2,
+      fillTop: fill.top,
+      fillBottom: fill.bottom,
+      width: buttonBox.width,
+      height: buttonBox.height,
+      radius,
+    };
+  });
+  expect(place.buttonRight).toBeLessThanOrEqual(place.fillLeft + 1);
+  expect(place.buttonMidY).toBeGreaterThan(place.fillTop - 2);
+  expect(place.buttonMidY).toBeLessThan(place.fillBottom + 2);
+  expect(Math.abs(place.width - place.height)).toBeLessThan(1);
+  expect(place.radius).toBeGreaterThanOrEqual(place.width / 2 - 0.5);
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY);`,
+      `INSERT INTO ${name} (id, label) VALUES ('a', 'alpha');`,
+      `SELECT * FROM ${name} WHERE id = 'a';`,
+      `SCAN * FROM pw_missing_table;`,
+    ].join("\n"),
+  );
+  await page.locator(".cm-line", { hasText: "DROP TABLE" }).dragTo(page.locator(".cm-line", { hasText: "VALUES" }));
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "1 affected" })).toBeVisible();
+
+  await page.locator(".cm-line", { hasText: "INSERT INTO" }).dragTo(page.locator(".cm-line", { hasText: "SELECT * FROM" }));
+  await page.locator(".run-float").click();
+  await expect(page.locator("#result-table")).toContainText("alpha");
+  await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
+  await expect(page.locator("#run")).toBeEnabled();
+});
+
 function uniqueTable() {
   return `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
