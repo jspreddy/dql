@@ -11,7 +11,7 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { bandLayer, dqlLanguage, markersForRunStatus, queryHighlight, runFrame, runStatusField, runStatusGutter, setRunStatuses } from "./dql-mode.js";
+import { bandLayer, dqlLanguage, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setRunRequest, setRunStatuses } from "./dql-mode.js";
 import { runTarget, statementSpans } from "./dql-tokens.js";
 
 const dqlHighlight = HighlightStyle.define([
@@ -80,15 +80,18 @@ const editor = new EditorView({
       dqlLanguage,
       highlightCompartment.of(queryHighlight(highlightOptions)),
       runFrame,
+      runButtonLayer,
+      // Below-layers paint earlier entries above later ones. Selection must
+      // sit above the even/odd bands, and the query window above that.
+      drawSelection(),
       bandLayer,
       syntaxHighlighting(dqlHighlight),
       placeholder("Open a .dql file, or create one."),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "false", id: "editor-content" }),
-      drawSelection(),
       Prec.highest(EditorView.theme({
         ".cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground": {
-          backgroundColor: "transparent !important",
+          backgroundColor: "rgba(37, 99, 235, 0.28) !important",
         },
         ".cm-run-fill": {
           backgroundColor: "rgba(16, 42, 96, 0.05)",
@@ -240,11 +243,19 @@ runButton.title = "Run selection (" + runShortcutLabel + ")";
 runButton.setAttribute("aria-keyshortcuts", "Control+Enter");
 runButton.addEventListener("click", runSelection);
 
+function setRunBusy(busy) {
+  runButton.disabled = busy;
+  const floating = editor.dom.querySelector(".run-float");
+  if (floating) floating.disabled = busy;
+}
+
 function runFromEditor() {
   if (runButton.disabled) return true;
   runSelection();
   return true;
 }
+
+setRunRequest(runFromEditor);
 const minimalWriteInput = document.querySelector("#opt-minimal-write");
 const evenOddInput = document.querySelector("#opt-even-odd");
 minimalWriteInput.checked = highlightOptions.minimalWrite;
@@ -803,7 +814,7 @@ async function runSelection() {
   const origins = statementSpans(dql).map((span) => range.from + span.from);
   runMarks = origins.length ? [{ from: origins[0], status: "running" }] : [];
   paintRunMarks();
-  runButton.disabled = true;
+  setRunBusy(true);
   resultMeta.textContent = "Running…";
   resultBody.replaceChildren();
   showProgress(null, null);
@@ -842,7 +853,7 @@ async function runSelection() {
     }
   } finally {
     hideProgress();
-    runButton.disabled = false;
+    setRunBusy(false);
   }
 }
 
@@ -1087,12 +1098,12 @@ function tableKeyLine(keys) {
     }
     const pair = document.createElement("span");
     pair.className = "key-pair";
-    const name = document.createElement("span");
-    name.textContent = key.name;
-    pair.append(name);
     if (key.role === "hash" || key.role === "range") {
       pair.append(keyIcon(key.role, key.role === "hash" ? "Hash key" : "Range key"));
     }
+    const name = document.createElement("span");
+    name.textContent = key.name;
+    pair.append(name);
     line.append(pair);
   }
   return line;

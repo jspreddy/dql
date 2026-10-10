@@ -115,6 +115,61 @@ test("colors SELECT and outlines the current query without covering the next one
   await expect(page.locator(".cm-run-fill")).toHaveCount(1);
 });
 
+test("frames a partial line selection as a whole line and highlights the text", async ({ page }) => {
+  await node(page, "queries/read.dql").click();
+  const line = page.locator(".cm-line", { hasText: "SELECT * FROM pw_missing_table" });
+  const box = await line.boundingBox();
+  await page.mouse.move(box.x + 14, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 52, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.up();
+
+  await expect(page.locator(".cm-selectionBackground").first()).toBeVisible();
+  await expect(page.locator(".cm-run-fill")).toBeVisible();
+  const metrics = await page.evaluate(() => {
+    const fill = document.querySelector(".cm-run-fill").getBoundingClientRect();
+    const selected = [...document.querySelectorAll(".cm-selectionBackground")].map((el) => el.getBoundingClientRect());
+    const selectLeft = Math.min(...selected.map((rect) => rect.left));
+    const selectRight = Math.max(...selected.map((rect) => rect.right));
+    const row = [...document.querySelectorAll(".cm-content .cm-line")].find((el) =>
+      el.textContent.includes("SELECT * FROM pw_missing_table"),
+    );
+    const range = document.createRange();
+    range.selectNodeContents(row);
+    const text = range.getBoundingClientRect();
+    const keyword = [...row.querySelectorAll("span")].find((el) => el.textContent === "SELECT");
+    return {
+      fillLeft: fill.left,
+      fillRight: fill.right,
+      textLeft: text.left,
+      textRight: text.right,
+      selectWidth: selectRight - selectLeft,
+      textWidth: text.width,
+      keyword: keyword ? getComputedStyle(keyword).color : "",
+      highlight: getComputedStyle(document.querySelector(".cm-selectionBackground")).backgroundColor,
+    };
+  });
+  expect(metrics.fillLeft).toBeLessThanOrEqual(metrics.textLeft + 1);
+  expect(metrics.fillRight).toBeGreaterThanOrEqual(metrics.textRight - 1);
+  expect(metrics.selectWidth).toBeGreaterThan(4);
+  expect(metrics.selectWidth).toBeLessThan(metrics.textWidth * 0.75);
+  expect(metrics.keyword).toBe("rgb(15, 118, 110)");
+  expect(metrics.highlight).not.toBe("rgba(0, 0, 0, 0)");
+  const layerOrder = await page.evaluate(() => {
+    const z = (selector) => Number(getComputedStyle(document.querySelector(selector)).zIndex);
+    return { selection: z(".cm-selectionLayer"), band: z(".cm-band-layer"), window: z(".cm-run-fill-layer") };
+  });
+  expect(layerOrder.selection).toBeGreaterThan(layerOrder.band);
+  expect(layerOrder.window).toBeGreaterThan(layerOrder.selection);
+
+  const framed = await lineOverlaps(page);
+  expect(lineByText(framed, "SELECT * FROM pw_missing_table").overlap).toBeGreaterThan(
+    lineByText(framed, "SELECT * FROM pw_missing_table").height * 0.8,
+  );
+  expect(lineByText(framed, "WHERE id = 'a'").overlap).toBeLessThan(12);
+  expect(lineByText(framed, "-- header stays with the select").overlap).toBeLessThan(12);
+});
+
 test("saves highlight toggles and switches write bands to a gutter bar", async ({ page }) => {
   await node(page, "queries/read.dql").click();
   await expect(page.locator(".cm-band-alt").first()).toBeVisible();
@@ -266,6 +321,58 @@ test("shows a progress bar and a running gutter mark for a throttled insert", as
   await expect(page.locator("#run")).toBeEnabled();
   await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "30 affected" })).toBeVisible();
   await expect(page.locator('[data-testid="run-status-error"]')).toHaveCount(0);
+});
+
+test("places a play button on the left of the run box and runs that range", async ({ page, app }) => {
+  await node(page, "queries/read.dql").click();
+  await expect(page.locator(".run-float")).toHaveCount(0);
+
+  await page.locator(".cm-line", { hasText: "SELECT * FROM pw_missing_table" }).click();
+  const button = page.locator(".run-float");
+  await expect(button).toBeVisible();
+  await expect(button).toHaveAttribute("aria-label", "Run selection");
+  const place = await page.evaluate(() => {
+    const buttonBox = document.querySelector(".run-float").getBoundingClientRect();
+    const fill = document.querySelector(".cm-run-fill").getBoundingClientRect();
+    const radius = parseFloat(getComputedStyle(document.querySelector(".run-float")).borderRadius);
+    return {
+      buttonRight: buttonBox.right,
+      fillLeft: fill.left,
+      buttonMidY: buttonBox.top + buttonBox.height / 2,
+      fillTop: fill.top,
+      fillBottom: fill.bottom,
+      width: buttonBox.width,
+      height: buttonBox.height,
+      radius,
+    };
+  });
+  expect(place.buttonRight).toBeLessThanOrEqual(place.fillLeft + 1);
+  expect(place.buttonMidY).toBeGreaterThan(place.fillTop - 2);
+  expect(place.buttonMidY).toBeLessThan(place.fillBottom + 2);
+  expect(Math.abs(place.width - place.height)).toBeLessThan(1);
+  expect(place.radius).toBeGreaterThanOrEqual(place.width / 2 - 0.5);
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY);`,
+      `INSERT INTO ${name} (id, label) VALUES ('a', 'alpha');`,
+      `SELECT * FROM ${name} WHERE id = 'a';`,
+      `SCAN * FROM pw_missing_table;`,
+    ].join("\n"),
+  );
+  await page.locator(".cm-line", { hasText: "DROP TABLE" }).dragTo(page.locator(".cm-line", { hasText: "VALUES" }));
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "1 affected" })).toBeVisible();
+
+  await page.locator(".cm-line", { hasText: "INSERT INTO" }).dragTo(page.locator(".cm-line", { hasText: "SELECT * FROM" }));
+  await page.locator(".run-float").click();
+  await expect(page.locator("#result-table")).toContainText("alpha");
+  await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
+  await expect(page.locator("#run")).toBeEnabled();
 });
 
 function uniqueTable() {

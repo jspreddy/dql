@@ -95,9 +95,15 @@ test("orders table and result columns by keys, index, then selection or name", a
   await expect(page.locator("#result-table thead th").nth(0)).toHaveClass(/col-table/);
   await expect(page.locator("#result-table thead th").nth(0).locator('[data-key="hash"]')).toBeVisible();
   await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("background-color", "rgb(231, 246, 236)");
+  await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("box-shadow", /rgb\(111, 191, 150\)/);
+  const headerIcons = await page.locator("#result-table thead th").nth(0).locator(".col-label").evaluate((label) =>
+    [...label.children].map((child) => child.dataset.key || child.textContent.trim()),
+  );
+  expect(headerIcons).toEqual(["id", "hash"]);
   await expect(page.locator("#result-table thead th").nth(1)).toHaveClass(/col-table/);
   await expect(page.locator("#result-table thead th").nth(1).locator('[data-key="range"]')).toBeVisible();
-  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("background-color", "rgb(231, 246, 236)");
+  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("background-color", "rgb(245, 251, 247)");
+  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("box-shadow", /rgb\(111, 191, 150\)/);
 
   await replaceEditor(page, `SELECT zebra, apple, id FROM ${name} WHERE id = 'a' AND sk = 1;`);
   await page.keyboard.press("Control+A");
@@ -112,11 +118,14 @@ test("orders table and result columns by keys, index, then selection or name", a
   await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("background-color", "rgb(231, 246, 236)");
   await expect(page.locator("#result-table thead th").nth(1)).toHaveClass(/col-both/);
   await expect(page.locator("#result-table thead th").nth(1)).toHaveCSS("background-color", "rgb(231, 243, 244)");
+  await expect(page.locator("#result-table thead th").nth(1)).toHaveCSS("box-shadow", /rgb\(116, 184, 184\)/);
   await expect(page.locator("#result-table thead th").nth(1).locator('[data-key="range"]')).toBeVisible();
   await expect(page.locator("#result-table thead th").nth(2)).toHaveClass(/col-index/);
   await expect(page.locator("#result-table thead th").nth(2)).toHaveCSS("background-color", "rgb(231, 241, 252)");
   await expect(page.locator("#result-table thead th").nth(2).locator('[data-key="hash"]')).toBeVisible();
-  await expect(page.locator("#result-table tbody td").nth(1)).toHaveCSS("background-color", "rgb(231, 243, 244)");
+  await expect(page.locator("#result-table tbody td").nth(1)).toHaveCSS("background-color", "rgb(245, 250, 251)");
+  await expect(page.locator("#result-table thead th").nth(2)).toHaveCSS("box-shadow", /rgb\(122, 166, 224\)/);
+  await expect(page.locator("#result-table tbody td").nth(2)).toHaveCSS("background-color", "rgb(245, 249, 254)");
 
   await page.locator("#mode-tables").click();
   await page.locator("#table-search").fill(name);
@@ -134,6 +143,10 @@ test("orders table and result columns by keys, index, then selection or name", a
   await expect(listed).toContainText("sk");
   await expect(listed).not.toContainText("HASH");
   await expect(listed).not.toContainText("RANGE");
+  const listedOrder = await listed.locator(".key-pair").evaluateAll((pairs) =>
+    pairs.map((pair) => [...pair.children].map((child) => child.dataset.key || child.textContent.trim())),
+  );
+  expect(listedOrder).toEqual([["hash", "id"], ["range", "sk"]]);
 });
 
 function uniqueTable() {
