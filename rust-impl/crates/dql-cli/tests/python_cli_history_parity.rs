@@ -38,7 +38,7 @@ mod test_cli {
     fn test_help_docs() {
         for topic in [
             "alter", "analyze", "create", "delete", "drop", "dump", "explain", "insert", "load",
-            "scan", "select", "update", "options",
+            "scan", "select", "show", "update", "options",
         ] {
             assert!(
                 help::statement_help(topic).is_some(),
@@ -150,6 +150,24 @@ mod current_cli_surface {
             String::from_utf8(output.stdout).unwrap(),
             "{\n    \"id\": \"a\"\n}\n"
         );
+    }
+
+    #[test]
+    fn show_tables_like_prints_matching_names() {
+        let output = dql()
+            .args([
+                "--json",
+                "-c",
+                "CREATE TABLE alpha_show (id STRING HASH KEY); \
+                 CREATE TABLE beta_show (id STRING HASH KEY); \
+                 SHOW TABLES LIKE 'alpha%'",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("alpha_show"), "{stdout}");
+        assert!(!stdout.contains("beta_show"), "{stdout}");
     }
 
     #[test]

@@ -159,3 +159,48 @@ fn parity_explain_query() {
         other => panic!("unexpected result: {other:?}"),
     }
 }
+
+#[test]
+fn parity_show_tables_like() {
+    if skip_if_no_local() {
+        return;
+    }
+    let Some(mut harness) = LocalHarness::try_new() else {
+        return;
+    };
+    let table = LocalHarness::unique_table_name("parity_show");
+    let other = LocalHarness::unique_table_name("parity_hide");
+    harness
+        .query(&format!(
+            "CREATE TABLE {table} (id STRING HASH KEY);
+             CREATE TABLE {other} (id STRING HASH KEY)"
+        ))
+        .expect("setup should succeed");
+    match harness
+        .query(&format!("SHOW TABLES LIKE '{table}'"))
+        .expect("show tables should succeed")
+    {
+        StatementResult::Items(items) => {
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].get("name"), Some(&Value::String(table.clone())));
+        }
+        other => panic!("unexpected result: {other:?}"),
+    }
+    match harness
+        .query(&format!("SHOW TABLES LIKE '{table}%'"))
+        .expect("prefix like should succeed")
+    {
+        StatementResult::Items(items) => {
+            let names: Vec<_> = items
+                .iter()
+                .filter_map(|item| match item.get("name") {
+                    Some(Value::String(name)) => Some(name.clone()),
+                    _ => None,
+                })
+                .collect();
+            assert!(names.contains(&table));
+            assert!(!names.contains(&other));
+        }
+        other => panic!("unexpected result: {other:?}"),
+    }
+}

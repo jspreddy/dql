@@ -67,6 +67,8 @@ flowchart TB
     dropIf["test_100_drop_if_exists_missing_table"]
     dump["test_100_dump_schema"]
     ls["test_100_cli_ls"]
+    show["test_100_show_tables_like"]
+    lsGlob["test_100_cli_ls_glob_refresh"]
     ins["test_110_insert_multiple_values"]
     load["test_110_load_json_into_table"]
     bulk["test_110_insert_bulk_progress"]

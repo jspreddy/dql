@@ -314,6 +314,7 @@ impl<B: DynamoBackend> Engine<B> {
             }
             Statement::AlterTable { table, action } => self.alter_table(table, action),
             Statement::DumpSchema { tables } => self.dump_schema(tables.as_deref()),
+            Statement::ShowTables { like } => self.show_tables(like.as_deref()),
             Statement::Load { file, table } => self.load(file, table),
             Statement::Explain(inner) => self.explain(inner),
             Statement::Analyze(inner) => self.analyze(inner),
@@ -665,6 +666,24 @@ impl<B: DynamoBackend> Engine<B> {
             load_items_from_file(path).map_err(|err| EngineError::Runtime(err.to_string()))?;
         let response = self.write_items(table, items)?;
         Ok(StatementResult::Affected(response.output))
+    }
+
+    fn show_tables(&mut self, like: Option<&str>) -> Result<StatementResult, EngineError> {
+        self.record("list_tables", like.unwrap_or("*"));
+        let mut names = self.table_names()?;
+        if let Some(pattern) = like {
+            names.retain(|name| sql_like(name, pattern));
+        }
+        names.sort();
+        let items = names
+            .into_iter()
+            .map(|name| {
+                let mut item = Item::new();
+                item.insert("name".to_string(), Value::String(name));
+                item
+            })
+            .collect();
+        Ok(StatementResult::Items(items))
     }
 
     fn dump_schema(&mut self, tables: Option<&[String]>) -> Result<StatementResult, EngineError> {
@@ -1039,6 +1058,47 @@ fn sort_items(items: &mut [Item], order_by: &OrderBy) {
     });
 }
 
+/// SQL `LIKE`: `%` is any sequence, `_` is one character. Matching is case-sensitive.
+fn sql_like(text: &str, pattern: &str) -> bool {
+    fn matches(text: &[char], pattern: &[char]) -> bool {
+        let mut text_index = 0;
+        let mut pattern_index = 0;
+        let mut wildcard_pattern: Option<usize> = None;
+        let mut wildcard_text = 0;
+        while text_index < text.len() {
+            if pattern_index < pattern.len()
+                && (pattern[pattern_index] == '_' || pattern[pattern_index] == text[text_index])
+            {
+                text_index += 1;
+                pattern_index += 1;
+                continue;
+            }
+            if pattern_index < pattern.len() && pattern[pattern_index] == '%' {
+                wildcard_pattern = Some(pattern_index);
+                wildcard_text = text_index;
+                pattern_index += 1;
+                continue;
+            }
+            if let Some(saved) = wildcard_pattern {
+                wildcard_text += 1;
+                text_index = wildcard_text;
+                pattern_index = saved + 1;
+                continue;
+            }
+            return false;
+        }
+        while pattern_index < pattern.len() && pattern[pattern_index] == '%' {
+            pattern_index += 1;
+        }
+        pattern_index == pattern.len()
+    }
+
+    matches(
+        &text.chars().collect::<Vec<_>>(),
+        &pattern.chars().collect::<Vec<_>>(),
+    )
+}
+
 fn compare_sort_values(left: Option<&Value>, right: Option<&Value>) -> std::cmp::Ordering {
     match (left, right) {
         (None, None) => std::cmp::Ordering::Equal,
@@ -1115,6 +1175,61 @@ mod tests {
         assert_eq!(context.table.name, "t");
         assert_eq!(context.important_columns(), vec!["id"]);
         assert!(context.preserve_column_order());
+    }
+
+    #[test]
+    fn show_tables_like_filters_names() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute(
+                "CREATE TABLE alpha_show (id STRING HASH KEY);
+                 CREATE TABLE alpha_other (id STRING HASH KEY);
+                 CREATE TABLE beta_show (id STRING HASH KEY)",
+            )
+            .unwrap();
+        match engine.execute("SHOW TABLES LIKE 'alpha%'").unwrap() {
+            StatementResult::Items(items) => {
+                let names: Vec<_> = items
+                    .iter()
+                    .map(|item| match item.get("name") {
+                        Some(Value::String(name)) => name.as_str(),
+                        other => panic!("unexpected name: {other:?}"),
+                    })
+                    .collect();
+                assert_eq!(names, vec!["alpha_other", "alpha_show"]);
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        match engine.execute("SHOW TABLES LIKE 'alpha_show'").unwrap() {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(
+                    items[0].get("name"),
+                    Some(&Value::String("alpha_show".to_string()))
+                );
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        match engine.execute("SHOW TABLES").unwrap() {
+            StatementResult::Items(items) => assert_eq!(items.len(), 3),
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn sql_like_matches_percent_and_underscore() {
+        assert!(sql_like("abc", "abc"));
+        assert!(sql_like("abc", "a%"));
+        assert!(sql_like("abc", "%c"));
+        assert!(sql_like("abc", "%b%"));
+        assert!(sql_like("abc", "a_c"));
+        assert!(sql_like("axxb", "a%b"));
+        assert!(sql_like("", "%"));
+        assert!(sql_like("", ""));
+        assert!(!sql_like("abc", "a_"));
+        assert!(!sql_like("abc", "x"));
+        assert!(!sql_like("a", ""));
+        assert!(!sql_like("Foo", "foo"));
     }
 
     #[test]

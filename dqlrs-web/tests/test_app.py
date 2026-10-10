@@ -76,6 +76,13 @@ class StatementTests(unittest.TestCase):
     def test_ignores_blank_input(self) -> None:
         self.assertEqual(split_statements("  \n-- just a comment\n"), [])
 
+    def test_keeps_show_tables_and_ls_refresh_intact(self) -> None:
+        text = "SHOW TABLES LIKE 'alpha%';\nls alpha* refresh=True"
+        self.assertEqual(
+            split_statements(text),
+            ["SHOW TABLES LIKE 'alpha%';", "ls alpha* refresh=True;"],
+        )
+
 
 class FileTests(unittest.TestCase):
     def test_tree_nests_dql_files_and_rejects_escape(self) -> None:
