@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import threading
 from dataclasses import dataclass
-from fnmatch import fnmatch
 from pathlib import Path
 
 from statements import split_statements
@@ -107,27 +107,33 @@ class Engine:
                 if not result.get("ok"):
                     return
 
-    def list_tables(self, pattern: str, *, refresh: bool = False) -> list[dict]:
-        # `ls refresh=true` rewrites dqlrs's description cache. Dropping the
+    def list_tables(self, pattern: str, *, refresh: bool = False) -> dict:
+        # `ls refresh=True` rewrites dqlrs's description cache. Dropping the
         # shape cache makes the open table pick up that fresh schema.
         if refresh:
             with self._lock:
                 self._shapes.clear()
-        summary = self._exec("ls refresh=true" if refresh else "ls")
-        if not summary.get("ok"):
-            raise EngineError(_error_message(summary))
-        names = _ls_names(summary.get("message") or "")
         needle = (pattern or "").strip()
+        command = "ls"
         if needle:
-            names = [name for name in names if fnmatch(name, needle)]
+            command += " " + shlex.quote(needle)
+        if refresh:
+            command += " refresh=True"
+        summary = self._exec(command)
+        text = summary.get("message") or ""
+        if not summary.get("ok"):
+            message = _error_message(summary)
+            if "not found" in message.lower():
+                return {"tables": [], "note": ""}
+            raise EngineError(message)
         tables = []
-        for name in names:
-            detail = self._exec(f"ls {name}")
-            keys = ""
+        for name in _ls_names(text):
+            detail = self._exec(f"ls {shlex.quote(name)}")
+            keys = []
             if detail.get("ok"):
                 keys = _ls_keys(detail.get("message") or "")
             tables.append({"name": name, "keys": keys})
-        return tables
+        return {"tables": tables, "note": _ls_note(text)}
 
     def table_rows(self, name: str, page: int) -> dict:
         if not _safe_table_name(name):
@@ -323,23 +329,48 @@ def _error_message(envelope: dict) -> str:
     return error.get("message") or envelope.get("message") or "dqlrs request failed"
 
 
-def _ls_names(text: str) -> list[str]:
-    names: list[str] = []
-    past_header = False
+_INTELLIGENT_NOTE = re.compile(
+    r'^No exact match for "[^"]*", so showing '
+    r"(?:similar names and related keys|similar names|related keys)\.$"
+)
+_DESCRIBED_NAME = re.compile(r"^Name:\s+(\S+)")
+
+
+def _ls_note(text: str) -> str:
     for raw in text.splitlines():
         line = raw.strip()
         if not line:
             continue
+        return line if _INTELLIGENT_NOTE.match(line) else ""
+    return ""
+
+
+def _ls_names(text: str) -> list[str]:
+    described: list[str] = []
+    summary: list[str] = []
+    in_summary = False
+    past_header = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("No exact match for "):
+            continue
+        named = _DESCRIBED_NAME.match(line)
+        if named:
+            described.append(named.group(1))
+            continue
+        if line == "Tables":
+            in_summary = True
+            continue
+        if not in_summary:
+            continue
         if not past_header:
-            if line == "Tables" or line.startswith("Name "):
-                if line.startswith("Name "):
-                    past_header = True
-                continue
-            past_header = True
+            if line.startswith("Name ") or line.startswith("Name\t"):
+                past_header = True
+            continue
         name = line.split()[0]
         if name not in {"Name", "Tables"}:
-            names.append(name)
-    return names
+            summary.append(name)
+    return described or summary
 
 
 def _ls_keys(text: str) -> list[dict]:

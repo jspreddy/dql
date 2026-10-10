@@ -32,8 +32,25 @@ pub fn render_result(
             let formatter = config.formatter(items, rich_context);
             formatter.display(&mut writer)
         }
+        StatementResult::ItemsWithNote { items, note } => {
+            let listed = is_formatted_table_list(note);
+            if !config.silent {
+                backend.write_line(note)?;
+            }
+            if config.silent || !listed {
+                let mut writer = backend.writer();
+                let formatter = config.formatter(items, rich_context);
+                formatter.display(&mut writer)?;
+            }
+            Ok(())
+        }
         StatementResult::Status(_) | StatementResult::Affected(_) => Ok(()),
     }
+}
+
+fn is_formatted_table_list(note: &str) -> bool {
+    let body = note.trim_start();
+    body.starts_with("Tables\n") || body.contains("\nTables\n")
 }
 
 pub fn format_items(

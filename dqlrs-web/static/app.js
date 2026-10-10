@@ -13,7 +13,7 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { bandLayer, dqlLanguage, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setRunRequest, setRunStatuses } from "./dql-mode.js";
 import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
-import { parseTableDescription } from "./describe-card.js";
+import { parseLsMessage } from "./describe-card.js";
 
 const dqlHighlight = HighlightStyle.define([
   { tag: tags.keyword, color: "#0f766e", fontWeight: "650" },
@@ -239,10 +239,11 @@ document.querySelector("#mode-tables").addEventListener("click", () => setMode("
 document.querySelector("#new-file").addEventListener("click", createFile);
 const runButton = document.querySelector("#run");
 const runShortcut = document.querySelector("#run-shortcut");
-const runShortcutLabel = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent) ? "⌘Enter" : "Ctrl+Enter";
+const macShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+const runShortcutLabel = macShortcut ? "⌘ Enter" : "Ctrl+Enter";
 runShortcut.textContent = runShortcutLabel;
 runButton.title = "Run selection (" + runShortcutLabel + ")";
-runButton.setAttribute("aria-keyshortcuts", "Control+Enter");
+runButton.setAttribute("aria-keyshortcuts", macShortcut ? "Meta+Enter" : "Control+Enter");
 runButton.addEventListener("click", runSelection);
 
 function setRunBusy(busy) {
@@ -869,6 +870,7 @@ function renderResults(results) {
   const notes = results.filter((item) => item !== lastItems);
   let explainSteps = 0;
   let otherNotes = 0;
+  let listedTables = 0;
   for (const item of notes) {
     const plan = item.ok && item.kind === "schema" ? parseExplainPlan(item.message || "") : null;
     if (plan) {
@@ -876,12 +878,18 @@ function renderResults(results) {
       resultBody.append(explainPlan(plan));
       continue;
     }
-    const description = item.ok && (item.kind === "schema" || item.kind === "text")
-      ? parseTableDescription(item.message || "")
+    const listed = item.ok && (item.kind === "schema" || item.kind === "text")
+      ? parseLsMessage(item.message || "")
       : null;
-    if (description) {
+    if (listed && listed.description) {
       otherNotes += 1;
-      resultBody.append(describeCard(description));
+      resultBody.append(describeCard(listed.description, listed.note));
+      continue;
+    }
+    if (listed && (listed.tables.length || listed.note)) {
+      otherNotes += 1;
+      listedTables = listed.tables.length;
+      resultBody.append(intelligentSummary(listed.note, listed.summary, listed.tables));
       continue;
     }
     otherNotes += 1;
@@ -891,8 +899,17 @@ function renderResults(results) {
   }
   if (lastItems) {
     const rows = lastItems.items || [];
-    resultMeta.textContent = rows.length + (rows.length === 1 ? " row" : " rows");
-    resultBody.append(dataTable(rows, "result-table", lastItems.columns));
+    const listed = parseLsMessage(lastItems.message || "");
+    if (listed && listed.tables.length) {
+      const count = listed.tables.length;
+      resultMeta.textContent = count + (count === 1 ? " table" : " tables");
+      resultBody.append(intelligentSummary(listed.note, listed.summary, listed.tables));
+    } else {
+      resultMeta.textContent = rows.length + (rows.length === 1 ? " row" : " rows");
+      resultBody.append(dataTable(rows, "result-table", lastItems.columns));
+    }
+  } else if (listedTables > 0 && otherNotes === 1) {
+    resultMeta.textContent = listedTables + (listedTables === 1 ? " table" : " tables");
   } else if (explainSteps > 0 && otherNotes === 0) {
     resultMeta.textContent = explainSteps + (explainSteps === 1 ? " step" : " steps");
   } else {
@@ -1030,10 +1047,11 @@ function resultLabel(item) {
   return item.message || "ok";
 }
 
-function describeCard(description) {
+function describeCard(description, note) {
   const card = document.createElement("section");
   card.className = "describe";
   card.dataset.testid = "result-note";
+  if (note) card.append(matchNote(note));
 
   const head = document.createElement("header");
   head.className = "describe-head";
@@ -1084,6 +1102,113 @@ function describeCard(description) {
   }
   if (description.schema) card.append(highlightedQuery(description.schema));
   return card;
+}
+
+function intelligentSummary(note, summary, tables) {
+  const card = document.createElement("section");
+  card.className = "describe";
+  card.dataset.testid = "result-note";
+  if (note) card.append(matchNote(note));
+  if (tables && tables.length) card.append(summaryTable(tables));
+  else {
+    const body = document.createElement("pre");
+    body.className = "describe-summary";
+    body.textContent = summary;
+    card.append(body);
+  }
+  return card;
+}
+
+function summaryTable(tables) {
+  const wrap = document.createElement("div");
+  wrap.className = "describe-tables-wrap";
+  const table = document.createElement("table");
+  table.className = "describe-tables";
+  const columns = [
+    ["Name", "name", false],
+    ["Items", "items", true],
+    ["Read", "read", true],
+    ["Write", "write", true],
+    ["Status", "status", false],
+    ["Size", "size", true],
+  ];
+  const head = document.createElement("tr");
+  for (const [label, , numeric] of columns) {
+    const cell = document.createElement("th");
+    if (numeric) cell.className = "num";
+    cell.textContent = label;
+    head.append(cell);
+  }
+  const thead = document.createElement("thead");
+  thead.append(head);
+  const body = document.createElement("tbody");
+  for (const row of tables) {
+    const tr = document.createElement("tr");
+    for (const [, key, numeric] of columns) {
+      const cell = document.createElement("td");
+      if (key === "name") {
+        cell.className = "describe-table-name";
+        cell.textContent = row.name;
+      } else if (key === "status") {
+        const status = document.createElement("span");
+        status.className = "describe-status " + statusClass(row.status);
+        status.textContent = row.status;
+        cell.append(status);
+      } else {
+        if (numeric) cell.className = "num";
+        cell.textContent = row[key] === "-" ? "—" : row[key];
+      }
+      tr.append(cell);
+    }
+    body.append(tr);
+  }
+  table.append(thead, body);
+  wrap.append(table);
+  return wrap;
+}
+
+function sidebarMatchNote(text) {
+  const note = document.createElement("p");
+  note.className = "table-match-note";
+  note.dataset.testid = "intelligent-match";
+  note.title = text;
+  const kind = String(text).match(/so showing (similar names and related keys|similar names|related keys)\.$/);
+  note.textContent = kind ? kind[1][0].toUpperCase() + kind[1].slice(1) : text;
+  return note;
+}
+
+function matchNote(text) {
+  const note = document.createElement("p");
+  note.className = "describe-match-note";
+  note.dataset.testid = "intelligent-match";
+  note.append(matchMark());
+  const quoted = String(text).match(/^(No exact match for )("[^"]*")(, so showing (?:similar names and related keys|similar names|related keys)\.)$/);
+  if (!quoted) {
+    note.append(document.createTextNode(text));
+    return note;
+  }
+  const pattern = document.createElement("span");
+  pattern.className = "describe-match-pattern";
+  pattern.textContent = quoted[2];
+  note.append(document.createTextNode(quoted[1]), pattern, document.createTextNode(quoted[3]));
+  return note;
+}
+
+function matchMark() {
+  const icon = document.createElement("span");
+  icon.className = "describe-match-mark";
+  icon.setAttribute("aria-hidden", "true");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.4");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("d", "M7.1 3.1a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7ZM10.1 10.1 13 13");
+  svg.append(path);
+  icon.append(svg);
+  return icon;
 }
 
 function describeKey(role, label, key) {
@@ -1294,6 +1419,7 @@ async function loadTables(options = {}) {
     const payload = await api("/api/tables?" + query.toString());
     if (request !== state.tablesRequest) return;
     list.replaceChildren();
+    if (payload.note) list.append(sidebarMatchNote(payload.note));
     if (!payload.tables.length) {
       state.table = "";
       list.append(note(pattern ? "No tables match " + pattern : "No tables", false));

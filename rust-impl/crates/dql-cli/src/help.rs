@@ -584,6 +584,10 @@ pub const LS: &str = r"
     <glob> uses * and ? the same way as a filename glob.
     One match prints that table's description, the same text as DESCRIBE.
     Several matches print a list.
+    When nothing matches exactly, ls lists tables with similar names and tables
+    whose keys, indexes, or attributes are similar to the text.
+    A two-letter pattern matches only names that start with it.
+    The result says whether it is showing similar names, related keys, or both.
     refresh=True ignores the cached description and loads it again.
     True, true, and yes are accepted.
 
@@ -616,13 +620,21 @@ pub const SHOW: &str = r"
     SHOW TABLES;
     SHOW TABLES LIKE 'pattern';
 
-    LIKE is case-sensitive. % matches any sequence. _ matches one character.
+    SHOW TABLES prints the same list as `ls`: name, items, read, write, status,
+    and size. LIKE is case-sensitive. % matches any sequence. _ matches one
+    character.
+    When that matches nothing, the result lists tables with similar names and
+    tables whose keys, indexes, or attributes are similar to the text.
+    A two-letter pattern matches only names that start with it.
+    The result says whether it is showing similar names, related keys, or both.
+    A pattern that is still not similar stays an empty list.
 
     Examples
     --------
     SHOW TABLES;
     SHOW TABLES LIKE 'alpha%';
     SHOW TABLES LIKE 'foo_bar';
+    SHOW TABLES LIKE 'post';
 ";
 
 pub const HISTORY: &str = r#"

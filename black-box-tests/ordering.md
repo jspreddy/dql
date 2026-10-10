@@ -68,9 +68,11 @@ flowchart TB
     dump["test_100_dump_schema"]
     ls["test_100_cli_ls"]
     show["test_100_show_tables_like"]
+    showIntel["test_100_show_tables_like_intelligent_match"]
     lsGlob["test_100_cli_ls_glob_refresh"]
     describe["test_100_describe_table"]
     lsOne["test_100_cli_ls_one_match_describes"]
+    lsIntel["test_100_cli_ls_intelligent_match"]
     ins["test_110_insert_multiple_values"]
     load["test_110_load_json_into_table"]
     bulk["test_110_insert_bulk_progress"]
@@ -101,6 +103,7 @@ flowchart TB
   c --> ls
   c --> describe
   c --> lsOne
+  c --> lsIntel
   c --> ins
   c --> load
   c --> bulk
@@ -140,6 +143,8 @@ the `SELECT` tests it explains. `ANALYZE` actually runs `SELECT`, so it sits in
 | `test_100_cli_ls` | `create` |
 | `test_100_describe_table` | `create` (dqlrs only) |
 | `test_100_cli_ls_one_match_describes` | `create` |
+| `test_100_cli_ls_intelligent_match` | `create` (dqlrs only) |
+| `test_100_show_tables_like_intelligent_match` | `create` (dqlrs only) |
 | `test_110_insert_multiple_values` | `create` |
 | `test_110_insert_bulk_progress` | `create` |
 | `test_110_insert_json_omits_progress` | `insert` |
@@ -190,6 +195,9 @@ Same group. Each setup is only `CREATE TABLE`.
 | `test_100_cli_ls` | `ls` | Lists the table created in setup. |
 | `test_100_describe_table` | `DESCRIBE` | Same description text as `ls` of that table (`dqlrs` only). |
 | `test_100_cli_ls_one_match_describes` | `ls <name>` and `ls <glob>` | One match prints the description. Several matches print the list. |
+| `test_100_cli_ls_intelligent_match` | `ls <partial>` | No exact match lists similar names or related keys, with a note. |
+| `test_100_show_tables_like` | `SHOW TABLES LIKE` | Exact LIKE returns matching names. |
+| `test_100_show_tables_like_intelligent_match` | `SHOW TABLES LIKE` | No LIKE hit lists similar names or related keys, with a note. `--json` stays name rows. |
 
 ### `110` — insert, load
 

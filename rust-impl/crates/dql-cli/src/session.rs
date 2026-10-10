@@ -413,6 +413,7 @@ impl Session {
             self.apply_rate_limit()?;
             let rich_context = self.engine.rich_context();
             if let Some(result) = self.engine.execute_fragment(trimmed)? {
+                let result = crate::meta::ls::annotate_table_list(self, result);
                 render_result(
                     &result,
                     &output_config,
@@ -425,6 +426,7 @@ impl Session {
                 self.apply_rate_limit()?;
                 let rich_context = self.engine.rich_context();
                 if let Some(result) = self.engine.execute_fragment(";")? {
+                    let result = crate::meta::ls::annotate_table_list(self, result);
                     render_result(
                         &result,
                         &output_config,
@@ -504,7 +506,10 @@ impl Session {
             let _ = crate::meta::lifecycle::take_exit_request();
             let _ = crate::meta::lifecycle::take_history_edit_request();
             return match dispatched {
-                Ok(Some(result)) => envelope_from_result(result, self.engine.partial()),
+                Ok(Some(result)) => {
+                    let result = crate::meta::ls::annotate_table_list(self, result);
+                    envelope_from_result(result, self.engine.partial())
+                }
                 Ok(None) => {
                     let message = String::from_utf8_lossy(&buf).trim_end().to_string();
                     if message.is_empty() {
@@ -526,13 +531,19 @@ impl Session {
             return envelope_from_error(err);
         }
         match self.engine.execute_fragment(trimmed) {
-            Ok(Some(result)) => envelope_from_result(result, self.engine.partial()),
+            Ok(Some(result)) => {
+                let result = crate::meta::ls::annotate_table_list(self, result);
+                envelope_from_result(result, self.engine.partial())
+            }
             Ok(None) if self.engine.partial() => {
                 if let Err(err) = self.apply_rate_limit() {
                     return envelope_from_error(err);
                 }
                 match self.engine.execute_fragment(";") {
-                    Ok(Some(result)) => envelope_from_result(result, self.engine.partial()),
+                    Ok(Some(result)) => {
+                        let result = crate::meta::ls::annotate_table_list(self, result);
+                        envelope_from_result(result, self.engine.partial())
+                    }
                     Ok(None) => {
                         let mut envelope = ServeEnvelope::success("none");
                         envelope.partial = self.engine.partial();
@@ -675,6 +686,10 @@ mod tests {
         let shown = session.execute_for_serve("SHOW TABLES LIKE 'alpha%';");
         assert!(shown.ok, "{shown:?}");
         assert_eq!(shown.kind, "items");
+        assert!(
+            shown.message.is_none(),
+            "an exact LIKE has no note: {shown:?}"
+        );
         let names = shown
             .items
             .unwrap()
@@ -711,6 +726,25 @@ mod tests {
         assert!(!fresh_text.contains("alpha_other"));
         assert!(!fresh_text.contains("beta_ls"));
 
+        let shown_all = session.execute_for_serve("SHOW TABLES;");
+        assert!(shown_all.ok, "{shown_all:?}");
+        assert_eq!(shown_all.kind, "items");
+        let shown_text = shown_all.message.clone().unwrap();
+        assert!(shown_text.starts_with("Tables\n"), "{shown_text}");
+        assert!(shown_text.contains("alpha_ls"), "{shown_text}");
+        assert!(shown_text.contains("alpha_other"), "{shown_text}");
+        assert!(shown_text.contains("beta_ls"), "{shown_text}");
+        assert!(!shown_text.contains("Hash Key"), "{shown_text}");
+        assert!(item_names(&shown_all).contains(&"alpha_ls".to_string()));
+
+        let every = session.execute_for_serve("ls;");
+        assert!(every.ok, "{every:?}");
+        assert_eq!(every.kind, "text");
+        let every_text = every.message.unwrap();
+        assert!(every_text.contains("Tables"), "{every_text}");
+        assert!(every_text.contains("alpha_ls"), "{every_text}");
+        assert!(every_text.contains("Name"), "{every_text}");
+
         let listed = session.execute_for_serve("ls alpha_* refresh=True");
         assert!(listed.ok, "{listed:?}");
         let listed_text = listed.message.unwrap();
@@ -721,6 +755,61 @@ mod tests {
             !listed_text.contains("Hash Key"),
             "several matches should stay a list:\n{listed_text}"
         );
+    }
+
+    #[test]
+    fn show_tables_like_falls_back_to_similar_names() {
+        let mut session = Session::new_memory_headless("us-west-1");
+        for statement in [
+            "CREATE TABLE posts_v2 (id STRING HASH KEY);",
+            "CREATE TABLE nb_posts (id STRING HASH KEY);",
+            "CREATE TABLE orders (customer_id STRING HASH KEY);",
+            "CREATE TABLE gamma (id STRING HASH KEY);",
+        ] {
+            let created = session.execute_for_serve(statement);
+            assert!(created.ok, "{statement}: {created:?}");
+        }
+
+        let exact = session.execute_for_serve("SHOW TABLES LIKE 'posts_v2';");
+        assert!(exact.ok, "{exact:?}");
+        assert_eq!(exact.kind, "items");
+        assert!(exact.message.is_none(), "{exact:?}");
+
+        let similar = session.execute_for_serve("SHOW TABLES LIKE 'post';");
+        assert!(similar.ok, "{similar:?}");
+        assert_eq!(similar.kind, "items");
+        let similar_text = similar.message.clone().unwrap();
+        assert!(similar_text.starts_with("No exact match for \"post\", so showing similar names."));
+        assert!(similar_text.contains("Tables"), "{similar_text}");
+        assert!(similar_text.contains("posts_v2"), "{similar_text}");
+        assert!(similar_text.contains("nb_posts"), "{similar_text}");
+        assert!(!similar_text.contains("gamma"), "{similar_text}");
+        let names = item_names(&similar);
+        assert_eq!(names, vec!["posts_v2".to_string(), "nb_posts".to_string()]);
+
+        let related = session.execute_for_serve("SHOW TABLES LIKE 'customer_id';");
+        assert!(related.ok, "{related:?}");
+        let related_text = related.message.clone().unwrap();
+        assert!(related_text
+            .starts_with("No exact match for \"customer_id\", so showing related keys."));
+        assert!(related_text.contains("orders"), "{related_text}");
+        assert!(!related_text.contains("gamma"), "{related_text}");
+        assert_eq!(item_names(&related), vec!["orders".to_string()]);
+
+        let missing = session.execute_for_serve("SHOW TABLES LIKE 'qqqxxyyzz';");
+        assert!(missing.ok, "{missing:?}");
+        assert!(missing.message.is_none(), "{missing:?}");
+        assert!(item_names(&missing).is_empty());
+    }
+
+    fn item_names(envelope: &crate::serve::protocol::ServeEnvelope) -> Vec<String> {
+        envelope
+            .items
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|item| item["name"].as_str().unwrap().to_string())
+            .collect()
     }
 
     #[test]
@@ -760,6 +849,91 @@ mod tests {
         assert!(many_text.contains("alpha_desc"));
         assert!(many_text.contains("alpha_other"));
         assert!(!many_text.contains("Hash Key"));
+        assert!(!many_text.contains("No exact match"));
+    }
+
+    #[test]
+    fn ls_partial_name_shows_intelligent_matches() {
+        let mut session = Session::new_memory_headless("us-west-1");
+        for statement in [
+            "CREATE TABLE alpha_posts (id STRING HASH KEY);",
+            "CREATE TABLE beta_posts (id STRING HASH KEY);",
+            "CREATE TABLE gamma (id STRING HASH KEY);",
+        ] {
+            let created = session.execute_for_serve(statement);
+            assert!(created.ok, "{statement}: {created:?}");
+        }
+
+        let exact = session.execute_for_serve("ls alpha_posts;");
+        assert!(exact.ok, "{exact:?}");
+        let exact_text = exact.message.unwrap();
+        assert!(exact_text.contains("Hash Key"));
+        assert!(!exact_text.contains("No exact match"));
+
+        let one = session.execute_for_serve("ls alpha_po");
+        assert!(one.ok, "{one:?}");
+        let one_text = one.message.unwrap();
+        assert!(one_text.starts_with("No exact match for \"alpha_po\", so showing similar names."));
+        assert!(one_text.contains("Name: alpha_posts"));
+        assert!(one_text.contains("Hash Key"));
+        assert!(!one_text.contains("beta_posts"));
+        assert!(!one_text.contains("gamma"));
+
+        let many = session.execute_for_serve("ls posts");
+        assert!(many.ok, "{many:?}");
+        let many_text = many.message.unwrap();
+        assert!(many_text.contains("No exact match for \"posts\", so showing similar names."));
+        assert!(many_text.contains("alpha_posts"));
+        assert!(many_text.contains("beta_posts"));
+        assert!(!many_text.contains("gamma"));
+        assert!(!many_text.contains("Hash Key"));
+
+        let missing = session.execute_for_serve("ls missing;");
+        assert!(!missing.ok, "{missing:?}");
+    }
+
+    #[test]
+    fn ls_typo_and_related_keys_are_intelligent_matches() {
+        let mut session = Session::new_memory_headless("us-west-1");
+        for statement in [
+            "CREATE TABLE posts (id STRING HASH KEY);",
+            "CREATE TABLE orders (order_id STRING HASH KEY);",
+            "CREATE TABLE order_items (order_id STRING HASH KEY);",
+            "CREATE TABLE shipments (order_id STRING HASH KEY);",
+            "CREATE TABLE invoices (customer_id STRING HASH KEY);",
+            "CREATE TABLE gamma (id STRING HASH KEY);",
+        ] {
+            let created = session.execute_for_serve(statement);
+            assert!(created.ok, "{statement}: {created:?}");
+        }
+
+        let typo = session.execute_for_serve("ls psots");
+        assert!(typo.ok, "{typo:?}");
+        let typo_text = typo.message.unwrap();
+        assert!(typo_text.starts_with("No exact match for \"psots\", so showing similar names."));
+        assert!(typo_text.contains("Name: posts"));
+        assert!(!typo_text.contains("gamma"));
+
+        let related = session.execute_for_serve("ls customer_id");
+        assert!(related.ok, "{related:?}");
+        let related_text = related.message.unwrap();
+        assert!(related_text
+            .starts_with("No exact match for \"customer_id\", so showing related keys."));
+        assert!(related_text.contains("invoices"));
+        assert!(!related_text.contains("gamma"));
+        assert!(!related_text.contains("orders"));
+
+        let mixed = session.execute_for_serve("ls order");
+        assert!(mixed.ok, "{mixed:?}");
+        let mixed_text = mixed.message.unwrap();
+        assert!(mixed_text.starts_with(
+            "No exact match for \"order\", so showing similar names and related keys."
+        ));
+        assert!(mixed_text.contains("orders"));
+        assert!(mixed_text.contains("order_items"));
+        assert!(mixed_text.contains("shipments"));
+        assert!(!mixed_text.contains("gamma"));
+        assert!(!mixed_text.contains("Hash Key"));
     }
 
     #[test]

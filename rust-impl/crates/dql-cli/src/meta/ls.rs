@@ -1,13 +1,22 @@
 use crate::session::Session;
+use dql_engine::StatementResult;
 use dql_models::TableMeta;
 use dql_output::{format_table_detail, format_table_summary_table, TableStats};
+use dql_parser::Value;
 use ratatui::text::Line;
 use std::collections::HashMap;
 use std::io::Write;
 
 pub enum LsView {
-    Summary(Vec<(TableMeta, TableStats)>),
-    Detail(Box<TableMeta>, TableStats),
+    Summary {
+        rows: Vec<(TableMeta, TableStats)>,
+        note: Option<String>,
+    },
+    Detail {
+        meta: Box<TableMeta>,
+        stats: TableStats,
+        note: Option<String>,
+    },
 }
 
 pub fn handle(
@@ -24,11 +33,15 @@ pub fn handle(
         }
     }
     match collect_view(session, args, kwargs)? {
-        LsView::Summary(rows) => {
+        LsView::Summary { rows, note } => {
+            write_note(out, note.as_deref())?;
             writeln!(out, "{}", format_table_summary_table(&rows)).map_err(|err| err.to_string())?
         }
-        LsView::Detail(meta, stats) => writeln!(out, "{}", format_table_detail(&meta, &stats))
-            .map_err(|err| err.to_string())?,
+        LsView::Detail { meta, stats, note } => {
+            write_note(out, note.as_deref())?;
+            writeln!(out, "{}", format_table_detail(&meta, &stats))
+                .map_err(|err| err.to_string())?
+        }
     }
     Ok(())
 }
@@ -49,8 +62,14 @@ pub fn render_rich_lines(
         }
     }
     match collect_view(session, args, kwargs)? {
-        LsView::Summary(rows) => lines.extend(table_summary_to_lines(&rows, width)),
-        LsView::Detail(meta, stats) => lines.extend(table_detail_to_lines(&meta, &stats, width)),
+        LsView::Summary { rows, note } => {
+            push_note(&mut lines, note.as_deref());
+            lines.extend(table_summary_to_lines(&rows, width));
+        }
+        LsView::Detail { meta, stats, note } => {
+            push_note(&mut lines, note.as_deref());
+            lines.extend(table_detail_to_lines(&meta, &stats, width));
+        }
     }
     Ok(lines)
 }
@@ -71,21 +90,10 @@ pub fn collect_view(
             .into_iter()
             .map(|meta| table_row(session, meta))
             .collect();
-        return Ok(LsView::Summary(rows));
+        return Ok(LsView::Summary { rows, note: None });
     }
     let pattern = args[0].trim_end_matches(';');
-    let tables = session
-        .engine
-        .list_tables()
-        .map_err(|err| err.to_string())?;
-    let filtered: Vec<_> = tables
-        .into_iter()
-        .filter(|name| {
-            glob::Pattern::new(pattern)
-                .map(|p| p.matches(name))
-                .unwrap_or(false)
-        })
-        .collect();
+    let (filtered, note) = resolve_names(session, pattern, refresh)?;
     match filtered.len() {
         0 => Err(format!("Table {pattern:?} not found")),
         1 => {
@@ -95,7 +103,11 @@ pub fn collect_view(
                 .describe_with_metrics(name, refresh, metrics)
                 .map_err(|err| err.to_string())?
                 .ok_or_else(|| format!("Table {name:?} not found"))?;
-            Ok(LsView::Detail(Box::new(meta), table_stats(session, name)))
+            Ok(LsView::Detail {
+                meta: Box::new(meta),
+                stats: table_stats(session, name),
+                note,
+            })
         }
         _ => {
             let mut rows = Vec::new();
@@ -107,9 +119,87 @@ pub fn collect_view(
                     .ok_or_else(|| format!("Table {name:?} not found"))?;
                 rows.push((meta, table_stats(session, &name)));
             }
-            Ok(LsView::Summary(rows))
+            Ok(LsView::Summary { rows, note })
         }
     }
+}
+
+fn glob_matches(pattern: &str, name: &str) -> bool {
+    glob::Pattern::new(pattern)
+        .map(|pattern| pattern.matches(name))
+        .unwrap_or(false)
+}
+
+fn resolve_names(
+    session: &mut Session,
+    pattern: &str,
+    refresh: bool,
+) -> Result<(Vec<String>, Option<String>), String> {
+    let names = session
+        .engine
+        .list_tables()
+        .map_err(|err| err.to_string())?;
+    let exact: Vec<String> = names
+        .into_iter()
+        .filter(|name| glob_matches(pattern, name))
+        .collect();
+    if !exact.is_empty() {
+        return Ok((exact, None));
+    }
+    let metas = session
+        .engine
+        .describe_all(refresh)
+        .map_err(|err| err.to_string())?;
+    let tables: Vec<_> = metas
+        .iter()
+        .map(dql_engine::MatchTable::from_meta)
+        .collect();
+    let hit = dql_engine::intelligent_matches(&tables, pattern)?;
+    Ok((hit.names, Some(hit.note)))
+}
+
+fn write_note(out: &mut dyn Write, note: Option<&str>) -> Result<(), String> {
+    if let Some(note) = note {
+        writeln!(out, "{note}\n").map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+fn push_note(lines: &mut Vec<Line<'static>>, note: Option<&str>) {
+    if let Some(note) = note {
+        lines.push(Line::from(note.to_string()));
+        lines.push(Line::from(""));
+    }
+}
+
+/// Turn a `SHOW TABLES LIKE` fallback into the same list `ls` prints.
+pub fn annotate_table_list(session: &mut Session, result: StatementResult) -> StatementResult {
+    let StatementResult::ItemsWithNote { items, note } = result else {
+        return result;
+    };
+    let mut rows = Vec::new();
+    for item in &items {
+        let Some(Value::String(name)) = item.get("name") else {
+            continue;
+        };
+        let Ok(Some(meta)) = session.engine.describe(name, false) else {
+            continue;
+        };
+        rows.push(table_row(session, meta));
+    }
+    if rows.is_empty() {
+        if note.is_empty() {
+            return StatementResult::Items(items);
+        }
+        return StatementResult::ItemsWithNote { items, note };
+    }
+    let summary = format_table_summary_table(&rows);
+    let note = if note.is_empty() {
+        summary.trim_end().to_string()
+    } else {
+        format!("{note}\n\n{}", summary.trim_end())
+    };
+    StatementResult::ItemsWithNote { items, note }
 }
 
 fn table_row(session: &Session, meta: TableMeta) -> (TableMeta, TableStats) {
@@ -150,4 +240,19 @@ fn parse_bool(value: Option<&String>, default: bool) -> bool {
     value
         .map(|value| matches!(value.to_ascii_lowercase().as_str(), "true" | "1" | "yes"))
         .unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact_glob_wins_over_a_partial_name() {
+        let names = ["nb_posts", "posts"];
+        let exact: Vec<_> = names
+            .into_iter()
+            .filter(|name| glob_matches("posts", name))
+            .collect();
+        assert_eq!(exact, vec!["posts"]);
+    }
 }
