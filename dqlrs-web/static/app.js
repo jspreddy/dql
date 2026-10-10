@@ -869,6 +869,7 @@ function renderResults(results) {
   const notes = results.filter((item) => item !== lastItems);
   let explainSteps = 0;
   let otherNotes = 0;
+  let listedTables = 0;
   for (const item of notes) {
     const plan = item.ok && item.kind === "schema" ? parseExplainPlan(item.message || "") : null;
     if (plan) {
@@ -884,8 +885,9 @@ function renderResults(results) {
       resultBody.append(describeCard(listed.description, listed.note));
       continue;
     }
-    if (listed && listed.note) {
+    if (listed && (listed.tables.length || listed.note)) {
       otherNotes += 1;
+      listedTables = listed.tables.length;
       resultBody.append(intelligentSummary(listed.note, listed.summary, listed.tables));
       continue;
     }
@@ -897,7 +899,7 @@ function renderResults(results) {
   if (lastItems) {
     const rows = lastItems.items || [];
     const listed = parseLsMessage(lastItems.message || "");
-    if (listed && listed.note && listed.tables.length) {
+    if (listed && listed.tables.length) {
       const count = listed.tables.length;
       resultMeta.textContent = count + (count === 1 ? " table" : " tables");
       resultBody.append(intelligentSummary(listed.note, listed.summary, listed.tables));
@@ -905,6 +907,8 @@ function renderResults(results) {
       resultMeta.textContent = rows.length + (rows.length === 1 ? " row" : " rows");
       resultBody.append(dataTable(rows, "result-table", lastItems.columns));
     }
+  } else if (listedTables > 0 && otherNotes === 1) {
+    resultMeta.textContent = listedTables + (listedTables === 1 ? " table" : " tables");
   } else if (explainSteps > 0 && otherNotes === 0) {
     resultMeta.textContent = explainSteps + (explainSteps === 1 ? " step" : " steps");
   } else {
@@ -1103,7 +1107,7 @@ function intelligentSummary(note, summary, tables) {
   const card = document.createElement("section");
   card.className = "describe";
   card.dataset.testid = "result-note";
-  card.append(matchNote(note));
+  if (note) card.append(matchNote(note));
   if (tables && tables.length) card.append(summaryTable(tables));
   else {
     const body = document.createElement("pre");

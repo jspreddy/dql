@@ -510,6 +510,10 @@ body.results-resizing * {
   overflow-x: auto;
 }
 
+#result-body .describe > .describe-tables-wrap:first-child {
+  margin-top: 0;
+}
+
 #result-body .describe-tables {
   width: 100%;
   margin: 0;

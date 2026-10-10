@@ -33,7 +33,7 @@ pub fn render_result(
             formatter.display(&mut writer)
         }
         StatementResult::ItemsWithNote { items, note } => {
-            let listed = note.contains("\nTables\n");
+            let listed = is_formatted_table_list(note);
             if !config.silent {
                 backend.write_line(note)?;
             }
@@ -46,6 +46,11 @@ pub fn render_result(
         }
         StatementResult::Status(_) | StatementResult::Affected(_) => Ok(()),
     }
+}
+
+fn is_formatted_table_list(note: &str) -> bool {
+    let body = note.trim_start();
+    body.starts_with("Tables\n") || body.contains("\nTables\n")
 }
 
 pub fn format_items(

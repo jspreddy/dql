@@ -674,7 +674,12 @@ impl<B: DynamoBackend> Engine<B> {
         let mut names = self.table_names()?;
         let Some(pattern) = like else {
             names.sort();
-            return Ok(StatementResult::Items(name_items(&names)));
+            // An empty note marks the full list. The CLI turns it into the same
+            // summary `ls` prints; the items stay the name rows for JSON.
+            return Ok(StatementResult::ItemsWithNote {
+                items: name_items(&names),
+                note: String::new(),
+            });
         };
         let exact: Vec<String> = names
             .iter()
@@ -1242,7 +1247,10 @@ mod tests {
             other => panic!("unexpected result: {other:?}"),
         }
         match engine.execute("SHOW TABLES").unwrap() {
-            StatementResult::Items(items) => assert_eq!(items.len(), 3),
+            StatementResult::ItemsWithNote { items, note } => {
+                assert_eq!(items.len(), 3);
+                assert!(note.is_empty(), "{note}");
+            }
             other => panic!("unexpected result: {other:?}"),
         }
     }
@@ -1274,7 +1282,10 @@ mod tests {
             other => panic!("a LIKE hit should stay a plain list: {other:?}"),
         }
         match engine.execute("SHOW TABLES").unwrap() {
-            StatementResult::Items(items) => assert_eq!(items.len(), 6),
+            StatementResult::ItemsWithNote { items, note } => {
+                assert_eq!(items.len(), 6);
+                assert!(note.is_empty(), "{note}");
+            }
             other => panic!("unexpected result: {other:?}"),
         }
         match engine.execute("SHOW TABLES LIKE 'post'").unwrap() {

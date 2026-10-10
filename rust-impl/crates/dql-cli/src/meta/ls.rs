@@ -188,13 +188,18 @@ pub fn annotate_table_list(session: &mut Session, result: StatementResult) -> St
         rows.push(table_row(session, meta));
     }
     if rows.is_empty() {
+        if note.is_empty() {
+            return StatementResult::Items(items);
+        }
         return StatementResult::ItemsWithNote { items, note };
     }
     let summary = format_table_summary_table(&rows);
-    StatementResult::ItemsWithNote {
-        items,
-        note: format!("{note}\n\n{}", summary.trim_end()),
-    }
+    let note = if note.is_empty() {
+        summary.trim_end().to_string()
+    } else {
+        format!("{note}\n\n{}", summary.trim_end())
+    };
+    StatementResult::ItemsWithNote { items, note }
 }
 
 fn table_row(session: &Session, meta: TableMeta) -> (TableMeta, TableStats) {

@@ -726,6 +726,25 @@ mod tests {
         assert!(!fresh_text.contains("alpha_other"));
         assert!(!fresh_text.contains("beta_ls"));
 
+        let shown_all = session.execute_for_serve("SHOW TABLES;");
+        assert!(shown_all.ok, "{shown_all:?}");
+        assert_eq!(shown_all.kind, "items");
+        let shown_text = shown_all.message.clone().unwrap();
+        assert!(shown_text.starts_with("Tables\n"), "{shown_text}");
+        assert!(shown_text.contains("alpha_ls"), "{shown_text}");
+        assert!(shown_text.contains("alpha_other"), "{shown_text}");
+        assert!(shown_text.contains("beta_ls"), "{shown_text}");
+        assert!(!shown_text.contains("Hash Key"), "{shown_text}");
+        assert!(item_names(&shown_all).contains(&"alpha_ls".to_string()));
+
+        let every = session.execute_for_serve("ls;");
+        assert!(every.ok, "{every:?}");
+        assert_eq!(every.kind, "text");
+        let every_text = every.message.unwrap();
+        assert!(every_text.contains("Tables"), "{every_text}");
+        assert!(every_text.contains("alpha_ls"), "{every_text}");
+        assert!(every_text.contains("Name"), "{every_text}");
+
         let listed = session.execute_for_serve("ls alpha_* refresh=True");
         assert!(listed.ok, "{listed:?}");
         let listed_text = listed.message.unwrap();

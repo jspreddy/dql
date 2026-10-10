@@ -430,6 +430,7 @@ test("show-tables-like-intelligent-match notes similar names and related keys", 
   const editions = `${shop}_editions`;
   const orders = `${shop}_orders`;
   const shipments = `${shop}_shipments`;
+  const buyer = `zzqq${Math.random().toString(36).slice(2, 8)}`;
   for (const table of [catalog, editions, orders, shipments]) app.trackTable(table);
 
   async function runEditor(text) {
@@ -464,15 +465,15 @@ test("show-tables-like-intelligent-match notes similar names and related keys", 
 
   await runEditor(
     [
-      `CREATE TABLE ${orders} (order_id STRING HASH KEY, title STRING);`,
-      `CREATE TABLE ${shipments} (order_id STRING HASH KEY, shipment_id STRING RANGE KEY);`,
-      `INSERT INTO ${orders} (order_id, title) VALUES ('ord-1001', 'The C Programming Language');`,
-      `INSERT INTO ${shipments} (order_id, shipment_id) VALUES ('ord-1001', 'shp-9');`,
-      `SHOW TABLES LIKE 'order_id';`,
+      `CREATE TABLE ${orders} (${buyer} STRING HASH KEY, title STRING);`,
+      `CREATE TABLE ${shipments} (${buyer} STRING HASH KEY, shipment_id STRING RANGE KEY);`,
+      `INSERT INTO ${orders} (${buyer}, title) VALUES ('ord-1001', 'The C Programming Language');`,
+      `INSERT INTO ${shipments} (${buyer}, shipment_id) VALUES ('ord-1001', 'shp-9');`,
+      `SHOW TABLES LIKE '${buyer}';`,
     ].join("\n"),
   );
   const related = page.locator(".describe").filter({ hasText: "related keys" });
-  await expect(related.locator("[data-testid='intelligent-match']")).toContainText('No exact match for "order_id"');
+  await expect(related.locator("[data-testid='intelligent-match']")).toContainText(`No exact match for "${buyer}"`);
   await expect(related.locator("[data-testid='intelligent-match']")).toContainText("showing related keys");
   await expect(related.locator(".describe-table-name", { hasText: orders })).toHaveCount(1);
   await expect(related.locator(".describe-table-name", { hasText: shipments })).toHaveCount(1);
@@ -521,11 +522,32 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   await expect(globbed).not.toContainText(other);
 
   await runEditor(`ls ${stem}*`);
-  const summary = page.locator('[data-testid="result-note"]').filter({ hasText: stem });
-  await expect(summary).toContainText(name);
-  await expect(summary).toContainText(other);
+  const summary = page.locator(".describe").filter({ hasText: stem });
+  await expect(summary.locator(".describe-table-name", { hasText: name })).toHaveCount(1);
+  await expect(summary.locator(".describe-table-name", { hasText: other })).toHaveCount(1);
+  await expect(summary.locator("th", { hasText: "Items" })).toBeVisible();
+  await expect(summary.locator(".describe-status.is-active")).toHaveCount(2);
   await expect(summary).not.toContainText("Hash Key");
   await expect(summary.locator("[data-testid='intelligent-match']")).toHaveCount(0);
+  await expect(summary.locator("#result-table")).toHaveCount(0);
+
+  await runEditor("ls;");
+  const all = page.locator(".describe").filter({ hasText: name });
+  await expect(all.locator("th", { hasText: "Status" })).toBeVisible();
+  await expect(all.locator(".describe-table-name", { hasText: name })).toHaveCount(1);
+  await expect(all.locator(".describe-table-name", { hasText: other })).toHaveCount(1);
+  await expect(all.locator("[data-testid='intelligent-match']")).toHaveCount(0);
+  await expect(page.locator("#result-meta")).toHaveText(/\d+ tables?/);
+
+  await runEditor("SHOW TABLES;");
+  const shown = page.locator(".describe").filter({ hasText: name });
+  await expect(shown.locator("th", { hasText: "Items" })).toBeVisible();
+  await expect(shown.locator(".describe-table-name", { hasText: name })).toHaveCount(1);
+  await expect(shown.locator(".describe-table-name", { hasText: other })).toHaveCount(1);
+  await expect(shown.locator(".describe-status.is-active").first()).toBeVisible();
+  await expect(shown.locator("[data-testid='intelligent-match']")).toHaveCount(0);
+  await expect(shown.locator("#result-table")).toHaveCount(0);
+  await expect(page.locator("#result-meta")).toHaveText(/\d+ tables?/);
 });
 
 test("ls-intelligent-match notes partial names when nothing matches exactly", async ({ page, app }) => {

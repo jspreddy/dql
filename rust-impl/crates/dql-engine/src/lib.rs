@@ -44,7 +44,8 @@ pub enum StatementResult {
     Status(String),
     Affected(usize),
     Items(Vec<Item>),
-    /// Rows plus a note. `SHOW TABLES LIKE` uses this when nothing matched exactly.
+    /// Rows plus a note. `SHOW TABLES` uses an empty note for the full list.
+    /// `SHOW TABLES LIKE` uses this when nothing matched exactly.
     ItemsWithNote {
         items: Vec<Item>,
         note: String,
