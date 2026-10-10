@@ -401,6 +401,76 @@ body.results-resizing * {
 #result-body tbody tr:nth-child(even) td { background: #f8fafb; }
 #result-body tbody tr:hover td { background: #e7f3f2; }
 
+#result-body .explain {
+  margin: 10px 12px 14px;
+  background: #fff;
+  border: 1px solid #d5e4e2;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(20, 30, 40, 0.04);
+}
+
+#result-body .explain-head {
+  padding: 8px 12px;
+  background: #f3faf8;
+  border-bottom: 1px solid #d5e4e2;
+  color: #115e59;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+#result-body .explain-step {
+  padding: 10px 12px 12px;
+  border-bottom: 1px solid #eef1f4;
+}
+
+#result-body .explain-step:last-child { border-bottom: 0; }
+
+#result-body .explain-op {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+#result-body .explain-badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e7f3f2;
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#result-body .explain-target {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-weight: 650;
+}
+
+#result-body .explain-fields {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 10px 0 0;
+}
+
+#result-body .explain-fields dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#result-body .explain-fields dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
 .results-title {
   display: flex;
   align-items: center;

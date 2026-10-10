@@ -183,6 +183,40 @@ test("runs a selection and shows the result table", async ({ page, app }) => {
   await expect(page.locator("#run-progress")).toBeHidden();
 });
 
+test("shows an explain plan as operations and conditions", async ({ page, app }) => {
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, n NUMBER RANGE KEY);`,
+    ].join("\n"),
+  );
+  await page.keyboard.press("Control+A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
+
+  await replaceEditor(page, `EXPLAIN SELECT * FROM ${name} WHERE id = 'a' AND n > 1;`);
+  await page.keyboard.press("Control+A");
+  await page.locator("#run").click();
+
+  const plan = page.locator('[data-testid="explain-plan"]');
+  await expect(plan).toBeVisible();
+  await expect(plan.locator('[data-testid="explain-step"]')).toHaveCount(1);
+  await expect(plan.locator('[data-testid="explain-op"]')).toHaveText("query");
+  await expect(plan.locator('[data-testid="explain-target"]')).toHaveText(name);
+  const fields = plan.locator(".explain-fields");
+  const field = (label) =>
+    fields.locator("dt", { hasText: new RegExp("^" + label + "$") }).locator("xpath=following-sibling::dd[1]");
+  await expect(field("key condition")).toContainText("n > ");
+  await expect(field("filter")).toContainText("id = ");
+  await expect(field("index")).toHaveText("TABLE");
+  await expect(page.locator("#result-meta")).toHaveText("1 step");
+  await expect(page.locator('[data-testid="result-note"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid="run-status-error"]')).toHaveCount(0);
+});
+
 test("shows a progress bar and a running gutter mark for a throttled insert", async ({ page, app }) => {
   const name = uniqueTable();
   app.trackTable(name);

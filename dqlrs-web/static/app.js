@@ -844,7 +844,16 @@ function renderResults(results) {
   resultBody.replaceChildren();
   const lastItems = [...results].reverse().find((item) => item.kind === "items" && item.ok);
   const notes = results.filter((item) => item !== lastItems);
+  let explainSteps = 0;
+  let otherNotes = 0;
   for (const item of notes) {
+    const plan = item.ok && item.kind === "schema" ? parseExplainPlan(item.message || "") : null;
+    if (plan) {
+      explainSteps += plan.length;
+      resultBody.append(explainPlan(plan));
+      continue;
+    }
+    otherNotes += 1;
     const row = note(resultLabel(item), !item.ok);
     if (item.ok && item.kind === "affected") row.classList.add("ok");
     resultBody.append(row);
@@ -853,9 +862,107 @@ function renderResults(results) {
     const rows = lastItems.items || [];
     resultMeta.textContent = rows.length + (rows.length === 1 ? " row" : " rows");
     resultBody.append(dataTable(rows, "result-table"));
+  } else if (explainSteps > 0 && otherNotes === 0) {
+    resultMeta.textContent = explainSteps + (explainSteps === 1 ? " step" : " steps");
   } else {
     resultMeta.textContent = results.length ? "" : "Nothing to run";
   }
+}
+
+function parseExplainPlan(message) {
+  const lines = message.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return null;
+  const steps = [];
+  for (const line of lines) {
+    const match = line.match(/^([a-z][a-z0-9_]*)\s+(\S+)(?:\s+(\{.*\}))?$/);
+    if (!match) return null;
+    const fields = match[3] ? parseExplainFields(match[3]) : [];
+    if (!fields) return null;
+    steps.push({ operation: match[1], target: match[2], fields });
+  }
+  return steps;
+}
+
+function parseExplainFields(text) {
+  if (!text.startsWith("{") || !text.endsWith("}")) return null;
+  const fields = [];
+  let index = 1;
+  const end = text.length - 1;
+  while (index < end) {
+    while (index < end && (text[index] === " " || text[index] === ",")) index += 1;
+    if (index >= end) break;
+    if (text[index] !== "'") return null;
+    index += 1;
+    let key = "";
+    while (index < end && text[index] !== "'") {
+      key += text[index];
+      index += 1;
+    }
+    if (text[index] !== "'") return null;
+    index += 1;
+    if (text.slice(index, index + 2) !== ": ") return null;
+    index += 2;
+    if (text[index] !== '"') return null;
+    index += 1;
+    let value = "";
+    while (index < end) {
+      if (text[index] === "\\") {
+        const next = text[index + 1] || "";
+        value += next === "n" ? "\n" : next === "r" ? "\r" : next === "t" ? "\t" : next;
+        index += 2;
+        continue;
+      }
+      if (text[index] === '"') {
+        index += 1;
+        break;
+      }
+      value += text[index];
+      index += 1;
+    }
+    fields.push({ key, value });
+  }
+  return fields;
+}
+
+function explainPlan(steps) {
+  const card = document.createElement("section");
+  card.className = "explain";
+  card.dataset.testid = "explain-plan";
+  const head = document.createElement("div");
+  head.className = "explain-head";
+  head.textContent = "Explain";
+  card.append(head);
+  for (const step of steps) {
+    const row = document.createElement("div");
+    row.className = "explain-step";
+    row.dataset.testid = "explain-step";
+    const op = document.createElement("div");
+    op.className = "explain-op";
+    const badge = document.createElement("span");
+    badge.className = "explain-badge";
+    badge.dataset.testid = "explain-op";
+    badge.textContent = step.operation.replaceAll("_", " ");
+    const target = document.createElement("span");
+    target.className = "explain-target";
+    target.dataset.testid = "explain-target";
+    target.textContent = step.target;
+    op.append(badge, target);
+    row.append(op);
+    if (step.fields.length) {
+      const list = document.createElement("dl");
+      list.className = "explain-fields";
+      for (const field of step.fields) {
+        const term = document.createElement("dt");
+        term.textContent = field.key.replaceAll("_", " ");
+        const detail = document.createElement("dd");
+        detail.textContent = field.value;
+        list.append(term, detail);
+      }
+      row.append(list);
+    }
+    card.append(row);
+  }
+  return card;
 }
 
 function resultLabel(item) {
