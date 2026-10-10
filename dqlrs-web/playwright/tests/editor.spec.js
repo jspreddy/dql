@@ -482,9 +482,9 @@ test("ls-intelligent-match notes partial names when nothing matches exactly", as
   await runEditor(
     [`CREATE TABLE ${name} (id STRING HASH KEY);`, `CREATE TABLE ${other} (id STRING HASH KEY);`, `ls ${stem}`].join("\n"),
   );
-  const many = page.locator(".describe").filter({ hasText: "intelligent matches" });
+  const many = page.locator(".describe").filter({ hasText: "similar names" });
   await expect(many.locator("[data-testid='intelligent-match']")).toContainText(`No exact match for "${stem}"`);
-  await expect(many.locator("[data-testid='intelligent-match']")).toContainText("showing intelligent matches");
+  await expect(many.locator("[data-testid='intelligent-match']")).toContainText("showing similar names");
   await expect(many.locator(".describe-match-pattern")).toContainText(`"${stem}"`);
   await expect(many.locator(".describe-table-name", { hasText: name })).toHaveCount(1);
   await expect(many.locator(".describe-table-name", { hasText: other })).toHaveCount(1);
@@ -496,7 +496,38 @@ test("ls-intelligent-match notes partial names when nothing matches exactly", as
   const one = page.locator(".describe").filter({ hasText: "Hash Key" });
   await expect(one.locator(".describe-name")).toHaveText(name);
   await expect(one.locator("[data-testid='intelligent-match']")).toContainText(`No exact match for "${stem}alp"`);
+  await expect(one.locator("[data-testid='intelligent-match']")).toContainText("showing similar names");
   await expect(one).not.toContainText(other);
+});
+
+test("ls-related-keys lists tables whose keys match", async ({ page, app }) => {
+  const orders = `red${uniqueTable()}`;
+  const invoices = `blue${uniqueTable()}`;
+  const key = `zzqq${Math.random().toString(36).slice(2, 8)}`;
+  app.trackTable(orders);
+  app.trackTable(invoices);
+
+  async function runEditor(text) {
+    await replaceEditor(page, text);
+    await expect(page.locator("#editor-content")).toContainText(text.split("\n")[0]);
+    await page.keyboard.press("Control+A");
+    await page.locator("#run").click();
+  }
+
+  await runEditor(
+    [
+      `CREATE TABLE ${orders} (${key} STRING HASH KEY);`,
+      `CREATE TABLE ${invoices} (${key} STRING HASH KEY);`,
+      `ls ${key}`,
+    ].join("\n"),
+  );
+  const card = page.locator(".describe").filter({ hasText: "related keys" });
+  await expect(card.locator("[data-testid='intelligent-match']")).toContainText(`No exact match for "${key}"`);
+  await expect(card.locator("[data-testid='intelligent-match']")).toContainText("showing related keys");
+  await expect(card.locator(".describe-table-name", { hasText: orders })).toHaveCount(1);
+  await expect(card.locator(".describe-table-name", { hasText: invoices })).toHaveCount(1);
+  await expect(card).not.toContainText("similar names");
+  await expect(card).not.toContainText("Hash Key");
 });
 
 async function expectDescription(card, tableName) {

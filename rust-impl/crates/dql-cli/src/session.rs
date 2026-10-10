@@ -760,7 +760,7 @@ mod tests {
         assert!(many_text.contains("alpha_desc"));
         assert!(many_text.contains("alpha_other"));
         assert!(!many_text.contains("Hash Key"));
-        assert!(!many_text.contains("intelligent matches"));
+        assert!(!many_text.contains("No exact match"));
     }
 
     #[test]
@@ -779,13 +779,12 @@ mod tests {
         assert!(exact.ok, "{exact:?}");
         let exact_text = exact.message.unwrap();
         assert!(exact_text.contains("Hash Key"));
-        assert!(!exact_text.contains("intelligent matches"));
+        assert!(!exact_text.contains("No exact match"));
 
         let one = session.execute_for_serve("ls alpha_po");
         assert!(one.ok, "{one:?}");
         let one_text = one.message.unwrap();
-        assert!(one_text
-            .starts_with("No exact match for \"alpha_po\", so showing intelligent matches."));
+        assert!(one_text.starts_with("No exact match for \"alpha_po\", so showing similar names."));
         assert!(one_text.contains("Name: alpha_posts"));
         assert!(one_text.contains("Hash Key"));
         assert!(!one_text.contains("beta_posts"));
@@ -794,7 +793,7 @@ mod tests {
         let many = session.execute_for_serve("ls posts");
         assert!(many.ok, "{many:?}");
         let many_text = many.message.unwrap();
-        assert!(many_text.contains("No exact match for \"posts\", so showing intelligent matches."));
+        assert!(many_text.contains("No exact match for \"posts\", so showing similar names."));
         assert!(many_text.contains("alpha_posts"));
         assert!(many_text.contains("beta_posts"));
         assert!(!many_text.contains("gamma"));
@@ -802,6 +801,50 @@ mod tests {
 
         let missing = session.execute_for_serve("ls missing;");
         assert!(!missing.ok, "{missing:?}");
+    }
+
+    #[test]
+    fn ls_typo_and_related_keys_are_intelligent_matches() {
+        let mut session = Session::new_memory_headless("us-west-1");
+        for statement in [
+            "CREATE TABLE posts (id STRING HASH KEY);",
+            "CREATE TABLE orders (order_id STRING HASH KEY);",
+            "CREATE TABLE order_items (order_id STRING HASH KEY);",
+            "CREATE TABLE shipments (order_id STRING HASH KEY);",
+            "CREATE TABLE invoices (customer_id STRING HASH KEY);",
+            "CREATE TABLE gamma (id STRING HASH KEY);",
+        ] {
+            let created = session.execute_for_serve(statement);
+            assert!(created.ok, "{statement}: {created:?}");
+        }
+
+        let typo = session.execute_for_serve("ls psots");
+        assert!(typo.ok, "{typo:?}");
+        let typo_text = typo.message.unwrap();
+        assert!(typo_text.starts_with("No exact match for \"psots\", so showing similar names."));
+        assert!(typo_text.contains("Name: posts"));
+        assert!(!typo_text.contains("gamma"));
+
+        let related = session.execute_for_serve("ls customer_id");
+        assert!(related.ok, "{related:?}");
+        let related_text = related.message.unwrap();
+        assert!(related_text
+            .starts_with("No exact match for \"customer_id\", so showing related keys."));
+        assert!(related_text.contains("invoices"));
+        assert!(!related_text.contains("gamma"));
+        assert!(!related_text.contains("orders"));
+
+        let mixed = session.execute_for_serve("ls order");
+        assert!(mixed.ok, "{mixed:?}");
+        let mixed_text = mixed.message.unwrap();
+        assert!(mixed_text.starts_with(
+            "No exact match for \"order\", so showing similar names and related keys."
+        ));
+        assert!(mixed_text.contains("orders"));
+        assert!(mixed_text.contains("order_items"));
+        assert!(mixed_text.contains("shipments"));
+        assert!(!mixed_text.contains("gamma"));
+        assert!(!mixed_text.contains("Hash Key"));
     }
 
     #[test]

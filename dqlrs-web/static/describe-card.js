@@ -1,4 +1,4 @@
-const INTELLIGENT_NOTE = /^No exact match for ".*", so showing intelligent matches\.$/;
+const INTELLIGENT_NOTE = /^No exact match for "[^"]*", so showing (?:similar names and related keys|similar names|related keys)\.$/;
 
 /**
  * Split an ls message into an optional intelligent-match note and either a

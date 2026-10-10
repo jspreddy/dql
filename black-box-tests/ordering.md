@@ -193,7 +193,7 @@ Same group. Each setup is only `CREATE TABLE`.
 | `test_100_cli_ls` | `ls` | Lists the table created in setup. |
 | `test_100_describe_table` | `DESCRIBE` | Same description text as `ls` of that table (`dqlrs` only). |
 | `test_100_cli_ls_one_match_describes` | `ls <name>` and `ls <glob>` | One match prints the description. Several matches print the list. |
-| `test_100_cli_ls_intelligent_match` | `ls <partial>` | No exact match lists tables whose names contain the text, with a note. |
+| `test_100_cli_ls_intelligent_match` | `ls <partial>` | No exact match lists similar names or related keys, with a note. |
 
 ### `110` — insert, load
 

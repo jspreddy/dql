@@ -1160,7 +1160,7 @@ function matchNote(text) {
   note.className = "describe-match-note";
   note.dataset.testid = "intelligent-match";
   note.append(matchMark());
-  const quoted = String(text).match(/^(No exact match for )("[^"]*")(, so showing intelligent matches\.)$/);
+  const quoted = String(text).match(/^(No exact match for )("[^"]*")(, so showing (?:similar names and related keys|similar names|related keys)\.)$/);
   if (!quoted) {
     note.append(document.createTextNode(text));
     return note;

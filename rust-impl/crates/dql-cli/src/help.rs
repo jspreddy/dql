@@ -584,8 +584,10 @@ pub const LS: &str = r"
     <glob> uses * and ? the same way as a filename glob.
     One match prints that table's description, the same text as DESCRIBE.
     Several matches print a list.
-    When nothing matches exactly, ls lists tables whose names contain the text
-    and says those are intelligent matches.
+    When nothing matches exactly, ls lists tables with similar names and tables
+    whose keys, indexes, or attributes are similar to the text.
+    A two-letter pattern matches only names that start with it.
+    The result says whether it is showing similar names, related keys, or both.
     refresh=True ignores the cached description and loads it again.
     True, true, and yes are accepted.
 

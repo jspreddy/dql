@@ -37,7 +37,7 @@ test("parseTableDescription ignores list output and plain status text", () => {
 });
 
 test("parseLsMessage keeps an intelligent-match note on a description and a list", () => {
-  const note = 'No exact match for "post", so showing intelligent matches.';
+  const note = 'No exact match for "post", so showing similar names.';
   const one = parseLsMessage(`${note}\n\n${detail}`);
   assert.equal(one.note, note);
   assert.equal(one.description.name, "posts");
@@ -62,6 +62,18 @@ test("parseLsMessage keeps an intelligent-match note on a description and a list
   assert.equal(exact.note, "");
   assert.equal(exact.description.name, "posts");
   assert.deepEqual(exact.tables, []);
+
+  const related = parseLsMessage(
+    'No exact match for "customer_id", so showing related keys.\n\n' + summary,
+  );
+  assert.equal(related.note.includes("related keys"), true);
+  assert.equal(related.tables.length, 2);
+
+  const mixed = parseLsMessage(
+    'No exact match for "order", so showing similar names and related keys.\n\nTables\nName Items\nonly 0',
+  );
+  assert.equal(mixed.note.includes("similar names and related keys"), true);
+  assert.equal(mixed.description, null);
 });
 
 test("parseTableSummary reads size text and rejects a description", () => {
