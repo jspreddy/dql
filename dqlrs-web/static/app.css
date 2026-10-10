@@ -252,9 +252,9 @@ main { flex: 1; min-width: 0; min-height: 0; display: flex; }
   min-height: 0;
 }
 
-/* One background behind the glyphs. Native selection stays clear so syntax colors remain. */
+/* Text selection sits behind the glyphs, so syntax colors stay visible. */
 .cm-editor .cm-selectionBackground {
-  background-color: transparent !important;
+  background-color: rgba(37, 99, 235, 0.28) !important;
 }
 
 .cm-run-fill {
@@ -474,45 +474,75 @@ body.results-resizing * {
 .result-body td.col-both .key-icon { color: #3d7480; }
 
 #result-body th.col-table,
-#rows-body th.col-table,
+#rows-body th.col-table {
+  background: #e7f6ec;
+  box-shadow: inset 1px 0 0 #6fbf96, inset -1px 0 0 #6fbf96, inset 0 1px 0 #6fbf96;
+}
+
+#result-body th.col-index,
+#rows-body th.col-index {
+  background: #e7f1fc;
+  box-shadow: inset 1px 0 0 #7aa6e0, inset -1px 0 0 #7aa6e0, inset 0 1px 0 #7aa6e0;
+}
+
+#result-body th.col-both,
+#rows-body th.col-both {
+  background: #e7f3f4;
+  box-shadow: inset 1px 0 0 #74b8b8, inset -1px 0 0 #74b8b8, inset 0 1px 0 #74b8b8;
+}
+
 #result-body td.col-table,
 #rows-body td.col-table,
 #result-body tbody tr:nth-child(even) td.col-table,
 #rows-body tbody tr:nth-child(even) td.col-table {
-  background: #e7f6ec;
+  background: #f5fbf7;
+  box-shadow: inset 1px 0 0 #6fbf96, inset -1px 0 0 #6fbf96;
 }
 
-#result-body th.col-index,
-#rows-body th.col-index,
 #result-body td.col-index,
 #rows-body td.col-index,
 #result-body tbody tr:nth-child(even) td.col-index,
 #rows-body tbody tr:nth-child(even) td.col-index {
-  background: #e7f1fc;
+  background: #f5f9fe;
+  box-shadow: inset 1px 0 0 #7aa6e0, inset -1px 0 0 #7aa6e0;
 }
 
-#result-body th.col-both,
-#rows-body th.col-both,
 #result-body td.col-both,
 #rows-body td.col-both,
 #result-body tbody tr:nth-child(even) td.col-both,
 #rows-body tbody tr:nth-child(even) td.col-both {
-  background: #e7f3f4;
+  background: #f5fafb;
+  box-shadow: inset 1px 0 0 #74b8b8, inset -1px 0 0 #74b8b8;
+}
+
+#result-body tbody tr:last-child td.col-table,
+#rows-body tbody tr:last-child td.col-table {
+  box-shadow: inset 1px 0 0 #6fbf96, inset -1px 0 0 #6fbf96, inset 0 -1px 0 #6fbf96;
+}
+
+#result-body tbody tr:last-child td.col-index,
+#rows-body tbody tr:last-child td.col-index {
+  box-shadow: inset 1px 0 0 #7aa6e0, inset -1px 0 0 #7aa6e0, inset 0 -1px 0 #7aa6e0;
+}
+
+#result-body tbody tr:last-child td.col-both,
+#rows-body tbody tr:last-child td.col-both {
+  box-shadow: inset 1px 0 0 #74b8b8, inset -1px 0 0 #74b8b8, inset 0 -1px 0 #74b8b8;
 }
 
 #result-body tbody tr:hover td.col-table,
 #rows-body tbody tr:hover td.col-table {
-  background: #d7efe0;
+  background: #eef8f2;
 }
 
 #result-body tbody tr:hover td.col-index,
 #rows-body tbody tr:hover td.col-index {
-  background: #d6e6f7;
+  background: #eef4fc;
 }
 
 #result-body tbody tr:hover td.col-both,
 #rows-body tbody tr:hover td.col-both {
-  background: #d5e8ea;
+  background: #eef6f7;
 }
 
 #result-body .explain {

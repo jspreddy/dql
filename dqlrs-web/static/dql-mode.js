@@ -205,15 +205,29 @@ function paintEnd(doc, from, to) {
   return to;
 }
 
-/** One background for the query or selection that Run will execute. */
+/**
+ * Range the query selection window frames.
+ * A text selection grows to each line it touches, so a partial line is framed
+ * as a whole line. A cursor inside a query keeps that query's own range.
+ */
+function windowRange(doc, target) {
+  if (target.kind !== "selection") return { from: target.from, to: target.to };
+  const start = doc.lineAt(Math.min(target.from, doc.length));
+  const last = Math.min(Math.max(target.from, target.to - 1), doc.length);
+  const end = doc.lineAt(last);
+  return { from: start.from, to: end.to };
+}
+
+/** Blue window around the query, or around every line a text selection touches. */
 export function runBox(view) {
   const selection = view.state.selection.main;
   const target = runTarget(view.state.doc.toString(), selection.head, selection.anchor);
   if (!target || target.from >= target.to) return null;
-  const to = paintEnd(view.state.doc, target.from, target.to);
-  if (target.from >= to) return null;
+  const range = windowRange(view.state.doc, target);
+  const to = paintEnd(view.state.doc, range.from, range.to);
+  if (range.from >= to) return null;
   const rects = RectangleMarker.forRange(view, "cm-run-fill", {
-    from: target.from,
+    from: range.from,
     to,
     empty: false,
   });
@@ -310,7 +324,7 @@ function runButtonMarkers(view) {
   return [new RunButtonMarker(origin.left, origin.top, busy)];
 }
 
-/** Play button sitting just left of the outlined run range. */
+/** Play button sitting just left of the query selection window. */
 export const runButtonLayer = layer({
   above: true,
   class: "cm-run-button-layer",

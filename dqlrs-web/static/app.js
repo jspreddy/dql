@@ -11,7 +11,7 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { bandLayer, dqlLanguage, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setRunRequest, setRunStatuses } from "./dql-mode.js";
+import { bandLayer, dqlLanguage, markersForRunStatus, queryHighlight, runButtonLayer, runButtonLayer, runFrame, runStatusField, runStatusGutter, setRunRequest, setRunRequest, setRunStatuses } from "./dql-mode.js";
 import { runTarget, statementSpans } from "./dql-tokens.js";
 
 const dqlHighlight = HighlightStyle.define([
@@ -81,15 +81,17 @@ const editor = new EditorView({
       highlightCompartment.of(queryHighlight(highlightOptions)),
       runFrame,
       runButtonLayer,
+      // Below-layers paint earlier entries above later ones. Selection must
+      // sit above the even/odd bands, and the query window above that.
+      drawSelection(),
       bandLayer,
       syntaxHighlighting(dqlHighlight),
       placeholder("Open a .dql file, or create one."),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "false", id: "editor-content" }),
-      drawSelection(),
       Prec.highest(EditorView.theme({
         ".cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground": {
-          backgroundColor: "transparent !important",
+          backgroundColor: "rgba(37, 99, 235, 0.28) !important",
         },
         ".cm-run-fill": {
           backgroundColor: "rgba(16, 42, 96, 0.05)",
@@ -1096,12 +1098,12 @@ function tableKeyLine(keys) {
     }
     const pair = document.createElement("span");
     pair.className = "key-pair";
-    const name = document.createElement("span");
-    name.textContent = key.name;
-    pair.append(name);
     if (key.role === "hash" || key.role === "range") {
       pair.append(keyIcon(key.role, key.role === "hash" ? "Hash key" : "Range key"));
     }
+    const name = document.createElement("span");
+    name.textContent = key.name;
+    pair.append(name);
     line.append(pair);
   }
   return line;

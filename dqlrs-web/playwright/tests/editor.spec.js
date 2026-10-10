@@ -115,6 +115,61 @@ test("colors SELECT and outlines the current query without covering the next one
   await expect(page.locator(".cm-run-fill")).toHaveCount(1);
 });
 
+test("frames a partial line selection as a whole line and highlights the text", async ({ page }) => {
+  await node(page, "queries/read.dql").click();
+  const line = page.locator(".cm-line", { hasText: "SELECT * FROM pw_missing_table" });
+  const box = await line.boundingBox();
+  await page.mouse.move(box.x + 14, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 52, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.up();
+
+  await expect(page.locator(".cm-selectionBackground").first()).toBeVisible();
+  await expect(page.locator(".cm-run-fill")).toBeVisible();
+  const metrics = await page.evaluate(() => {
+    const fill = document.querySelector(".cm-run-fill").getBoundingClientRect();
+    const selected = [...document.querySelectorAll(".cm-selectionBackground")].map((el) => el.getBoundingClientRect());
+    const selectLeft = Math.min(...selected.map((rect) => rect.left));
+    const selectRight = Math.max(...selected.map((rect) => rect.right));
+    const row = [...document.querySelectorAll(".cm-content .cm-line")].find((el) =>
+      el.textContent.includes("SELECT * FROM pw_missing_table"),
+    );
+    const range = document.createRange();
+    range.selectNodeContents(row);
+    const text = range.getBoundingClientRect();
+    const keyword = [...row.querySelectorAll("span")].find((el) => el.textContent === "SELECT");
+    return {
+      fillLeft: fill.left,
+      fillRight: fill.right,
+      textLeft: text.left,
+      textRight: text.right,
+      selectWidth: selectRight - selectLeft,
+      textWidth: text.width,
+      keyword: keyword ? getComputedStyle(keyword).color : "",
+      highlight: getComputedStyle(document.querySelector(".cm-selectionBackground")).backgroundColor,
+    };
+  });
+  expect(metrics.fillLeft).toBeLessThanOrEqual(metrics.textLeft + 1);
+  expect(metrics.fillRight).toBeGreaterThanOrEqual(metrics.textRight - 1);
+  expect(metrics.selectWidth).toBeGreaterThan(4);
+  expect(metrics.selectWidth).toBeLessThan(metrics.textWidth * 0.75);
+  expect(metrics.keyword).toBe("rgb(15, 118, 110)");
+  expect(metrics.highlight).not.toBe("rgba(0, 0, 0, 0)");
+  const layerOrder = await page.evaluate(() => {
+    const z = (selector) => Number(getComputedStyle(document.querySelector(selector)).zIndex);
+    return { selection: z(".cm-selectionLayer"), band: z(".cm-band-layer"), window: z(".cm-run-fill-layer") };
+  });
+  expect(layerOrder.selection).toBeGreaterThan(layerOrder.band);
+  expect(layerOrder.window).toBeGreaterThan(layerOrder.selection);
+
+  const framed = await lineOverlaps(page);
+  expect(lineByText(framed, "SELECT * FROM pw_missing_table").overlap).toBeGreaterThan(
+    lineByText(framed, "SELECT * FROM pw_missing_table").height * 0.8,
+  );
+  expect(lineByText(framed, "WHERE id = 'a'").overlap).toBeLessThan(12);
+  expect(lineByText(framed, "-- header stays with the select").overlap).toBeLessThan(12);
+});
+
 test("saves highlight toggles and switches write bands to a gutter bar", async ({ page }) => {
   await node(page, "queries/read.dql").click();
   await expect(page.locator(".cm-band-alt").first()).toBeVisible();
