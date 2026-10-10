@@ -107,8 +107,13 @@ class Engine:
                 if not result.get("ok"):
                     return
 
-    def list_tables(self, pattern: str) -> list[dict]:
-        summary = self._exec("ls")
+    def list_tables(self, pattern: str, *, refresh: bool = False) -> list[dict]:
+        # `ls refresh=true` rewrites dqlrs's description cache. Dropping the
+        # shape cache makes the open table pick up that fresh schema.
+        if refresh:
+            with self._lock:
+                self._shapes.clear()
+        summary = self._exec("ls refresh=true" if refresh else "ls")
         if not summary.get("ok"):
             raise EngineError(_error_message(summary))
         names = _ls_names(summary.get("message") or "")

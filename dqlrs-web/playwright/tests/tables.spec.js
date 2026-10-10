@@ -8,6 +8,12 @@ test("opens the table browser from the #tables hash", async ({ page, app }) => {
   await expect(page.locator("#mode-tables")).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#file-name")).toHaveText("No file open");
   await expect(page.locator("#side-title")).toHaveText("Tables");
+  await expect(page.locator("#refresh-tables")).toBeVisible();
+  await expect(page.locator("#new-file")).toBeHidden();
+  const heading = await page.locator(".side-heading").evaluate((row) =>
+    [...row.children].map((child) => child.id),
+  );
+  expect(heading).toEqual(["side-title", "refresh-tables"]);
   await expect(page.locator("#tree")).toBeHidden();
   await expect(page.locator("#tables-nav")).toBeVisible();
   await expect(page.locator(".side #table-list")).toBeVisible();
@@ -15,9 +21,32 @@ test("opens the table browser from the #tables hash", async ({ page, app }) => {
 
   await page.locator("#mode-query").click();
   await expect(page.locator("#side-title")).toHaveText("Files");
+  await expect(page.locator("#refresh-tables")).toBeHidden();
   await expect(page.locator("#tree")).toBeVisible();
   await expect(page.locator("#tables-nav")).toBeHidden();
   await expect(page.locator("#new-file")).toBeVisible();
+});
+
+test("refresh button reloads the table list without the description cache", async ({ page, app }) => {
+  const first = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.ok() && url.pathname === "/api/tables" && url.searchParams.get("refresh") !== "1";
+  });
+  await page.goto(`${app.baseURL}/#tables`);
+  await first;
+  const button = page.locator("#refresh-tables");
+  await expect(button).toBeVisible();
+  await expect(button).toBeEnabled();
+
+  const pending = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return url.pathname === "/api/tables" && url.searchParams.get("refresh") === "1";
+  });
+  await button.click();
+  const request = await pending;
+  expect(new URL(request.url()).searchParams.get("pattern")).toBe("");
+  await expect(button).toBeEnabled();
+  await expect(page.locator("#table-list")).not.toHaveText("Loading…");
 });
 
 test("pages a table fifty rows at a time from a searched name", async ({ page, app }) => {

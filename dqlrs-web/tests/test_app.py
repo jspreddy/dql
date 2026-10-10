@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from engine import (  # noqa: E402
+    Engine,
     TableShape,
     _ls_keys,
     _ls_names,
@@ -217,6 +218,33 @@ class LsParseTests(unittest.TestCase):
         self.assertTrue(_safe_table_name("nb-posts"))
         self.assertFalse(_safe_table_name("nb posts"))
         self.assertFalse(_safe_table_name(""))
+
+
+class ListTablesRefreshTests(unittest.TestCase):
+    def test_refresh_rewrites_the_description_cache(self) -> None:
+        engine = _RecordingEngine()
+        engine._shapes["nb_posts"] = TableShape("id", "", {})
+        tables = engine.list_tables("nb_*")
+        self.assertEqual([table["name"] for table in tables], ["nb_posts"])
+        self.assertEqual(engine.commands, ["ls", "ls nb_posts"])
+        self.assertIn("nb_posts", engine._shapes)
+
+        engine.commands.clear()
+        engine.list_tables("nb_*", refresh=True)
+        self.assertEqual(engine.commands, ["ls refresh=true", "ls nb_posts"])
+        self.assertEqual(engine._shapes, {})
+
+
+class _RecordingEngine(Engine):
+    def __init__(self) -> None:
+        super().__init__("dqlrs", "", "8000", "us-west-1")
+        self.commands: list[str] = []
+
+    def _exec(self, dql: str) -> dict:
+        self.commands.append(dql)
+        if dql.startswith("ls ") and not dql.startswith("ls refresh"):
+            return {"ok": True, "message": "Hash Key: id (STRING)\n"}
+        return {"ok": True, "message": "Tables\nName Items\nnb_posts 1\nother 1\n"}
 
 
 if __name__ == "__main__":

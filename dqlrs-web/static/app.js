@@ -41,6 +41,7 @@ const state = {
   hasMore: false,
   suppressSave: false,
   dragPath: "",
+  tablesRequest: 0,
 };
 
 const HIGHLIGHT_KEY = "dqlrs-web.highlight";
@@ -277,6 +278,9 @@ document.querySelector("#table-search").addEventListener("input", () => {
   clearTimeout(state.searchTimer);
   state.searchTimer = setTimeout(loadTables, 250);
 });
+document.querySelector("#refresh-tables").addEventListener("click", () => {
+  loadTables({ refresh: true });
+});
 document.querySelector("#page-prev").addEventListener("click", () => changePage(-1));
 document.querySelector("#page-next").addEventListener("click", () => changePage(1));
 
@@ -306,6 +310,7 @@ function setMode(mode) {
   document.querySelector("#tree").classList.toggle("hidden", tables);
   document.querySelector("#tables-nav").classList.toggle("hidden", !tables);
   document.querySelector("#new-file").classList.toggle("hidden", tables);
+  document.querySelector("#refresh-tables").classList.toggle("hidden", !tables);
   document.querySelector("#side-title").textContent = tables ? "Tables" : "Files";
   if (tables) loadTables();
 }
@@ -1162,12 +1167,21 @@ function tableColumns(rows, columns) {
   return ordered.concat(extra).map((name) => described.get(name) || { name });
 }
 
-async function loadTables() {
+async function loadTables(options = {}) {
+  const refresh = Boolean(options.refresh);
+  const request = ++state.tablesRequest;
   const pattern = document.querySelector("#table-search").value.trim();
   const list = document.querySelector("#table-list");
+  const refreshButton = document.querySelector("#refresh-tables");
+  refreshButton.disabled = true;
+  refreshButton.classList.toggle("is-busy", refresh);
+  refreshButton.setAttribute("aria-busy", refresh ? "true" : "false");
   list.replaceChildren(note("Loading…", false));
   try {
-    const payload = await api("/api/tables?pattern=" + encodeURIComponent(pattern));
+    const query = new URLSearchParams({ pattern });
+    if (refresh) query.set("refresh", "1");
+    const payload = await api("/api/tables?" + query.toString());
+    if (request !== state.tablesRequest) return;
     list.replaceChildren();
     if (!payload.tables.length) {
       state.table = "";
@@ -1192,7 +1206,14 @@ async function loadTables() {
     }
     await loadRows();
   } catch (error) {
+    if (request !== state.tablesRequest) return;
     list.replaceChildren(note(error.message, true));
+  } finally {
+    if (request === state.tablesRequest) {
+      refreshButton.disabled = false;
+      refreshButton.classList.remove("is-busy");
+      refreshButton.setAttribute("aria-busy", "false");
+    }
   }
 }
 
