@@ -1,0 +1,94 @@
+-- one device timeline, payloads from a ping to a crash
+DROP TABLE IF EXISTS sample_events;
+
+CREATE TABLE sample_events (
+  device_id STRING HASH KEY,
+  ts NUMBER RANGE KEY,
+  kind STRING INDEX('kind-index')
+);
+
+INSERT INTO sample_events (
+  device_id='gate-4',
+  ts=1710000001,
+  kind='heartbeat',
+  ok=TRUE
+);
+
+INSERT INTO sample_events (
+  device_id='gate-4',
+  ts=1710000040,
+  kind='click',
+  x=412,
+  y=88,
+  target='open-latch',
+  pointer='pen'
+);
+
+INSERT INTO sample_events (
+  device_id='gate-4',
+  ts=1710000102,
+  kind='metric',
+  samples=[
+    {'name': 'temp_c', 'value': 21.5, 'unit': 'C'},
+    {'name': 'humidity', 'value': 0.41, 'unit': 'ratio'},
+    {'name': 'lux', 'value': 320, 'unit': 'lx'}
+  ]
+);
+
+INSERT INTO sample_events (
+  device_id='gate-4',
+  ts=1710000900,
+  kind='crash',
+  severity='fatal',
+  message='latch servo stalled after the third retry',
+  stack=['servo.rs:88', 'gate.rs:240', 'main.rs:17'],
+  build={'version': '1.8.4', 'channel': 'stable', 'commit': 'a1b2c3d'},
+  minidump=b'CRASH',
+  user_visible=FALSE
+);
+
+-- a different device, a batch, and names the gate rows never use
+INSERT INTO sample_events (
+  device_id='sensor-n22',
+  ts=1710002000,
+  kind='batch',
+  site='warehouse-east',
+  readings=[
+    {'channel': 'a', 'raw': 1022, 'scaled': 3.3},
+    {'channel': 'b', 'raw': 0, 'scaled': 0},
+    {'channel': 'c', 'raw': 640, 'scaled': 2.08, 'clipped': FALSE},
+    {'channel': 'd', 'raw': 12, 'fault': 'open'}
+  ],
+  firmware-rev='0.9.1-rc.3',
+  calibration=NULL
+);
+
+INSERT INTO sample_events (
+  device_id='sensor-n22',
+  ts=1710002600,
+  kind='note',
+  author='Åse',
+  text='Replaced the probe. The old one read high after the freezer door was left open overnight.',
+  tags=('maintenance', 'freezer'),
+  follow_up={'owner': 'lin', 'due': 1710086400, 'done': FALSE}
+);
+
+SELECT * FROM sample_events
+WHERE device_id = 'gate-4' AND ts >= 1710000000
+ORDER BY ts DESC
+LIMIT 3;
+
+SELECT kind, message, severity
+FROM sample_events
+WHERE device_id = 'gate-4' AND kind = 'crash'
+USING kind-index;
+
+SCAN * FROM sample_events
+WHERE begins_with(device_id, 'sensor');
+
+EXPLAIN SELECT * FROM sample_events
+WHERE device_id = 'gate-4' AND ts > 1710000100;
+
+UPDATE sample_events
+SET text = 'closed', closed_at = 1710086400
+WHERE device_id = 'sensor-n22' AND ts = 1710002600;

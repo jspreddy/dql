@@ -1,0 +1,86 @@
+-- one hash key, almost no shared attributes
+DROP TABLE IF EXISTS sample_people;
+
+CREATE TABLE sample_people (
+  user_id STRING HASH KEY
+);
+
+INSERT INTO sample_people (user_id='u-ada');
+
+INSERT INTO sample_people (
+  user_id='u-grace',
+  display_name='Grace Hopper',
+  role='compiler',
+  active=TRUE,
+  years=85,
+  badges=('navy', 'cobol', 'nanosecond')
+);
+
+INSERT INTO sample_people (
+  user_id='u-mina',
+  preferred-name='Mina',
+  locale='ja-JP',
+  city='東京',
+  score=0.01,
+  organ-donor=FALSE,
+  address={'line1': '2-1 Marunouchi', 'region': 'Tokyo', 'postal': '100-0005', 'geo': {'lat': 35.681, 'lng': 139.767}}
+);
+
+INSERT INTO sample_people (
+  user_id='u-josé',
+  given='José',
+  family='Ng',
+  nicknames=['Joe', 'J'],
+  emails=('jose@example.com', 'j.ng@example.org'),
+  phones=[],
+  meta={'source': 'import', 'raw': NULL, 'attempts': 3},
+  avatar=b'PNG'
+);
+
+-- wide and flat, on purpose
+INSERT INTO sample_people (
+  user_id='u-sam',
+  a=1,
+  b=2,
+  c=3,
+  n=0,
+  flag=TRUE,
+  note='short',
+  team='blue',
+  desk='4F-12',
+  start_year=2019,
+  manager_id='u-grace'
+);
+
+INSERT INTO sample_people (
+  user_id='u-lin',
+  handle='torvalds',
+  projects=[{'name': 'linux', 'since': 1991}, {'name': 'git', 'since': 2005, 'kind': 'vcs'}],
+  quote='Talk is cheap. Show me the code.',
+  followers=1000000,
+  verified=NULL
+);
+
+SELECT * FROM sample_people
+KEYS IN 'u-mina', 'u-josé', 'u-ada';
+
+SCAN user_id, display_name, preferred-name, handle
+FROM sample_people
+WHERE attribute_exists(badges)
+OR attribute_exists(projects);
+
+SCAN * FROM sample_people
+WHERE city = '東京' OR begins_with(user_id, 'u-j');
+
+SCAN count(*) FROM sample_people
+WHERE organ-donor = FALSE OR years > 80;
+
+EXPLAIN SCAN * FROM sample_people
+WHERE attribute_exists(address.geo.lat);
+
+UPDATE sample_people
+SET years = years + 1, role = 'admiral'
+WHERE user_id = 'u-grace';
+
+DELETE FROM sample_people
+KEYS IN 'u-ada';

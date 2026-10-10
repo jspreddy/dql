@@ -1,0 +1,91 @@
+-- orders whose line items, money, and addresses are different shapes
+DROP TABLE IF EXISTS sample_orders;
+
+CREATE TABLE sample_orders (
+  customer_id STRING HASH KEY,
+  order_id STRING RANGE KEY
+) GLOBAL INDEX ('by-status', status STRING, placed_at NUMBER);
+
+-- one line, flat cents
+INSERT INTO sample_orders (
+  customer_id='cust-1',
+  order_id='A-100',
+  status='open',
+  placed_at=1711000000,
+  currency='USD',
+  total_cents=1299,
+  lines=[{'sku': 'MUG-BLUE', 'qty': 1, 'cents': 1299}]
+);
+
+-- several lines, a ship-to map, and a note list
+INSERT INTO sample_orders (
+  customer_id='cust-1',
+  order_id='A-101',
+  status='shipped',
+  placed_at=1711100000,
+  currency='USD',
+  total_cents=20680,
+  lines=[
+    {'sku': 'LAMP-ARC', 'qty': 1, 'cents': 18900, 'gift': FALSE},
+    {'sku': 'CABLE-USBC', 'qty': 2, 'cents': 1780, 'gift': TRUE}
+  ],
+  ship_to={'name': 'Ada Lovelace', 'line1': '12 Analytical Engines', 'city': 'London', 'postal': 'SW1A 1AA', 'country': 'GB'},
+  notes=['leave at the side door', 'fragile shade']
+);
+
+-- money as a map, a long line list, and a different customer
+INSERT INTO sample_orders (
+  customer_id='cust-9',
+  order_id='K-7',
+  status='open',
+  placed_at=1711200000,
+  total={'currency': 'JPY', 'amount': 18600, 'tax_included': TRUE},
+  lines=[
+    {'sku': 'NOTE-7', 'qty': 4, 'amount': 9600},
+    {'sku': 'MUG-BLUE', 'qty': 1, 'amount': 1800},
+    {'sku': 'CABLE-USBC', 'qty': 3, 'amount': 3600},
+    {'sku': 'LAMP-ARC', 'qty': 0, 'amount': 0, 'backordered': TRUE},
+    {'sku': 'SEED-0', 'qty': 1, 'amount': 0},
+    {'sku': 'WRAP', 'qty': 6, 'amount': 3600, 'color': 'sage'}
+  ],
+  ship_to={'name': '岡田 美奈', 'postal': '100-0005', 'region': '東京都', 'country': 'JP', 'phone': NULL},
+  gift_wrap=TRUE,
+  coupon=NULL
+);
+
+-- almost empty, plus a negative adjustment row
+INSERT INTO sample_orders (
+  customer_id='cust-9',
+  order_id='K-8',
+  status='cancelled',
+  placed_at=1711200400,
+  total={'currency': 'JPY', 'amount': -500, 'reason': 'goodwill'},
+  lines=[],
+  cancelled_by='desk'
+);
+
+SELECT * FROM sample_orders
+WHERE customer_id = 'cust-1'
+ORDER BY order_id DESC;
+
+SELECT order_id, status, total_cents, total
+FROM sample_orders
+WHERE status = 'open'
+USING by-status;
+
+SELECT * FROM sample_orders
+KEYS IN ('cust-1', 'A-101'), ('cust-9', 'K-7');
+
+SCAN * FROM sample_orders
+WHERE size(lines) > 2 OR attribute_not_exists(ship_to);
+
+EXPLAIN SELECT * FROM sample_orders
+WHERE status = 'shipped' AND placed_at > 1710000000
+USING by-status;
+
+UPDATE sample_orders
+SET status = 'delivered', total_cents = total_cents + 0
+WHERE customer_id = 'cust-1' AND order_id = 'A-101';
+
+DELETE FROM sample_orders
+WHERE customer_id = 'cust-9' AND order_id = 'K-8';
