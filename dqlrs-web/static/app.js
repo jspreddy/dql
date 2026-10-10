@@ -1019,9 +1019,16 @@ function dataTable(rows, tableId, columns) {
   const table = document.createElement("table");
   if (tableId) table.id = tableId;
   const head = document.createElement("tr");
-  for (const key of keys) {
+  for (const column of keys) {
     const cell = document.createElement("th");
-    cell.textContent = key;
+    paintKeyColumn(cell, column);
+    const label = document.createElement("span");
+    label.className = "col-label";
+    const name = document.createElement("span");
+    name.textContent = column.name;
+    label.append(name);
+    for (const icon of keyIcons(column)) label.append(icon);
+    cell.append(label);
     head.append(cell);
   }
   const thead = document.createElement("thead");
@@ -1029,9 +1036,10 @@ function dataTable(rows, tableId, columns) {
   const body = document.createElement("tbody");
   for (const row of rows) {
     const tr = document.createElement("tr");
-    for (const key of keys) {
+    for (const column of keys) {
       const cell = document.createElement("td");
-      const value = row[key];
+      paintKeyColumn(cell, column);
+      const value = row[column.name];
       cell.textContent = value === null || value === undefined ? "" : typeof value === "object" ? JSON.stringify(value) : String(value);
       tr.append(cell);
     }
@@ -1041,6 +1049,57 @@ function dataTable(rows, tableId, columns) {
   return table;
 }
 
+function paintKeyColumn(cell, column) {
+  const tableKey = column.table || "";
+  const indexKey = column.index || "";
+  if (tableKey && indexKey) cell.classList.add("col-both");
+  else if (tableKey) cell.classList.add("col-table");
+  else if (indexKey) cell.classList.add("col-index");
+}
+
+function keyIcons(column) {
+  const icons = [];
+  const hash = column.table === "hash" || column.index === "hash";
+  const range = column.table === "range" || column.index === "range";
+  if (hash) icons.push(keyIcon("hash", keyTitle(column, "hash")));
+  if (range) icons.push(keyIcon("range", keyTitle(column, "range")));
+  return icons;
+}
+
+function keyTitle(column, role) {
+  const parts = [];
+  if (column.table === role) parts.push(role === "hash" ? "Table hash key" : "Table range key");
+  if (column.index === role) parts.push(role === "hash" ? "Index hash key" : "Index range key");
+  return parts.join(", ");
+}
+
+function keyIcon(role, title) {
+  const icon = document.createElement("span");
+  icon.className = "key-icon";
+  icon.dataset.key = role;
+  icon.title = title;
+  icon.setAttribute("role", "img");
+  icon.setAttribute("aria-label", title);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 12 12");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.3");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  path.setAttribute(
+    "d",
+    role === "hash"
+      ? "M4.2 1.2v9.6M7.8 1.2v9.6M1.3 4.2h9.4M1.3 7.8h9.4"
+      : "M6 1.3v9.4M6 1.3 3.7 3.6M6 1.3l2.3 2.3M6 10.7 3.7 8.4M6 10.7l2.3-2.3",
+  );
+  svg.append(path);
+  icon.append(svg);
+  return icon;
+}
+
 function tableColumns(rows, columns) {
   const present = [];
   for (const row of rows) {
@@ -1048,14 +1107,23 @@ function tableColumns(rows, columns) {
       if (!present.includes(key)) present.push(key);
     }
   }
-  if (!Array.isArray(columns) || !columns.length) return present;
-  const keys = [];
-  for (const key of columns) {
-    if (present.includes(key) && !keys.includes(key)) keys.push(key);
+  const described = new Map();
+  if (Array.isArray(columns)) {
+    for (const column of columns) {
+      const name = typeof column === "string" ? column : column && column.name;
+      if (name) described.set(name, typeof column === "string" ? { name } : column);
+    }
   }
-  const extra = present.filter((key) => !keys.includes(key));
+  const ordered = [];
+  for (const name of described.keys()) {
+    if (present.includes(name) && !ordered.includes(name)) ordered.push(name);
+  }
+  if (!ordered.length) {
+    return present.map((name) => ({ name }));
+  }
+  const extra = present.filter((key) => !ordered.includes(key));
   extra.sort((left, right) => left.localeCompare(right));
-  return keys.concat(extra);
+  return ordered.concat(extra).map((name) => described.get(name) || { name });
 }
 
 async function loadTables() {

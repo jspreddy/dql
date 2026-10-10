@@ -89,6 +89,12 @@ test("orders table and result columns by keys, index, then selection or name", a
   await page.keyboard.press("Control+A");
   await page.locator("#run").click();
   await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "apple", "n", "zebra"]);
+  await expect(page.locator("#result-table thead th").nth(0)).toHaveClass(/col-table/);
+  await expect(page.locator("#result-table thead th").nth(0).locator('[data-key="hash"]')).toBeVisible();
+  await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("background-color", "rgb(231, 246, 236)");
+  await expect(page.locator("#result-table thead th").nth(1)).toHaveClass(/col-table/);
+  await expect(page.locator("#result-table thead th").nth(1).locator('[data-key="range"]')).toBeVisible();
+  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("background-color", "rgb(231, 246, 236)");
 
   await replaceEditor(page, `SELECT zebra, apple, id FROM ${name} WHERE id = 'a' AND sk = 1;`);
   await page.keyboard.press("Control+A");
@@ -99,11 +105,25 @@ test("orders table and result columns by keys, index, then selection or name", a
   await page.keyboard.press("Control+A");
   await page.locator("#run").click();
   await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "n", "apple", "zebra"]);
+  await expect(page.locator("#result-table thead th").nth(0)).toHaveClass(/col-table/);
+  await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("background-color", "rgb(231, 246, 236)");
+  await expect(page.locator("#result-table thead th").nth(1)).toHaveClass(/col-both/);
+  await expect(page.locator("#result-table thead th").nth(1)).toHaveCSS("background-color", "rgb(231, 243, 244)");
+  await expect(page.locator("#result-table thead th").nth(1).locator('[data-key="range"]')).toBeVisible();
+  await expect(page.locator("#result-table thead th").nth(2)).toHaveClass(/col-index/);
+  await expect(page.locator("#result-table thead th").nth(2)).toHaveCSS("background-color", "rgb(231, 241, 252)");
+  await expect(page.locator("#result-table thead th").nth(2).locator('[data-key="hash"]')).toBeVisible();
+  await expect(page.locator("#result-table tbody td").nth(1)).toHaveCSS("background-color", "rgb(231, 243, 244)");
 
   await page.locator("#mode-tables").click();
   await page.locator("#table-search").fill(name);
   await expect(page.locator(`#table-${name}`)).toBeVisible();
   await expect(page.locator("#rows-table thead th")).toHaveText(["id", "sk", "apple", "n", "zebra"]);
+  await expect(page.locator("#rows-table thead th").nth(0)).toHaveClass(/col-table/);
+  await expect(page.locator("#rows-table thead th").nth(0).locator('[data-key="hash"]')).toBeVisible();
+  await expect(page.locator("#rows-table thead th").nth(0)).toHaveCSS("background-color", "rgb(231, 246, 236)");
+  await expect(page.locator("#rows-table thead th").nth(1).locator('[data-key="range"]')).toBeVisible();
+  await expect(page.locator("#rows-table thead th").nth(3)).not.toHaveClass(/col-/);
 });
 
 function uniqueTable() {

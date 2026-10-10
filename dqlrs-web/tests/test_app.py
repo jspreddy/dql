@@ -180,19 +180,26 @@ class LsParseTests(unittest.TestCase):
             {"zebra": "z", "id": "a", "n": 9, "sk": 2, "apple": "p"},
             {"id": "a", "sk": 1, "n": 3, "apple": "q", "zebra": "y"},
         ]
-        self.assertEqual(column_order(rows, shape, None, None), ["id", "sk", "apple", "n", "zebra"])
+        plain = column_order(rows, shape, None, None)
+        self.assertEqual([column["name"] for column in plain], ["id", "sk", "apple", "n", "zebra"])
+        self.assertEqual(plain[0], {"name": "id", "table": "hash", "index": None})
+        self.assertEqual(plain[1], {"name": "sk", "table": "range", "index": None})
+        self.assertEqual(plain[2]["table"], None)
+        indexed_star = column_order(rows, shape, "by-n", None)
         self.assertEqual(
-            column_order(rows, shape, "by-n", None),
+            [column["name"] for column in indexed_star],
             ["id", "sk", "n", "apple", "zebra"],
         )
+        self.assertEqual(indexed_star[1], {"name": "sk", "table": "range", "index": "range"})
+        self.assertEqual(indexed_star[2], {"name": "n", "table": None, "index": "hash"})
         projected = [{"zebra": "z", "apple": "p", "id": "a"}]
         self.assertEqual(
-            column_order(projected, shape, None, ["zebra", "apple", "id"]),
+            [column["name"] for column in column_order(projected, shape, None, ["zebra", "apple", "id"])],
             ["id", "zebra", "apple"],
         )
         indexed = [{"apple": "p", "zebra": "z", "n": 9}]
         self.assertEqual(
-            column_order(indexed, shape, "by-n", ["apple", "zebra", "n"]),
+            [column["name"] for column in column_order(indexed, shape, "by-n", ["apple", "zebra", "n"])],
             ["n", "apple", "zebra"],
         )
         self.assertEqual(explain_index("query t {'index': \"by-n\", 'filter': \"n = :v1\"}"), "by-n")

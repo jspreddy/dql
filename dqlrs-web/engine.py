@@ -147,7 +147,7 @@ class Engine:
             "has_more": len(items) >= limit,
         }
 
-    def _columns_locked(self, proc: subprocess.Popen[str], statement: str, rows: list) -> list[str]:
+    def _columns_locked(self, proc: subprocess.Popen[str], statement: str, rows: list) -> list[dict]:
         table, selection = read_query(statement)
         if not table:
             return column_order(rows, None, None, None)
@@ -453,8 +453,12 @@ def column_order(
     shape: TableShape | None,
     index: str | None,
     selection: list[str] | None,
-) -> list[str]:
-    """Table keys, then index keys, then selection order or alphabetical."""
+) -> list[dict]:
+    """Table keys, then index keys, then selection order or alphabetical.
+
+    Each entry names the column and, when it is a key, whether that role is
+    ``hash`` or ``range`` on the table and on the index used by the query.
+    """
     present: list[str] = []
     seen: set[str] = set()
     for row in rows:
@@ -465,17 +469,28 @@ def column_order(
                 seen.add(key)
                 present.append(key)
     ordered: list[str] = []
+    roles: dict[str, dict] = {}
 
     def take(name: str | None) -> None:
         if name and name in seen and name not in ordered:
             ordered.append(name)
 
+    def mark(name: str | None, kind: str, role: str) -> None:
+        if not name or name not in seen:
+            return
+        entry = roles.setdefault(name, {"name": name, "table": None, "index": None})
+        entry[kind] = role
+
     if shape is not None:
+        mark(shape.hash_key, "table", "hash")
         take(shape.hash_key)
+        mark(shape.range_key, "table", "range")
         take(shape.range_key)
         if index and index in shape.indexes:
             index_hash, index_range = shape.indexes[index]
+            mark(index_hash, "index", "hash")
             take(index_hash)
+            mark(index_range, "index", "range")
             take(index_range)
     if selection is None:
         rest = [key for key in present if key not in ordered]
@@ -485,7 +500,7 @@ def column_order(
         rest = [key for key in present if key not in ordered]
     rest.sort(key=lambda name: (name.casefold(), name))
     ordered.extend(rest)
-    return ordered
+    return [roles.get(name, {"name": name, "table": None, "index": None}) for name in ordered]
 
 
 def _blank_key(name: str) -> str | None:
