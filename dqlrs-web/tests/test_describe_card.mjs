@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseTableDescription } from "../static/describe-card.js";
+import { parseLsMessage, parseTableDescription } from "../static/describe-card.js";
 
 const detail = `Name: posts
 Status: ACTIVE
@@ -34,4 +34,21 @@ test("parseTableDescription ignores list output and plain status text", () => {
   assert.equal(parseTableDescription("Tables\nName  Items\nposts  0"), null);
   assert.equal(parseTableDescription("Created table 'posts'"), null);
   assert.equal(parseTableDescription("Name: posts\nStatus: ACTIVE"), null);
+});
+
+test("parseLsMessage keeps an intelligent-match note on a description and a list", () => {
+  const note = 'No exact match for "post", so showing intelligent matches.';
+  const one = parseLsMessage(`${note}\n\n${detail}`);
+  assert.equal(one.note, note);
+  assert.equal(one.description.name, "posts");
+  assert.equal(one.summary, "");
+
+  const many = parseLsMessage(`${note}\n\nTables\nName Items\nnb_posts 0`);
+  assert.equal(many.note, note);
+  assert.equal(many.description, null);
+  assert.match(many.summary, /^Tables\n/);
+
+  const exact = parseLsMessage(detail);
+  assert.equal(exact.note, "");
+  assert.equal(exact.description.name, "posts");
 });

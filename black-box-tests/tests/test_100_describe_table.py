@@ -25,6 +25,31 @@ def test_100_describe_table(cli: Cli) -> None:
     assert described.stdout.strip() == listed.stdout.strip()
 
 
+def test_100_cli_ls_intelligent_match(cli: Cli) -> None:
+    """A partial name lists containing tables and says they are intelligent matches."""
+    cli.require_dqlrs()
+    table = cli.table()
+    other = cli.table()
+    cli.oneshot(f"CREATE TABLE {table} (id STRING HASH KEY);")
+    cli.oneshot(f"CREATE TABLE {other} (id STRING HASH KEY);")
+    prefix, _, _pid = table.rpartition("_")
+    stem, _, index = prefix.rpartition("_")
+    listed = cli.assert_stdout(
+        "ls %s" % stem,
+        'No exact match for "%s", so showing intelligent matches.' % stem,
+    )
+    assert table in listed.stdout
+    assert other in listed.stdout
+    assert "Hash Key" not in listed.stdout
+    one = cli.assert_stdout(
+        "ls %s_%s_" % (stem, index),
+        "No exact match",
+    )
+    assert table in one.stdout
+    assert "Hash Key" in one.stdout
+    assert other not in one.stdout
+
+
 def test_100_cli_ls_one_match_describes(cli: Cli) -> None:
     """ls prints a description for one match and a list for several."""
     table = cli.table()

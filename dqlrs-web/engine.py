@@ -330,6 +330,8 @@ def _ls_names(text: str) -> list[str]:
         line = raw.strip()
         if not line:
             continue
+        if line.startswith("No exact match for "):
+            continue
         if not past_header:
             if line == "Tables" or line.startswith("Name "):
                 if line.startswith("Name "):

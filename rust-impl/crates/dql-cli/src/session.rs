@@ -760,6 +760,48 @@ mod tests {
         assert!(many_text.contains("alpha_desc"));
         assert!(many_text.contains("alpha_other"));
         assert!(!many_text.contains("Hash Key"));
+        assert!(!many_text.contains("intelligent matches"));
+    }
+
+    #[test]
+    fn ls_partial_name_shows_intelligent_matches() {
+        let mut session = Session::new_memory_headless("us-west-1");
+        for statement in [
+            "CREATE TABLE alpha_posts (id STRING HASH KEY);",
+            "CREATE TABLE beta_posts (id STRING HASH KEY);",
+            "CREATE TABLE gamma (id STRING HASH KEY);",
+        ] {
+            let created = session.execute_for_serve(statement);
+            assert!(created.ok, "{statement}: {created:?}");
+        }
+
+        let exact = session.execute_for_serve("ls alpha_posts;");
+        assert!(exact.ok, "{exact:?}");
+        let exact_text = exact.message.unwrap();
+        assert!(exact_text.contains("Hash Key"));
+        assert!(!exact_text.contains("intelligent matches"));
+
+        let one = session.execute_for_serve("ls alpha_po");
+        assert!(one.ok, "{one:?}");
+        let one_text = one.message.unwrap();
+        assert!(one_text
+            .starts_with("No exact match for \"alpha_po\", so showing intelligent matches."));
+        assert!(one_text.contains("Name: alpha_posts"));
+        assert!(one_text.contains("Hash Key"));
+        assert!(!one_text.contains("beta_posts"));
+        assert!(!one_text.contains("gamma"));
+
+        let many = session.execute_for_serve("ls posts");
+        assert!(many.ok, "{many:?}");
+        let many_text = many.message.unwrap();
+        assert!(many_text.contains("No exact match for \"posts\", so showing intelligent matches."));
+        assert!(many_text.contains("alpha_posts"));
+        assert!(many_text.contains("beta_posts"));
+        assert!(!many_text.contains("gamma"));
+        assert!(!many_text.contains("Hash Key"));
+
+        let missing = session.execute_for_serve("ls missing;");
+        assert!(!missing.ok, "{missing:?}");
     }
 
     #[test]

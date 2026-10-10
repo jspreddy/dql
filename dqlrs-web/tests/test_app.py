@@ -150,6 +150,10 @@ class LsParseTests(unittest.TestCase):
     def test_names_and_keys(self) -> None:
         summary = "Tables\nName     Items\nnb_posts        2\nnb_users        1\n"
         self.assertEqual(_ls_names(summary), ["nb_posts", "nb_users"])
+        noted = (
+            'No exact match for "post", so showing intelligent matches.\n\n' + summary
+        )
+        self.assertEqual(_ls_names(noted), ["nb_posts", "nb_users"])
         detail = "Name: nb_posts\nHash Key: username (STRING)\nRange Key: postid (NUMBER)\n"
         self.assertEqual(
             _ls_keys(detail),

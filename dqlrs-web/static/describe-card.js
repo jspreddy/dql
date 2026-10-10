@@ -1,3 +1,27 @@
+const INTELLIGENT_NOTE = /^No exact match for ".*", so showing intelligent matches\.$/;
+
+/**
+ * Split an ls message into an optional intelligent-match note and either a
+ * table description or a summary list.
+ */
+export function parseLsMessage(text) {
+  const raw = String(text || "").replace(/\r\n/g, "\n").trim();
+  if (!raw) return null;
+  const lines = raw.split("\n");
+  let note = "";
+  let start = 0;
+  if (INTELLIGENT_NOTE.test(lines[0].trim())) {
+    note = lines[0].trim();
+    start = 1;
+    while (start < lines.length && !lines[start].trim()) start += 1;
+  }
+  const body = lines.slice(start).join("\n").trim();
+  const description = parseTableDescription(body);
+  if (description) return { note, description, summary: "" };
+  if (note || body.startsWith("Tables")) return { note, description: null, summary: body };
+  return null;
+}
+
 /**
  * Split an `ls` / `DESCRIBE` detail message into fields and the CREATE query.
  * Returns null when the text is not that description.

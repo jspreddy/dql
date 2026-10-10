@@ -462,6 +462,38 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   await expect(summary).toContainText(name);
   await expect(summary).toContainText(other);
   await expect(summary).not.toContainText("Hash Key");
+  await expect(summary.locator("[data-testid='intelligent-match']")).toHaveCount(0);
+});
+
+test("ls-intelligent-match notes partial names when nothing matches exactly", async ({ page, app }) => {
+  const stem = uniqueTable();
+  const name = `${stem}alpha`;
+  const other = `${stem}beta`;
+  app.trackTable(name);
+  app.trackTable(other);
+
+  async function runEditor(text) {
+    await replaceEditor(page, text);
+    await expect(page.locator("#editor-content")).toContainText(text.split("\n")[0]);
+    await page.keyboard.press("Control+A");
+    await page.locator("#run").click();
+  }
+
+  await runEditor(
+    [`CREATE TABLE ${name} (id STRING HASH KEY);`, `CREATE TABLE ${other} (id STRING HASH KEY);`, `ls ${stem}`].join("\n"),
+  );
+  const many = page.locator(".describe").filter({ hasText: "intelligent matches" });
+  await expect(many.locator("[data-testid='intelligent-match']")).toContainText(`No exact match for "${stem}"`);
+  await expect(many.locator("[data-testid='intelligent-match']")).toContainText("showing intelligent matches");
+  await expect(many).toContainText(name);
+  await expect(many).toContainText(other);
+  await expect(many).not.toContainText("Hash Key");
+
+  await runEditor(`ls ${stem}alp`);
+  const one = page.locator(".describe").filter({ hasText: "Hash Key" });
+  await expect(one.locator(".describe-name")).toHaveText(name);
+  await expect(one.locator("[data-testid='intelligent-match']")).toContainText(`No exact match for "${stem}alp"`);
+  await expect(one).not.toContainText(other);
 });
 
 async function expectDescription(card, tableName) {

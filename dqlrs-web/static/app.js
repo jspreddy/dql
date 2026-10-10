@@ -13,7 +13,7 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { bandLayer, dqlLanguage, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setRunRequest, setRunStatuses } from "./dql-mode.js";
 import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
-import { parseTableDescription } from "./describe-card.js";
+import { parseLsMessage } from "./describe-card.js";
 
 const dqlHighlight = HighlightStyle.define([
   { tag: tags.keyword, color: "#0f766e", fontWeight: "650" },
@@ -876,12 +876,17 @@ function renderResults(results) {
       resultBody.append(explainPlan(plan));
       continue;
     }
-    const description = item.ok && (item.kind === "schema" || item.kind === "text")
-      ? parseTableDescription(item.message || "")
+    const listed = item.ok && (item.kind === "schema" || item.kind === "text")
+      ? parseLsMessage(item.message || "")
       : null;
-    if (description) {
+    if (listed && listed.description) {
       otherNotes += 1;
-      resultBody.append(describeCard(description));
+      resultBody.append(describeCard(listed.description, listed.note));
+      continue;
+    }
+    if (listed && listed.note) {
+      otherNotes += 1;
+      resultBody.append(intelligentSummary(listed.note, listed.summary));
       continue;
     }
     otherNotes += 1;
@@ -1030,10 +1035,11 @@ function resultLabel(item) {
   return item.message || "ok";
 }
 
-function describeCard(description) {
+function describeCard(description, note) {
   const card = document.createElement("section");
   card.className = "describe";
   card.dataset.testid = "result-note";
+  if (note) card.append(matchNote(note));
 
   const head = document.createElement("header");
   head.className = "describe-head";
@@ -1084,6 +1090,26 @@ function describeCard(description) {
   }
   if (description.schema) card.append(highlightedQuery(description.schema));
   return card;
+}
+
+function intelligentSummary(note, summary) {
+  const card = document.createElement("section");
+  card.className = "describe";
+  card.dataset.testid = "result-note";
+  card.append(matchNote(note));
+  const body = document.createElement("pre");
+  body.className = "describe-summary";
+  body.textContent = summary;
+  card.append(body);
+  return card;
+}
+
+function matchNote(text) {
+  const note = document.createElement("p");
+  note.className = "describe-match-note";
+  note.dataset.testid = "intelligent-match";
+  note.textContent = text;
+  return note;
 }
 
 function describeKey(role, label, key) {
