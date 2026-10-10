@@ -5,6 +5,47 @@ test.beforeEach(async ({ page, app }) => {
   await openApp(page, app);
 });
 
+test("resizes the results pane from the top handle", async ({ page }) => {
+  const results = page.locator("#results");
+  const handle = page.locator("#results-resize");
+  await expect(handle).toBeVisible();
+  const before = await results.boundingBox();
+  const grip = await handle.boundingBox();
+  const x = grip.x + grip.width / 2;
+  await page.mouse.move(x, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(x, grip.y - 90, { steps: 8 });
+  await page.mouse.up();
+  const taller = await results.boundingBox();
+  expect(taller.height).toBeGreaterThan(before.height + 60);
+  const stored = Number(await page.evaluate(() => localStorage.getItem("dqlrs-web.results-height")));
+  expect(Math.abs(stored - taller.height)).toBeLessThan(3);
+
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  const restored = await page.locator("#results").boundingBox();
+  expect(Math.abs(restored.height - taller.height)).toBeLessThan(3);
+
+  await handle.focus();
+  await page.keyboard.press("ArrowDown");
+  const shorter = await page.locator("#results").boundingBox();
+  expect(shorter.height).toBeLessThan(restored.height - 10);
+
+  const edge = await handle.boundingBox();
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + 4);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + edge.width / 2, 0, { steps: 6 });
+  await page.mouse.up();
+  const editor = await page.locator(".editor").boundingBox();
+  expect(editor.height).toBeGreaterThan(140);
+
+  await handle.dblclick();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("dqlrs-web.results-height"))).toBeNull();
+  const reset = await page.locator("#results").boundingBox();
+  const view = await page.locator("#query-view").boundingBox();
+  expect(Math.abs(reset.height - view.height * 0.46)).toBeLessThan(8);
+});
+
 test("shows the endpoint and the editor shortcut", async ({ page }) => {
   await expect(page.locator("#endpoint")).toHaveText("localhost:8000");
   await expect(page.locator("#run-shortcut")).toHaveText("Ctrl+Enter");

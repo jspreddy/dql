@@ -57,13 +57,19 @@
         <div class="editor">
           <div id="editor"></div>
         </div>
-        <section class="results">
-          <div class="pane-head">
-            <span class="results-title">
-              Results
-              <progress id="run-progress" hidden aria-label="Query progress"></progress>
-            </span>
-            <span id="result-meta" class="meta"></span>
+        <section class="results" id="results">
+          <div class="results-bar">
+            <div id="results-resize" class="results-resize" role="separator" aria-orientation="horizontal" aria-label="Resize results" title="Drag to resize results" tabindex="0">
+              <span class="results-grip" aria-hidden="true"></span>
+            </div>
+            <div class="pane-head results-head">
+              <span class="results-title">
+                <span class="results-mark" aria-hidden="true"></span>
+                Results
+                <progress id="run-progress" hidden aria-label="Query progress"></progress>
+              </span>
+              <span id="result-meta" class="meta"></span>
+            </div>
           </div>
           <div id="result-body" class="result-body"></div>
         </section>

@@ -142,6 +142,91 @@ const editor = new EditorView({
 const resultBody = document.querySelector("#result-body");
 const runProgress = document.querySelector("#run-progress");
 const resultMeta = document.querySelector("#result-meta");
+const resultsEl = document.querySelector("#results");
+const resultsResize = document.querySelector("#results-resize");
+const RESULTS_HEIGHT_KEY = "dqlrs-web.results-height";
+
+function resultsLimits() {
+  const view = resultsEl.parentElement.getBoundingClientRect().height;
+  const head = resultsEl.parentElement.querySelector(":scope > .pane-head");
+  const headHeight = head ? head.getBoundingClientRect().height : 0;
+  const min = 120;
+  const max = Math.max(min, Math.floor(view - headHeight - 160));
+  return { min, max };
+}
+
+function applyResultsHeight(height, persist) {
+  const { min, max } = resultsLimits();
+  const next = Math.round(Math.min(max, Math.max(min, height)));
+  resultsEl.style.height = next + "px";
+  resultsResize.setAttribute("aria-valuemin", String(min));
+  resultsResize.setAttribute("aria-valuemax", String(max));
+  resultsResize.setAttribute("aria-valuenow", String(next));
+  if (persist) localStorage.setItem(RESULTS_HEIGHT_KEY, String(next));
+  return next;
+}
+
+function restoreResultsHeight() {
+  const saved = Number(localStorage.getItem(RESULTS_HEIGHT_KEY));
+  if (!Number.isFinite(saved) || saved <= 0) {
+    const { min, max } = resultsLimits();
+    resultsResize.setAttribute("aria-valuemin", String(min));
+    resultsResize.setAttribute("aria-valuemax", String(max));
+    resultsResize.setAttribute("aria-valuenow", String(Math.round(resultsEl.getBoundingClientRect().height)));
+    return;
+  }
+  applyResultsHeight(saved, false);
+}
+
+let resultsDrag = null;
+
+resultsResize.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  resultsResize.setPointerCapture(event.pointerId);
+  resultsDrag = {
+    y: event.clientY,
+    height: resultsEl.getBoundingClientRect().height,
+  };
+  document.body.classList.add("results-resizing");
+});
+
+resultsResize.addEventListener("pointermove", (event) => {
+  if (!resultsDrag) return;
+  applyResultsHeight(resultsDrag.height - (event.clientY - resultsDrag.y), false);
+});
+
+function endResultsDrag(event) {
+  if (!resultsDrag) return;
+  if (event && resultsResize.hasPointerCapture(event.pointerId)) {
+    resultsResize.releasePointerCapture(event.pointerId);
+  }
+  resultsDrag = null;
+  document.body.classList.remove("results-resizing");
+  applyResultsHeight(resultsEl.getBoundingClientRect().height, true);
+}
+
+resultsResize.addEventListener("pointerup", endResultsDrag);
+resultsResize.addEventListener("pointercancel", endResultsDrag);
+
+resultsResize.addEventListener("dblclick", () => {
+  resultsEl.style.height = "";
+  localStorage.removeItem(RESULTS_HEIGHT_KEY);
+  restoreResultsHeight();
+});
+
+resultsResize.addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+  event.preventDefault();
+  const step = event.shiftKey ? 80 : 28;
+  const current = resultsEl.getBoundingClientRect().height;
+  applyResultsHeight(current + (event.key === "ArrowUp" ? step : -step), true);
+});
+
+requestAnimationFrame(restoreResultsHeight);
+window.addEventListener("resize", () => {
+  if (resultsEl.offsetParent === null || !resultsEl.style.height) return;
+  applyResultsHeight(parseFloat(resultsEl.style.height), false);
+});
 
 document.querySelector("#mode-query").addEventListener("click", () => setMode("query"));
 document.querySelector("#mode-tables").addEventListener("click", () => setMode("tables"));
@@ -760,7 +845,9 @@ function renderResults(results) {
   const lastItems = [...results].reverse().find((item) => item.kind === "items" && item.ok);
   const notes = results.filter((item) => item !== lastItems);
   for (const item of notes) {
-    resultBody.append(note(resultLabel(item), !item.ok));
+    const row = note(resultLabel(item), !item.ok);
+    if (item.ok && item.kind === "affected") row.classList.add("ok");
+    resultBody.append(row);
   }
   if (lastItems) {
     const rows = lastItems.items || [];
