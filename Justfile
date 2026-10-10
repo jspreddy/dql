@@ -174,6 +174,61 @@ notebook-test *args:
         ./notebook-tests/run.sh
     fi
 
+# Start DQLRS Web against dqlrs-web/examples. Extra args go to dqlrs-web/run.sh: just web -- --port 9000
+[group('web')]
+web *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    # `just recipe -- --flag` includes the separator in the variadic args.
+    args=({{args}})
+    if [[ ${#args[@]} -gt 0 && "${args[0]}" == "--" ]]; then
+        args=("${args[@]:1}")
+    fi
+    use_local=1
+    if [[ ${#args[@]} -gt 0 ]]; then
+        for arg in "${args[@]}"; do
+            if [[ "$arg" == "--aws" ]]; then
+                use_local=0
+            fi
+        done
+    fi
+    if [[ "$use_local" -eq 1 ]]; then
+        just dynamo
+    fi
+    if [[ ${#args[@]} -eq 0 ]]; then
+        exec ./dqlrs-web/run.sh --dir "{{justfile_directory()}}/dqlrs-web/examples"
+    fi
+    exec ./dqlrs-web/run.sh "${args[@]}"
+
+# Playwright tests for DQLRS Web. Flags need a `--` separator: just web-test -- --headed tests/editor.spec.js
+[group('web')]
+web-test *args: dynamo
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}/dqlrs-web/playwright"
+    root="{{justfile_directory()}}"
+    if [[ -z "${DQLRS_BIN:-}" ]]; then
+        if [[ -x "$root/rust-impl/target/debug/dqlrs" ]]; then
+            export DQLRS_BIN="$root/rust-impl/target/debug/dqlrs"
+        elif [[ -x "$root/rust-impl/target/release/dqlrs" ]]; then
+            export DQLRS_BIN="$root/rust-impl/target/release/dqlrs"
+        fi
+    fi
+    if [[ ! -x node_modules/.bin/playwright ]]; then
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm ci
+    fi
+    # `just recipe -- --flag` includes the separator in the variadic args.
+    args=({{args}})
+    if [[ ${#args[@]} -gt 0 && "${args[0]}" == "--" ]]; then
+        args=("${args[@]:1}")
+    fi
+    if [[ ${#args[@]} -gt 0 ]]; then
+        ./node_modules/.bin/playwright test "${args[@]}"
+    else
+        ./node_modules/.bin/playwright test
+    fi
+
 # Playwright notebook tests marked slow. Headed, with 500ms between actions unless --slowmo is set.
 [group('notebook')]
 notebook-test-slow *args:
