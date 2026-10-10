@@ -1087,12 +1087,12 @@ function tableKeyLine(keys) {
     }
     const pair = document.createElement("span");
     pair.className = "key-pair";
-    const name = document.createElement("span");
-    name.textContent = key.name;
-    pair.append(name);
     if (key.role === "hash" || key.role === "range") {
       pair.append(keyIcon(key.role, key.role === "hash" ? "Hash key" : "Range key"));
     }
+    const name = document.createElement("span");
+    name.textContent = key.name;
+    pair.append(name);
     line.append(pair);
   }
   return line;
