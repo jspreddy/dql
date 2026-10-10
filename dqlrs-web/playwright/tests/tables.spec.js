@@ -71,6 +71,41 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(50);
 });
 
+test("orders table and result columns by keys, index, then selection or name", async ({ page, app }) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, sk NUMBER RANGE KEY) GLOBAL INDEX ('by-n', n NUMBER, sk NUMBER);`,
+      `INSERT INTO ${name} (id, sk, zebra, n, apple) VALUES ('a', 2, 'z', 9, 'p'), ('a', 1, 'y', 3, 'q');`,
+      `SELECT * FROM ${name} WHERE id = 'a';`,
+    ].join("\n"),
+  );
+  await page.keyboard.press("Control+A");
+  await page.locator("#run").click();
+  await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "apple", "n", "zebra"]);
+
+  await replaceEditor(page, `SELECT zebra, apple, id FROM ${name} WHERE id = 'a' AND sk = 1;`);
+  await page.keyboard.press("Control+A");
+  await page.locator("#run").click();
+  await expect(page.locator("#result-table thead th")).toHaveText(["id", "zebra", "apple"]);
+
+  await replaceEditor(page, `SELECT * FROM ${name} WHERE n = 9 AND sk = 2 USING by-n;`);
+  await page.keyboard.press("Control+A");
+  await page.locator("#run").click();
+  await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "n", "apple", "zebra"]);
+
+  await page.locator("#mode-tables").click();
+  await page.locator("#table-search").fill(name);
+  await expect(page.locator(`#table-${name}`)).toBeVisible();
+  await expect(page.locator("#rows-table thead th")).toHaveText(["id", "sk", "apple", "n", "zebra"]);
+});
+
 function uniqueTable() {
   return `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }

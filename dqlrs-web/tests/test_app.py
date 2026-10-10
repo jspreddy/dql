@@ -10,7 +10,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from engine import _ls_keys, _ls_names, _safe_table_name, interpret_serve_value  # noqa: E402
+from engine import (  # noqa: E402
+    TableShape,
+    _ls_keys,
+    _ls_names,
+    _safe_table_name,
+    column_order,
+    explain_index,
+    interpret_serve_value,
+    parse_table_shape,
+    read_query,
+)
 from files import (  # noqa: E402
     PathError,
     create_file,
@@ -130,6 +140,67 @@ class LsParseTests(unittest.TestCase):
         self.assertEqual(_ls_names(summary), ["nb_posts", "nb_users"])
         detail = "Name: nb_posts\nHash Key: username (STRING)\nRange Key: postid (NUMBER)\n"
         self.assertEqual(_ls_keys(detail), "username HASH · postid RANGE")
+
+    def test_table_shape_includes_local_and_global_indexes(self) -> None:
+        detail = "\n".join(
+            [
+                "Name: sample_cosmos",
+                "Hash Key: pk (STRING)",
+                "Range Key: sk (STRING)",
+                "",
+                "Global Indexes:",
+                "  Name             Projection       Read    Write HashKey              RangeKey               Status",
+                "  by-kind          ALL               N/A      N/A kind (STRING)        name (STRING)          ACTIVE",
+                "",
+                "CREATE TABLE sample_cosmos (pk STRING HASH KEY, sk STRING RANGE KEY);",
+            ]
+        )
+        shape = parse_table_shape(detail)
+        assert shape is not None
+        self.assertEqual(shape.hash_key, "pk")
+        self.assertEqual(shape.range_key, "sk")
+        self.assertEqual(shape.indexes["by-kind"], ("kind", "name"))
+
+        local = "\n".join(
+            [
+                "Hash Key: device_id (STRING)",
+                "Range Key: ts (NUMBER)",
+                "",
+                "Local Indexes:",
+                "  kind-index  hash=device_id  range=kind  projection=ALL",
+            ]
+        )
+        local_shape = parse_table_shape(local)
+        assert local_shape is not None
+        self.assertEqual(local_shape.indexes["kind-index"], ("device_id", "kind"))
+
+    def test_column_order_keys_then_selection_or_alpha(self) -> None:
+        shape = TableShape("id", "sk", {"by-n": ("n", "sk")})
+        rows = [
+            {"zebra": "z", "id": "a", "n": 9, "sk": 2, "apple": "p"},
+            {"id": "a", "sk": 1, "n": 3, "apple": "q", "zebra": "y"},
+        ]
+        self.assertEqual(column_order(rows, shape, None, None), ["id", "sk", "apple", "n", "zebra"])
+        self.assertEqual(
+            column_order(rows, shape, "by-n", None),
+            ["id", "sk", "n", "apple", "zebra"],
+        )
+        projected = [{"zebra": "z", "apple": "p", "id": "a"}]
+        self.assertEqual(
+            column_order(projected, shape, None, ["zebra", "apple", "id"]),
+            ["id", "zebra", "apple"],
+        )
+        indexed = [{"apple": "p", "zebra": "z", "n": 9}]
+        self.assertEqual(
+            column_order(indexed, shape, "by-n", ["apple", "zebra", "n"]),
+            ["n", "apple", "zebra"],
+        )
+        self.assertEqual(explain_index("query t {'index': \"by-n\", 'filter': \"n = :v1\"}"), "by-n")
+        self.assertIsNone(explain_index("query t {'index': \"TABLE\"}"))
+        self.assertIsNone(explain_index("scan t {'filter': \"habitable = :v1\"}"))
+        self.assertEqual(read_query("SELECT zebra, apple AS fruit FROM posts WHERE id = 'a';"), ("posts", ["zebra", "fruit"]))
+        self.assertEqual(read_query("-- note\nSELECT CONSISTENT * FROM posts WHERE id = 'a';"), ("posts", None))
+        self.assertEqual(read_query("SCAN name, ts(updated) FROM posts;"), ("posts", ["name", "ts(updated)"]))
 
     def test_table_name_shape(self) -> None:
         self.assertTrue(_safe_table_name("nb_posts"))

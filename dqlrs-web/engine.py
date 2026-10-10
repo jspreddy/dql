@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
+from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
 
@@ -29,6 +31,7 @@ class Engine:
         self._proc: subprocess.Popen[str] | None = None
         self._lock = threading.Lock()
         self._next_id = 1
+        self._shapes: dict[str, TableShape] = {}
 
     @property
     def endpoint_label(self) -> str:
@@ -94,6 +97,12 @@ class Engine:
                 if envelope is None:
                     raise EngineError("dqlrs --serve ended without a result")
                 result = _public_result(statement, envelope)
+                if result.get("ok") and result.get("kind") == "items":
+                    result["columns"] = self._columns_locked(
+                        proc, statement, result.get("items") or []
+                    )
+                if result.get("ok") and _changes_schema(statement):
+                    self._shapes.clear()
                 yield {"event": "result", "index": index, "result": result}
                 if not result.get("ok"):
                     return
@@ -120,27 +129,69 @@ class Engine:
             raise EngineError(f"unsupported table name {name!r}")
         page = max(0, page)
         limit = PAGE_SIZE * (page + 1)
-        envelope = self._exec(f"SCAN * FROM {name} LIMIT {limit}")
-        if not envelope.get("ok"):
-            raise EngineError(_error_message(envelope))
-        items = envelope.get("items") or []
-        start = PAGE_SIZE * page
-        window = items[start : start + PAGE_SIZE]
+        with self._lock:
+            proc = self._ensure_locked()
+            envelope = self._exec_locked(proc, f"SCAN * FROM {name} LIMIT {limit}")
+            if not envelope.get("ok"):
+                raise EngineError(_error_message(envelope))
+            items = envelope.get("items") or []
+            start = PAGE_SIZE * page
+            window = items[start : start + PAGE_SIZE]
+            shape = self._shape_locked(proc, name)
         return {
             "name": name,
             "page": page,
             "page_size": PAGE_SIZE,
             "items": window,
+            "columns": column_order(window, shape, None, None),
             "has_more": len(items) >= limit,
         }
+
+    def _columns_locked(self, proc: subprocess.Popen[str], statement: str, rows: list) -> list[str]:
+        table, selection = read_query(statement)
+        if not table:
+            return column_order(rows, None, None, None)
+        index = None
+        try:
+            explained = self._exec_locked(proc, "EXPLAIN " + statement)
+        except EngineError:
+            explained = None
+        if explained and explained.get("ok"):
+            index = explain_index(explained.get("message") or "")
+        shape = self._shape_locked(proc, table)
+        if index and shape is not None and index not in shape.indexes:
+            self._shapes.pop(table, None)
+            shape = self._shape_locked(proc, table)
+        return column_order(rows, shape, index, selection)
+
+    def _shape_locked(self, proc: subprocess.Popen[str], name: str) -> TableShape | None:
+        cached = self._shapes.get(name)
+        if cached is not None:
+            return cached
+        if not _safe_table_name(name):
+            return None
+        try:
+            detail = self._exec_locked(proc, f"ls {name}")
+        except EngineError:
+            return None
+        if not detail.get("ok"):
+            return None
+        shape = parse_table_shape(detail.get("message") or "")
+        if shape is None:
+            return None
+        self._shapes[name] = shape
+        return shape
 
     def _exec(self, dql: str) -> dict:
         with self._lock:
             proc = self._ensure_locked()
-            for value in self._exec_values(proc, dql):
-                interpreted = interpret_serve_value(value)
-                if interpreted is not None and interpreted["event"] == "envelope":
-                    return interpreted["envelope"]
+            return self._exec_locked(proc, dql)
+
+    def _exec_locked(self, proc: subprocess.Popen[str], dql: str) -> dict:
+        for value in self._exec_values(proc, dql):
+            interpreted = interpret_serve_value(value)
+            if interpreted is not None and interpreted["event"] == "envelope":
+                return interpreted["envelope"]
         raise EngineError("dqlrs --serve ended without a result")
 
     def _ensure_locked(self) -> subprocess.Popen[str]:
@@ -301,6 +352,215 @@ def _ls_keys(text: str) -> str:
     if range_key:
         parts.append(f"{range_key} RANGE")
     return " · ".join(parts)
+
+
+@dataclass(frozen=True)
+class TableShape:
+    hash_key: str
+    range_key: str | None
+    indexes: dict[str, tuple[str, str | None]]
+
+
+_READ_QUERY = re.compile(
+    r"(?is)^\s*(?:select|scan)\s+(?P<select>.*?)\s+from\s+(?P<table>[A-Za-z_][A-Za-z0-9_.-]*)\b"
+)
+_SCHEMA_CHANGE = re.compile(r"(?i)^(create|drop|alter)\s+table\b")
+_LSI_LINE = re.compile(
+    r"^\s+(?P<name>\S+)\s+hash=(?P<hash>\S+)\s+range=(?P<range>\S+)\s+projection="
+)
+_GSI_LINE = re.compile(
+    r"^\s+(?P<name>\S+)\s+\S+\s+\S+\s+\S+\s+(?P<hash>\S+)(?:\s+\([^)]+\))?\s+"
+    r"(?P<range>\S+)(?:\s+\([^)]+\))?\s+\S+\s*$"
+)
+_EXPLAIN_INDEX = re.compile(r"""'index':\s+"([^"]+)\"""")
+
+
+def parse_table_shape(text: str) -> TableShape | None:
+    """Read hash, range, and index keys out of `ls <table>` detail text."""
+    hash_key = ""
+    range_key = None
+    indexes: dict[str, tuple[str, str | None]] = {}
+    section = ""
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if stripped.startswith("Hash Key:"):
+            hash_key = stripped.split(":", 1)[1].strip().split(" (", 1)[0].strip()
+            section = ""
+            continue
+        if stripped.startswith("Range Key:"):
+            range_key = stripped.split(":", 1)[1].strip().split(" (", 1)[0].strip() or None
+            section = ""
+            continue
+        if stripped == "Local Indexes:":
+            section = "lsi"
+            continue
+        if stripped == "Global Indexes:":
+            section = "gsi"
+            continue
+        if stripped.startswith("CREATE TABLE") or stripped.startswith("Name:"):
+            section = ""
+        if section == "lsi":
+            match = _LSI_LINE.match(line)
+            if match:
+                indexes[match.group("name")] = (
+                    match.group("hash"),
+                    _blank_key(match.group("range")),
+                )
+        elif section == "gsi" and not stripped.startswith("Name "):
+            match = _GSI_LINE.match(line)
+            if match:
+                indexes[match.group("name")] = (
+                    match.group("hash"),
+                    _blank_key(match.group("range")),
+                )
+    if not hash_key:
+        return None
+    return TableShape(hash_key, range_key, indexes)
+
+
+def read_query(statement: str) -> tuple[str | None, list[str] | None]:
+    """Return the table and selected output names.
+
+    ``None`` for the names means ``*`` (or a statement that is not a read).
+    """
+    match = _READ_QUERY.match(_strip_comments(statement))
+    if not match:
+        return None, None
+    selected = re.sub(r"(?i)^consistent\s+", "", match.group("select").strip())
+    if selected == "*" or re.fullmatch(r"(?i)count\s*\(\s*\*\s*\)", selected):
+        return match.group("table"), None
+    names = []
+    for part in _split_csv(selected):
+        piece = part.strip()
+        if not piece:
+            continue
+        alias = re.search(r"(?i)\s+AS\s+(\S+)\s*$", piece)
+        names.append(_norm_ws(alias.group(1) if alias else piece))
+    return match.group("table"), names
+
+
+def explain_index(message: str) -> str | None:
+    """Index name from an EXPLAIN schema string, ignoring the base table."""
+    for name in _EXPLAIN_INDEX.findall(message or ""):
+        if name not in {"TABLE", "-"}:
+            return name
+    return None
+
+
+def column_order(
+    rows: list,
+    shape: TableShape | None,
+    index: str | None,
+    selection: list[str] | None,
+) -> list[str]:
+    """Table keys, then index keys, then selection order or alphabetical."""
+    present: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in row:
+            if isinstance(key, str) and key not in seen:
+                seen.add(key)
+                present.append(key)
+    ordered: list[str] = []
+
+    def take(name: str | None) -> None:
+        if name and name in seen and name not in ordered:
+            ordered.append(name)
+
+    if shape is not None:
+        take(shape.hash_key)
+        take(shape.range_key)
+        if index and index in shape.indexes:
+            index_hash, index_range = shape.indexes[index]
+            take(index_hash)
+            take(index_range)
+    if selection is None:
+        rest = [key for key in present if key not in ordered]
+    else:
+        for name in selection:
+            take(name)
+        rest = [key for key in present if key not in ordered]
+    rest.sort(key=lambda name: (name.casefold(), name))
+    ordered.extend(rest)
+    return ordered
+
+
+def _blank_key(name: str) -> str | None:
+    return None if name in {"", "-"} else name
+
+
+def _changes_schema(statement: str) -> bool:
+    code = _strip_comments(statement).strip()
+    return _SCHEMA_CHANGE.match(code) is not None
+
+
+def _strip_comments(text: str) -> str:
+    out: list[str] = []
+    quote: str | None = None
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < len(text) else ""
+        if quote is None and ch == "-" and nxt == "-":
+            while i < len(text) and text[i] != "\n":
+                i += 1
+            continue
+        if quote is not None:
+            out.append(ch)
+            if ch == quote and text[i - 1] != "\\":
+                quote = None
+            i += 1
+            continue
+        if ch in {"'", '"'}:
+            quote = ch
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _split_csv(text: str) -> list[str]:
+    parts: list[str] = []
+    buf: list[str] = []
+    depth = 0
+    quote: str | None = None
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if quote is not None:
+            buf.append(ch)
+            if ch == "\\" and i + 1 < len(text):
+                buf.append(text[i + 1])
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in {"'", '"'}:
+            quote = ch
+            buf.append(ch)
+        elif ch == "(":
+            depth += 1
+            buf.append(ch)
+        elif ch == ")":
+            depth = max(0, depth - 1)
+            buf.append(ch)
+        elif ch == "," and depth == 0:
+            parts.append("".join(buf))
+            buf = []
+        else:
+            buf.append(ch)
+        i += 1
+    if buf:
+        parts.append("".join(buf))
+    return parts
+
+
+def _norm_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _safe_table_name(name: str) -> bool:

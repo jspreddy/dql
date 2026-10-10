@@ -867,7 +867,7 @@ function renderResults(results) {
   if (lastItems) {
     const rows = lastItems.items || [];
     resultMeta.textContent = rows.length + (rows.length === 1 ? " row" : " rows");
-    resultBody.append(dataTable(rows, "result-table"));
+    resultBody.append(dataTable(rows, "result-table", lastItems.columns));
   } else if (explainSteps > 0 && otherNotes === 0) {
     resultMeta.textContent = explainSteps + (explainSteps === 1 ? " step" : " steps");
   } else {
@@ -1013,14 +1013,9 @@ function note(text, isError) {
   return div;
 }
 
-function dataTable(rows, tableId) {
+function dataTable(rows, tableId, columns) {
   if (!rows.length) return note("No rows", false);
-  const keys = [];
-  for (const row of rows) {
-    for (const key of Object.keys(row)) {
-      if (!keys.includes(key)) keys.push(key);
-    }
-  }
+  const keys = tableColumns(rows, columns);
   const table = document.createElement("table");
   if (tableId) table.id = tableId;
   const head = document.createElement("tr");
@@ -1044,6 +1039,23 @@ function dataTable(rows, tableId) {
   }
   table.append(thead, body);
   return table;
+}
+
+function tableColumns(rows, columns) {
+  const present = [];
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (!present.includes(key)) present.push(key);
+    }
+  }
+  if (!Array.isArray(columns) || !columns.length) return present;
+  const keys = [];
+  for (const key of columns) {
+    if (present.includes(key) && !keys.includes(key)) keys.push(key);
+  }
+  const extra = present.filter((key) => !keys.includes(key));
+  extra.sort((left, right) => left.localeCompare(right));
+  return keys.concat(extra);
 }
 
 async function loadTables() {
@@ -1120,7 +1132,7 @@ async function loadRows() {
       : "No rows";
     document.querySelector("#page-prev").disabled = payload.page <= 0;
     document.querySelector("#page-next").disabled = !state.hasMore;
-    body.replaceChildren(dataTable(payload.items || [], "rows-table"));
+    body.replaceChildren(dataTable(payload.items || [], "rows-table", payload.columns));
     body.scrollTop = 0;
   } catch (error) {
     body.replaceChildren(note(error.message, true));
