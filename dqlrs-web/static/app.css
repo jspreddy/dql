@@ -459,7 +459,8 @@ body.results-resizing * {
   overflow: hidden;
 }
 
-#result-body .describe-match-note {
+#result-body .describe-match-note,
+#table-list .describe-match-note {
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -473,7 +474,15 @@ body.results-resizing * {
   line-height: 1.45;
 }
 
-#result-body .describe-match-mark {
+#table-list .describe-match-note {
+  margin: 4px 8px 8px;
+  padding: 6px 8px;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+#result-body .describe-match-mark,
+#table-list .describe-match-mark {
   display: inline-flex;
   flex: none;
   width: 16px;
@@ -481,12 +490,14 @@ body.results-resizing * {
   margin-top: 1px;
 }
 
-#result-body .describe-match-mark svg {
+#result-body .describe-match-mark svg,
+#table-list .describe-match-mark svg {
   width: 16px;
   height: 16px;
 }
 
-#result-body .describe-match-pattern {
+#result-body .describe-match-pattern,
+#table-list .describe-match-pattern {
   padding: 1px 0;
   border-radius: 3px;
   background: #fef3c7;

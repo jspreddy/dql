@@ -1404,6 +1404,7 @@ async function loadTables(options = {}) {
     const payload = await api("/api/tables?" + query.toString());
     if (request !== state.tablesRequest) return;
     list.replaceChildren();
+    if (payload.note) list.append(matchNote(payload.note));
     if (!payload.tables.length) {
       state.table = "";
       list.append(note(pattern ? "No tables match " + pattern : "No tables", false));

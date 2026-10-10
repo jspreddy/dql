@@ -57,7 +57,7 @@ class App(BaseHTTPRequestHandler):
             pattern = query.get("pattern", [""])[0]
             refresh = query.get("refresh", [""])[0].strip().lower() in {"1", "true", "yes"}
             try:
-                self._json({"tables": ENGINE.list_tables(pattern, refresh=refresh)})
+                self._json(ENGINE.list_tables(pattern, refresh=refresh))
             except EngineError as exc:
                 self._error(502, str(exc))
             return
