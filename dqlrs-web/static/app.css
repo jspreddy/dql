@@ -486,6 +486,21 @@ body.results-resizing * {
   height: 16px;
 }
 
+#result-body .describe > #result-table {
+  width: 100%;
+  margin: 12px 0 0;
+  border: 0;
+  border-top: 1px solid #eef1f4;
+  border-radius: 0;
+}
+
+#result-body .describe > #result-table thead th:first-child,
+#result-body .describe > #result-table thead th:last-child,
+#result-body .describe > #result-table tbody tr:last-child td:first-child,
+#result-body .describe > #result-table tbody tr:last-child td:last-child {
+  border-radius: 0;
+}
+
 #result-body .describe-match-pattern {
   padding: 1px 0;
   border-radius: 3px;

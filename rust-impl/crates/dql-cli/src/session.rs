@@ -675,6 +675,10 @@ mod tests {
         let shown = session.execute_for_serve("SHOW TABLES LIKE 'alpha%';");
         assert!(shown.ok, "{shown:?}");
         assert_eq!(shown.kind, "items");
+        assert!(
+            shown.message.is_none(),
+            "an exact LIKE has no note: {shown:?}"
+        );
         let names = shown
             .items
             .unwrap()
@@ -721,6 +725,58 @@ mod tests {
             !listed_text.contains("Hash Key"),
             "several matches should stay a list:\n{listed_text}"
         );
+    }
+
+    #[test]
+    fn show_tables_like_falls_back_to_similar_names() {
+        let mut session = Session::new_memory_headless("us-west-1");
+        for statement in [
+            "CREATE TABLE posts_v2 (id STRING HASH KEY);",
+            "CREATE TABLE nb_posts (id STRING HASH KEY);",
+            "CREATE TABLE orders (customer_id STRING HASH KEY);",
+            "CREATE TABLE gamma (id STRING HASH KEY);",
+        ] {
+            let created = session.execute_for_serve(statement);
+            assert!(created.ok, "{statement}: {created:?}");
+        }
+
+        let exact = session.execute_for_serve("SHOW TABLES LIKE 'posts_v2';");
+        assert!(exact.ok, "{exact:?}");
+        assert_eq!(exact.kind, "items");
+        assert!(exact.message.is_none(), "{exact:?}");
+
+        let similar = session.execute_for_serve("SHOW TABLES LIKE 'post';");
+        assert!(similar.ok, "{similar:?}");
+        assert_eq!(similar.kind, "items");
+        assert_eq!(
+            similar.message.as_deref(),
+            Some("No exact match for \"post\", so showing similar names.")
+        );
+        let names = item_names(&similar);
+        assert_eq!(names, vec!["posts_v2".to_string(), "nb_posts".to_string()]);
+
+        let related = session.execute_for_serve("SHOW TABLES LIKE 'customer_id';");
+        assert!(related.ok, "{related:?}");
+        assert_eq!(
+            related.message.as_deref(),
+            Some("No exact match for \"customer_id\", so showing related keys.")
+        );
+        assert_eq!(item_names(&related), vec!["orders".to_string()]);
+
+        let missing = session.execute_for_serve("SHOW TABLES LIKE 'qqqxxyyzz';");
+        assert!(missing.ok, "{missing:?}");
+        assert!(missing.message.is_none(), "{missing:?}");
+        assert!(item_names(&missing).is_empty());
+    }
+
+    fn item_names(envelope: &crate::serve::protocol::ServeEnvelope) -> Vec<String> {
+        envelope
+            .items
+            .as_ref()
+            .unwrap()
+            .iter()
+            .map(|item| item["name"].as_str().unwrap().to_string())
+            .collect()
     }
 
     #[test]

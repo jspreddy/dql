@@ -621,12 +621,18 @@ pub const SHOW: &str = r"
     SHOW TABLES LIKE 'pattern';
 
     LIKE is case-sensitive. % matches any sequence. _ matches one character.
+    When that matches nothing, the result lists tables with similar names and
+    tables whose keys, indexes, or attributes are similar to the text.
+    A two-letter pattern matches only names that start with it.
+    The result says whether it is showing similar names, related keys, or both.
+    A pattern that is still not similar stays an empty list.
 
     Examples
     --------
     SHOW TABLES;
     SHOW TABLES LIKE 'alpha%';
     SHOW TABLES LIKE 'foo_bar';
+    SHOW TABLES LIKE 'post';
 ";
 
 pub const HISTORY: &str = r#"

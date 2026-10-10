@@ -32,6 +32,14 @@ pub fn render_result(
             let formatter = config.formatter(items, rich_context);
             formatter.display(&mut writer)
         }
+        StatementResult::ItemsWithNote { items, note } => {
+            if !config.silent {
+                backend.write_line(&format!("{note}\n"))?;
+            }
+            let mut writer = backend.writer();
+            let formatter = config.formatter(items, rich_context);
+            formatter.display(&mut writer)
+        }
         StatementResult::Status(_) | StatementResult::Affected(_) => Ok(()),
     }
 }

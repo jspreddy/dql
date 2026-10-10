@@ -672,19 +672,29 @@ impl<B: DynamoBackend> Engine<B> {
     fn show_tables(&mut self, like: Option<&str>) -> Result<StatementResult, EngineError> {
         self.record("list_tables", like.unwrap_or("*"));
         let mut names = self.table_names()?;
-        if let Some(pattern) = like {
-            names.retain(|name| sql_like(name, pattern));
-        }
-        names.sort();
-        let items = names
-            .into_iter()
-            .map(|name| {
-                let mut item = Item::new();
-                item.insert("name".to_string(), Value::String(name));
-                item
-            })
+        let Some(pattern) = like else {
+            names.sort();
+            return Ok(StatementResult::Items(name_items(&names)));
+        };
+        let exact: Vec<String> = names
+            .iter()
+            .filter(|name| sql_like(name, pattern))
+            .cloned()
             .collect();
-        Ok(StatementResult::Items(items))
+        if !exact.is_empty() {
+            let mut exact = exact;
+            exact.sort();
+            return Ok(StatementResult::Items(name_items(&exact)));
+        }
+        let metas = self.describe_all(false)?;
+        let tables: Vec<_> = metas.iter().map(crate::MatchTable::from_meta).collect();
+        match crate::intelligent_like_matches(&tables, pattern) {
+            Ok(hit) => Ok(StatementResult::ItemsWithNote {
+                items: name_items(&hit.names),
+                note: hit.note,
+            }),
+            Err(_) => Ok(StatementResult::Items(Vec::new())),
+        }
     }
 
     fn describe_statement(&mut self, table: &str) -> Result<StatementResult, EngineError> {
@@ -1068,6 +1078,17 @@ fn sort_items(items: &mut [Item], order_by: &OrderBy) {
     });
 }
 
+fn name_items(names: &[String]) -> Vec<Item> {
+    names
+        .iter()
+        .map(|name| {
+            let mut item = Item::new();
+            item.insert("name".to_string(), Value::String(name.clone()));
+            item
+        })
+        .collect()
+}
+
 /// SQL `LIKE`: `%` is any sequence, `_` is one character. Matching is case-sensitive.
 fn sql_like(text: &str, pattern: &str) -> bool {
     fn matches(text: &[char], pattern: &[char]) -> bool {
@@ -1224,6 +1245,99 @@ mod tests {
             StatementResult::Items(items) => assert_eq!(items.len(), 3),
             other => panic!("unexpected result: {other:?}"),
         }
+    }
+
+    #[test]
+    fn show_tables_like_falls_back_to_similar_names_and_related_keys() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute(
+                "CREATE TABLE posts_v2 (id STRING HASH KEY);
+                 CREATE TABLE nb_posts (id STRING HASH KEY);
+                 CREATE TABLE zzposts (id STRING HASH KEY);
+                 CREATE TABLE orders (customer_id STRING HASH KEY);
+                 CREATE TABLE invoices (customer_id STRING HASH KEY);
+                 CREATE TABLE gamma (id STRING HASH KEY)",
+            )
+            .unwrap();
+
+        match engine.execute("SHOW TABLES LIKE 'posts_v2'").unwrap() {
+            StatementResult::Items(items) => {
+                assert_eq!(item_names(&items), vec!["posts_v2".to_string()]);
+            }
+            other => panic!("exact name should stay a plain list: {other:?}"),
+        }
+        match engine.execute("SHOW TABLES LIKE 'post%'").unwrap() {
+            StatementResult::Items(items) => {
+                assert_eq!(item_names(&items), vec!["posts_v2".to_string()]);
+            }
+            other => panic!("a LIKE hit should stay a plain list: {other:?}"),
+        }
+        match engine.execute("SHOW TABLES").unwrap() {
+            StatementResult::Items(items) => assert_eq!(items.len(), 6),
+            other => panic!("unexpected result: {other:?}"),
+        }
+        match engine.execute("SHOW TABLES LIKE 'post'").unwrap() {
+            StatementResult::ItemsWithNote { items, note } => {
+                assert_eq!(
+                    item_names(&items),
+                    vec![
+                        "posts_v2".to_string(),
+                        "nb_posts".to_string(),
+                        "zzposts".to_string()
+                    ]
+                );
+                assert_eq!(
+                    note,
+                    "No exact match for \"post\", so showing similar names."
+                );
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        let mut percent = Engine::new(MemoryBackend::new());
+        percent
+            .execute(
+                "CREATE TABLE zzposts (id STRING HASH KEY);
+                 CREATE TABLE gamma (id STRING HASH KEY)",
+            )
+            .unwrap();
+        match percent.execute("SHOW TABLES LIKE 'post%'").unwrap() {
+            StatementResult::ItemsWithNote { items, note } => {
+                assert_eq!(item_names(&items), vec!["zzposts".to_string()]);
+                assert_eq!(
+                    note,
+                    "No exact match for \"post%\", so showing similar names."
+                );
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        match engine.execute("SHOW TABLES LIKE 'customer_id'").unwrap() {
+            StatementResult::ItemsWithNote { items, note } => {
+                assert_eq!(
+                    item_names(&items),
+                    vec!["orders".to_string(), "invoices".to_string()]
+                );
+                assert_eq!(
+                    note,
+                    "No exact match for \"customer_id\", so showing related keys."
+                );
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        match engine.execute("SHOW TABLES LIKE 'qqqxxyyzz'").unwrap() {
+            StatementResult::Items(items) => assert!(items.is_empty()),
+            other => panic!("an unmatched pattern stays empty: {other:?}"),
+        }
+    }
+
+    fn item_names(items: &[Item]) -> Vec<String> {
+        items
+            .iter()
+            .map(|item| match item.get("name") {
+                Some(Value::String(name)) => name.clone(),
+                other => panic!("unexpected name: {other:?}"),
+            })
+            .collect()
     }
 
     #[test]

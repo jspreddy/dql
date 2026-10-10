@@ -9,6 +9,7 @@ pub mod json_util;
 mod memory;
 mod progress;
 mod query_context;
+mod table_match;
 mod table_text;
 mod throttle;
 
@@ -21,6 +22,7 @@ pub use engine::Engine;
 pub use memory::MemoryBackend;
 pub use progress::{ProgressEvent, ProgressSink, WRITE_PROGRESS_CHUNK};
 pub use query_context::{query_context_from_read, LastQueryContext};
+pub use table_match::{intelligent_like_matches, intelligent_matches, MatchTable};
 pub use table_text::format_table_description;
 
 use crate::json_util::{item_to_json, string_to_json};
@@ -42,6 +44,11 @@ pub enum StatementResult {
     Status(String),
     Affected(usize),
     Items(Vec<Item>),
+    /// Rows plus a note. `SHOW TABLES LIKE` uses this when nothing matched exactly.
+    ItemsWithNote {
+        items: Vec<Item>,
+        note: String,
+    },
     Schema(String),
 }
 
@@ -191,7 +198,7 @@ impl Default for InMemoryEngine {
 impl StatementResult {
     pub fn to_json_lines(&self) -> String {
         match self {
-            StatementResult::Items(items) => {
+            StatementResult::Items(items) | StatementResult::ItemsWithNote { items, .. } => {
                 let mut output = String::new();
                 for item in items {
                     output.push_str(&item_to_json(item, 0));
@@ -213,6 +220,13 @@ impl fmt::Display for StatementResult {
             StatementResult::Status(status) => writeln!(f, "{status}"),
             StatementResult::Affected(count) => writeln!(f, "{count} item(s) affected"),
             StatementResult::Items(items) => {
+                for item in items {
+                    writeln!(f, "{}", item_to_json(item, 0))?;
+                }
+                Ok(())
+            }
+            StatementResult::ItemsWithNote { items, note } => {
+                writeln!(f, "{note}\n")?;
                 for item in items {
                     writeln!(f, "{}", item_to_json(item, 0))?;
                 }

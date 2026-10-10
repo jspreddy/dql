@@ -897,7 +897,17 @@ function renderResults(results) {
   if (lastItems) {
     const rows = lastItems.items || [];
     resultMeta.textContent = rows.length + (rows.length === 1 ? " row" : " rows");
-    resultBody.append(dataTable(rows, "result-table", lastItems.columns));
+    const match = intelligentItemsNote(lastItems.message);
+    const table = dataTable(rows, "result-table", lastItems.columns);
+    if (match) {
+      const card = document.createElement("section");
+      card.className = "describe";
+      card.dataset.testid = "result-note";
+      card.append(matchNote(match), table);
+      resultBody.append(card);
+    } else {
+      resultBody.append(table);
+    }
   } else if (explainSteps > 0 && otherNotes === 0) {
     resultMeta.textContent = explainSteps + (explainSteps === 1 ? " step" : " steps");
   } else {
@@ -1153,6 +1163,13 @@ function summaryTable(tables) {
   table.append(thead, body);
   wrap.append(table);
   return wrap;
+}
+
+const INTELLIGENT_NOTE = /^No exact match for "[^"]*", so showing (?:similar names and related keys|similar names|related keys)\.$/;
+
+function intelligentItemsNote(message) {
+  const text = String(message || "").trim();
+  return INTELLIGENT_NOTE.test(text) ? text : "";
 }
 
 function matchNote(text) {
