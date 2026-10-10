@@ -81,12 +81,14 @@ const editor = new EditorView({
       highlightCompartment.of(queryHighlight(highlightOptions)),
       runFrame,
       runButtonLayer,
+      // Below-layers paint earlier entries above later ones. Selection must
+      // sit above the even/odd bands, and the query window above that.
+      drawSelection(),
       bandLayer,
       syntaxHighlighting(dqlHighlight),
       placeholder("Open a .dql file, or create one."),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "false", id: "editor-content" }),
-      drawSelection(),
       Prec.highest(EditorView.theme({
         ".cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground": {
           backgroundColor: "rgba(37, 99, 235, 0.28) !important",

@@ -155,6 +155,12 @@ test("frames a partial line selection as a whole line and highlights the text", 
   expect(metrics.selectWidth).toBeLessThan(metrics.textWidth * 0.75);
   expect(metrics.keyword).toBe("rgb(15, 118, 110)");
   expect(metrics.highlight).not.toBe("rgba(0, 0, 0, 0)");
+  const layerOrder = await page.evaluate(() => {
+    const z = (selector) => Number(getComputedStyle(document.querySelector(selector)).zIndex);
+    return { selection: z(".cm-selectionLayer"), band: z(".cm-band-layer"), window: z(".cm-run-fill-layer") };
+  });
+  expect(layerOrder.selection).toBeGreaterThan(layerOrder.band);
+  expect(layerOrder.window).toBeGreaterThan(layerOrder.selection);
 
   const framed = await lineOverlaps(page);
   expect(lineByText(framed, "SELECT * FROM pw_missing_table").overlap).toBeGreaterThan(
