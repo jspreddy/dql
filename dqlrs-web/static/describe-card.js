@@ -17,9 +17,40 @@ export function parseLsMessage(text) {
   }
   const body = lines.slice(start).join("\n").trim();
   const description = parseTableDescription(body);
-  if (description) return { note, description, summary: "" };
-  if (note || body.startsWith("Tables")) return { note, description: null, summary: body };
+  const tables = parseTableSummary(body);
+  if (description) return { note, description, summary: "", tables: [] };
+  if (note || tables || body.startsWith("Tables")) {
+    return { note, description: null, summary: body, tables: tables || [] };
+  }
   return null;
+}
+
+/**
+ * Parse an `ls` summary table. Returns null when the text is not that table.
+ * Size may contain a space (`0 B`).
+ */
+export function parseTableSummary(text) {
+  const lines = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim());
+  if (lines.length < 3 || lines[0].trim() !== "Tables") return null;
+  if (!/^\s*Name\s+Items\s+Read\s+Write\s+Status\s+Size\s*$/.test(lines[1])) return null;
+  const rows = [];
+  for (const line of lines.slice(2)) {
+    const match = line.match(/^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+(?:\s+\S+)*)$/);
+    if (!match) return null;
+    rows.push({
+      name: match[1],
+      items: match[2],
+      read: match[3],
+      write: match[4],
+      status: match[5],
+      size: match[6],
+    });
+  }
+  return rows.length ? rows : null;
 }
 
 /**

@@ -460,13 +460,95 @@ body.results-resizing * {
 }
 
 #result-body .describe-match-note {
-  margin: 0;
-  padding: 8px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 14px 0;
+  padding: 8px 10px;
   background: #fffbeb;
-  border-bottom: 1px solid #fde68a;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
   color: #92400e;
   font-size: 12.5px;
-  line-height: 1.4;
+  line-height: 1.45;
+}
+
+#result-body .describe-match-mark {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+#result-body .describe-match-mark svg {
+  width: 16px;
+  height: 16px;
+}
+
+#result-body .describe-match-pattern {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: #fef3c7;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 650;
+}
+
+#result-body .describe-tables-wrap {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+
+#result-body .describe-tables {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+#result-body .describe-tables thead th:first-child,
+#result-body .describe-tables thead th:last-child,
+#result-body .describe-tables tbody tr:last-child td:first-child,
+#result-body .describe-tables tbody tr:last-child td:last-child {
+  border-radius: 0;
+}
+
+#result-body .describe-tables th {
+  padding: 8px 14px;
+  background: #f7f9fb;
+  border-bottom: 1px solid #e6ebf0;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+#result-body .describe-tables td {
+  padding: 9px 14px;
+  border-bottom: 1px solid #eef1f4;
+  font-size: 13px;
+  color: #334155;
+}
+
+#result-body .describe-tables tbody tr:nth-child(even) td { background: #fbfcfd; }
+#result-body .describe-tables tbody tr:hover td { background: #f3faf8; }
+#result-body .describe-tables tbody tr:last-child td { border-bottom: 0; }
+
+#result-body .describe-tables .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#result-body .describe-tables .describe-table-name {
+  color: #12202b;
+  font-weight: 650;
+}
+
+#result-body .describe-tables .describe-status {
+  display: inline-flex;
 }
 
 #result-body .describe-summary {

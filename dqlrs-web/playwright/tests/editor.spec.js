@@ -485,8 +485,11 @@ test("ls-intelligent-match notes partial names when nothing matches exactly", as
   const many = page.locator(".describe").filter({ hasText: "intelligent matches" });
   await expect(many.locator("[data-testid='intelligent-match']")).toContainText(`No exact match for "${stem}"`);
   await expect(many.locator("[data-testid='intelligent-match']")).toContainText("showing intelligent matches");
-  await expect(many).toContainText(name);
-  await expect(many).toContainText(other);
+  await expect(many.locator(".describe-match-pattern")).toContainText(`"${stem}"`);
+  await expect(many.locator(".describe-table-name", { hasText: name })).toHaveCount(1);
+  await expect(many.locator(".describe-table-name", { hasText: other })).toHaveCount(1);
+  await expect(many.locator(".describe-status.is-active")).toHaveCount(2);
+  await expect(many.locator(".describe-summary")).toHaveCount(0);
   await expect(many).not.toContainText("Hash Key");
 
   await runEditor(`ls ${stem}alp`);

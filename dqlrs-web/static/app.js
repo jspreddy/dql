@@ -886,7 +886,7 @@ function renderResults(results) {
     }
     if (listed && listed.note) {
       otherNotes += 1;
-      resultBody.append(intelligentSummary(listed.note, listed.summary));
+      resultBody.append(intelligentSummary(listed.note, listed.summary, listed.tables));
       continue;
     }
     otherNotes += 1;
@@ -1092,24 +1092,101 @@ function describeCard(description, note) {
   return card;
 }
 
-function intelligentSummary(note, summary) {
+function intelligentSummary(note, summary, tables) {
   const card = document.createElement("section");
   card.className = "describe";
   card.dataset.testid = "result-note";
   card.append(matchNote(note));
-  const body = document.createElement("pre");
-  body.className = "describe-summary";
-  body.textContent = summary;
-  card.append(body);
+  if (tables && tables.length) card.append(summaryTable(tables));
+  else {
+    const body = document.createElement("pre");
+    body.className = "describe-summary";
+    body.textContent = summary;
+    card.append(body);
+  }
   return card;
+}
+
+function summaryTable(tables) {
+  const wrap = document.createElement("div");
+  wrap.className = "describe-tables-wrap";
+  const table = document.createElement("table");
+  table.className = "describe-tables";
+  const columns = [
+    ["Name", "name", false],
+    ["Items", "items", true],
+    ["Read", "read", true],
+    ["Write", "write", true],
+    ["Status", "status", false],
+    ["Size", "size", true],
+  ];
+  const head = document.createElement("tr");
+  for (const [label, , numeric] of columns) {
+    const cell = document.createElement("th");
+    if (numeric) cell.className = "num";
+    cell.textContent = label;
+    head.append(cell);
+  }
+  const thead = document.createElement("thead");
+  thead.append(head);
+  const body = document.createElement("tbody");
+  for (const row of tables) {
+    const tr = document.createElement("tr");
+    for (const [, key, numeric] of columns) {
+      const cell = document.createElement("td");
+      if (key === "name") {
+        cell.className = "describe-table-name";
+        cell.textContent = row.name;
+      } else if (key === "status") {
+        const status = document.createElement("span");
+        status.className = "describe-status " + statusClass(row.status);
+        status.textContent = row.status;
+        cell.append(status);
+      } else {
+        if (numeric) cell.className = "num";
+        cell.textContent = row[key] === "-" ? "—" : row[key];
+      }
+      tr.append(cell);
+    }
+    body.append(tr);
+  }
+  table.append(thead, body);
+  wrap.append(table);
+  return wrap;
 }
 
 function matchNote(text) {
   const note = document.createElement("p");
   note.className = "describe-match-note";
   note.dataset.testid = "intelligent-match";
-  note.textContent = text;
+  note.append(matchMark());
+  const quoted = String(text).match(/^(No exact match for )("[^"]*")(, so showing intelligent matches\.)$/);
+  if (!quoted) {
+    note.append(document.createTextNode(text));
+    return note;
+  }
+  const pattern = document.createElement("span");
+  pattern.className = "describe-match-pattern";
+  pattern.textContent = quoted[2];
+  note.append(document.createTextNode(quoted[1]), pattern, document.createTextNode(quoted[3]));
   return note;
+}
+
+function matchMark() {
+  const icon = document.createElement("span");
+  icon.className = "describe-match-mark";
+  icon.setAttribute("aria-hidden", "true");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.4");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("d", "M7.1 3.1a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7ZM10.1 10.1 13 13");
+  svg.append(path);
+  icon.append(svg);
+  return icon;
 }
 
 function describeKey(role, label, key) {

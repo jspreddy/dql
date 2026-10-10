@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseLsMessage, parseTableDescription } from "../static/describe-card.js";
+import { parseLsMessage, parseTableDescription, parseTableSummary } from "../static/describe-card.js";
 
 const detail = `Name: posts
 Status: ACTIVE
@@ -43,12 +43,28 @@ test("parseLsMessage keeps an intelligent-match note on a description and a list
   assert.equal(one.description.name, "posts");
   assert.equal(one.summary, "");
 
-  const many = parseLsMessage(`${note}\n\nTables\nName Items\nnb_posts 0`);
+  const summary = [
+    "Tables",
+    "Name                         Items     Read    Write     Status     Size",
+    "posts_v2                         0        -        -     ACTIVE     0 B",
+    "nb_posts                         0        2        3     ACTIVE   1.5 KiB",
+  ].join("\n");
+  const many = parseLsMessage(`${note}\n\n${summary}`);
   assert.equal(many.note, note);
   assert.equal(many.description, null);
   assert.match(many.summary, /^Tables\n/);
+  assert.deepEqual(many.tables, [
+    { name: "posts_v2", items: "0", read: "-", write: "-", status: "ACTIVE", size: "0 B" },
+    { name: "nb_posts", items: "0", read: "2", write: "3", status: "ACTIVE", size: "1.5 KiB" },
+  ]);
 
   const exact = parseLsMessage(detail);
   assert.equal(exact.note, "");
   assert.equal(exact.description.name, "posts");
+  assert.deepEqual(exact.tables, []);
+});
+
+test("parseTableSummary reads size text and rejects a description", () => {
+  assert.equal(parseTableSummary(detail), null);
+  assert.equal(parseTableSummary("Tables\nName Items\nposts 0"), null);
 });
