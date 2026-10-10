@@ -487,8 +487,8 @@ body.results-resizing * {
 }
 
 #result-body .describe-match-pattern {
-  padding: 0 4px;
-  border-radius: 4px;
+  padding: 1px 0;
+  border-radius: 3px;
   background: #fef3c7;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-weight: 650;
