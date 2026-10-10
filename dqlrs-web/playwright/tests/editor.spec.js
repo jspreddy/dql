@@ -85,7 +85,7 @@ test("saves highlight toggles and switches write bands to a gutter bar", async (
   await expect(page.locator(".cm-band-write").first()).toBeVisible();
 
   await page.locator("#opt-minimal-write").check();
-  await expect(page.locator(".cm-write-bar").first()).toBeVisible();
+  await expect.poll(() => visibleWriteBars(page)).toBeGreaterThan(0);
   await expect(page.locator(".cm-band-write")).toHaveCount(0);
 
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("dqlrs-web.highlight")));
@@ -95,9 +95,19 @@ test("saves highlight toggles and switches write bands to a gutter bar", async (
   await expect(page.locator("#opt-minimal-write")).toBeChecked();
   await expect(page.locator("#opt-even-odd")).not.toBeChecked();
   await node(page, "queries/read.dql").click();
-  await expect(page.locator(".cm-write-bar").first()).toBeVisible();
+  await expect.poll(() => visibleWriteBars(page)).toBeGreaterThan(0);
   await expect(page.locator(".cm-band-alt")).toHaveCount(0);
 });
+
+async function visibleWriteBars(page) {
+  return page.locator(".cm-write-bar").evaluateAll((elements) =>
+    elements.filter((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return rect.height > 2 && rect.width > 1 && style.visibility !== "hidden";
+    }).length,
+  );
+}
 
 test("runs the query at the cursor with Ctrl+Enter and marks a failure", async ({ page }) => {
   await node(page, "queries/read.dql").click();
