@@ -215,6 +215,34 @@ test("shows an explain plan as operations and conditions", async ({ page, app })
   await expect(page.locator("#result-meta")).toHaveText("1 step");
   await expect(page.locator('[data-testid="result-note"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="run-status-error"]')).toHaveCount(0);
+
+  const toggle = plan.locator('[data-testid="explain-raw"]');
+  const raw = plan.locator('[data-testid="explain-json"]');
+  await expect(toggle).not.toBeChecked();
+  await expect(raw).toBeHidden();
+  await toggle.check();
+  await expect(plan.locator('[data-testid="explain-step"]')).toBeHidden();
+  await expect(raw).toBeVisible();
+  const text = await raw.innerText();
+  expect(text).toContain('\n    "operation": "query"');
+  const parsed = JSON.parse(text);
+  expect(parsed).toHaveLength(1);
+  expect(parsed[0].operation).toBe("query");
+  expect(parsed[0].target).toBe(name);
+  expect(parsed[0].index).toBe("TABLE");
+  expect(parsed[0].key_condition).toContain("n > ");
+  expect(parsed[0].filter).toContain("id = ");
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await replaceEditor(page, `EXPLAIN SELECT * FROM ${name} WHERE id = 'a' AND n > 1;`);
+  await page.keyboard.press("Control+A");
+  await page.locator("#run").click();
+  const again = page.locator('[data-testid="explain-plan"]');
+  await expect(again.locator('[data-testid="explain-raw"]')).toBeChecked();
+  await expect(again.locator('[data-testid="explain-json"]')).toBeVisible();
+  await again.locator('[data-testid="explain-raw"]').uncheck();
+  await expect(again.locator('[data-testid="explain-step"]')).toBeVisible();
+  await expect(again.locator('[data-testid="explain-json"]')).toBeHidden();
 });
 
 test("shows a progress bar and a running gutter mark for a throttled insert", async ({ page, app }) => {

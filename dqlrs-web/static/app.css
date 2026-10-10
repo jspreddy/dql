@@ -411,6 +411,9 @@ body.results-resizing * {
 }
 
 #result-body .explain-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 8px 12px;
   background: #f3faf8;
   border-bottom: 1px solid #d5e4e2;
@@ -418,6 +421,31 @@ body.results-resizing * {
   font-weight: 650;
   letter-spacing: 0.01em;
 }
+
+#result-body .explain-raw {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+#result-body .explain.raw .explain-step { display: none; }
+
+#result-body .explain-json {
+  display: none;
+  margin: 0;
+  padding: 10px 12px 12px;
+  overflow: auto;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+#result-body .explain.raw .explain-json { display: block; }
 
 #result-body .explain-step {
   padding: 10px 12px 12px;

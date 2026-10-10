@@ -145,6 +145,7 @@ const resultMeta = document.querySelector("#result-meta");
 const resultsEl = document.querySelector("#results");
 const resultsResize = document.querySelector("#results-resize");
 const RESULTS_HEIGHT_KEY = "dqlrs-web.results-height";
+const EXPLAIN_JSON_KEY = "dqlrs-web.explain-json";
 
 function resultsLimits() {
   const view = resultsEl.parentElement.getBoundingClientRect().height;
@@ -928,10 +929,36 @@ function explainPlan(steps) {
   const card = document.createElement("section");
   card.className = "explain";
   card.dataset.testid = "explain-plan";
+  const showJson = localStorage.getItem(EXPLAIN_JSON_KEY) === "1";
+  if (showJson) card.classList.add("raw");
   const head = document.createElement("div");
   head.className = "explain-head";
-  head.textContent = "Explain";
-  card.append(head);
+  const title = document.createElement("span");
+  title.textContent = "Explain";
+  const toggle = document.createElement("label");
+  toggle.className = "explain-raw";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.dataset.testid = "explain-raw";
+  input.checked = showJson;
+  input.setAttribute("aria-label", "Show raw JSON");
+  const caption = document.createElement("span");
+  caption.textContent = "JSON";
+  toggle.append(input, caption);
+  head.append(title, toggle);
+  input.addEventListener("change", () => {
+    card.classList.toggle("raw", input.checked);
+    localStorage.setItem(EXPLAIN_JSON_KEY, input.checked ? "1" : "0");
+  });
+  const json = document.createElement("pre");
+  json.className = "explain-json";
+  json.dataset.testid = "explain-json";
+  json.textContent = JSON.stringify(steps.map((step) => {
+    const row = { operation: step.operation, target: step.target };
+    for (const field of step.fields) row[field.key] = field.value;
+    return row;
+  }), null, 2);
+  card.append(head, json);
   for (const step of steps) {
     const row = document.createElement("div");
     row.className = "explain-step";
