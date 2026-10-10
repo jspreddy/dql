@@ -320,8 +320,8 @@ fn name_similarity(needle: &str, name: &str) -> Similarity {
     let name_tokens = tokens(name);
     let mut token_fuzzy = 0;
     if !needle_tokens.is_empty() && !name_tokens.is_empty() {
-        let mut structural_sum = 0;
-        let mut fuzzy_sum = 0;
+        let mut structural_floor = i32::MAX;
+        let mut fuzzy_floor = i32::MAX;
         for needle_token in &needle_tokens {
             let mut best_structural = 0;
             let mut best_fuzzy = 0;
@@ -330,12 +330,11 @@ fn name_similarity(needle: &str, name: &str) -> Similarity {
                 best_structural = best_structural.max(part.structural);
                 best_fuzzy = best_fuzzy.max(part.fuzzy);
             }
-            structural_sum += best_structural;
-            fuzzy_sum += best_fuzzy;
+            structural_floor = structural_floor.min(best_structural);
+            fuzzy_floor = fuzzy_floor.min(best_fuzzy);
         }
-        let count = needle_tokens.len() as i32;
-        structural = structural.max(structural_sum / count);
-        token_fuzzy = fuzzy_sum / count;
+        structural = structural.max(structural_floor);
+        token_fuzzy = fuzzy_floor;
     }
     let mut fuzzy = token_fuzzy;
     if needle_c.chars().count() >= 3 && name_c.chars().count() >= 3 {
@@ -587,6 +586,13 @@ mod tests {
         let tables = vec![named("shotalpha", "id"), named("shotbeta", "id")];
         let hit = intelligent_matches(&tables, "shotalp").unwrap();
         assert_eq!(hit.names, vec!["shotalpha".to_string()]);
+
+        let long = vec![
+            named("pwmv2jduon2oje95alpha", "id"),
+            named("pwmv2jduon2oje95beta", "id"),
+        ];
+        let hit = intelligent_matches(&long, "pwmv2jduon2oje95alp").unwrap();
+        assert_eq!(hit.names, vec!["pwmv2jduon2oje95alpha".to_string()]);
     }
 
     #[test]
