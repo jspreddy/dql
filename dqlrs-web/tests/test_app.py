@@ -76,6 +76,10 @@ class StatementTests(unittest.TestCase):
     def test_ignores_blank_input(self) -> None:
         self.assertEqual(split_statements("  \n-- just a comment\n"), [])
 
+    def test_keeps_describe_intact(self) -> None:
+        text = "DESCRIBE posts;\nls posts"
+        self.assertEqual(split_statements(text), ["DESCRIBE posts;", "ls posts;"])
+
     def test_keeps_show_tables_and_ls_refresh_intact(self) -> None:
         text = "SHOW TABLES LIKE 'alpha%';\nls alpha* refresh=True"
         self.assertEqual(

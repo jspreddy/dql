@@ -422,6 +422,51 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
   await expect(page.locator("#result-meta")).toHaveText("1 row");
 });
 
+test("describe-table matches ls when one table matches", async ({ page, app }) => {
+  const stem = uniqueTable();
+  const name = `${stem}a`;
+  const other = `${stem}b`;
+  app.trackTable(name);
+  app.trackTable(other);
+
+  async function runEditor(text) {
+    await replaceEditor(page, text);
+    await expect(page.locator("#editor-content")).toContainText(text.split("\n")[0]);
+    await page.keyboard.press("Control+A");
+    await page.locator("#run").click();
+  }
+
+  await runEditor(
+    [
+      `CREATE TABLE ${name} (id STRING HASH KEY, n NUMBER RANGE KEY);`,
+      `CREATE TABLE ${other} (id STRING HASH KEY);`,
+      `DESCRIBE ${name};`,
+    ].join("\n"),
+  );
+  const described = page.locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
+  await expect(described).toContainText(`Name: ${name}`);
+  await expect(described).toContainText("Range Key: n (NUMBER)");
+  await expect(described).toContainText(`CREATE TABLE ${name}`);
+  await expect(described).not.toContainText(other);
+
+  await runEditor(`ls ${name}`);
+  const listed = page.locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
+  await expect(listed).toContainText(`Name: ${name}`);
+  await expect(listed).toContainText("Range Key: n (NUMBER)");
+  await expect(listed).not.toContainText(other);
+
+  await runEditor(`ls ${name}*`);
+  const globbed = page.locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
+  await expect(globbed).toContainText(`Name: ${name}`);
+  await expect(globbed).not.toContainText(other);
+
+  await runEditor(`ls ${stem}*`);
+  const summary = page.locator('[data-testid="result-note"]').filter({ hasText: stem });
+  await expect(summary).toContainText(name);
+  await expect(summary).toContainText(other);
+  await expect(summary).not.toContainText("Hash Key");
+});
+
 function uniqueTable() {
   return `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }

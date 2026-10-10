@@ -6,7 +6,7 @@ import { bandAppearance, highlightSource, knownWords, queryBands, runTarget, sta
 const required = {
   keyword: [
     "SELECT", "SCAN", "INSERT", "UPDATE", "CREATE", "ALTER",
-    "DUMP", "LOAD", "EXPLAIN", "ANALYZE", "SHOW", "LIKE",
+    "DUMP", "LOAD", "EXPLAIN", "ANALYZE", "SHOW", "LIKE", "DESCRIBE",
     "FROM", "WHERE", "INTO", "VALUES", "SET", "ADD", "REMOVE", "USING",
     "LIMIT", "ORDER", "BY", "ASC", "DESC", "AS", "KEYS", "IN", "CONSISTENT",
     "THROTTLE", "RETURNS", "SAVE",

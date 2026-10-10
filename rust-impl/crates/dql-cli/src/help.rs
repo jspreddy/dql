@@ -36,6 +36,10 @@ const GROUPS: &[HelpGroup] = &[
                 summary: "Delete items from a table",
             },
             HelpCommand {
+                name: "describe",
+                summary: "Print one table's description",
+            },
+            HelpCommand {
                 name: "drop",
                 summary: "Delete a table",
             },
@@ -258,6 +262,7 @@ pub fn topic_help(topic: &str) -> Option<&'static str> {
         "analyze" => Some(ANALYZE),
         "create" => Some(CREATE),
         "delete" => Some(DELETE),
+        "describe" => Some(DESCRIBE),
         "drop" => Some(DROP),
         "dump" => Some(DUMP),
         "explain" => Some(EXPLAIN),
@@ -577,7 +582,8 @@ pub const LS: &str = r"
     ls <glob> metrics=True
 
     <glob> uses * and ? the same way as a filename glob.
-    One match prints that table. Several matches print a list.
+    One match prints that table's description, the same text as DESCRIBE.
+    Several matches print a list.
     refresh=True ignores the cached description and loads it again.
     True, true, and yes are accepted.
 
@@ -586,6 +592,22 @@ pub const LS: &str = r"
     ls
     ls foo-*
     ls *foo* refresh=True
+";
+
+pub const DESCRIBE: &str = r"
+    Print one table's description
+
+    DESCRIBE <table>;
+
+    The text matches `ls <table>` when that name matches one table.
+    A glob that matches one table prints this description too.
+    Several matches print the list instead.
+
+    Examples
+    --------
+    DESCRIBE posts;
+    ls posts
+    ls post*
 ";
 
 pub const SHOW: &str = r"
@@ -650,9 +672,9 @@ mod tests {
     #[test]
     fn test_help_docs() {
         for topic in [
-            "alter", "analyze", "create", "delete", "drop", "dump", "explain", "insert", "load",
-            "scan", "select", "show", "update", "options", "opt", "history", "clear", "exit", "ls",
-            "help",
+            "alter", "analyze", "create", "delete", "describe", "drop", "dump", "explain",
+            "insert", "load", "scan", "select", "show", "update", "options", "opt", "history",
+            "clear", "exit", "ls", "help",
         ] {
             assert!(topic_help(topic).is_some(), "missing help for {topic}");
         }

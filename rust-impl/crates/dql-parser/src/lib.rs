@@ -300,6 +300,10 @@ pub enum Statement {
     ShowTables {
         like: Option<String>,
     },
+    /// `DESCRIBE <table>` prints the same detail view as `ls` for one table.
+    Describe {
+        table: String,
+    },
     Load {
         file: String,
         table: String,
@@ -616,6 +620,8 @@ impl Parser {
             self.parse_load()
         } else if self.accept_keyword("SHOW") {
             self.parse_show()
+        } else if self.accept_keyword("DESCRIBE") {
+            self.parse_describe()
         } else {
             Err(self.error("expected a DQL statement"))
         }
@@ -1213,6 +1219,11 @@ impl Parser {
                 Some(tables)
             },
         })
+    }
+
+    fn parse_describe(&mut self) -> Result<Statement, ParseError> {
+        let table = self.expect_ident()?;
+        Ok(Statement::Describe { table })
     }
 
     fn parse_show(&mut self) -> Result<Statement, ParseError> {
@@ -2173,6 +2184,24 @@ mod tests {
         );
         assert!(parse_statement("SHOW TABLES LIKE").is_err());
         assert!(parse_statement("SHOW TABLE t").is_err());
+    }
+
+    #[test]
+    fn parses_describe_table() {
+        assert_eq!(
+            parse_statement("DESCRIBE posts").unwrap(),
+            Statement::Describe {
+                table: "posts".to_string()
+            }
+        );
+        assert_eq!(
+            parse_statement("describe posts;").unwrap(),
+            Statement::Describe {
+                table: "posts".to_string()
+            }
+        );
+        assert!(parse_statement("DESCRIBE").is_err());
+        assert!(parse_statement("DESCRIBE 'posts'").is_err());
     }
 
     #[test]

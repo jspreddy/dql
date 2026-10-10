@@ -717,6 +717,49 @@ mod tests {
         assert!(listed_text.contains("alpha_ls"));
         assert!(listed_text.contains("alpha_other"));
         assert!(!listed_text.contains("beta_ls"));
+        assert!(
+            !listed_text.contains("Hash Key"),
+            "several matches should stay a list:\n{listed_text}"
+        );
+    }
+
+    #[test]
+    fn describe_matches_ls_when_one_table_matches() {
+        let mut session = Session::new_memory_headless("us-west-1");
+        for statement in [
+            "CREATE TABLE alpha_desc (id STRING HASH KEY, n NUMBER RANGE KEY);",
+            "CREATE TABLE alpha_other (id STRING HASH KEY);",
+        ] {
+            let created = session.execute_for_serve(statement);
+            assert!(created.ok, "{statement}: {created:?}");
+        }
+
+        let described = session.execute_for_serve("DESCRIBE alpha_desc;");
+        assert!(described.ok, "{described:?}");
+        assert_eq!(described.kind, "schema");
+        let described_text = described.message.clone().unwrap();
+        assert!(described_text.contains("Hash Key: id (STRING)"));
+        assert!(described_text.contains("Range Key: n (NUMBER)"));
+        assert!(!described_text.contains("alpha_other"));
+
+        let listed = session.execute_for_serve("ls alpha_desc;");
+        assert!(listed.ok, "{listed:?}");
+        assert_eq!(listed.message.as_deref(), Some(described_text.as_str()));
+
+        let globbed = session.execute_for_serve("ls alpha_desc*");
+        assert!(globbed.ok, "{globbed:?}");
+        assert_eq!(
+            globbed.message.as_deref(),
+            Some(described_text.as_str()),
+            "one glob match should print the table description"
+        );
+
+        let many = session.execute_for_serve("ls alpha_*");
+        assert!(many.ok, "{many:?}");
+        let many_text = many.message.unwrap();
+        assert!(many_text.contains("alpha_desc"));
+        assert!(many_text.contains("alpha_other"));
+        assert!(!many_text.contains("Hash Key"));
     }
 
     #[test]

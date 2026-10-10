@@ -1086,6 +1086,7 @@ dependencies = [
  "dql-models",
  "dql-parser",
  "flate2",
+ "humansize",
  "rmp",
  "rmpv",
  "serde_json",
