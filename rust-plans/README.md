@@ -40,6 +40,8 @@ these major surfaces:
 - [`rust-docs/migration-from-python.md`](../rust-docs/migration-from-python.md)
   documents install and behavior differences for users moving from Python to Rust.
 - `testing-strategy.md` defines the parity gates and test migration approach.
+- [`rust-skills-review.md`](rust-skills-review.md) records a read-only review of
+  `rust-impl/` against [leonardomso/rust-skills](https://github.com/leonardomso/rust-skills).
 
 ## Design debt (`todo_*.md`)
 
