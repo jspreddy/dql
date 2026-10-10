@@ -1073,6 +1073,31 @@ function keyTitle(column, role) {
   return parts.join(", ");
 }
 
+function tableKeyLine(keys) {
+  const line = document.createElement("span");
+  line.className = "keys";
+  const listed = Array.isArray(keys) ? keys : [];
+  for (const key of listed) {
+    if (!key || !key.name) continue;
+    if (line.childNodes.length) {
+      const sep = document.createElement("span");
+      sep.className = "key-sep";
+      sep.textContent = "·";
+      line.append(sep);
+    }
+    const pair = document.createElement("span");
+    pair.className = "key-pair";
+    const name = document.createElement("span");
+    name.textContent = key.name;
+    pair.append(name);
+    if (key.role === "hash" || key.role === "range") {
+      pair.append(keyIcon(key.role, key.role === "hash" ? "Hash key" : "Range key"));
+    }
+    line.append(pair);
+  }
+  return line;
+}
+
 function keyIcon(role, title) {
   const icon = document.createElement("span");
   icon.className = "key-icon";
@@ -1150,10 +1175,7 @@ async function loadTables() {
       button.className = "table-row" + (table.name === state.table ? " selected" : "");
       const name = document.createElement("strong");
       name.textContent = table.name;
-      const keys = document.createElement("span");
-      keys.className = "keys";
-      keys.textContent = table.keys || "";
-      button.append(name, keys);
+      button.append(name, tableKeyLine(table.keys));
       button.addEventListener("click", () => selectTable(table.name));
       list.append(button);
     }

@@ -46,7 +46,10 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   const row = page.locator(`#table-${name}`);
   await expect(row).toBeVisible();
   await expect(row).toContainText(`${name}`);
-  await expect(row).toContainText("id HASH");
+  await expect(row).toContainText("id");
+  await expect(row.locator('[data-key="hash"]')).toBeVisible();
+  await expect(row).not.toContainText("HASH");
+  await expect(row).not.toContainText("RANGE");
   await expect(page.locator("#rows-title")).toHaveText(name);
   await expect(page.locator("#rows-meta")).toHaveText("50 rows at a time");
   await expect(page.locator("#page-label")).toHaveText("Showing 1–50");
@@ -124,6 +127,13 @@ test("orders table and result columns by keys, index, then selection or name", a
   await expect(page.locator("#rows-table thead th").nth(0)).toHaveCSS("background-color", "rgb(231, 246, 236)");
   await expect(page.locator("#rows-table thead th").nth(1).locator('[data-key="range"]')).toBeVisible();
   await expect(page.locator("#rows-table thead th").nth(3)).not.toHaveClass(/col-/);
+  const listed = page.locator(`#table-${name}`);
+  await expect(listed.locator('[data-key="hash"]')).toBeVisible();
+  await expect(listed.locator('[data-key="range"]')).toBeVisible();
+  await expect(listed).toContainText("id");
+  await expect(listed).toContainText("sk");
+  await expect(listed).not.toContainText("HASH");
+  await expect(listed).not.toContainText("RANGE");
 });
 
 function uniqueTable() {

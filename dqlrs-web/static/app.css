@@ -700,12 +700,39 @@ body.results-resizing * {
 }
 
 .table-row .keys {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   max-width: 100%;
   overflow: hidden;
   color: var(--muted);
   font-size: 12px;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.table-row .key-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.table-row .key-pair > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.table-row .keys .key-icon {
+  display: inline-flex;
+  flex: none;
+  width: 11px;
+  height: 11px;
+  color: #3f6f57;
+}
+
+.table-row .keys .key-icon svg {
+  width: 11px;
+  height: 11px;
 }
 
 .table-row.selected { background: #d9e6f6; }

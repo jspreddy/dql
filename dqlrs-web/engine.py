@@ -337,7 +337,7 @@ def _ls_names(text: str) -> list[str]:
     return names
 
 
-def _ls_keys(text: str) -> str:
+def _ls_keys(text: str) -> list[dict]:
     hash_key = ""
     range_key = ""
     for raw in text.splitlines():
@@ -346,12 +346,12 @@ def _ls_keys(text: str) -> str:
             hash_key = line.split(":", 1)[1].strip().split(" (", 1)[0].strip()
         elif line.startswith("Range Key:"):
             range_key = line.split(":", 1)[1].strip().split(" (", 1)[0].strip()
-    parts = []
+    keys = []
     if hash_key:
-        parts.append(f"{hash_key} HASH")
+        keys.append({"name": hash_key, "role": "hash"})
     if range_key:
-        parts.append(f"{range_key} RANGE")
-    return " · ".join(parts)
+        keys.append({"name": range_key, "role": "range"})
+    return keys
 
 
 @dataclass(frozen=True)

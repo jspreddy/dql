@@ -139,7 +139,10 @@ class LsParseTests(unittest.TestCase):
         summary = "Tables\nName     Items\nnb_posts        2\nnb_users        1\n"
         self.assertEqual(_ls_names(summary), ["nb_posts", "nb_users"])
         detail = "Name: nb_posts\nHash Key: username (STRING)\nRange Key: postid (NUMBER)\n"
-        self.assertEqual(_ls_keys(detail), "username HASH · postid RANGE")
+        self.assertEqual(
+            _ls_keys(detail),
+            [{"name": "username", "role": "hash"}, {"name": "postid", "role": "range"}],
+        )
 
     def test_table_shape_includes_local_and_global_indexes(self) -> None:
         detail = "\n".join(
