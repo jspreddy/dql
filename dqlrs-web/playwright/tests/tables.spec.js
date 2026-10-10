@@ -7,6 +7,17 @@ test("opens the table browser from the #tables hash", async ({ page, app }) => {
   await expect(page.locator("#query-view")).toBeHidden();
   await expect(page.locator("#mode-tables")).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#file-name")).toHaveText("No file open");
+  await expect(page.locator("#side-title")).toHaveText("Tables");
+  await expect(page.locator("#tree")).toBeHidden();
+  await expect(page.locator("#tables-nav")).toBeVisible();
+  await expect(page.locator(".side #table-list")).toBeVisible();
+  await expect(page.locator("#tables-view #table-list")).toHaveCount(0);
+
+  await page.locator("#mode-query").click();
+  await expect(page.locator("#side-title")).toHaveText("Files");
+  await expect(page.locator("#tree")).toBeVisible();
+  await expect(page.locator("#tables-nav")).toBeHidden();
+  await expect(page.locator("#new-file")).toBeVisible();
 });
 
 test("pages a table fifty rows at a time from a searched name", async ({ page, app }) => {

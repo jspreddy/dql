@@ -285,13 +285,18 @@ async function boot() {
 
 function setMode(mode) {
   state.mode = mode;
+  const tables = mode === "tables";
   document.querySelector("#query-view").classList.toggle("hidden", mode !== "query");
   document.querySelector("#tables-view").classList.toggle("hidden", mode !== "tables");
   document.querySelector("#mode-query").classList.toggle("active", mode === "query");
   document.querySelector("#mode-tables").classList.toggle("active", mode === "tables");
   document.querySelector("#mode-query").setAttribute("aria-selected", mode === "query");
   document.querySelector("#mode-tables").setAttribute("aria-selected", mode === "tables");
-  if (mode === "tables") loadTables();
+  document.querySelector("#tree").classList.toggle("hidden", tables);
+  document.querySelector("#tables-nav").classList.toggle("hidden", !tables);
+  document.querySelector("#new-file").classList.toggle("hidden", tables);
+  document.querySelector("#side-title").textContent = tables ? "Tables" : "Files";
+  if (tables) loadTables();
 }
 
 async function refreshTree() {
@@ -678,7 +683,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") hideMenu();
 });
 document.querySelector(".side").addEventListener("contextmenu", (event) => {
-  if (event.target.closest(".node")) return;
+  if (state.mode !== "query" || event.target.closest(".node")) return;
   event.preventDefault();
   showMenu(event.clientX, event.clientY, menuItems({ type: "root", path: "." }));
 });
@@ -1049,7 +1054,9 @@ async function loadTables() {
     const payload = await api("/api/tables?pattern=" + encodeURIComponent(pattern));
     list.replaceChildren();
     if (!payload.tables.length) {
+      state.table = "";
       list.append(note(pattern ? "No tables match " + pattern : "No tables", false));
+      clearRows();
       return;
     }
     if (!payload.tables.some((table) => table.name === state.table)) {
@@ -1067,17 +1074,32 @@ async function loadTables() {
       keys.className = "keys";
       keys.textContent = table.keys || "";
       button.append(name, keys);
-      button.addEventListener("click", () => {
-        state.table = table.name;
-        state.page = 0;
-        loadTables();
-      });
+      button.addEventListener("click", () => selectTable(table.name));
       list.append(button);
     }
     await loadRows();
   } catch (error) {
     list.replaceChildren(note(error.message, true));
   }
+}
+
+function selectTable(name) {
+  if (state.table === name && state.page === 0) return;
+  state.table = name;
+  state.page = 0;
+  for (const button of document.querySelectorAll("#table-list .table-row")) {
+    button.classList.toggle("selected", button.id === "table-" + name.replaceAll(/[^A-Za-z0-9_-]/g, "_"));
+  }
+  loadRows();
+}
+
+function clearRows() {
+  document.querySelector("#rows-title").textContent = "";
+  document.querySelector("#rows-meta").textContent = "";
+  document.querySelector("#page-label").textContent = "";
+  document.querySelector("#page-prev").disabled = true;
+  document.querySelector("#page-next").disabled = true;
+  document.querySelector("#rows-body").replaceChildren();
 }
 
 async function loadRows() {
