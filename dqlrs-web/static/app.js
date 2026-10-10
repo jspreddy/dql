@@ -84,7 +84,7 @@ const editor = new EditorView({
       syntaxHighlighting(dqlHighlight),
       placeholder("Open a .dql file, or create one."),
       EditorView.lineWrapping,
-      EditorView.contentAttributes.of({ spellcheck: "false" }),
+      EditorView.contentAttributes.of({ spellcheck: "false", id: "editor-content" }),
       drawSelection(),
       Prec.highest(EditorView.theme({
         ".cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground": {
@@ -230,6 +230,8 @@ function renderDir(node, isRoot) {
     const button = nodeButton(child.type === "dir" ? (open ? "▾" : "▸") : "", child.name, child.path === state.path);
     button.dataset.kind = child.type;
     button.dataset.path = child.path;
+    button.id = nodeDomId(child.path);
+    button.dataset.testid = button.id;
     bindNode(button, child);
     item.append(button);
     if (open) item.append(renderDir(child, false));
@@ -338,6 +340,10 @@ async function dropOnto(from, destDir) {
   } catch (error) {
     window.alert(error.message);
   }
+}
+
+function nodeDomId(path) {
+  return "node-" + String(path).replaceAll("/", "__");
 }
 
 function nodeButton(twist, label, selected) {
@@ -474,6 +480,7 @@ function beginRename(path) {
   if (!button || button.querySelector("input")) return;
   const name = path.split("/").pop();
   const input = document.createElement("input");
+  input.id = "rename-input";
   input.className = "rename";
   input.value = name;
   input.spellcheck = false;
@@ -535,6 +542,15 @@ function menuItems(target) {
   return items;
 }
 
+const menuIds = {
+  "New file": "menu-new-file",
+  "New folder": "menu-new-folder",
+  Duplicate: "menu-duplicate",
+  Rename: "menu-rename",
+  "Move to…": "menu-move",
+  Delete: "menu-delete",
+};
+
 const menuEl = document.querySelector("#file-menu");
 
 function showMenu(x, y, items) {
@@ -547,6 +563,7 @@ function showMenu(x, y, items) {
     const button = document.createElement("button");
     button.type = "button";
     button.role = "menuitem";
+    button.id = menuIds[item.label];
     button.textContent = item.label;
     if (item.danger) button.className = "danger";
     button.addEventListener("click", (event) => {
@@ -748,7 +765,7 @@ function renderResults(results) {
   if (lastItems) {
     const rows = lastItems.items || [];
     resultMeta.textContent = rows.length + (rows.length === 1 ? " row" : " rows");
-    resultBody.append(dataTable(rows));
+    resultBody.append(dataTable(rows, "result-table"));
   } else {
     resultMeta.textContent = results.length ? "" : "Nothing to run";
   }
@@ -765,11 +782,12 @@ function resultLabel(item) {
 function note(text, isError) {
   const div = document.createElement("div");
   div.className = "note" + (isError ? " error" : "");
+  div.dataset.testid = "result-note";
   div.textContent = text;
   return div;
 }
 
-function dataTable(rows) {
+function dataTable(rows, tableId) {
   if (!rows.length) return note("No rows", false);
   const keys = [];
   for (const row of rows) {
@@ -778,6 +796,7 @@ function dataTable(rows) {
     }
   }
   const table = document.createElement("table");
+  if (tableId) table.id = tableId;
   const head = document.createElement("tr");
   for (const key of keys) {
     const cell = document.createElement("th");
@@ -819,6 +838,7 @@ async function loadTables() {
     for (const table of payload.tables) {
       const button = document.createElement("button");
       button.type = "button";
+      button.id = "table-" + table.name.replaceAll(/[^A-Za-z0-9_-]/g, "_");
       button.className = "table-row" + (table.name === state.table ? " selected" : "");
       const name = document.createElement("strong");
       name.textContent = table.name;
@@ -857,7 +877,7 @@ async function loadRows() {
       : "No rows";
     document.querySelector("#page-prev").disabled = payload.page <= 0;
     document.querySelector("#page-next").disabled = !state.hasMore;
-    body.replaceChildren(dataTable(payload.items || []));
+    body.replaceChildren(dataTable(payload.items || [], "rows-table"));
     body.scrollTop = 0;
   } catch (error) {
     body.replaceChildren(note(error.message, true));

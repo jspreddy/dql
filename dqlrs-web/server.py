@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -251,6 +252,11 @@ def main(argv: list[str] | None = None) -> None:
     print(f"DQLRS Web  http://{args.host}:{args.port}")
     print(f"workspace  {ROOT}")
     print(f"endpoint   {ENGINE.endpoint_label}")
+
+    def _request_stop(_signum, _frame) -> None:
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, _request_stop)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

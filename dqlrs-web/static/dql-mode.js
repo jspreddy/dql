@@ -247,6 +247,7 @@ class RunStatusMarker extends GutterMarker {
     mark.title = label;
     mark.setAttribute("role", "img");
     mark.setAttribute("aria-label", label);
+    mark.dataset.testid = "run-status-" + this.status;
     if (this.status === "ok") mark.textContent = "✓";
     if (this.status === "error") mark.textContent = "×";
     return mark;
