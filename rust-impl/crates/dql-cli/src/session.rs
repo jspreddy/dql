@@ -401,10 +401,12 @@ impl Session {
                 .backend()
         };
         let trimmed = command.trim();
-        let is_meta = trimmed
-            .split_once(char::is_whitespace)
-            .map(|(cmd, _)| crate::meta::is_meta_command(cmd))
-            .unwrap_or_else(|| crate::meta::is_meta_command(trimmed));
+        let command_word = trimmed
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .trim_end_matches(';');
+        let is_meta = crate::meta::is_meta_command(command_word);
         if is_meta {
             self.dispatch_line(trimmed, &output_config, backend.as_mut())?;
         } else {
@@ -656,6 +658,65 @@ mod tests {
         let watch = session.execute_for_serve("watch");
         assert!(!watch.ok);
         assert_eq!(watch.error.as_ref().unwrap().code, "unsupported");
+    }
+
+    #[test]
+    fn show_tables_like_and_ls_glob_refresh_true() {
+        let mut session = Session::new_memory_headless("us-west-1");
+        for statement in [
+            "CREATE TABLE alpha_ls (id STRING HASH KEY);",
+            "CREATE TABLE alpha_other (id STRING HASH KEY);",
+            "CREATE TABLE beta_ls (id STRING HASH KEY);",
+        ] {
+            let created = session.execute_for_serve(statement);
+            assert!(created.ok, "{statement}: {created:?}");
+        }
+
+        let shown = session.execute_for_serve("SHOW TABLES LIKE 'alpha%';");
+        assert!(shown.ok, "{shown:?}");
+        assert_eq!(shown.kind, "items");
+        let names = shown
+            .items
+            .unwrap()
+            .iter()
+            .map(|item| item["name"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            vec!["alpha_ls".to_string(), "alpha_other".to_string()]
+        );
+
+        let cached = session.execute_for_serve("ls alpha_ls;");
+        assert!(cached.ok, "{cached:?}");
+        let cached_text = cached.message.unwrap();
+        assert!(cached_text.contains("Hash Key: id"));
+        assert!(!cached_text.contains("by-n"));
+
+        let altered = session
+            .execute_for_serve("ALTER TABLE alpha_ls CREATE GLOBAL INDEX ('by-n', n NUMBER);");
+        assert!(altered.ok, "{altered:?}");
+
+        let stale = session.execute_for_serve("ls alpha_ls");
+        assert!(stale.ok, "{stale:?}");
+        assert!(
+            !stale.message.unwrap().contains("by-n"),
+            "cached ls should keep the description from before the index"
+        );
+
+        let fresh = session.execute_for_serve("ls alpha_l* refresh=True;");
+        assert!(fresh.ok, "{fresh:?}");
+        let fresh_text = fresh.message.unwrap();
+        assert!(fresh_text.contains("by-n"), "{fresh_text}");
+        assert!(fresh_text.contains("alpha_ls"));
+        assert!(!fresh_text.contains("alpha_other"));
+        assert!(!fresh_text.contains("beta_ls"));
+
+        let listed = session.execute_for_serve("ls alpha_* refresh=True");
+        assert!(listed.ok, "{listed:?}");
+        let listed_text = listed.message.unwrap();
+        assert!(listed_text.contains("alpha_ls"));
+        assert!(listed_text.contains("alpha_other"));
+        assert!(!listed_text.contains("beta_ls"));
     }
 
     #[test]

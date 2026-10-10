@@ -375,6 +375,53 @@ test("places a play button on the left of the run box and runs that range", asyn
   await expect(page.locator("#run")).toBeEnabled();
 });
 
+test("show-tables-like and ls glob refresh=True reload a changed table", async ({ page, app }) => {
+  const name = uniqueTable();
+  const other = uniqueTable();
+  app.trackTable(name);
+  app.trackTable(other);
+
+  async function runEditor(text) {
+    await replaceEditor(page, text);
+    await expect(page.locator("#editor-content")).toContainText(text.split("\n")[0]);
+    await page.keyboard.press("Control+A");
+    await page.locator("#run").click();
+  }
+
+  await runEditor(
+    [
+      `CREATE TABLE ${name} (id STRING HASH KEY);`,
+      `CREATE TABLE ${other} (id STRING HASH KEY);`,
+      `ls ${name}`,
+    ].join("\n"),
+  );
+  const cached = page.locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
+  await expect(cached).toContainText("THROUGHPUT (0, 0)");
+  await expect(cached).toContainText(name);
+
+  await runEditor(`ALTER TABLE ${name} SET THROUGHPUT (2, 3);`);
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "Updated throughput" })).toBeVisible();
+  await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
+
+  await runEditor(`ls ${name}`);
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" })).toContainText("THROUGHPUT (0, 0)");
+
+  await runEditor(`ls ${name}* refresh=True`);
+  const fresh = page.locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
+  await expect(fresh).toContainText("THROUGHPUT (2, 3)");
+  await expect(fresh).toContainText(name);
+  await expect(fresh).not.toContainText(other);
+
+  await runEditor(`SHOW TABLES LIKE '${name}';`);
+  await expect(page.locator("#result-table")).toContainText(name);
+  await expect(page.locator("#result-table")).not.toContainText(other);
+  await expect(page.locator("#result-meta")).toHaveText("1 row");
+
+  await runEditor(`SHOW TABLES LIKE '${name}%';`);
+  await expect(page.locator("#result-table")).toContainText(name);
+  await expect(page.locator("#result-meta")).toHaveText("1 row");
+});
+
 function uniqueTable() {
   return `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }

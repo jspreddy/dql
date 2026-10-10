@@ -64,6 +64,10 @@ const GROUPS: &[HelpGroup] = &[
                 summary: "Query items from a table or index",
             },
             HelpCommand {
+                name: "show",
+                summary: "List table names, optionally with a LIKE pattern",
+            },
+            HelpCommand {
                 name: "update",
                 summary: "Update items in a table",
             },
@@ -261,6 +265,7 @@ pub fn topic_help(topic: &str) -> Option<&'static str> {
         "load" => Some(LOAD),
         "scan" => Some(SCAN),
         "select" => Some(SELECT),
+        "show" => Some(SHOW),
         "update" => Some(UPDATE),
         "opt" | "options" => Some(OPTIONS),
         "help" => Some(HELP),
@@ -566,9 +571,36 @@ pub const LS: &str = r"
     List tables or describe one table
 
     ls
-    ls <tablename>
-    ls metrics=true
-    ls <tablename> refresh=true
+    ls <glob>
+    ls <glob> refresh=True
+    ls refresh=True
+    ls <glob> metrics=True
+
+    <glob> uses * and ? the same way as a filename glob.
+    One match prints that table. Several matches print a list.
+    refresh=True ignores the cached description and loads it again.
+    True, true, and yes are accepted.
+
+    Examples
+    --------
+    ls
+    ls foo-*
+    ls *foo* refresh=True
+";
+
+pub const SHOW: &str = r"
+    List table names
+
+    SHOW TABLES;
+    SHOW TABLES LIKE 'pattern';
+
+    LIKE is case-sensitive. % matches any sequence. _ matches one character.
+
+    Examples
+    --------
+    SHOW TABLES;
+    SHOW TABLES LIKE 'alpha%';
+    SHOW TABLES LIKE 'foo_bar';
 ";
 
 pub const HISTORY: &str = r#"
@@ -619,7 +651,8 @@ mod tests {
     fn test_help_docs() {
         for topic in [
             "alter", "analyze", "create", "delete", "drop", "dump", "explain", "insert", "load",
-            "scan", "select", "update", "options", "opt", "history", "clear", "exit", "ls", "help",
+            "scan", "select", "show", "update", "options", "opt", "history", "clear", "exit", "ls",
+            "help",
         ] {
             assert!(topic_help(topic).is_some(), "missing help for {topic}");
         }

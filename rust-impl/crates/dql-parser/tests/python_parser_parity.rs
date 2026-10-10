@@ -131,6 +131,22 @@ mod test_parser {
     }
 
     #[test]
+    fn test_show_tables() {
+        assert_eq!(
+            parse_statement("SHOW TABLES").unwrap(),
+            Statement::ShowTables { like: None }
+        );
+        assert_eq!(
+            parse_statement("SHOW TABLES LIKE 'alpha%'").unwrap(),
+            Statement::ShowTables {
+                like: Some("alpha%".to_string())
+            }
+        );
+        assert_parse_err("SHOW TABLES LIKE");
+        assert_parse_err("SHOW TABLE alpha");
+    }
+
+    #[test]
     fn test_dump() {
         assert_eq!(
             parse_statement("DUMP SCHEMA").unwrap(),

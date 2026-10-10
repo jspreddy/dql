@@ -10,7 +10,7 @@ import { StringStream } from "./vendor/streamparser.js";
 const groups = {
   keyword: [
     "SELECT", "SCAN", "INSERT", "UPDATE", "CREATE", "ALTER",
-    "DUMP", "LOAD", "EXPLAIN", "ANALYZE",
+    "DUMP", "LOAD", "EXPLAIN", "ANALYZE", "SHOW", "LIKE",
     "FROM", "WHERE", "INTO", "VALUES", "SET", "ADD", "REMOVE", "USING",
     "LIMIT", "ORDER", "BY", "ASC", "DESC", "AS", "KEYS", "IN", "CONSISTENT",
     "THROTTLE", "RETURNS", "SAVE",

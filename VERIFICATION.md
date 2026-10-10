@@ -99,7 +99,7 @@ Details and how to add a test: [`black-box-tests/README.md`](black-box-tests/REA
 
 ## One-shot (copy-paste from repo root)
 
-The same sequence is `just verify` ([`Justfile`](Justfile)). Foreground Local would block, so this starts Java in the same shell, waits for port 8000, then runs both trees, the black-box acceptance suite, and the Playwright notebook tests:
+The same sequence is `just verify` ([`Justfile`](Justfile)). Foreground Local would block, so this starts Java in the same shell, waits for port 8000, then runs both trees, the black-box acceptance suite, the Playwright notebook tests, and the Playwright web tests:
 
 ```bash
 set -euo pipefail
@@ -129,6 +129,7 @@ export DQL_BIN="$PWD/py-impl/.venv/bin/dql"
 export DQLRS_BIN="$PWD/rust-impl/target/release/dqlrs"
 ./black-box-tests/run.sh
 ./notebook-tests/run.sh
+DQLRS_BIN="$DQLRS_BIN" just web-test
 ```
 
 ---
