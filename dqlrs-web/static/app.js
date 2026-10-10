@@ -11,7 +11,7 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { bandLayer, dqlLanguage, markersForRunStatus, queryHighlight, runButtonLayer, runButtonLayer, runFrame, runStatusField, runStatusGutter, setRunRequest, setRunRequest, setRunStatuses } from "./dql-mode.js";
+import { bandLayer, dqlLanguage, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setRunRequest, setRunStatuses } from "./dql-mode.js";
 import { runTarget, statementSpans } from "./dql-tokens.js";
 
 const dqlHighlight = HighlightStyle.define([
