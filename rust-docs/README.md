@@ -6,6 +6,7 @@ User guide for the Rust implementation of DynamoDB Query Language. The CLI
 binary is `dqlrs`. Source lives in [`rust-impl/`](../rust-impl/). Maintainer
 notes are in [`rust-impl/README.md`](../rust-impl/README.md). Differences from
 the Python client: [migration-from-python.md](migration-from-python.md).
+Architecture, package, and runtime diagrams: [architecture.html](architecture.html).
 
 This repository ([jspreddy/dql](https://github.com/jspreddy/dql)) is a fork of
 [stevearc/dql](https://github.com/stevearc/dql).
