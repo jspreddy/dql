@@ -36,6 +36,10 @@ const GROUPS: &[HelpGroup] = &[
                 summary: "Delete items from a table",
             },
             HelpCommand {
+                name: "describe",
+                summary: "Print one table's description",
+            },
+            HelpCommand {
                 name: "drop",
                 summary: "Delete a table",
             },
@@ -62,6 +66,10 @@ const GROUPS: &[HelpGroup] = &[
             HelpCommand {
                 name: "select",
                 summary: "Query items from a table or index",
+            },
+            HelpCommand {
+                name: "show",
+                summary: "List table names, optionally with a LIKE pattern",
             },
             HelpCommand {
                 name: "update",
@@ -254,6 +262,7 @@ pub fn topic_help(topic: &str) -> Option<&'static str> {
         "analyze" => Some(ANALYZE),
         "create" => Some(CREATE),
         "delete" => Some(DELETE),
+        "describe" => Some(DESCRIBE),
         "drop" => Some(DROP),
         "dump" => Some(DUMP),
         "explain" => Some(EXPLAIN),
@@ -261,6 +270,7 @@ pub fn topic_help(topic: &str) -> Option<&'static str> {
         "load" => Some(LOAD),
         "scan" => Some(SCAN),
         "select" => Some(SELECT),
+        "show" => Some(SHOW),
         "update" => Some(UPDATE),
         "opt" | "options" => Some(OPTIONS),
         "help" => Some(HELP),
@@ -566,9 +576,65 @@ pub const LS: &str = r"
     List tables or describe one table
 
     ls
-    ls <tablename>
-    ls metrics=true
-    ls <tablename> refresh=true
+    ls <glob>
+    ls <glob> refresh=True
+    ls refresh=True
+    ls <glob> metrics=True
+
+    <glob> uses * and ? the same way as a filename glob.
+    One match prints that table's description, the same text as DESCRIBE.
+    Several matches print a list.
+    When nothing matches exactly, ls lists tables with similar names and tables
+    whose keys, indexes, or attributes are similar to the text.
+    A two-letter pattern matches only names that start with it.
+    The result says whether it is showing similar names, related keys, or both.
+    refresh=True ignores the cached description and loads it again.
+    True, true, and yes are accepted.
+
+    Examples
+    --------
+    ls
+    ls foo-*
+    ls *foo* refresh=True
+";
+
+pub const DESCRIBE: &str = r"
+    Print one table's description
+
+    DESCRIBE <table>;
+
+    The text matches `ls <table>` when that name matches one table.
+    A glob that matches one table prints this description too.
+    Several matches print the list instead.
+
+    Examples
+    --------
+    DESCRIBE posts;
+    ls posts
+    ls post*
+";
+
+pub const SHOW: &str = r"
+    List table names
+
+    SHOW TABLES;
+    SHOW TABLES LIKE 'pattern';
+
+    SHOW TABLES prints the same list as `ls`: name, items, read, write, status,
+    and size. LIKE is case-sensitive. % matches any sequence. _ matches one
+    character.
+    When that matches nothing, the result lists tables with similar names and
+    tables whose keys, indexes, or attributes are similar to the text.
+    A two-letter pattern matches only names that start with it.
+    The result says whether it is showing similar names, related keys, or both.
+    A pattern that is still not similar stays an empty list.
+
+    Examples
+    --------
+    SHOW TABLES;
+    SHOW TABLES LIKE 'alpha%';
+    SHOW TABLES LIKE 'foo_bar';
+    SHOW TABLES LIKE 'post';
 ";
 
 pub const HISTORY: &str = r#"
@@ -618,8 +684,9 @@ mod tests {
     #[test]
     fn test_help_docs() {
         for topic in [
-            "alter", "analyze", "create", "delete", "drop", "dump", "explain", "insert", "load",
-            "scan", "select", "update", "options", "opt", "history", "clear", "exit", "ls", "help",
+            "alter", "analyze", "create", "delete", "describe", "drop", "dump", "explain",
+            "insert", "load", "scan", "select", "show", "update", "options", "opt", "history",
+            "clear", "exit", "ls", "help",
         ] {
             assert!(topic_help(topic).is_some(), "missing help for {topic}");
         }

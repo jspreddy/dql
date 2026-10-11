@@ -47,6 +47,9 @@ pub fn dispatch(
     out: &mut dyn Write,
     repl: bool,
 ) -> Result<Option<StatementResult>, dql_engine::EngineError> {
+    // Scripts and the web UI terminate statements with ';'. That mark is not
+    // part of a flag value (`refresh=True;`).
+    let line = line.trim().trim_end_matches(';').trim();
     let (command, arglist) = match line.split_once(char::is_whitespace) {
         Some((command, rest)) => (command, rest.trim()),
         None => (line, ""),

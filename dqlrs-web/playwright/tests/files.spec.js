@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
-import { handleDialogs, node, openApp } from "../support/helpers.js";
+import { handleDialogs, node, openApp, pressMod } from "../support/helpers.js";
 
 test.beforeEach(async ({ page, app }) => {
   await openApp(page, app);
@@ -157,7 +157,7 @@ test("deletes a file, deletes an empty folder, and refuses a folder that holds a
 
 test("writes editor edits back to the temporary file", async ({ page, app }) => {
   await page.locator("#editor-content").click();
-  await page.keyboard.press("Control+A");
+  await pressMod(page, "A");
   await page.keyboard.press("Backspace");
   await page.keyboard.insertText("-- saved from the test\nSELECT 1;\n");
   await expect.poll(() => fs.readFileSync(path.join(app.workspace, "queries/edit.dql"), "utf8"), {

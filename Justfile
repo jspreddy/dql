@@ -246,9 +246,9 @@ notebook-test-slow *args:
         just notebook-test -- --slowmo 500 -m slow
     fi
 
-# Python, Rust, black-box, and Playwright notebook checks from VERIFICATION.md
+# Python, Rust, black-box, Playwright notebook, and Playwright web checks from VERIFICATION.md
 [group('tests')]
-verify: dynamo py rust black-box notebook-test
+verify: dynamo py rust black-box notebook-test web-test
 
 # Sync, lint, test, and build Python and Rust
 prep: py rust
