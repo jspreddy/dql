@@ -34,7 +34,6 @@ serde.workspace = true
 serde_json.workspace = true
 shell-words.workspace = true
 strip-ansi-escapes = "0.2.1"
-tiny_http = "0.12"
 
 [dev-dependencies]
 insta.workspace = true
