@@ -234,6 +234,15 @@ class LsParseTests(unittest.TestCase):
         )
         self.assertEqual(indexed_star[1], {"name": "sk", "table": "range", "index": "range"})
         self.assertEqual(indexed_star[2], {"name": "n", "table": None, "index": "hash"})
+        swapped = TableShape("id", "sk", {"by-apple": ("apple", "id")})
+        by_apple = column_order(rows, swapped, "by-apple", None)
+        self.assertEqual(
+            [column["name"] for column in by_apple],
+            ["id", "sk", "apple", "n", "zebra"],
+        )
+        self.assertEqual(by_apple[0], {"name": "id", "table": "hash", "index": "range"})
+        self.assertEqual(by_apple[1], {"name": "sk", "table": "range", "index": None})
+        self.assertEqual(by_apple[2], {"name": "apple", "table": None, "index": "hash"})
         projected = [{"zebra": "z", "apple": "p", "id": "a"}]
         self.assertEqual(
             [column["name"] for column in column_order(projected, shape, None, ["zebra", "apple", "id"])],
