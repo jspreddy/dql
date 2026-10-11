@@ -124,7 +124,7 @@ test("orders table and result columns by keys, index, then selection or name", a
   await expect(page.locator("#result-table thead th").nth(0)).toHaveClass(/col-table/);
   await expect(page.locator("#result-table thead th").nth(0).locator('[data-key="hash"]')).toBeVisible();
   await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("background-color", "rgb(231, 246, 236)");
-  await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("box-shadow", /rgb\(111, 191, 150\)/);
+  await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("box-shadow", /rgb\(215, 229, 220\)/);
   const headerIcons = await page.locator("#result-table thead th").nth(0).locator(".col-label").evaluate((label) =>
     [...label.children].map((child) => child.dataset.key || child.textContent.trim()),
   );
@@ -132,7 +132,7 @@ test("orders table and result columns by keys, index, then selection or name", a
   await expect(page.locator("#result-table thead th").nth(1)).toHaveClass(/col-table/);
   await expect(page.locator("#result-table thead th").nth(1).locator('[data-key="range"]')).toBeVisible();
   await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("background-color", "rgb(245, 251, 247)");
-  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("box-shadow", /rgb\(111, 191, 150\)/);
+  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("box-shadow", /rgb\(231, 237, 233\)/);
 
   await replaceEditor(page, `SELECT zebra, apple, id FROM ${name} WHERE id = 'a' AND sk = 1;`);
   await pressMod(page, "A");
@@ -147,13 +147,13 @@ test("orders table and result columns by keys, index, then selection or name", a
   await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("background-color", "rgb(231, 246, 236)");
   await expect(page.locator("#result-table thead th").nth(1)).toHaveClass(/col-both/);
   await expect(page.locator("#result-table thead th").nth(1)).toHaveCSS("background-color", "rgb(231, 243, 244)");
-  await expect(page.locator("#result-table thead th").nth(1)).toHaveCSS("box-shadow", /rgb\(116, 184, 184\)/);
+  await expect(page.locator("#result-table thead th").nth(1)).toHaveCSS("box-shadow", /rgb\(215, 226, 227\)/);
   await expect(page.locator("#result-table thead th").nth(1).locator('[data-key="range"]')).toBeVisible();
   await expect(page.locator("#result-table thead th").nth(2)).toHaveClass(/col-index/);
   await expect(page.locator("#result-table thead th").nth(2)).toHaveCSS("background-color", "rgb(231, 241, 252)");
   await expect(page.locator("#result-table thead th").nth(2).locator('[data-key="hash"]')).toBeVisible();
   await expect(page.locator("#result-table tbody td").nth(1)).toHaveCSS("background-color", "rgb(245, 250, 251)");
-  await expect(page.locator("#result-table thead th").nth(2)).toHaveCSS("box-shadow", /rgb\(122, 166, 224\)/);
+  await expect(page.locator("#result-table thead th").nth(2)).toHaveCSS("box-shadow", /rgb\(215, 224, 234\)/);
   await expect(page.locator("#result-table tbody td").nth(2)).toHaveCSS("background-color", "rgb(245, 249, 254)");
 
   await page.locator("#mode-tables").click();
