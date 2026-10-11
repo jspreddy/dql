@@ -65,6 +65,9 @@ You can use `$HOME/.aws/credentials` or `AWS_ACCESS_KEY_ID` /
     --json               With -c, print results as JSON
     --serve              Headless JSON-lines worker (stdio, or --bind on loopback)
     --bind <ADDR>        With --serve, listen on loopback HOST:PORT (or PORT as 127.0.0.1:PORT)
+    --web                Serve the query editor and table browser
+    --listen <ADDR>      With --web, listen on loopback HOST:PORT (default 127.0.0.1:8765)
+    --dir <DIR>          With --web, folder of .dql files (default: current directory)
     notebook             Start JupyterLab with a DQL (Rust) kernel (this binary)
     --version            Print the version and exit
     -h, --help           Print help
@@ -82,6 +85,21 @@ In the REPL, type `help` or `help <statement>`. Meta-commands include `opt`,
 
 Output formats (via `opt format`): `smart`, `column`, `expanded`, `json`,
 `rich`. Non-TUI paths can page with `opt display less`.
+
+## Web UI (`--web`)
+
+`dqlrs --web` serves the query editor and table browser on `127.0.0.1:8765`.
+The server runs inside this binary. Browser assets are bundled with it.
+`-H` and `-p` still choose DynamoDB Local; omit `-H` to use AWS.
+
+```bash
+dqlrs --web -H localhost -p 8000
+dqlrs --web --listen 127.0.0.1:9000 --dir ~/queries
+```
+
+From a checkout, `just web` builds `dqlrs`, starts DynamoDB Local when port 8000
+is down, and opens the UI on `dqlrs-web/examples`. Details:
+[`dqlrs-web/README.md`](../dqlrs-web/README.md).
 
 ## Headless worker (`--serve`)
 
