@@ -180,7 +180,7 @@ web *args:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
-    cargo build -p dql-cli --manifest-path rust-impl/Cargo.toml
+    (cd rust-impl && cargo build -p dql-cli)
     # `just recipe -- --flag` includes the separator in the variadic args.
     args=({{args}})
     if [[ ${#args[@]} -gt 0 && "${args[0]}" == "--" ]]; then
@@ -208,7 +208,7 @@ web-test *args: dynamo
     #!/usr/bin/env bash
     set -euo pipefail
     root="{{justfile_directory()}}"
-    cargo build -p dql-cli --manifest-path "$root/rust-impl/Cargo.toml"
+    (cd "$root/rust-impl" && cargo build -p dql-cli)
     cd "$root/dqlrs-web/playwright"
     if [[ -z "${DQLRS_BIN:-}" ]]; then
         if [[ -x "$root/rust-impl/target/debug/dqlrs" ]]; then
