@@ -98,7 +98,7 @@ rust-smoke:
 rust: rust-fetch rust-fmt rust-clippy rust-test rust-local rust-build rust-smoke
 
 # Run black-box acceptance tests. Extra args are passed to black-box-tests/run.sh.
-[group('tests')]
+[group('py-rs')]
 black-box *args:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -298,12 +298,12 @@ notebook-test-slow *args:
         just notebook-test -- --slowmo 500 -m slow
     fi
 
+# Root recipes.
+
 # Run every test suite. Starts DynamoDB Local, syncs Python, and builds release dqlrs first.
-[group('tests')]
 test: dynamo py-sync rust-build web-unit py-test rust-test rust-local rust-smoke black-box notebook-test web-test
 
 # Python, Rust, black-box, Playwright notebook, and Playwright web checks from VERIFICATION.md
-[group('tests')]
 verify: dynamo py rust black-box notebook-test web-test
 
 # Sync, lint, test, and build Python and Rust
