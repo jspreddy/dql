@@ -1,5 +1,8 @@
 import { defineConfig } from "@playwright/test";
 
+// playwright test has no --slow-mo flag. just web-test-slow sets this.
+const slowMo = Number(process.env.PLAYWRIGHT_SLOW_MO || 0);
+
 export default defineConfig({
   testDir: "./tests",
   timeout: 90_000,
@@ -12,5 +15,6 @@ export default defineConfig({
     channel: "chrome",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    ...(slowMo > 0 ? { launchOptions: { slowMo } } : {}),
   },
 });

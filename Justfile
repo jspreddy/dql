@@ -202,6 +202,11 @@ web *args:
     fi
     exec ./dqlrs-web/run.sh "${args[@]}"
 
+# Node tests for the DQLRS Web editor
+[group('web')]
+web-unit:
+    node --test "{{justfile_directory()}}"/dqlrs-web/tests/*.mjs
+
 # Playwright tests for DQLRS Web. Flags need a `--` separator: just web-test -- --headed tests/editor.spec.js
 [group('web')]
 web-test *args: dynamo
@@ -231,6 +236,51 @@ web-test *args: dynamo
         ./node_modules/.bin/playwright test
     fi
 
+# Playwright web tests, headed, with 500ms between actions unless --slow-mo is set.
+[group('web')]
+web-test-slow *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # `just recipe -- --flag` includes the separator in the variadic args.
+    args=({{args}})
+    if [[ ${#args[@]} -gt 0 && "${args[0]}" == "--" ]]; then
+        args=("${args[@]:1}")
+    fi
+    # playwright test rejects --slow-mo. A later --slow-mo here replaces 500.
+    slow_mo=500
+    forwarded=()
+    i=0
+    while [[ $i -lt ${#args[@]} ]]; do
+        arg="${args[$i]}"
+        case "$arg" in
+            --slow-mo)
+                i=$((i + 1))
+                if [[ $i -ge ${#args[@]} || -z "${args[$i]}" ]]; then
+                    echo "error: --slow-mo requires milliseconds" >&2
+                    exit 2
+                fi
+                slow_mo="${args[$i]}"
+                ;;
+            --slow-mo=*)
+                slow_mo="${arg#--slow-mo=}"
+                ;;
+            *)
+                forwarded+=("$arg")
+                ;;
+        esac
+        i=$((i + 1))
+    done
+    if [[ ! "$slow_mo" =~ ^[0-9]+$ ]]; then
+        echo "error: --slow-mo requires milliseconds" >&2
+        exit 2
+    fi
+    export PLAYWRIGHT_SLOW_MO="$slow_mo"
+    if [[ ${#forwarded[@]} -gt 0 ]]; then
+        just web-test -- --headed "${forwarded[@]}"
+    else
+        just web-test -- --headed
+    fi
+
 # Playwright notebook tests marked slow. Headed, with 500ms between actions unless --slowmo is set.
 [group('notebook')]
 notebook-test-slow *args:
@@ -247,6 +297,10 @@ notebook-test-slow *args:
     else
         just notebook-test -- --slowmo 500 -m slow
     fi
+
+# Run every test suite. Starts DynamoDB Local, syncs Python, and builds release dqlrs first.
+[group('tests')]
+test: dynamo py-sync rust-build web-unit py-test rust-test rust-local rust-smoke black-box notebook-test web-test
 
 # Python, Rust, black-box, Playwright notebook, and Playwright web checks from VERIFICATION.md
 [group('tests')]
