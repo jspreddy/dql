@@ -12,7 +12,8 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { bandLayer, dqlLanguage, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setRunRequest, setRunStatuses } from "./dql-mode.js";
-import { runTarget, statementSpans } from "./dql-tokens.js";
+import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
+import { parseLsMessage } from "./describe-card.js";
 
 const dqlHighlight = HighlightStyle.define([
   { tag: tags.keyword, color: "#0f766e", fontWeight: "650" },
@@ -41,6 +42,7 @@ const state = {
   hasMore: false,
   suppressSave: false,
   dragPath: "",
+  tablesRequest: 0,
 };
 
 const HIGHLIGHT_KEY = "dqlrs-web.highlight";
@@ -237,10 +239,11 @@ document.querySelector("#mode-tables").addEventListener("click", () => setMode("
 document.querySelector("#new-file").addEventListener("click", createFile);
 const runButton = document.querySelector("#run");
 const runShortcut = document.querySelector("#run-shortcut");
-const runShortcutLabel = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent) ? "⌘Enter" : "Ctrl+Enter";
+const macShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+const runShortcutLabel = macShortcut ? "⌘ Enter" : "Ctrl+Enter";
 runShortcut.textContent = runShortcutLabel;
 runButton.title = "Run selection (" + runShortcutLabel + ")";
-runButton.setAttribute("aria-keyshortcuts", "Control+Enter");
+runButton.setAttribute("aria-keyshortcuts", macShortcut ? "Meta+Enter" : "Control+Enter");
 runButton.addEventListener("click", runSelection);
 
 function setRunBusy(busy) {
@@ -277,6 +280,9 @@ document.querySelector("#table-search").addEventListener("input", () => {
   clearTimeout(state.searchTimer);
   state.searchTimer = setTimeout(loadTables, 250);
 });
+document.querySelector("#refresh-tables").addEventListener("click", () => {
+  loadTables({ refresh: true });
+});
 document.querySelector("#page-prev").addEventListener("click", () => changePage(-1));
 document.querySelector("#page-next").addEventListener("click", () => changePage(1));
 
@@ -306,6 +312,7 @@ function setMode(mode) {
   document.querySelector("#tree").classList.toggle("hidden", tables);
   document.querySelector("#tables-nav").classList.toggle("hidden", !tables);
   document.querySelector("#new-file").classList.toggle("hidden", tables);
+  document.querySelector("#refresh-tables").classList.toggle("hidden", !tables);
   document.querySelector("#side-title").textContent = tables ? "Tables" : "Files";
   if (tables) loadTables();
 }
@@ -863,11 +870,26 @@ function renderResults(results) {
   const notes = results.filter((item) => item !== lastItems);
   let explainSteps = 0;
   let otherNotes = 0;
+  let listedTables = 0;
   for (const item of notes) {
     const plan = item.ok && item.kind === "schema" ? parseExplainPlan(item.message || "") : null;
     if (plan) {
       explainSteps += plan.length;
       resultBody.append(explainPlan(plan));
+      continue;
+    }
+    const listed = item.ok && (item.kind === "schema" || item.kind === "text")
+      ? parseLsMessage(item.message || "")
+      : null;
+    if (listed && listed.description) {
+      otherNotes += 1;
+      resultBody.append(describeCard(listed.description, listed.note));
+      continue;
+    }
+    if (listed && (listed.tables.length || listed.note)) {
+      otherNotes += 1;
+      listedTables = listed.tables.length;
+      resultBody.append(intelligentSummary(listed.note, listed.summary, listed.tables));
       continue;
     }
     otherNotes += 1;
@@ -877,8 +899,17 @@ function renderResults(results) {
   }
   if (lastItems) {
     const rows = lastItems.items || [];
-    resultMeta.textContent = rows.length + (rows.length === 1 ? " row" : " rows");
-    resultBody.append(dataTable(rows, "result-table", lastItems.columns));
+    const listed = parseLsMessage(lastItems.message || "");
+    if (listed && listed.tables.length) {
+      const count = listed.tables.length;
+      resultMeta.textContent = count + (count === 1 ? " table" : " tables");
+      resultBody.append(intelligentSummary(listed.note, listed.summary, listed.tables));
+    } else {
+      resultMeta.textContent = rows.length + (rows.length === 1 ? " row" : " rows");
+      resultBody.append(dataTable(rows, "result-table", lastItems.columns));
+    }
+  } else if (listedTables > 0 && otherNotes === 1) {
+    resultMeta.textContent = listedTables + (listedTables === 1 ? " table" : " tables");
   } else if (explainSteps > 0 && otherNotes === 0) {
     resultMeta.textContent = explainSteps + (explainSteps === 1 ? " step" : " steps");
   } else {
@@ -1014,6 +1045,216 @@ function resultLabel(item) {
   if (item.kind === "status" || item.kind === "schema" || item.kind === "text") return item.message || item.kind;
   if (item.kind === "items") return ((item.items || []).length) + " rows";
   return item.message || "ok";
+}
+
+function describeCard(description, note) {
+  const card = document.createElement("section");
+  card.className = "describe";
+  card.dataset.testid = "result-note";
+  if (note) card.append(matchNote(note));
+
+  const head = document.createElement("header");
+  head.className = "describe-head";
+  const title = document.createElement("h2");
+  title.className = "describe-name";
+  title.textContent = description.name;
+  head.append(title);
+  if (description.status) {
+    const status = document.createElement("span");
+    status.className = "describe-status " + statusClass(description.status);
+    status.textContent = description.status;
+    head.append(status);
+  }
+  card.append(head);
+
+  const stats = [
+    ["Items", description.items],
+    ["Size", description.size],
+    ["Read", description.read],
+    ["Write", description.write],
+  ].filter(([, value]) => value);
+  if (stats.length) {
+    const list = document.createElement("dl");
+    list.className = "describe-stats";
+    for (const [label, value] of stats) {
+      const item = document.createElement("div");
+      const term = document.createElement("dt");
+      term.textContent = label;
+      const detail = document.createElement("dd");
+      detail.textContent = value;
+      item.append(term, detail);
+      list.append(item);
+    }
+    card.append(list);
+  }
+
+  const keys = document.createElement("div");
+  keys.className = "describe-keys";
+  if (description.hashKey) keys.append(describeKey("hash", "Hash Key", description.hashKey));
+  if (description.rangeKey) keys.append(describeKey("range", "Range Key", description.rangeKey));
+  if (keys.childNodes.length) card.append(keys);
+
+  if (description.extra) {
+    const extra = document.createElement("pre");
+    extra.className = "describe-extra";
+    extra.textContent = description.extra;
+    card.append(extra);
+  }
+  if (description.schema) card.append(highlightedQuery(description.schema));
+  return card;
+}
+
+function intelligentSummary(note, summary, tables) {
+  const card = document.createElement("section");
+  card.className = "describe";
+  card.dataset.testid = "result-note";
+  if (note) card.append(matchNote(note));
+  if (tables && tables.length) card.append(summaryTable(tables));
+  else {
+    const body = document.createElement("pre");
+    body.className = "describe-summary";
+    body.textContent = summary;
+    card.append(body);
+  }
+  return card;
+}
+
+function summaryTable(tables) {
+  const wrap = document.createElement("div");
+  wrap.className = "describe-tables-wrap";
+  const table = document.createElement("table");
+  table.className = "describe-tables";
+  const columns = [
+    ["Name", "name", false],
+    ["Items", "items", true],
+    ["Read", "read", true],
+    ["Write", "write", true],
+    ["Status", "status", false],
+    ["Size", "size", true],
+  ];
+  const head = document.createElement("tr");
+  for (const [label, , numeric] of columns) {
+    const cell = document.createElement("th");
+    if (numeric) cell.className = "num";
+    cell.textContent = label;
+    head.append(cell);
+  }
+  const thead = document.createElement("thead");
+  thead.append(head);
+  const body = document.createElement("tbody");
+  for (const row of tables) {
+    const tr = document.createElement("tr");
+    for (const [, key, numeric] of columns) {
+      const cell = document.createElement("td");
+      if (key === "name") {
+        cell.className = "describe-table-name";
+        cell.textContent = row.name;
+      } else if (key === "status") {
+        const status = document.createElement("span");
+        status.className = "describe-status " + statusClass(row.status);
+        status.textContent = row.status;
+        cell.append(status);
+      } else {
+        if (numeric) cell.className = "num";
+        cell.textContent = row[key] === "-" ? "—" : row[key];
+      }
+      tr.append(cell);
+    }
+    body.append(tr);
+  }
+  table.append(thead, body);
+  wrap.append(table);
+  return wrap;
+}
+
+function sidebarMatchNote(text) {
+  const note = document.createElement("p");
+  note.className = "table-match-note";
+  note.dataset.testid = "intelligent-match";
+  note.title = text;
+  const kind = String(text).match(/so showing (similar names and related keys|similar names|related keys)\.$/);
+  note.textContent = kind ? kind[1][0].toUpperCase() + kind[1].slice(1) : text;
+  return note;
+}
+
+function matchNote(text) {
+  const note = document.createElement("p");
+  note.className = "describe-match-note";
+  note.dataset.testid = "intelligent-match";
+  note.append(matchMark());
+  const quoted = String(text).match(/^(No exact match for )("[^"]*")(, so showing (?:similar names and related keys|similar names|related keys)\.)$/);
+  if (!quoted) {
+    note.append(document.createTextNode(text));
+    return note;
+  }
+  const pattern = document.createElement("span");
+  pattern.className = "describe-match-pattern";
+  pattern.textContent = quoted[2];
+  note.append(document.createTextNode(quoted[1]), pattern, document.createTextNode(quoted[3]));
+  return note;
+}
+
+function matchMark() {
+  const icon = document.createElement("span");
+  icon.className = "describe-match-mark";
+  icon.setAttribute("aria-hidden", "true");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.4");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("d", "M7.1 3.1a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7ZM10.1 10.1 13 13");
+  svg.append(path);
+  icon.append(svg);
+  return icon;
+}
+
+function describeKey(role, label, key) {
+  const row = document.createElement("div");
+  row.className = "describe-key";
+  row.dataset.key = role;
+  row.append(keyIcon(role, label));
+  const nameLabel = document.createElement("span");
+  nameLabel.className = "describe-key-label";
+  nameLabel.textContent = label;
+  const name = document.createElement("span");
+  name.className = "describe-key-name";
+  name.textContent = key.name;
+  row.append(nameLabel, name);
+  if (key.type) {
+    const type = document.createElement("span");
+    type.className = "describe-key-type";
+    type.textContent = key.type;
+    row.append(type);
+  }
+  return row;
+}
+
+function statusClass(status) {
+  const key = String(status).toLowerCase();
+  if (key === "active") return "is-active";
+  if (key === "deleting") return "is-deleting";
+  if (key === "creating" || key === "updating") return "is-updating";
+  return "";
+}
+
+function highlightedQuery(text) {
+  const pre = document.createElement("pre");
+  pre.className = "describe-query";
+  pre.dataset.testid = "describe-query";
+  for (const part of highlightParts(text)) {
+    if (!part.style) {
+      pre.append(part.text);
+      continue;
+    }
+    const span = document.createElement("span");
+    span.className = "tok-" + part.style.replaceAll(".", "-");
+    span.textContent = part.text;
+    pre.append(span);
+  }
+  return pre;
 }
 
 function note(text, isError) {
@@ -1162,13 +1403,23 @@ function tableColumns(rows, columns) {
   return ordered.concat(extra).map((name) => described.get(name) || { name });
 }
 
-async function loadTables() {
+async function loadTables(options = {}) {
+  const refresh = Boolean(options.refresh);
+  const request = ++state.tablesRequest;
   const pattern = document.querySelector("#table-search").value.trim();
   const list = document.querySelector("#table-list");
+  const refreshButton = document.querySelector("#refresh-tables");
+  refreshButton.disabled = true;
+  refreshButton.classList.toggle("is-busy", refresh);
+  refreshButton.setAttribute("aria-busy", refresh ? "true" : "false");
   list.replaceChildren(note("Loading…", false));
   try {
-    const payload = await api("/api/tables?pattern=" + encodeURIComponent(pattern));
+    const query = new URLSearchParams({ pattern });
+    if (refresh) query.set("refresh", "1");
+    const payload = await api("/api/tables?" + query.toString());
+    if (request !== state.tablesRequest) return;
     list.replaceChildren();
+    if (payload.note) list.append(sidebarMatchNote(payload.note));
     if (!payload.tables.length) {
       state.table = "";
       list.append(note(pattern ? "No tables match " + pattern : "No tables", false));
@@ -1192,7 +1443,14 @@ async function loadTables() {
     }
     await loadRows();
   } catch (error) {
+    if (request !== state.tablesRequest) return;
     list.replaceChildren(note(error.message, true));
+  } finally {
+    if (request === state.tablesRequest) {
+      refreshButton.disabled = false;
+      refreshButton.classList.remove("is-busy");
+      refreshButton.setAttribute("aria-busy", "false");
+    }
   }
 }
 

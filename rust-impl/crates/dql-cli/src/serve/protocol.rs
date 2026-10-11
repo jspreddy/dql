@@ -106,11 +106,8 @@ pub fn envelope_from_result(result: StatementResult, partial: bool) -> ServeEnve
             envelope.affected = Some(count as u64);
             envelope
         }
-        StatementResult::Items(items) => {
-            let mut envelope = ServeEnvelope::success("items");
-            envelope.items = Some(items.iter().map(item_to_value).collect());
-            envelope
-        }
+        StatementResult::Items(items) => items_envelope(items, None),
+        StatementResult::ItemsWithNote { items, note } => items_envelope(items, Some(note)),
         StatementResult::Schema(schema) => {
             let mut envelope = ServeEnvelope::success("schema");
             envelope.message = Some(schema);
@@ -126,6 +123,13 @@ pub fn envelope_from_error(err: EngineError) -> ServeEnvelope {
         EngineError::Parse(parse_err) => ServeEnvelope::err("parse", parse_err.to_string()),
         EngineError::Runtime(message) => ServeEnvelope::err("runtime", message),
     }
+}
+
+fn items_envelope(items: Vec<dql_engine::Item>, note: Option<String>) -> ServeEnvelope {
+    let mut envelope = ServeEnvelope::success("items");
+    envelope.items = Some(items.iter().map(item_to_value).collect());
+    envelope.message = note;
+    envelope
 }
 
 fn item_to_value(item: &dql_engine::Item) -> serde_json::Value {

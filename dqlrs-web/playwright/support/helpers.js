@@ -1,5 +1,12 @@
 import { expect } from "@playwright/test";
 
+// CodeMirror Mod is Command on macOS and Control elsewhere.
+export const mod = process.platform === "darwin" ? "Meta" : "Control";
+
+export async function pressMod(page, key) {
+  await page.keyboard.press(`${mod}+${key}`);
+}
+
 export function node(page, filePath) {
   const id = "node-" + String(filePath).replaceAll("/", "__");
   return page.locator(`[data-testid="${id}"]`);
@@ -12,7 +19,7 @@ export async function openApp(page, app) {
 
 export async function replaceEditor(page, text) {
   await page.locator("#editor-content").click();
-  await page.keyboard.press("Control+A");
+  await pressMod(page, "A");
   await page.keyboard.press("Backspace");
   await page.keyboard.insertText(text);
 }

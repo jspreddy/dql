@@ -11,9 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from engine import (  # noqa: E402
+    Engine,
+    EngineError,
     TableShape,
     _ls_keys,
     _ls_names,
+    _ls_note,
     _safe_table_name,
     column_order,
     explain_index,
@@ -74,6 +77,17 @@ class StatementTests(unittest.TestCase):
 
     def test_ignores_blank_input(self) -> None:
         self.assertEqual(split_statements("  \n-- just a comment\n"), [])
+
+    def test_keeps_describe_intact(self) -> None:
+        text = "DESCRIBE posts;\nls posts"
+        self.assertEqual(split_statements(text), ["DESCRIBE posts;", "ls posts;"])
+
+    def test_keeps_show_tables_and_ls_refresh_intact(self) -> None:
+        text = "SHOW TABLES LIKE 'alpha%';\nls alpha* refresh=True"
+        self.assertEqual(
+            split_statements(text),
+            ["SHOW TABLES LIKE 'alpha%';", "ls alpha* refresh=True;"],
+        )
 
 
 class FileTests(unittest.TestCase):
@@ -138,6 +152,31 @@ class LsParseTests(unittest.TestCase):
     def test_names_and_keys(self) -> None:
         summary = "Tables\nName     Items\nnb_posts        2\nnb_users        1\n"
         self.assertEqual(_ls_names(summary), ["nb_posts", "nb_users"])
+        noted = (
+            'No exact match for "post", so showing similar names.\n\n' + summary
+        )
+        self.assertEqual(_ls_names(noted), ["nb_posts", "nb_users"])
+        self.assertEqual(
+            _ls_note(noted),
+            'No exact match for "post", so showing similar names.',
+        )
+        self.assertEqual(
+            _ls_note('No exact match for "order_id", so showing related keys.\n'),
+            'No exact match for "order_id", so showing related keys.',
+        )
+        self.assertEqual(
+            _ls_note('No exact match for "shop", so showing similar names and related keys.\n'),
+            'No exact match for "shop", so showing similar names and related keys.',
+        )
+        self.assertEqual(_ls_note(summary), "")
+        described = "Name: catalog\nHash Key: isbn (STRING)\n"
+        self.assertEqual(_ls_names(described), ["catalog"])
+        self.assertEqual(
+            _ls_names(
+                'No exact match for "catal", so showing similar names.\n\n' + described
+            ),
+            ["catalog"],
+        )
         detail = "Name: nb_posts\nHash Key: username (STRING)\nRange Key: postid (NUMBER)\n"
         self.assertEqual(
             _ls_keys(detail),
@@ -217,6 +256,87 @@ class LsParseTests(unittest.TestCase):
         self.assertTrue(_safe_table_name("nb-posts"))
         self.assertFalse(_safe_table_name("nb posts"))
         self.assertFalse(_safe_table_name(""))
+
+
+class ListTablesRefreshTests(unittest.TestCase):
+    def test_search_uses_ls_and_keeps_the_match_note(self) -> None:
+        engine = _RecordingEngine()
+        engine._shapes["nb_posts"] = TableShape("id", "", {})
+        listed = engine.list_tables("nb_*")
+        self.assertEqual(listed["note"], "")
+        self.assertEqual([table["name"] for table in listed["tables"]], ["nb_posts"])
+        self.assertEqual(listed["tables"][0]["keys"], [{"name": "id", "role": "hash"}])
+        self.assertEqual(engine.commands, ["ls 'nb_*'", "ls nb_posts"])
+        self.assertIn("nb_posts", engine._shapes)
+
+        engine.commands.clear()
+        refreshed = engine.list_tables("nb_*", refresh=True)
+        self.assertEqual(refreshed["note"], "")
+        self.assertEqual(engine.commands, ["ls 'nb_*' refresh=True", "ls nb_posts"])
+        self.assertEqual(engine._shapes, {})
+
+        engine.commands.clear()
+        similar = engine.list_tables("post")
+        self.assertEqual(similar["note"], 'No exact match for "post", so showing similar names.')
+        self.assertEqual([table["name"] for table in similar["tables"]], ["nb_posts"])
+        self.assertEqual(engine.commands, ["ls post", "ls nb_posts"])
+
+        engine.commands.clear()
+        one = engine.list_tables("catalog")
+        self.assertEqual(one["note"], 'No exact match for "catal", so showing similar names.')
+        self.assertEqual(
+            one["tables"],
+            [{"name": "catalog", "keys": [{"name": "isbn", "role": "hash"}]}],
+        )
+        self.assertEqual(engine.commands, ["ls catalog", "ls catalog"])
+
+        missed = engine.list_tables("missing")
+        self.assertEqual(missed, {"tables": [], "note": ""})
+        with self.assertRaises(EngineError):
+            engine.list_tables("boom")
+
+
+class _RecordingEngine(Engine):
+    def __init__(self) -> None:
+        super().__init__("dqlrs", "", "8000", "us-west-1")
+        self.commands: list[str] = []
+
+    def _exec(self, dql: str) -> dict:
+        self.commands.append(dql)
+        parts = dql.split()
+        target = ""
+        if len(parts) >= 2:
+            raw = parts[1]
+            if raw[:1] in {"'", '"'}:
+                target = raw.strip("'\"")
+            elif "=" not in raw:
+                target = raw
+        if target == "missing":
+            return {"ok": False, "error": {"message": 'Table "missing" not found'}}
+        if target == "boom":
+            return {"ok": False, "error": {"message": "connection refused"}}
+        if target == "nb_posts":
+            return {"ok": True, "message": "Name: nb_posts\nHash Key: id (STRING)\n"}
+        if target == "catalog":
+            return {
+                "ok": True,
+                "message": (
+                    'No exact match for "catal", so showing similar names.\n\n'
+                    "Name: catalog\nHash Key: isbn (STRING)\n"
+                ),
+            }
+        if target == "post":
+            return {
+                "ok": True,
+                "message": (
+                    'No exact match for "post", so showing similar names.\n\n'
+                    "Tables\nName Items\nnb_posts 2\n"
+                ),
+            }
+        if target in {"", "nb_*"}:
+            rows = "nb_posts 1\n" if target == "nb_*" else "nb_posts 1\nother 1\n"
+            return {"ok": True, "message": f"Tables\nName Items\n{rows}"}
+        return {"ok": False, "error": {"message": f"unexpected command {dql}"}}
 
 
 if __name__ == "__main__":

@@ -295,6 +295,15 @@ pub enum Statement {
     DumpSchema {
         tables: Option<Vec<String>>,
     },
+    /// `SHOW TABLES` or `SHOW TABLES LIKE 'pattern'`.
+    /// `%` matches any sequence and `_` matches one character.
+    ShowTables {
+        like: Option<String>,
+    },
+    /// `DESCRIBE <table>` prints the same detail view as `ls` for one table.
+    Describe {
+        table: String,
+    },
     Load {
         file: String,
         table: String,
@@ -609,6 +618,10 @@ impl Parser {
             self.parse_dump()
         } else if self.accept_keyword("LOAD") {
             self.parse_load()
+        } else if self.accept_keyword("SHOW") {
+            self.parse_show()
+        } else if self.accept_keyword("DESCRIBE") {
+            self.parse_describe()
         } else {
             Err(self.error("expected a DQL statement"))
         }
@@ -1208,6 +1221,21 @@ impl Parser {
         })
     }
 
+    fn parse_describe(&mut self) -> Result<Statement, ParseError> {
+        let table = self.expect_ident()?;
+        Ok(Statement::Describe { table })
+    }
+
+    fn parse_show(&mut self) -> Result<Statement, ParseError> {
+        self.expect_keyword("TABLES")?;
+        let like = if self.accept_keyword("LIKE") {
+            Some(self.expect_string()?)
+        } else {
+            None
+        };
+        Ok(Statement::ShowTables { like })
+    }
+
     fn parse_load(&mut self) -> Result<Statement, ParseError> {
         let file = self.expect_string_or_ident()?;
         self.expect_keyword("INTO")?;
@@ -1764,6 +1792,14 @@ impl Parser {
         matches!(self.peek(), Some(Token::Ident(value)) if value.eq_ignore_ascii_case(keyword))
     }
 
+    fn expect_string(&mut self) -> Result<String, ParseError> {
+        match self.next().cloned() {
+            Some(Token::String(value)) => Ok(value),
+            Some(token) => Err(self.error_at_previous(format!("expected string, got {token:?}"))),
+            None => Err(self.error("expected string")),
+        }
+    }
+
     fn expect_ident(&mut self) -> Result<String, ParseError> {
         match self.next().cloned() {
             Some(Token::Ident(value)) => Ok(value),
@@ -2126,6 +2162,46 @@ mod tests {
             } => assert_eq!(field, "a.b-c"),
             other => panic!("unexpected statement: {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_show_tables_like() {
+        assert_eq!(
+            parse_statement("SHOW TABLES").unwrap(),
+            Statement::ShowTables { like: None }
+        );
+        assert_eq!(
+            parse_statement("show tables like 'alpha%';").unwrap(),
+            Statement::ShowTables {
+                like: Some("alpha%".to_string())
+            }
+        );
+        assert_eq!(
+            parse_statement("SHOW TABLES LIKE 'a_c'").unwrap(),
+            Statement::ShowTables {
+                like: Some("a_c".to_string())
+            }
+        );
+        assert!(parse_statement("SHOW TABLES LIKE").is_err());
+        assert!(parse_statement("SHOW TABLE t").is_err());
+    }
+
+    #[test]
+    fn parses_describe_table() {
+        assert_eq!(
+            parse_statement("DESCRIBE posts").unwrap(),
+            Statement::Describe {
+                table: "posts".to_string()
+            }
+        );
+        assert_eq!(
+            parse_statement("describe posts;").unwrap(),
+            Statement::Describe {
+                table: "posts".to_string()
+            }
+        );
+        assert!(parse_statement("DESCRIBE").is_err());
+        assert!(parse_statement("DESCRIBE 'posts'").is_err());
     }
 
     #[test]
