@@ -53,12 +53,10 @@ Additionally, `whoami` command is available in the interactive shell.
 3. **Dual implementations.** The repo contains a Python client (`dql`) and a
    Rust rewrite (`dqlrs`). Install instructions below assume the `v-next`
    branch.
-4. **`v-next` Python is stable.** Python `dql` is the recommended tool. It is
-   the original implementation plus additional features and bug fixes, and the
-   one that matches documented behavior.
-5. **`v-next` Rust is WIP.** The Rust client is catching up to Python parity.
-   Try it if you want, but expect gaps / bugs.
-6. You can have both `dql` (Python) and `dqlrs` (Rust) installed side by side;
+4. **Target state is Rust.** `dqlrs` is the primary tool. Python remains for
+   the original `dql` client and for integrations where Rust is not feasible.
+   New `dqlrs` work, including the web UI (`dqlrs --web`), is Rust.
+5. You can have both `dql` (Python) and `dqlrs` (Rust) installed side by side;
    they are different binaries.
 
 ## Install instructions
@@ -66,7 +64,7 @@ Additionally, `whoami` command is available in the interactive shell.
 These install from GitHub on the **`v-next`** branch. The Python package is in
 `py-impl/`; the Rust workspace is in `rust-impl/`.
 
-### 1. Python `dql` (recommended)
+### 1. Python `dql`
 
 Requires Python 3.9–3.11 and [uv](https://docs.astral.sh/uv/).
 
@@ -79,7 +77,7 @@ uv tool install --python 3.9 \
 Run `dql` or `dql -r us-east-1`. Language docs:
 [`py-docs/topics/getting_started.rst`](py-docs/topics/getting_started.rst).
 
-### 2. Rust `dqlrs` (WIP)
+### 2. Rust `dqlrs`
 
 Requires [Rust/Cargo](https://rustup.rs/).
 
