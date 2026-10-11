@@ -1,4 +1,4 @@
-# Dev tasks for the DQL repo. Run `just` from anywhere in the checkout.
+# Dev and maintainer tasks for the DQL repo. Run `just` from anywhere in the checkout.
 
 # List dev tasks
 default:
@@ -13,6 +13,16 @@ dynamo:
 [group('local')]
 dynamo-stop:
     "{{justfile_directory()}}/scripts/stop_dynamodb_local.sh"
+
+# Install Java 22 with sdkman for DynamoDB Local
+[group('local')]
+java:
+    "{{justfile_directory()}}/scripts/install_sdkman_java.sh"
+
+# Install Java 22, then start DynamoDB Local in the foreground
+[group('local')]
+local-install:
+    "{{justfile_directory()}}/scripts/install.sh"
 
 # Sync the Python dev environment
 [group('python')]
@@ -33,6 +43,23 @@ py-fix:
 [group('python')]
 py-test:
     cd "{{justfile_directory()}}/py-impl" && uv run task test
+
+# Run Python tests on 3.9, 3.10, and 3.11. Extra args go to pytest.
+[group('python')]
+py-test-matrix *args: dynamo
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    # `just recipe -- --flag` includes the separator in the variadic args.
+    args=({{args}})
+    if [[ ${#args[@]} -gt 0 && "${args[0]}" == "--" ]]; then
+        args=("${args[@]:1}")
+    fi
+    if [[ ${#args[@]} -gt 0 ]]; then
+        ./scripts/py-test-python-versions.sh "${args[@]}"
+    else
+        ./scripts/py-test-python-versions.sh
+    fi
 
 # Build the Python sdist and wheel
 [group('python')]
@@ -82,6 +109,11 @@ rust-build:
 [group('rust')]
 rust-install:
     cd "{{justfile_directory()}}/rust-impl" && cargo install --path crates/dql-cli --locked --force --root "{{home_directory()}}/.local"
+
+# Install the release dql binary from GitHub. Override with DQL_VERSION, DQL_INSTALL_DIR, or DQL_REPO.
+[group('rust')]
+rust-install-release:
+    "{{justfile_directory()}}/scripts/rust-install.sh"
 
 # Smoke-test the release dqlrs binary (fails if DynamoDB Local is down)
 [group('rust')]
@@ -296,6 +328,23 @@ notebook-test-slow *args:
         just notebook-test -- --slowmo 500 "${args[@]}" -m slow
     else
         just notebook-test -- --slowmo 500 -m slow
+    fi
+
+# Bump Python or Rust and refresh that lockfile. Flags need `--`: just version -- rust --dry-run build
+[group('other')]
+version *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    # `just recipe -- --flag` includes the separator in the variadic args.
+    args=({{args}})
+    if [[ ${#args[@]} -gt 0 && "${args[0]}" == "--" ]]; then
+        args=("${args[@]:1}")
+    fi
+    if [[ ${#args[@]} -gt 0 ]]; then
+        ./scripts/bump-version.sh "${args[@]}"
+    else
+        ./scripts/bump-version.sh
     fi
 
 # Root recipes.
