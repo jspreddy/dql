@@ -1,0 +1,26 @@
+-- Save a scan to a file, then load that file into another table.
+-- A relative path is resolved from the directory where dqlrs was started.
+-- just web starts in the repository root, so saved.json and saved.csv land there.
+-- An absolute path is used as written. The parent folder must already exist.
+-- SCAN * FROM sample_save SAVE '/tmp/rows.json';
+
+DROP TABLE IF EXISTS sample_save;
+DROP TABLE IF EXISTS sample_save_loaded;
+
+CREATE TABLE sample_save (
+  id STRING HASH KEY
+);
+
+INSERT INTO sample_save (id, name, qty) VALUES ('a', 'alpha', 3);
+INSERT INTO sample_save (id, name, qty) VALUES ('b', 'beta', 7);
+
+SCAN * FROM sample_save SAVE 'saved.json';
+SCAN * FROM sample_save SAVE 'saved.csv';
+
+CREATE TABLE sample_save_loaded (
+  id STRING HASH KEY
+);
+
+LOAD 'saved.json' INTO sample_save_loaded;
+
+SCAN * FROM sample_save_loaded;
