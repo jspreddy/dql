@@ -402,6 +402,7 @@ const schemaPopTitle = document.querySelector("#schema-pop-title");
 const schemaPopKicker = document.querySelector("#schema-pop-kicker");
 const schemaPopSummary = document.querySelector("#schema-pop-summary");
 const schemaPopKeys = document.querySelector("#schema-pop-keys");
+const schemaPopQuery = document.querySelector("#schema-pop-query");
 const schemaPopBody = document.querySelector("#schema-pop-body");
 const schemaPopFoot = document.querySelector("#schema-pop-foot");
 rowsSchemaBtn.addEventListener("click", () => openSchema(state.browserSchema, rowsSchemaBtn));
@@ -1029,6 +1030,7 @@ function renderResults(results) {
       resultBody.append(resultCard({
         source: "result",
         title: tableName || "Result",
+        statement: item.statement || "",
         rows,
         columns: item.columns || [],
         keys: [],
@@ -1470,10 +1472,10 @@ function statusClass(status) {
   return "";
 }
 
-function highlightedQuery(text) {
+function highlightedQuery(text, className) {
   const pre = document.createElement("pre");
-  pre.className = "describe-query";
-  pre.dataset.testid = "describe-query";
+  pre.className = className || "describe-query";
+  pre.dataset.testid = className ? "schema-query" : "describe-query";
   for (const part of highlightParts(text)) {
     if (!part.style) {
       pre.append(part.text);
@@ -1774,11 +1776,26 @@ function openSchema(snapshot, button) {
     chip.append(label);
     schemaPopKeys.append(chip);
   }
+  fillSchemaQuery(browser ? "" : snapshot.statement);
   schemaPopBody.replaceChildren(schemaTable(inspected));
   schemaPopFoot.textContent = browser
     ? "Types come from this page and the keys already listed. No extra query was run."
     : "Types come from this result. No extra query was run.";
   schemaPop.showModal();
+}
+
+function fillSchemaQuery(statement) {
+  const text = String(statement || "").trim();
+  schemaPopQuery.replaceChildren();
+  if (!text) {
+    schemaPopQuery.hidden = true;
+    return;
+  }
+  const label = document.createElement("p");
+  label.className = "schema-pop-query-label";
+  label.textContent = "Query";
+  schemaPopQuery.append(label, highlightedQuery(text, "schema-pop-query-text"));
+  schemaPopQuery.hidden = false;
 }
 
 function schemaTable(inspected) {

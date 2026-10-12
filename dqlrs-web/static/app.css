@@ -1394,6 +1394,46 @@ th { background: #fafbfc; position: sticky; top: 0; }
 
 .schema-pop-keys:empty { display: none; }
 
+.schema-pop-query {
+  padding: 10px 20px 0;
+}
+
+.schema-pop-query[hidden] { display: none; }
+
+.schema-pop-query-label {
+  margin: 0 0 6px;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.schema-pop-query-text {
+  margin: 0;
+  padding: 10px 12px;
+  background: #f4f8f6;
+  border: 1px solid #dce8e2;
+  border-radius: 8px;
+  color: #12202b;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.schema-pop-query-text .tok-keyword { color: #0f766e; font-weight: 650; }
+.schema-pop-query-text .tok-deleted { color: #dc2626; font-weight: 700; }
+.schema-pop-query-text .tok-typeName { color: #1d4ed8; }
+.schema-pop-query-text .tok-variableName-function { color: #6d28d9; }
+.schema-pop-query-text .tok-bool,
+.schema-pop-query-text .tok-null { color: #0369a1; font-weight: 650; }
+.schema-pop-query-text .tok-string { color: #9f1239; }
+.schema-pop-query-text .tok-number { color: #b45309; }
+.schema-pop-query-text .tok-comment { color: #6b7280; font-style: italic; }
+.schema-pop-query-text .tok-operator { color: #334155; }
+
 .schema-key-chip {
   display: inline-flex;
   align-items: center;

@@ -335,6 +335,8 @@ test("opens result and table-browser structure from data already in hand", async
   await expect(page.locator("#schema-pop-kicker")).toHaveText("Result structure");
   await expect(page.locator("#schema-pop-title")).toHaveText(name);
   await expect(page.locator("#schema-pop-summary")).toHaveText("3 columns · 3 rows");
+  await expect(page.locator("#schema-pop-query")).toBeVisible();
+  await expect(page.locator("#schema-pop-query")).toContainText(`SCAN * FROM ${name}`);
   await expect(page.locator("#schema-table thead th")).toHaveText(["Column", "Type", "Role", "Present", "Sample"]);
   const resultId = page.locator('#schema-table tbody tr[data-column="id"]');
   await expect(resultId).toContainText("id");
@@ -377,6 +379,7 @@ test("opens result and table-browser structure from data already in hand", async
   await expect(page.locator("#schema-pop-kicker")).toHaveText("Table structure");
   await expect(page.locator("#schema-pop-title")).toHaveText(name);
   await expect(page.locator("#schema-pop-summary")).toHaveText("3 columns · 3 rows on this page");
+  await expect(page.locator("#schema-pop-query")).toBeHidden();
   const rowsId = page.locator('#schema-table tbody tr[data-column="id"]');
   await expect(rowsId).toContainText("STRING");
   await expect(rowsId).toContainText("Hash key");
@@ -435,6 +438,7 @@ test("gives each query result its own named card and structure icon", async ({ p
   await booksCard.locator(".result-schema").click();
   await expect(page.locator("#schema-pop")).toBeVisible();
   await expect(page.locator("#schema-pop-title")).toHaveText(books);
+  await expect(page.locator("#schema-pop-query")).toContainText(`SCAN * FROM ${books}`);
   await expect(page.locator('#schema-table tbody tr[data-column="isbn"]')).toContainText("STRING");
   await expect(page.locator('#schema-table tbody tr[data-column="isbn"]')).toContainText("Hash key");
   await expect(page.locator('#schema-table tbody tr[data-column="title"]')).toContainText("STRING");
@@ -442,6 +446,7 @@ test("gives each query result its own named card and structure icon", async ({ p
 
   await ordersCard.locator(".result-schema").click();
   await expect(page.locator("#schema-pop-title")).toHaveText(orders);
+  await expect(page.locator("#schema-pop-query")).toContainText(`SCAN * FROM ${orders}`);
   await expect(page.locator('#schema-table tbody tr[data-column="id"]')).toContainText("STRING");
   await expect(page.locator('#schema-table tbody tr[data-column="n"]')).toContainText("NUMBER");
   expect(extra).toEqual([]);
