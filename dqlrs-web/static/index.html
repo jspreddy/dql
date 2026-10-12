@@ -37,7 +37,7 @@
     <div class="endpoint" id="endpoint">localhost:8000</div>
   </header>
   <div class="body">
-    <aside class="side">
+    <aside class="side" id="side">
       <div class="side-head">
         <span class="side-heading">
           <span id="side-title">Files</span>
@@ -56,6 +56,9 @@
           <input id="table-search" type="search" placeholder="catalog" spellcheck="false" aria-label="Filter tables" title="Same matching as ls. A glob lists those tables. Otherwise similar names and related keys." />
         </div>
         <div id="table-list" class="table-list"></div>
+      </div>
+      <div id="side-resize" class="side-resize" role="separator" aria-orientation="vertical" aria-label="Resize navigation" title="Drag to resize the left nav" tabindex="0">
+        <span class="side-grip" aria-hidden="true"></span>
       </div>
     </aside>
     <div id="file-menu" class="menu" role="menu" hidden></div>

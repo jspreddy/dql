@@ -7,6 +7,42 @@ test.beforeEach(async ({ page, app }) => {
   await openApp(page, app);
 });
 
+test("resizes the left nav from the edge handle", async ({ page }) => {
+  const side = page.locator("#side");
+  const handle = page.locator("#side-resize");
+  await expect(handle).toBeVisible();
+  const before = await side.boundingBox();
+  const grip = await handle.boundingBox();
+  const y = grip.y + grip.height / 2;
+  await page.mouse.move(grip.x + grip.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 + 90, y, { steps: 8 });
+  const wider = await side.boundingBox();
+  expect(wider.width).toBeGreaterThan(before.width + 60);
+
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("dqlrs-web.side-width")), {
+    timeout: 1_000,
+  }).not.toBeNull();
+  const storedWhileHeld = Number(await page.evaluate(() => localStorage.getItem("dqlrs-web.side-width")));
+  expect(Math.abs(storedWhileHeld - wider.width)).toBeLessThan(3);
+
+  await page.mouse.up();
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  const restored = await page.locator("#side").boundingBox();
+  expect(Math.abs(restored.width - wider.width)).toBeLessThan(3);
+
+  await handle.focus();
+  await page.keyboard.press("ArrowLeft");
+  const narrower = await page.locator("#side").boundingBox();
+  expect(narrower.width).toBeLessThan(restored.width - 10);
+
+  await handle.dblclick();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("dqlrs-web.side-width"))).toBeNull();
+  const reset = await page.locator("#side").boundingBox();
+  expect(Math.abs(reset.width - 220)).toBeLessThan(8);
+});
+
 test("shows nested files, an empty folder, and opens a file", async ({ page }) => {
   await expect(node(page, "empty")).toBeVisible();
   await expect(node(page, "queries")).toBeVisible();
