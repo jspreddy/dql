@@ -1791,10 +1791,7 @@ function fillSchemaQuery(statement) {
     schemaPopQuery.hidden = true;
     return;
   }
-  const label = document.createElement("p");
-  label.className = "schema-pop-query-label";
-  label.textContent = "Query";
-  schemaPopQuery.append(label, highlightedQuery(text, "schema-pop-query-text"));
+  schemaPopQuery.append(highlightedQuery(text, "schema-pop-query-text"));
   schemaPopQuery.hidden = false;
 }
 
