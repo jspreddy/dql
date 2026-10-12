@@ -43,6 +43,9 @@ const state = {
   suppressSave: false,
   dragPath: "",
   tablesRequest: 0,
+  listedTables: [],
+  resultSchema: null,
+  browserSchema: null,
 };
 
 const HIGHLIGHT_KEY = "dqlrs-web.highlight";
@@ -393,6 +396,33 @@ document.querySelector("#refresh-tables").addEventListener("click", () => {
 });
 document.querySelector("#page-prev").addEventListener("click", () => changePage(-1));
 document.querySelector("#page-next").addEventListener("click", () => changePage(1));
+const resultSchemaBtn = document.querySelector("#result-schema");
+const rowsSchemaBtn = document.querySelector("#rows-schema");
+const schemaPop = document.querySelector("#schema-pop");
+const schemaPopTitle = document.querySelector("#schema-pop-title");
+const schemaPopKicker = document.querySelector("#schema-pop-kicker");
+const schemaPopSummary = document.querySelector("#schema-pop-summary");
+const schemaPopKeys = document.querySelector("#schema-pop-keys");
+const schemaPopBody = document.querySelector("#schema-pop-body");
+const schemaPopFoot = document.querySelector("#schema-pop-foot");
+resultSchemaBtn.addEventListener("click", () => openSchema("result"));
+rowsSchemaBtn.addEventListener("click", () => openSchema("browser"));
+document.querySelector("#schema-pop-close").addEventListener("click", () => schemaPop.close());
+schemaPop.addEventListener("click", (event) => {
+  const box = schemaPop.getBoundingClientRect();
+  if (
+    event.clientX < box.left
+    || event.clientX > box.right
+    || event.clientY < box.top
+    || event.clientY > box.bottom
+  ) {
+    schemaPop.close();
+  }
+});
+schemaPop.addEventListener("close", () => {
+  resultSchemaBtn.setAttribute("aria-expanded", "false");
+  rowsSchemaBtn.setAttribute("aria-expanded", "false");
+});
 
 boot();
 
@@ -409,6 +439,7 @@ async function boot() {
 }
 
 function setMode(mode) {
+  if (schemaPop.open) schemaPop.close();
   state.mode = mode;
   const tables = mode === "tables";
   document.querySelector("#query-view").classList.toggle("hidden", mode !== "query");
@@ -923,6 +954,7 @@ async function runSelection() {
   if (!dql.trim()) {
     resultMeta.textContent = "Nothing to run";
     resultBody.replaceChildren();
+    setResultSchema(null);
     hideProgress();
     return;
   }
@@ -932,6 +964,7 @@ async function runSelection() {
   setRunBusy(true);
   resultMeta.textContent = "Running…";
   resultBody.replaceChildren();
+  setResultSchema(null);
   showProgress(null, null);
   const results = [];
   try {
@@ -974,6 +1007,7 @@ async function runSelection() {
 
 function renderResults(results) {
   resultBody.replaceChildren();
+  setResultSchema(null);
   const lastItems = [...results].reverse().find((item) => item.kind === "items" && item.ok);
   const notes = results.filter((item) => item !== lastItems);
   let explainSteps = 0;
@@ -1015,6 +1049,13 @@ function renderResults(results) {
     } else {
       resultMeta.textContent = rows.length + (rows.length === 1 ? " row" : " rows");
       resultBody.append(dataTable(rows, "result-table", lastItems.columns));
+      setResultSchema({
+        source: "result",
+        title: "Results",
+        rows,
+        columns: lastItems.columns || [],
+        keys: [],
+      });
     }
   } else if (listedTables > 0 && otherNotes === 1) {
     resultMeta.textContent = listedTables + (listedTables === 1 ? " table" : " tables");
@@ -1511,6 +1552,242 @@ function tableColumns(rows, columns) {
   return ordered.concat(extra).map((name) => described.get(name) || { name });
 }
 
+function setResultSchema(snapshot) {
+  state.resultSchema = snapshot;
+  syncSchemaButton(resultSchemaBtn, snapshot);
+  if (!snapshot && resultSchemaBtn.getAttribute("aria-expanded") === "true") schemaPop.close();
+}
+
+function setBrowserSchema(snapshot) {
+  state.browserSchema = snapshot;
+  syncSchemaButton(rowsSchemaBtn, snapshot);
+  if (!snapshot && rowsSchemaBtn.getAttribute("aria-expanded") === "true") schemaPop.close();
+}
+
+function syncSchemaButton(button, snapshot) {
+  const columns = snapshot ? schemaColumns(snapshot.rows, snapshot.columns, snapshot.keys) : [];
+  button.classList.toggle("hidden", !columns.length);
+  if (!columns.length) button.setAttribute("aria-expanded", "false");
+}
+
+function schemaColumns(rows, columns, keys) {
+  const described = [];
+  const seen = new Set();
+  function add(column) {
+    const name = typeof column === "string" ? column : column && column.name;
+    if (!name || seen.has(name)) return;
+    seen.add(name);
+    described.push(typeof column === "string" ? { name } : column);
+  }
+  if (Array.isArray(columns)) {
+    for (const column of columns) add(column);
+  }
+  if (Array.isArray(keys)) {
+    for (const key of keys) {
+      if (!key || !key.name) continue;
+      add({
+        name: key.name,
+        table: key.role === "hash" || key.role === "range" ? key.role : undefined,
+      });
+    }
+  }
+  const present = [];
+  for (const row of rows || []) {
+    for (const name of Object.keys(row)) {
+      if (!present.includes(name)) present.push(name);
+    }
+  }
+  const extra = present.filter((name) => !seen.has(name));
+  extra.sort((left, right) => left.localeCompare(right));
+  return described.concat(extra.map((name) => ({ name })));
+}
+
+function valueKind(value) {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "boolean") return "BOOL";
+  if (typeof value === "number") return "NUMBER";
+  if (typeof value === "string") return "STRING";
+  if (Array.isArray(value)) return "LIST";
+  if (typeof value === "object") return "MAP";
+  return "STRING";
+}
+
+function inspectColumn(column, rows) {
+  const total = (rows || []).length;
+  let present = 0;
+  const kinds = [];
+  let sample;
+  for (const row of rows || []) {
+    if (!Object.prototype.hasOwnProperty.call(row, column.name)) continue;
+    present += 1;
+    const value = row[column.name];
+    const kind = valueKind(value);
+    if (kind !== "NULL" && !kinds.includes(kind)) kinds.push(kind);
+    if (sample === undefined && value !== null && value !== undefined) sample = value;
+  }
+  return {
+    column,
+    name: column.name,
+    kinds: kinds.length ? kinds : present ? ["NULL"] : [],
+    table: column.table || "",
+    index: column.index || "",
+    present,
+    total,
+    sample,
+  };
+}
+
+function roleLabels(column) {
+  const labels = [];
+  if (column.table === "hash") labels.push("Hash key");
+  if (column.table === "range") labels.push("Range key");
+  if (column.index === "hash") labels.push("Index hash");
+  if (column.index === "range") labels.push("Index range");
+  return labels;
+}
+
+function formatSample(value) {
+  if (value === null || value === undefined) return "";
+  const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+  return text.length > 48 ? text.slice(0, 47) + "…" : text;
+}
+
+function openSchema(source) {
+  const snapshot = source === "browser" ? state.browserSchema : state.resultSchema;
+  if (!snapshot) return;
+  const columns = schemaColumns(snapshot.rows, snapshot.columns, snapshot.keys);
+  if (!columns.length) return;
+  const inspected = columns.map((column) => inspectColumn(column, snapshot.rows));
+  const rowCount = (snapshot.rows || []).length;
+  resultSchemaBtn.setAttribute("aria-expanded", source === "result" ? "true" : "false");
+  rowsSchemaBtn.setAttribute("aria-expanded", source === "browser" ? "true" : "false");
+  schemaPopKicker.textContent = source === "browser" ? "Table structure" : "Result structure";
+  schemaPopTitle.textContent = source === "browser" ? snapshot.title : "This result";
+  schemaPopSummary.textContent = inspected.length
+    + (inspected.length === 1 ? " column" : " columns")
+    + " · "
+    + rowCount
+    + (rowCount === 1 ? " row" : " rows")
+    + (source === "browser" ? " on this page" : "");
+  schemaPopKeys.replaceChildren();
+  const keyChips = [];
+  for (const item of inspected) {
+    if (item.table === "hash" || item.table === "range") {
+      keyChips.push({ name: item.name, role: item.table });
+    }
+  }
+  if (!keyChips.length) {
+    for (const key of snapshot.keys || []) {
+      if (key && (key.role === "hash" || key.role === "range")) {
+        keyChips.push({ name: key.name, role: key.role });
+      }
+    }
+  }
+  for (const key of keyChips) {
+    const chip = document.createElement("span");
+    chip.className = "schema-key-chip";
+    chip.dataset.role = key.role;
+    chip.append(keyIcon(key.role, key.role === "hash" ? "Hash key" : "Range key"));
+    const label = document.createElement("span");
+    label.textContent = key.name;
+    chip.append(label);
+    schemaPopKeys.append(chip);
+  }
+  schemaPopBody.replaceChildren(schemaTable(inspected));
+  schemaPopFoot.textContent = source === "browser"
+    ? "Types come from this page and the keys already listed. No extra query was run."
+    : "Types come from this result. No extra query was run.";
+  schemaPop.showModal();
+}
+
+function schemaTable(inspected) {
+  if (!inspected.length) return note("No columns", false);
+  const table = document.createElement("table");
+  table.id = "schema-table";
+  const head = document.createElement("tr");
+  for (const label of ["Column", "Type", "Role", "Present", "Sample"]) {
+    const cell = document.createElement("th");
+    cell.scope = "col";
+    cell.textContent = label;
+    head.append(cell);
+  }
+  const thead = document.createElement("thead");
+  thead.append(head);
+  const body = document.createElement("tbody");
+  for (const item of inspected) {
+    const tr = document.createElement("tr");
+    tr.dataset.column = item.name;
+    const name = document.createElement("td");
+    name.className = "schema-name";
+    name.textContent = item.name;
+    const type = document.createElement("td");
+    const types = document.createElement("span");
+    types.className = "schema-types";
+    if (item.kinds.length) {
+      for (const kind of item.kinds) types.append(schemaTypeChip(kind));
+    } else {
+      types.append(schemaTypeChip("empty", "—"));
+    }
+    type.append(types);
+    const role = document.createElement("td");
+    const labels = roleLabels(item.column);
+    if (labels.length) {
+      const line = document.createElement("span");
+      line.className = "schema-role";
+      for (const icon of keyIcons(item.column)) line.append(icon);
+      const text = document.createElement("span");
+      text.textContent = labels.join(", ");
+      line.append(text);
+      role.append(line);
+    } else {
+      const empty = document.createElement("span");
+      empty.className = "schema-role-muted";
+      empty.textContent = "—";
+      role.append(empty);
+    }
+    const present = document.createElement("td");
+    present.append(schemaPresent(item.present, item.total));
+    const sample = document.createElement("td");
+    sample.className = "schema-sample";
+    const sampleText = formatSample(item.sample);
+    sample.textContent = sampleText;
+    sample.title = sampleText;
+    tr.append(name, type, role, present, sample);
+    body.append(tr);
+  }
+  table.append(thead, body);
+  return table;
+}
+
+function schemaTypeChip(kind, label) {
+  const chip = document.createElement("span");
+  chip.className = "schema-type";
+  chip.dataset.kind = kind;
+  chip.textContent = label || kind;
+  return chip;
+}
+
+function schemaPresent(present, total) {
+  const wrap = document.createElement("span");
+  wrap.className = "schema-present";
+  if (!total) {
+    const empty = document.createElement("span");
+    empty.className = "schema-role-muted";
+    empty.textContent = "—";
+    wrap.append(empty);
+    return wrap;
+  }
+  const bar = document.createElement("span");
+  bar.className = "schema-present-bar" + (present < total ? " is-sparse" : "");
+  const fill = document.createElement("span");
+  fill.style.width = Math.round((present / total) * 100) + "%";
+  bar.append(fill);
+  const label = document.createElement("span");
+  label.textContent = present + "/" + total;
+  wrap.append(bar, label);
+  return wrap;
+}
+
 async function loadTables(options = {}) {
   const refresh = Boolean(options.refresh);
   const request = ++state.tablesRequest;
@@ -1533,10 +1810,12 @@ async function loadTables(options = {}) {
     if (payload.note) list.append(sidebarMatchNote(payload.note));
     if (!payload.tables.length) {
       state.table = "";
+      state.listedTables = [];
       list.append(note(pattern ? "No tables match " + pattern : "No tables", false));
       clearRows();
       return;
     }
+    state.listedTables = payload.tables;
     if (!payload.tables.some((table) => table.name === state.table)) {
       state.table = payload.tables[0].name;
       state.page = 0;
@@ -1582,6 +1861,7 @@ function clearRows() {
   document.querySelector("#page-prev").disabled = true;
   document.querySelector("#page-next").disabled = true;
   document.querySelector("#rows-body").replaceChildren();
+  setBrowserSchema(null);
 }
 
 async function loadRows() {
@@ -1590,6 +1870,7 @@ async function loadRows() {
   document.querySelector("#rows-title").textContent = state.table;
   document.querySelector("#rows-meta").textContent = "50 rows at a time";
   body.replaceChildren(note("Loading…", false));
+  setBrowserSchema(null);
   try {
     const payload = await api(
       "/api/rows?table=" + encodeURIComponent(state.table) + "&page=" + state.page
@@ -1602,10 +1883,20 @@ async function loadRows() {
       : "No rows";
     document.querySelector("#page-prev").disabled = payload.page <= 0;
     document.querySelector("#page-next").disabled = !state.hasMore;
-    body.replaceChildren(dataTable(payload.items || [], "rows-table", payload.columns));
+    const rows = payload.items || [];
+    body.replaceChildren(dataTable(rows, "rows-table", payload.columns));
     body.scrollTop = 0;
+    const listed = (state.listedTables || []).find((table) => table.name === state.table);
+    setBrowserSchema({
+      source: "browser",
+      title: payload.name || state.table,
+      rows,
+      columns: payload.columns || [],
+      keys: listed ? listed.keys : [],
+    });
   } catch (error) {
     body.replaceChildren(note(error.message, true));
+    setBrowserSchema(null);
   }
 }
 

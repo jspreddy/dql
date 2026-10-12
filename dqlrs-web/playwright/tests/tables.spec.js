@@ -297,6 +297,96 @@ test("tables-search-matches-like-ls", async ({ page, app }) => {
   await expect(page.locator("#table-list [data-testid='intelligent-match']")).toHaveCount(0);
 });
 
+test("opens result and table-browser structure from data already in hand", async ({ page, app }) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await expect(page.locator("#result-schema")).toBeHidden();
+  await expect(page.locator("#rows-schema")).toBeHidden();
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, sk NUMBER RANGE KEY);`,
+      `INSERT INTO ${name} (id, sk, extra) VALUES ('a', 1, 'hello'), ('b', 2, 'hello');`,
+      `INSERT INTO ${name} (id, sk) VALUES ('c', 3);`,
+      `SELECT * FROM ${name};`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "extra"]);
+  await expect(page.locator("#result-schema")).toBeVisible();
+
+  const afterResult = [];
+  const watch = (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/tables" || path === "/api/run" || path === "/api/rows") afterResult.push(path);
+  };
+  page.on("request", watch);
+  await page.locator("#result-schema").click();
+  const pop = page.locator("#schema-pop");
+  await expect(pop).toBeVisible();
+  await expect(page.locator("#schema-pop-kicker")).toHaveText("Result structure");
+  await expect(page.locator("#schema-pop-title")).toHaveText("This result");
+  await expect(page.locator("#schema-pop-summary")).toHaveText("3 columns · 3 rows");
+  await expect(page.locator("#schema-table thead th")).toHaveText(["Column", "Type", "Role", "Present", "Sample"]);
+  const resultId = page.locator('#schema-table tbody tr[data-column="id"]');
+  await expect(resultId).toContainText("id");
+  await expect(resultId).toContainText("STRING");
+  await expect(resultId).toContainText("Hash key");
+  await expect(resultId).toContainText("3/3");
+  await expect(resultId.locator(".schema-sample")).not.toHaveText("");
+  const resultSk = page.locator('#schema-table tbody tr[data-column="sk"]');
+  await expect(resultSk).toContainText("NUMBER");
+  await expect(resultSk).toContainText("Range key");
+  await expect(resultSk).toContainText("3/3");
+  const resultExtra = page.locator('#schema-table tbody tr[data-column="extra"]');
+  await expect(resultExtra).toContainText("STRING");
+  await expect(resultExtra.locator(".schema-role-muted")).toHaveText("—");
+  await expect(resultExtra).toContainText("2/3");
+  await expect(resultExtra).toContainText("hello");
+  await expect(page.locator(".schema-key-chip")).toHaveCount(2);
+  await expect(page.locator("#schema-pop-foot")).toContainText("No extra query was run.");
+  expect(afterResult).toEqual([]);
+  await page.locator("#schema-pop-close").click();
+  await expect(pop).toBeHidden();
+  page.off("request", watch);
+
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await expect(page.locator(`#table-${name}`)).toBeVisible();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);
+  await expect(page.locator("#rows-schema")).toBeVisible();
+
+  const afterRows = [];
+  const watchRows = (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/tables" || path === "/api/run" || path === "/api/rows") afterRows.push(path);
+  };
+  page.on("request", watchRows);
+  await page.locator("#rows-schema").click();
+  await expect(pop).toBeVisible();
+  await expect(page.locator("#schema-pop-kicker")).toHaveText("Table structure");
+  await expect(page.locator("#schema-pop-title")).toHaveText(name);
+  await expect(page.locator("#schema-pop-summary")).toHaveText("3 columns · 3 rows on this page");
+  const rowsId = page.locator('#schema-table tbody tr[data-column="id"]');
+  await expect(rowsId).toContainText("STRING");
+  await expect(rowsId).toContainText("Hash key");
+  const rowsSk = page.locator('#schema-table tbody tr[data-column="sk"]');
+  await expect(rowsSk).toContainText("NUMBER");
+  await expect(rowsSk).toContainText("Range key");
+  const rowsExtra = page.locator('#schema-table tbody tr[data-column="extra"]');
+  await expect(rowsExtra).toContainText("2/3");
+  expect(afterRows).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(pop).toBeHidden();
+});
+
 function uniqueTable() {
   return `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
