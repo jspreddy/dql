@@ -135,45 +135,17 @@ pub fn list_tables(
     pattern: &str,
     refresh: bool,
     shapes: &mut HashMap<String, TableShape>,
+    catalog: &mut Option<Vec<ListedTable>>,
     mut exec: impl FnMut(&str) -> ExecText,
 ) -> Result<TableList, String> {
     if refresh {
         shapes.clear();
+        *catalog = None;
     }
-    let needle = pattern.trim();
-    let mut command = String::from("ls");
-    if !needle.is_empty() {
-        command.push(' ');
-        command.push_str(&shell_quote(needle));
+    if catalog.is_none() {
+        *catalog = Some(load_table_catalog(refresh, &mut exec)?);
     }
-    if refresh {
-        command.push_str(" refresh=True");
-    }
-    let summary = exec(&command);
-    if !summary.ok {
-        let message = summary.failure();
-        if message.to_lowercase().contains("not found") {
-            return Ok(TableList {
-                tables: Vec::new(),
-                note: String::new(),
-            });
-        }
-        return Err(message);
-    }
-    let mut tables = Vec::new();
-    for name in ls_names(&summary.message) {
-        let detail = exec(&format!("ls {}", shell_quote(&name)));
-        let keys = if detail.ok {
-            ls_keys(&detail.message)
-        } else {
-            Vec::new()
-        };
-        tables.push(ListedTable { name, keys });
-    }
-    Ok(TableList {
-        tables,
-        note: ls_note(&summary.message),
-    })
+    Ok(filter_table_list(catalog.as_deref().unwrap_or(&[]), pattern))
 }
 
 pub fn parse_table_shape(text: &str) -> Option<TableShape> {
@@ -374,6 +346,85 @@ pub fn shell_quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', r#"'"'"'"#))
 }
 
+fn load_table_catalog(
+    refresh: bool,
+    exec: &mut impl FnMut(&str) -> ExecText,
+) -> Result<Vec<ListedTable>, String> {
+    let command = if refresh {
+        "ls refresh=True"
+    } else {
+        "ls"
+    };
+    let summary = exec(command);
+    if !summary.ok {
+        let message = summary.failure();
+        if message.to_lowercase().contains("not found") {
+            return Ok(Vec::new());
+        }
+        return Err(message);
+    }
+    let mut tables = Vec::new();
+    for name in ls_names(&summary.message) {
+        let detail = exec(&format!("ls {}", shell_quote(&name)));
+        let keys = if detail.ok {
+            ls_keys(&detail.message)
+        } else {
+            Vec::new()
+        };
+        tables.push(ListedTable { name, keys });
+    }
+    Ok(tables)
+}
+
+fn filter_table_list(catalog: &[ListedTable], pattern: &str) -> TableList {
+    let needle = pattern.trim();
+    if needle.is_empty() {
+        return TableList {
+            tables: catalog.to_vec(),
+            note: String::new(),
+        };
+    }
+    let exact: Vec<ListedTable> = catalog
+        .iter()
+        .filter(|table| glob_matches(needle, &table.name))
+        .cloned()
+        .collect();
+    if !exact.is_empty() {
+        return TableList {
+            tables: exact,
+            note: String::new(),
+        };
+    }
+    let match_tables: Vec<dql_engine::MatchTable> = catalog
+        .iter()
+        .map(|table| dql_engine::MatchTable {
+            name: table.name.clone(),
+            fields: table.keys.iter().map(|key| key.name.clone()).collect(),
+        })
+        .collect();
+    match dql_engine::intelligent_matches(&match_tables, needle) {
+        Ok(hit) => TableList {
+            tables: hit
+                .names
+                .into_iter()
+                .filter_map(|name| catalog.iter().find(|table| table.name == name).cloned())
+                .collect(),
+            note: hit.note,
+        },
+        Err(_) => TableList {
+            tables: Vec::new(),
+            note: String::new(),
+        },
+    }
+}
+
+fn glob_matches(pattern: &str, name: &str) -> bool {
+    glob::Pattern::new(pattern)
+        .map(|compiled| compiled.matches(name))
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
 fn ls_note(text: &str) -> String {
     for raw in text.lines() {
         let line = raw.trim();
@@ -562,6 +613,7 @@ fn norm_ws(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+#[cfg(test)]
 static INTELLIGENT_NOTE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r#"^No exact match for "[^"]*", so showing (?:similar names and related keys|similar names|related keys)\.$"#,
@@ -800,7 +852,7 @@ Local Indexes:
     }
 
     #[test]
-    fn search_uses_ls_and_keeps_the_match_note() {
+    fn search_uses_cached_catalog_until_refresh() {
         let mut shapes = HashMap::from([(
             "nb_posts".to_string(),
             TableShape {
@@ -809,30 +861,42 @@ Local Indexes:
                 indexes: HashMap::new(),
             },
         )]);
+        let mut catalog = None;
         let mut commands = Vec::new();
-        let listed = list_tables("nb_*", false, &mut shapes, |command| {
+        let listed = list_tables("nb_*", false, &mut shapes, &mut catalog, |command| {
             commands.push(command.to_string());
             fake_ls(command)
         })
         .unwrap();
         assert_eq!(listed.note, "");
+        assert_eq!(listed.tables.len(), 1);
         assert_eq!(listed.tables[0].name, "nb_posts");
         assert_eq!(listed.tables[0].keys[0].name, "id");
-        assert_eq!(commands, ["ls 'nb_*'", "ls nb_posts"]);
+        assert_eq!(commands, ["ls", "ls nb_posts", "ls catalog"]);
+        assert!(catalog.as_ref().is_some_and(|tables| tables.len() == 2));
         assert!(shapes.contains_key("nb_posts"));
 
         commands.clear();
-        let refreshed = list_tables("nb_*", true, &mut shapes, |command| {
+        let cached = list_tables("nb_*", false, &mut shapes, &mut catalog, |command| {
+            commands.push(command.to_string());
+            fake_ls(command)
+        })
+        .unwrap();
+        assert_eq!(cached.tables[0].name, "nb_posts");
+        assert!(commands.is_empty());
+
+        commands.clear();
+        let refreshed = list_tables("nb_*", true, &mut shapes, &mut catalog, |command| {
             commands.push(command.to_string());
             fake_ls(command)
         })
         .unwrap();
         assert_eq!(refreshed.note, "");
-        assert_eq!(commands, ["ls 'nb_*' refresh=True", "ls nb_posts"]);
+        assert_eq!(commands, ["ls refresh=True", "ls nb_posts", "ls catalog"]);
         assert!(shapes.is_empty());
 
         commands.clear();
-        let similar = list_tables("post", false, &mut shapes, |command| {
+        let similar = list_tables("post", false, &mut shapes, &mut catalog, |command| {
             commands.push(command.to_string());
             fake_ls(command)
         })
@@ -842,54 +906,66 @@ Local Indexes:
             "No exact match for \"post\", so showing similar names."
         );
         assert_eq!(similar.tables[0].name, "nb_posts");
-        assert_eq!(commands, ["ls post", "ls nb_posts"]);
+        assert!(commands.is_empty());
 
         commands.clear();
-        let one = list_tables("catalog", false, &mut shapes, |command| {
+        let one = list_tables("catalog", false, &mut shapes, &mut catalog, |command| {
+            commands.push(command.to_string());
+            fake_ls(command)
+        })
+        .unwrap();
+        assert_eq!(one.note, "");
+        assert_eq!(one.tables.len(), 1);
+        assert_eq!(one.tables[0].name, "catalog");
+        assert_eq!(one.tables[0].keys[0].name, "isbn");
+        assert!(commands.is_empty());
+
+        commands.clear();
+        let related = list_tables("isbn", false, &mut shapes, &mut catalog, |command| {
             commands.push(command.to_string());
             fake_ls(command)
         })
         .unwrap();
         assert_eq!(
-            one.note,
-            "No exact match for \"catal\", so showing similar names."
+            related.note,
+            "No exact match for \"isbn\", so showing related keys."
         );
-        assert_eq!(one.tables[0].name, "catalog");
-        assert_eq!(one.tables[0].keys[0].name, "isbn");
-        assert_eq!(commands, ["ls catalog", "ls catalog"]);
+        assert_eq!(related.tables[0].name, "catalog");
+        assert!(commands.is_empty());
 
-        let missed = list_tables("missing", false, &mut shapes, fake_ls).unwrap();
+        commands.clear();
+        let missed = list_tables("missing", false, &mut shapes, &mut catalog, |command| {
+            commands.push(command.to_string());
+            fake_ls(command)
+        })
+        .unwrap();
         assert!(missed.tables.is_empty());
         assert_eq!(missed.note, "");
-        assert!(list_tables("boom", false, &mut shapes, fake_ls).is_err());
+        assert!(commands.is_empty());
+
+        let mut empty = None;
+        assert!(
+            list_tables("nb_*", false, &mut shapes, &mut empty, |_| ExecText {
+                ok: false,
+                message: String::new(),
+                error: "connection refused".to_string(),
+            })
+            .is_err()
+        );
     }
 
     fn fake_ls(command: &str) -> ExecText {
         let parts: Vec<&str> = command.split_whitespace().collect();
         let target = parts
-            .get(1)
+            .iter()
+            .skip(1)
+            .find(|part| !part.starts_with("refresh="))
             .map(|raw| raw.trim_matches(['\'', '"']))
             .unwrap_or("");
         let message = match target {
-            "missing" => {
-                return ExecText {
-                    ok: false,
-                    message: String::new(),
-                    error: "Table \"missing\" not found".to_string(),
-                };
-            }
-            "boom" => {
-                return ExecText {
-                    ok: false,
-                    message: String::new(),
-                    error: "connection refused".to_string(),
-                };
-            }
             "nb_posts" => "Name: nb_posts\nHash Key: id (STRING)\n".to_string(),
-            "catalog" => "No exact match for \"catal\", so showing similar names.\n\nName: catalog\nHash Key: isbn (STRING)\n".to_string(),
-            "post" => "No exact match for \"post\", so showing similar names.\n\nTables\nName Items\nnb_posts 2\n".to_string(),
-            "nb_*" => "Tables\nName Items\nnb_posts 1\n".to_string(),
-            "" => "Tables\nName Items\nnb_posts 1\nother 1\n".to_string(),
+            "catalog" => "Name: catalog\nHash Key: isbn (STRING)\n".to_string(),
+            "" => "Tables\nName Items\nnb_posts 1\ncatalog 1\n".to_string(),
             _ => {
                 return ExecText {
                     ok: false,

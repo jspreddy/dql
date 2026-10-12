@@ -1517,10 +1517,13 @@ async function loadTables(options = {}) {
   const pattern = document.querySelector("#table-search").value.trim();
   const list = document.querySelector("#table-list");
   const refreshButton = document.querySelector("#refresh-tables");
-  refreshButton.disabled = true;
-  refreshButton.classList.toggle("is-busy", refresh);
-  refreshButton.setAttribute("aria-busy", refresh ? "true" : "false");
-  list.replaceChildren(note("Loading…", false));
+  const showBusy = refresh || !list.hasChildNodes();
+  if (showBusy) {
+    refreshButton.disabled = true;
+    refreshButton.classList.toggle("is-busy", refresh);
+    refreshButton.setAttribute("aria-busy", refresh ? "true" : "false");
+    list.replaceChildren(note("Loading…", false));
+  }
   try {
     const query = new URLSearchParams({ pattern });
     if (refresh) query.set("refresh", "1");

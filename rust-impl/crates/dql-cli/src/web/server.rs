@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 use super::files::{self, PathError};
 use super::shape::{
     changes_schema, column_order, explain_index, list_tables, parse_table_shape, read_query,
-    safe_table_name, split_statements, Column, ExecText, TableShape, PAGE_SIZE,
+    safe_table_name, split_statements, Column, ExecText, ListedTable, TableShape, PAGE_SIZE,
 };
 use crate::serve::protocol::ServeEnvelope;
 use crate::session::Session;
@@ -33,6 +33,7 @@ const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 struct WebState {
     session: Session,
     shapes: std::collections::HashMap<String, TableShape>,
+    table_catalog: Option<Vec<ListedTable>>,
 }
 
 struct App {
@@ -109,6 +110,7 @@ impl App {
             state: Mutex::new(WebState {
                 session,
                 shapes: std::collections::HashMap::new(),
+                table_catalog: None,
             }),
         }
     }
@@ -281,10 +283,12 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
             let refresh = query_flag(query, "refresh");
             let mut state = lock_state(app);
             let mut shapes = std::mem::take(&mut state.shapes);
-            let listed = list_tables(&pattern, refresh, &mut shapes, |command| {
+            let mut catalog = state.table_catalog.take();
+            let listed = list_tables(&pattern, refresh, &mut shapes, &mut catalog, |command| {
                 ExecText::from_envelope(&state.session.execute_for_serve(command))
             });
             state.shapes = shapes;
+            state.table_catalog = catalog;
             match listed {
                 Ok(listed) => Reply::Json(200, serde_json::to_value(listed).unwrap_or(Value::Null)),
                 Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
@@ -407,6 +411,7 @@ fn run_script(app: Arc<App>, statements: Vec<String>, writer: impl Write + Send 
         };
         if envelope.ok && changes_schema(statement) {
             state.shapes.clear();
+            state.table_catalog = None;
         }
         let result = public_result(statement, &envelope, columns);
         let ok = envelope.ok;

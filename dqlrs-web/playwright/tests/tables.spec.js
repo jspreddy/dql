@@ -49,6 +49,38 @@ test("refresh button reloads the table list without the description cache", asyn
   await expect(page.locator("#table-list")).not.toHaveText("Loading…");
 });
 
+test("searching tables filters the cached list without refresh", async ({ page, app }) => {
+  const first = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.ok() && url.pathname === "/api/tables" && url.searchParams.get("refresh") !== "1";
+  });
+  await page.goto(`${app.baseURL}/#tables`);
+  await first;
+  await expect(page.locator("#table-list")).not.toHaveText("Loading…");
+
+  const tablesRequests = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/tables") tablesRequests.push(url);
+  });
+
+  await page.locator("#table-search").fill("zzz_no_such_table_*");
+  await expect(page.locator("#table-list")).toContainText("No tables match zzz_no_such_table_*");
+  await expect(page.locator("#table-list")).not.toHaveText("Loading…");
+  expect(tablesRequests.length).toBeGreaterThan(0);
+  expect(tablesRequests.every((url) => url.searchParams.get("refresh") !== "1")).toBe(true);
+  expect(tablesRequests.some((url) => url.searchParams.get("pattern") === "zzz_no_such_table_*")).toBe(true);
+
+  const pending = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return url.pathname === "/api/tables" && url.searchParams.get("refresh") === "1";
+  });
+  await page.locator("#refresh-tables").click();
+  const request = await pending;
+  expect(new URL(request.url()).searchParams.get("pattern")).toBe("zzz_no_such_table_*");
+  await expect(page.locator("#table-list")).toContainText("No tables match zzz_no_such_table_*");
+});
+
 test("pages a table fifty rows at a time from a searched name", async ({ page, app }) => {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
