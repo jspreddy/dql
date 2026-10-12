@@ -9,7 +9,7 @@ const required = {
     "DUMP", "LOAD", "EXPLAIN", "ANALYZE", "SHOW", "LIKE", "DESCRIBE",
     "FROM", "WHERE", "INTO", "VALUES", "SET", "ADD", "REMOVE", "USING",
     "LIMIT", "ORDER", "BY", "ASC", "DESC", "AS", "KEYS", "IN", "CONSISTENT",
-    "THROTTLE", "RETURNS", "SAVE",
+    "THROTTLE", "RETURNS", "SAVE", "PARENTS",
     "TABLE", "INDEX", "GLOBAL", "HASH", "RANGE", "KEY", "THROUGHPUT", "TP",
     "IF", "NOT", "EXISTS", "INCLUDE", "ALL", "SCHEMA",
     "AND", "OR", "BETWEEN",
@@ -44,6 +44,7 @@ test("sample script highlights keywords, strings, comments, and numbers", () => 
 -- keep the string below literal
 SELECT count(*) AS n FROM nb_posts
 WHERE username = 'SELECT' AND begins_with(body, "he")
+  AND contains(tags, "red") AND attribute_exists(body)
   AND score BETWEEN 1 AND 10
   AND flag = true AND deleted = null;
 SCAN * FROM t WHERE my-field = -2.5;
@@ -57,6 +58,8 @@ UPDATE t SET name = if_not_exists(name, 'x') WHERE id = b'abc';
   assert.equal(byText.get("AS"), "keyword");
   assert.equal(byText.get("FROM"), "keyword");
   assert.equal(byText.get("begins_with"), "variableName.function");
+  assert.equal(byText.get("contains"), "variableName.function");
+  assert.equal(byText.get("attribute_exists"), "variableName.function");
   assert.equal(byText.get("BETWEEN"), "keyword");
   assert.equal(byText.get("true"), "bool");
   assert.equal(byText.get("null"), "null");

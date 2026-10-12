@@ -49,6 +49,38 @@ test("refresh button reloads the table list without the description cache", asyn
   await expect(page.locator("#table-list")).not.toHaveText("Loading…");
 });
 
+test("searching tables filters the cached list without refresh", async ({ page, app }) => {
+  const first = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.ok() && url.pathname === "/api/tables" && url.searchParams.get("refresh") !== "1";
+  });
+  await page.goto(`${app.baseURL}/#tables`);
+  await first;
+  await expect(page.locator("#table-list")).not.toHaveText("Loading…");
+
+  const tablesRequests = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/tables") tablesRequests.push(url);
+  });
+
+  await page.locator("#table-search").fill("zzz_no_such_table_*");
+  await expect(page.locator("#table-list")).toContainText("No tables match zzz_no_such_table_*");
+  await expect(page.locator("#table-list")).not.toHaveText("Loading…");
+  expect(tablesRequests.length).toBeGreaterThan(0);
+  expect(tablesRequests.every((url) => url.searchParams.get("refresh") !== "1")).toBe(true);
+  expect(tablesRequests.some((url) => url.searchParams.get("pattern") === "zzz_no_such_table_*")).toBe(true);
+
+  const pending = page.waitForRequest((request) => {
+    const url = new URL(request.url());
+    return url.pathname === "/api/tables" && url.searchParams.get("refresh") === "1";
+  });
+  await page.locator("#refresh-tables").click();
+  const request = await pending;
+  expect(new URL(request.url()).searchParams.get("pattern")).toBe("zzz_no_such_table_*");
+  await expect(page.locator("#table-list")).toContainText("No tables match zzz_no_such_table_*");
+});
+
 test("pages a table fifty rows at a time from a searched name", async ({ page, app }) => {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
@@ -263,6 +295,171 @@ test("tables-search-matches-like-ls", async ({ page, app }) => {
   await page.locator("#table-search").fill("zzz_no_such_table_*");
   await expect(page.locator("#table-list")).toContainText("No tables match zzz_no_such_table_*");
   await expect(page.locator("#table-list [data-testid='intelligent-match']")).toHaveCount(0);
+});
+
+test("opens result and table-browser structure from data already in hand", async ({ page, app }) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await expect(page.locator(".result-card")).toHaveCount(0);
+  await expect(page.locator("#rows-schema")).toBeHidden();
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, sk NUMBER RANGE KEY);`,
+      `INSERT INTO ${name} (id, sk, extra) VALUES ('a', 1, 'hello'), ('b', 2, 'hello');`,
+      `INSERT INTO ${name} (id, sk) VALUES ('c', 3);`,
+      `SCAN * FROM ${name};`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "extra"]);
+  const resultCard = page.locator(`.result-card[data-table="${name}"]`);
+  await expect(resultCard).toBeVisible();
+  await expect(resultCard.locator(".result-card-name")).toHaveText(name);
+  await expect(resultCard.locator(".result-schema")).toBeVisible();
+
+  const afterResult = [];
+  const watch = (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/tables" || path === "/api/run" || path === "/api/rows") afterResult.push(path);
+  };
+  page.on("request", watch);
+  await resultCard.locator(".result-schema").click();
+  const pop = page.locator("#schema-pop");
+  await expect(pop).toBeVisible();
+  await expect(page.locator("#schema-pop-kicker")).toHaveText("Result structure");
+  await expect(page.locator("#schema-pop-info")).toBeVisible();
+  await expect(page.locator(".schema-pop-kicker-row #schema-pop-info")).toBeVisible();
+  await expect(page.locator("#schema-pop-info")).toHaveAttribute(
+    "title",
+    "Based on this query result, not the entire table.",
+  );
+  await expect(page.locator("#schema-pop-title")).toHaveText(name);
+  await expect(page.locator(".schema-pop-title-row .schema-key-chip")).toHaveCount(2);
+  await expect(page.locator("#schema-pop-summary")).toHaveText("3 columns · 3 rows");
+  await expect(page.locator("#schema-pop-query")).toBeVisible();
+  await expect(page.locator("#schema-pop-query")).toContainText(`SCAN * FROM ${name}`);
+  await expect(page.locator("#schema-table thead th")).toHaveText(["Column", "Type", "Role", "Present", "Sample"]);
+  const resultId = page.locator('#schema-table tbody tr[data-column="id"]');
+  await expect(resultId).toContainText("id");
+  await expect(resultId).toContainText("STRING");
+  await expect(resultId).toContainText("Hash key");
+  await expect(resultId).toContainText("3/3");
+  await expect(resultId.locator(".schema-sample")).not.toHaveText("");
+  const resultSk = page.locator('#schema-table tbody tr[data-column="sk"]');
+  await expect(resultSk).toContainText("NUMBER");
+  await expect(resultSk).toContainText("Range key");
+  await expect(resultSk).toContainText("3/3");
+  const resultExtra = page.locator('#schema-table tbody tr[data-column="extra"]');
+  await expect(resultExtra).toContainText("STRING");
+  await expect(resultExtra.locator(".schema-role-muted")).toHaveText("—");
+  await expect(resultExtra).toContainText("2/3");
+  await expect(resultExtra).toContainText("hello");
+  await expect(page.locator("#schema-pop-foot")).toContainText("No extra query was run.");
+  expect(afterResult).toEqual([]);
+  await page.locator("#schema-pop-close").click();
+  await expect(pop).toBeHidden();
+  page.off("request", watch);
+
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await expect(page.locator(`#table-${name}`)).toBeVisible();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);
+  await expect(page.locator("#rows-schema")).toBeVisible();
+
+  const afterRows = [];
+  const watchRows = (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/tables" || path === "/api/run" || path === "/api/rows") afterRows.push(path);
+  };
+  page.on("request", watchRows);
+  await page.locator("#rows-schema").click();
+  await expect(pop).toBeVisible();
+  await expect(page.locator("#schema-pop-kicker")).toHaveText("Table structure");
+  await expect(page.locator("#schema-pop-info")).toBeHidden();
+  await expect(page.locator("#schema-pop-title")).toHaveText(name);
+  await expect(page.locator(".schema-pop-title-row .schema-key-chip")).toHaveCount(2);
+  await expect(page.locator("#schema-pop-summary")).toHaveText("3 columns · 3 rows on this page");
+  await expect(page.locator("#schema-pop-query")).toBeHidden();
+  const rowsId = page.locator('#schema-table tbody tr[data-column="id"]');
+  await expect(rowsId).toContainText("STRING");
+  await expect(rowsId).toContainText("Hash key");
+  const rowsSk = page.locator('#schema-table tbody tr[data-column="sk"]');
+  await expect(rowsSk).toContainText("NUMBER");
+  await expect(rowsSk).toContainText("Range key");
+  const rowsExtra = page.locator('#schema-table tbody tr[data-column="extra"]');
+  await expect(rowsExtra).toContainText("2/3");
+  expect(afterRows).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(pop).toBeHidden();
+});
+
+test("gives each query result its own named card and structure icon", async ({ page, app }) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const books = uniqueTable();
+  const orders = uniqueTable();
+  app.trackTable(books);
+  app.trackTable(orders);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${books};`,
+      `DROP TABLE IF EXISTS ${orders};`,
+      `CREATE TABLE ${books} (isbn STRING HASH KEY);`,
+      `CREATE TABLE ${orders} (id STRING HASH KEY, n NUMBER);`,
+      `INSERT INTO ${books} (isbn, title) VALUES ('978-1', 'DQL Guide');`,
+      `INSERT INTO ${orders} (id, n) VALUES ('o1', 4);`,
+      `SCAN * FROM ${books};`,
+      `SCAN * FROM ${orders};`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator(".result-card")).toHaveCount(2);
+  await expect(page.locator("#result-meta")).toHaveText("2 results");
+
+  const booksCard = page.locator(`.result-card[data-table="${books}"]`);
+  const ordersCard = page.locator(`.result-card[data-table="${orders}"]`);
+  await expect(booksCard.locator(".result-card-name")).toHaveText(books);
+  await expect(ordersCard.locator(".result-card-name")).toHaveText(orders);
+  await expect(booksCard).toContainText("DQL Guide");
+  await expect(ordersCard).toContainText("o1");
+  await expect(booksCard.locator(".result-schema")).toBeVisible();
+  await expect(ordersCard.locator(".result-schema")).toBeVisible();
+  await expect(page.locator("#result-table")).toHaveCount(1);
+
+  const extra = [];
+  const watch = (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/tables" || path === "/api/run" || path === "/api/rows") extra.push(path);
+  };
+  page.on("request", watch);
+  await booksCard.locator(".result-schema").click();
+  await expect(page.locator("#schema-pop")).toBeVisible();
+  await expect(page.locator("#schema-pop-title")).toHaveText(books);
+  await expect(page.locator("#schema-pop-query")).toContainText(`SCAN * FROM ${books}`);
+  await expect(page.locator('#schema-table tbody tr[data-column="isbn"]')).toContainText("STRING");
+  await expect(page.locator('#schema-table tbody tr[data-column="isbn"]')).toContainText("Hash key");
+  await expect(page.locator('#schema-table tbody tr[data-column="title"]')).toContainText("STRING");
+  await page.locator("#schema-pop-close").click();
+
+  await ordersCard.locator(".result-schema").click();
+  await expect(page.locator("#schema-pop-title")).toHaveText(orders);
+  await expect(page.locator("#schema-pop-query")).toContainText(`SCAN * FROM ${orders}`);
+  await expect(page.locator('#schema-table tbody tr[data-column="id"]')).toContainText("STRING");
+  await expect(page.locator('#schema-table tbody tr[data-column="n"]')).toContainText("NUMBER");
+  expect(extra).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#schema-pop")).toBeHidden();
 });
 
 function uniqueTable() {

@@ -1,0 +1,14 @@
+---
+alwaysApply: true
+---
+
+# Pre-commit
+
+run `just check` and stage any changes it makes.
+
+
+# Commit message
+
+Do not add cursor account user name or email to the commit message.
+
+Use "Sai Jonnala <jspreddy@users.noreply.github.com>"

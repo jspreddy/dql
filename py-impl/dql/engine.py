@@ -81,6 +81,18 @@ from .util import open_file_smart_mode, plural, resolve, unwrap
 
 LOG = logging.getLogger(__name__)
 
+
+def _missing_table_is_transient(exc):
+    """True when DynamoDB Local has not finished creating the sqlite table."""
+    text = str(exc).lower()
+    return (
+        "resourcenotfound" in text
+        or "non-existent table" in text
+        or "no such table" in text
+        or "cannot do operations" in text
+    )
+
+
 PROGRESS_JSON_ENV = "DQL_PROGRESS_JSON"
 WRITE_PROGRESS_CHUNK = 25
 
@@ -985,7 +997,7 @@ class Engine(object):
             throughput = Throughput(*map(resolve, tree.throughput))
 
         try:
-            ret = self.connection.create_table(
+            self.connection.create_table(
                 tablename,
                 hash_key,
                 range_key,
@@ -997,6 +1009,7 @@ class Engine(object):
             if e.kwargs["Code"] == "ResourceInUseException" or tree.not_exists:
                 return False
             raise
+        self._wait_until_table_ready(tablename)
         return True
 
     def _parse_global_index(self, clause, attrs):
@@ -1049,6 +1062,37 @@ class Engine(object):
         else:
             raise SyntaxError("Invalid index type %r" % index_type)
         return factory(name, g_hash_key, g_range_key, **kwargs)
+
+    def _wait_until_table_ready(self, tablename):
+        """Block until a new table can be described.
+
+        CreateTable returns before the table is readable. DynamoDB Local can
+        also answer ResourceNotFound for a short time after that return, so
+        the next statement in the same script would miss the table.
+        """
+        deadline = time.monotonic() + 60
+        last = "Table %r not found" % tablename
+        while True:
+            try:
+                desc = self.describe(tablename, refresh=True)
+            except (
+                DynamoDBError,
+                botocore.exceptions.BotoCoreError,
+                ClientError,
+            ) as exc:
+                if not _missing_table_is_transient(exc):
+                    raise
+                last = str(exc)
+                desc = None
+            if desc is not None and desc.status == "ACTIVE":
+                return
+            if desc is not None:
+                last = "status %s" % desc.status
+            if time.monotonic() >= deadline:
+                raise EngineRuntimeError(
+                    "Table %r was not ready after create: %s" % (tablename, last)
+                )
+            time.sleep(0.02)
 
     def _insert(self, tree):
         """Run an INSERT statement"""

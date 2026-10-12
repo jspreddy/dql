@@ -27,7 +27,9 @@ dql-parser = { path = "../dql-parser" }
 glob.workspace = true
 human-panic = "2.0.8"
 humansize.workspace = true
+include_dir = "0.7"
 ratatui.workspace = true
+regex = "1.11"
 serde.workspace = true
 serde_json.workspace = true
 shell-words.workspace = true

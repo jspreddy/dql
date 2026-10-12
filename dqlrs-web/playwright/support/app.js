@@ -88,27 +88,34 @@ function stopChild(child) {
 }
 
 export const test = base.extend({
-  app: async ({}, use) => {
+  // SAVE and LOAD resolve relative paths from the dqlrs process directory.
+  // Tests that opt in get a temp directory so those files stay out of the repo.
+  isolateCwd: [false, { option: true }],
+  app: async ({ isolateCwd }, use) => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-web-"));
     fs.cpSync(fixtureRoot, workspace, { recursive: true });
+    const cwd = isolateCwd ? fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-web-cwd-")) : webRoot;
     const port = await freePort();
     const binary = dqlrsBinary();
+    if (!binary) {
+      throw new Error("dqlrs was not found. Build rust-impl or set DQLRS_BIN.");
+    }
     const chunks = [];
-    const child = spawn("python3", ["server.py", "--dir", workspace, "--port", String(port), "--host", "127.0.0.1"], {
-      cwd: webRoot,
-      env: {
-        ...process.env,
-        PYTHONUNBUFFERED: "1",
-        AWS_ACCESS_KEY_ID: "fakeid",
-        AWS_SECRET_ACCESS_KEY: "fakekey",
-        AWS_REGION: "us-west-1",
-        AWS_EC2_METADATA_DISABLED: "true",
-        DQL_HOST: "localhost",
-        DQL_PORT: "8000",
-        ...(binary ? { DQLRS_BIN: binary } : {}),
+    const child = spawn(
+      binary,
+      ["--web", "--dir", workspace, "--listen", `127.0.0.1:${port}`, "-H", "localhost", "-p", "8000", "-r", "us-west-1"],
+      {
+        cwd,
+        env: {
+          ...process.env,
+          AWS_ACCESS_KEY_ID: "fakeid",
+          AWS_SECRET_ACCESS_KEY: "fakekey",
+          AWS_REGION: "us-west-1",
+          AWS_EC2_METADATA_DISABLED: "true",
+        },
+        stdio: ["ignore", "pipe", "pipe"],
       },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    );
     child.stdout.on("data", (chunk) => chunks.push(chunk));
     child.stderr.on("data", (chunk) => chunks.push(chunk));
     const baseURL = `http://127.0.0.1:${port}`;
@@ -118,6 +125,7 @@ export const test = base.extend({
       await use({
         baseURL,
         workspace,
+        cwd,
         binary,
         trackTable(name) {
           tables.push(name);
@@ -127,6 +135,7 @@ export const test = base.extend({
       for (const name of tables) dropTable(binary, name);
       await stopChild(child);
       fs.rmSync(workspace, { recursive: true, force: true });
+      if (isolateCwd) fs.rmSync(cwd, { recursive: true, force: true });
     }
   },
 });

@@ -484,7 +484,8 @@ test("show-tables-like-intelligent-match notes similar names and related keys", 
   await expect(related.locator(".describe-status.is-active")).toHaveCount(2);
   await expect(related).not.toContainText("similar names");
 
-  await runEditor("SHOW TABLES LIKE 'qqqxxyyzz';");
+  // qqqxxyyzz scores as a related key of the zzqq… hash above.
+  await runEditor("SHOW TABLES LIKE 'mnvv77kk';");
   await expect(page.locator("[data-testid='intelligent-match']")).toHaveCount(0);
   await expect(page.locator("#result-meta")).toHaveText("0 rows");
   await expect(page.locator("#result-body")).toContainText("No rows");

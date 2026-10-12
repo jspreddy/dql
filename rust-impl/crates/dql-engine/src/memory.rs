@@ -446,7 +446,11 @@ pub fn matches_condition(item: &Item, condition: &Condition) -> bool {
             resolve_field_value(item, field).is_some_and(|item_value| values.contains(&item_value))
         }
         Condition::Function { name, args } => evaluate_function_condition(item, name, args),
-        Condition::Size { .. } | Condition::AttributeType { .. } => false,
+        Condition::Size { field, op, value } => resolve_field_value(item, field)
+            .and_then(|item_value| value_size(&item_value))
+            .is_some_and(|size| compare_values(&Value::Number(size.to_string()), op, value)),
+        Condition::AttributeType { field, ty } => resolve_field_value(item, field)
+            .is_some_and(|item_value| attribute_type_code(&item_value).eq_ignore_ascii_case(ty)),
         Condition::And(conditions) => conditions
             .iter()
             .all(|condition| matches_condition(item, condition)),
@@ -509,6 +513,31 @@ fn function_field_arg(args: &[ConditionOperand]) -> Option<String> {
 
 fn field_exists(item: &Item, path: &str) -> bool {
     resolve_field_value(item, path).is_some()
+}
+
+fn value_size(value: &Value) -> Option<usize> {
+    match value {
+        Value::String(value) => Some(value.len()),
+        Value::Binary(value) => Some(value.len()),
+        Value::Set(values) | Value::List(values) => Some(values.len()),
+        Value::Map(values) => Some(values.len()),
+        _ => None,
+    }
+}
+
+fn attribute_type_code(value: &Value) -> &'static str {
+    match value {
+        Value::String(_) | Value::Interval(_) => "S",
+        Value::Number(_) | Value::Timestamp(_) => "N",
+        Value::Binary(_) => "B",
+        Value::Bool(_) => "BOOL",
+        Value::Null => "NULL",
+        Value::List(_) => "L",
+        Value::Map(_) => "M",
+        Value::Set(values) if values.iter().all(|item| matches!(item, Value::Number(_))) => "NS",
+        Value::Set(values) if values.iter().all(|item| matches!(item, Value::Binary(_))) => "BS",
+        Value::Set(_) => "SS",
+    }
 }
 
 fn resolve_field_value(item: &Item, path: &str) -> Option<Value> {

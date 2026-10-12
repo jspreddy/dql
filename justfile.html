@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Justfile recipe tree</title>
+  <style>
+    :root {
+      --bg: #f3efe6;
+      --paper: #fffdf8;
+      --ink: #1c1915;
+      --muted: #5e564c;
+      --line: #d9cdb8;
+      --script: #1e3a5f;
+      --script-soft: #e7eef6;
+      --body: #7c4a12;
+      --body-soft: #f8efe4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 16px/1.5 "Iowan Old Style", Palatino, Georgia, serif;
+    }
+    a { color: #9a3412; }
+    header, main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+    header { padding: 28px 0 8px; }
+    .kicker {
+      margin: 0;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font: 600 12px/1.2 ui-sans-serif, system-ui, sans-serif;
+      color: var(--muted);
+    }
+    h1 { margin: 6px 0 8px; font-size: 40px; font-weight: 600; letter-spacing: -0.02em; }
+    header p { margin: 0; max-width: 68ch; color: var(--muted); }
+    nav { display: flex; flex-wrap: wrap; gap: 18px; margin: 16px 0 8px; font: 600 14px/1 ui-sans-serif, system-ui, sans-serif; }
+    main { padding-bottom: 48px; }
+    figure {
+      margin: 22px 0 8px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px 18px 12px;
+    }
+    figcaption h2 { margin: 0 0 4px; font-size: 22px; }
+    figcaption p { margin: 0 0 12px; color: var(--muted); }
+    pre.mermaid { margin: 0; background: transparent; }
+    .mermaid svg { max-width: 100%; height: auto; }
+    #call-graph svg .node { cursor: pointer; }
+    #call-graph svg.chain .node,
+    #call-graph svg.chain path.flowchart-link,
+    #call-graph svg.chain .edgeLabel {
+      opacity: 0.14;
+      transition: opacity 120ms ease;
+    }
+    #call-graph svg.chain .node.hot,
+    #call-graph svg.chain path.flowchart-link.hot,
+    #call-graph svg.chain .edgeLabel.hot {
+      opacity: 1;
+    }
+    #call-graph svg.chain path.flowchart-link.hot {
+      stroke: #9a3412;
+    }
+    #call-graph svg .node.pinned > rect {
+      fill: #9a3412 !important;
+      stroke: #7c2d12 !important;
+      stroke-width: 3px;
+    }
+    #call-graph svg .node.pinned .nodeLabel {
+      color: #fffdf8 !important;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #call-graph svg.chain .node,
+      #call-graph svg.chain path.flowchart-link,
+      #call-graph svg.chain .edgeLabel { transition: none; }
+    }
+    h2.group { margin: 28px 0 8px; font-size: 22px; }
+    .tree, .tree ul { margin: 0; padding: 0; list-style: none; }
+    .tree ul {
+      margin-left: 0.7rem;
+      padding-left: 0.9rem;
+      border-left: 1px solid var(--line);
+    }
+    .tree li { position: relative; padding: 3px 0 3px 0.85rem; }
+    .tree li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.95em;
+      width: 0.75rem;
+      border-top: 1px solid var(--line);
+    }
+    .node {
+      display: inline-flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      gap: 6px 8px;
+    }
+    .ord {
+      font: 600 12px/1 ui-sans-serif, system-ui, sans-serif;
+      color: var(--muted);
+      min-width: 1.1rem;
+    }
+    code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.86em;
+    }
+    .recipe { font-weight: 600; }
+    .script, .flag {
+      font: 13px/1.3 ui-sans-serif, system-ui, sans-serif;
+      border-radius: 999px;
+      padding: 1px 8px;
+    }
+    .script { color: var(--script); background: var(--script-soft); }
+    .flag { color: var(--body); background: var(--body-soft); }
+  </style>
+</head>
+<body>
+  <header>
+    <p class="kicker">dql</p>
+    <h1>Justfile recipe tree</h1>
+    <p>
+      Dependencies run in the numbered order before the recipe body.
+      A blue label is the shell script that recipe invokes.
+      A brown label is an argument passed when one recipe calls another from its body.
+    </p>
+    <nav>
+      <a href="#sankey">Sankey</a>
+      <a href="#mindmap">Mind map</a>
+      <a href="#call-graph">Call graph</a>
+      <a href="#tree">Tree</a>
+    </nav>
+  </header>
+  <main>
+    <figure id="sankey">
+      <figcaption>
+        <h2>Sankey</h2>
+        <p>A caller is a recipe that runs other recipes. Each link is one of those calls, then the shell script that recipe runs. <code>web</code> runs <code>dynamo</code> unless an argument is <code>--aws</code>.</p>
+      </figcaption>
+      <pre class="mermaid">
+sankey-beta
+
+py-test-matrix,dynamo,1
+py-test-matrix,scripts/py-test-python-versions.sh,1
+py,py-sync,1
+py,py-lint,1
+py,py-test,1
+py,py-build,1
+rust,rust-fetch,1
+rust,rust-fmt,1
+rust,rust-clippy,1
+rust,rust-test,1
+rust,rust-local,1
+rust,rust-build,1
+rust,rust-smoke,1
+web,dynamo,1
+web,dqlrs-web/run.sh,1
+web-test,dynamo,1
+web-test-slow,web-test,1
+notebook-test-slow,notebook-test,1
+test,dynamo,1
+test,py-sync,1
+test,rust-build,1
+test,web-unit,1
+test,py-test,1
+test,rust-test,1
+test,rust-local,1
+test,rust-smoke,1
+test,black-box,1
+test,notebook-test,1
+test,web-test,1
+verify,dynamo,1
+verify,web-unit,1
+verify,py,1
+verify,rust,1
+verify,black-box,1
+verify,notebook-test,1
+verify,web-test,1
+check,py-sync,1
+check,py-fix,1
+check,rust-fix,1
+install,py,1
+install,rust,1
+install,py-install,1
+install,rust-install,1
+dynamo,scripts/install_dynamodb_local.sh,5
+dynamo-stop,scripts/stop_dynamodb_local.sh,1
+java,scripts/install_sdkman_java.sh,1
+local-install,scripts/install.sh,1
+rust-install-release,scripts/rust-install.sh,1
+rust-smoke,scripts/rust-smoke-test.sh,2
+black-box,black-box-tests/run.sh,2
+notebook-dry-run,notebook/start.sh,1
+notebook,notebook/start.sh,1
+notebook-test,notebook-tests/run.sh,3
+version,scripts/bump-version.sh,1
+      </pre>
+    </figure>
+
+    <figure id="mindmap">
+      <figcaption>
+        <h2>Mind map</h2>
+        <p>Justfile groups and the recipes in each group.</p>
+      </figcaption>
+      <pre class="mermaid">
+mindmap
+  root((Justfile))
+    local
+      dynamo
+      dynamo-stop
+      java
+      local-install
+    python
+      py-sync
+      py-lint
+      py-fix
+      py-test
+      py-test-matrix
+      py-build
+      py-install
+      py
+    rust
+      rust-fetch
+      rust-fmt
+      rust-fix
+      rust-clippy
+      rust-test
+      rust-local
+      rust-build
+      rust-install
+      rust-install-release
+      rust-smoke
+      rust
+    py-rs
+      black-box
+    notebook
+      notebook-dry-run
+      notebook
+      notebook-test
+      notebook-test-slow
+    web
+      web
+      web-unit
+      web-test
+      web-test-slow
+    other
+      version
+    root recipes
+      default
+      check
+      test
+      verify
+      install
+      </pre>
+    </figure>
+
+    <figure id="call-graph">
+      <figcaption>
+        <h2>Call graph</h2>
+        <p>An arrow is a recipe running another recipe, or a shell script. Blue nodes are scripts. Hover a node to light its callers and callees. Click a node to keep that chain until you click it again.</p>
+      </figcaption>
+      <pre class="mermaid">
+flowchart LR
+  subgraph local [local]
+    dynamo[dynamo]
+    dynamoStop[dynamo-stop]
+    java[java]
+    localInstall[local-install]
+  end
+  subgraph python [python]
+    pySync[py-sync]
+    pyLint[py-lint]
+    pyFix[py-fix]
+    pyTest[py-test]
+    pyTestMatrix[py-test-matrix]
+    pyBuild[py-build]
+    pyInstall[py-install]
+    py[py]
+  end
+  subgraph rustg [rust]
+    rustFetch[rust-fetch]
+    rustFmt[rust-fmt]
+    rustFix[rust-fix]
+    rustClippy[rust-clippy]
+    rustTest[rust-test]
+    rustLocal[rust-local]
+    rustBuild[rust-build]
+    rustInstall[rust-install]
+    rustInstallRelease[rust-install-release]
+    rustSmoke[rust-smoke]
+    rust[rust]
+  end
+  subgraph pyrs [py-rs]
+    blackBox[black-box]
+  end
+  subgraph notebook [notebook]
+    notebookDry[notebook-dry-run]
+    notebookStart[notebook]
+    notebookTest[notebook-test]
+    notebookTestSlow[notebook-test-slow]
+  end
+  subgraph webg [web]
+    web[web]
+    webUnit[web-unit]
+    webTest[web-test]
+    webTestSlow[web-test-slow]
+  end
+  subgraph other [other]
+    version[version]
+  end
+  subgraph root [root]
+    recipeDefault[default]
+    check[check]
+    test[test]
+    verify[verify]
+    install[install]
+  end
+
+  pyTestMatrix --> dynamo
+  py --> pySync
+  py --> pyLint
+  py --> pyTest
+  py --> pyBuild
+  rust --> rustFetch
+  rust --> rustFmt
+  rust --> rustClippy
+  rust --> rustTest
+  rust --> rustLocal
+  rust --> rustBuild
+  rust --> rustSmoke
+  web -->|"unless --aws"| dynamo
+  webTest --> dynamo
+  webTestSlow --> webTest
+  notebookTestSlow --> notebookTest
+  test --> dynamo
+  test --> pySync
+  test --> rustBuild
+  test --> webUnit
+  test --> pyTest
+  test --> rustTest
+  test --> rustLocal
+  test --> rustSmoke
+  test --> blackBox
+  test --> notebookTest
+  test --> webTest
+  verify --> dynamo
+  verify --> webUnit
+  verify --> py
+  verify --> rust
+  verify --> blackBox
+  verify --> notebookTest
+  verify --> webTest
+  check --> pySync
+  check --> pyFix
+  check --> rustFix
+  install --> py
+  install --> rust
+  install --> pyInstall
+  install --> rustInstall
+
+  dynamo --> scrDynamo["scripts/install_dynamodb_local.sh"]
+  dynamoStop --> scrStop["scripts/stop_dynamodb_local.sh"]
+  java --> scrJava["scripts/install_sdkman_java.sh"]
+  localInstall --> scrInstall["scripts/install.sh"]
+  pyTestMatrix --> scrMatrix["scripts/py-test-python-versions.sh"]
+  rustInstallRelease --> scrRustInstall["scripts/rust-install.sh"]
+  rustSmoke --> scrSmoke["scripts/rust-smoke-test.sh"]
+  blackBox --> scrBlack["black-box-tests/run.sh"]
+  notebookDry --> scrNote["notebook/start.sh"]
+  notebookStart --> scrNote
+  notebookTest --> scrNoteTest["notebook-tests/run.sh"]
+  web --> scrWeb["dqlrs-web/run.sh"]
+  version --> scrVersion["scripts/bump-version.sh"]
+
+  classDef script fill:#e7eef6,stroke:#1e3a5f,color:#1e3a5f
+  class scrDynamo,scrStop,scrJava,scrInstall,scrMatrix,scrRustInstall,scrSmoke,scrBlack,scrNote,scrNoteTest,scrWeb,scrVersion script
+      </pre>
+    </figure>
+
+    <h2 id="tree" class="group">default</h2>
+    <ul class="tree">
+      <li><span class="node"><code class="recipe">default</code></span></li>
+    </ul>
+
+    <h2 class="group">local</h2>
+    <ul class="tree">
+      <li><span class="node"><code class="recipe">dynamo</code><code class="script">scripts/install_dynamodb_local.sh background</code></span></li>
+      <li><span class="node"><code class="recipe">dynamo-stop</code><code class="script">scripts/stop_dynamodb_local.sh</code></span></li>
+      <li><span class="node"><code class="recipe">java</code><code class="script">scripts/install_sdkman_java.sh</code></span></li>
+      <li><span class="node"><code class="recipe">local-install</code><code class="script">scripts/install.sh</code></span></li>
+    </ul>
+
+    <h2 class="group">python</h2>
+    <ul class="tree">
+      <li><span class="node"><code class="recipe">py-sync</code></span></li>
+      <li><span class="node"><code class="recipe">py-lint</code></span></li>
+      <li><span class="node"><code class="recipe">py-fix</code></span></li>
+      <li><span class="node"><code class="recipe">py-test</code></span></li>
+      <li>
+        <span class="node"><code class="recipe">py-test-matrix</code><code class="script">scripts/py-test-python-versions.sh</code></span>
+        <ul>
+          <li><span class="node"><span class="ord">1</span><code class="recipe">dynamo</code><code class="script">scripts/install_dynamodb_local.sh background</code></span></li>
+        </ul>
+      </li>
+      <li><span class="node"><code class="recipe">py-build</code></span></li>
+      <li><span class="node"><code class="recipe">py-install</code></span></li>
+      <li>
+        <span class="node"><code class="recipe">py</code></span>
+        <ul>
+          <li><span class="node"><span class="ord">1</span><code class="recipe">py-sync</code></span></li>
+          <li><span class="node"><span class="ord">2</span><code class="recipe">py-lint</code></span></li>
+          <li><span class="node"><span class="ord">3</span><code class="recipe">py-test</code></span></li>
+          <li><span class="node"><span class="ord">4</span><code class="recipe">py-build</code></span></li>
+        </ul>
+      </li>
+    </ul>
+
+    <h2 class="group">rust</h2>
+    <ul class="tree">
+      <li><span class="node"><code class="recipe">rust-fetch</code></span></li>
+      <li><span class="node"><code class="recipe">rust-fmt</code></span></li>
+      <li><span class="node"><code class="recipe">rust-fix</code></span></li>
+      <li><span class="node"><code class="recipe">rust-clippy</code></span></li>
+      <li><span class="node"><code class="recipe">rust-test</code></span></li>
+      <li><span class="node"><code class="recipe">rust-local</code></span></li>
+      <li><span class="node"><code class="recipe">rust-build</code></span></li>
+      <li><span class="node"><code class="recipe">rust-install</code></span></li>
+      <li><span class="node"><code class="recipe">rust-install-release</code><code class="script">scripts/rust-install.sh</code></span></li>
+      <li><span class="node"><code class="recipe">rust-smoke</code><code class="script">scripts/rust-smoke-test.sh</code></span></li>
+      <li>
+        <span class="node"><code class="recipe">rust</code></span>
+        <ul>
+          <li><span class="node"><span class="ord">1</span><code class="recipe">rust-fetch</code></span></li>
+          <li><span class="node"><span class="ord">2</span><code class="recipe">rust-fmt</code></span></li>
+          <li><span class="node"><span class="ord">3</span><code class="recipe">rust-clippy</code></span></li>
+          <li><span class="node"><span class="ord">4</span><code class="recipe">rust-test</code></span></li>
+          <li><span class="node"><span class="ord">5</span><code class="recipe">rust-local</code></span></li>
+          <li><span class="node"><span class="ord">6</span><code class="recipe">rust-build</code></span></li>
+          <li><span class="node"><span class="ord">7</span><code class="recipe">rust-smoke</code><code class="script">scripts/rust-smoke-test.sh</code></span></li>
+        </ul>
+      </li>
+    </ul>
+
+    <h2 class="group">py-rs</h2>
+    <ul class="tree">
+      <li><span class="node"><code class="recipe">black-box</code><code class="script">black-box-tests/run.sh</code></span></li>
+    </ul>
+
+    <h2 class="group">notebook</h2>
+    <ul class="tree">
+      <li><span class="node"><code class="recipe">notebook-dry-run</code><code class="script">notebook/start.sh --dry-run</code></span></li>
+      <li><span class="node"><code class="recipe">notebook</code><code class="script">notebook/start.sh</code></span></li>
+      <li><span class="node"><code class="recipe">notebook-test</code><code class="script">notebook-tests/run.sh</code></span></li>
+      <li>
+        <span class="node"><code class="recipe">notebook-test-slow</code></span>
+        <ul>
+          <li><span class="node"><code class="recipe">notebook-test</code><code class="flag">--slowmo 500 -m slow</code><code class="script">notebook-tests/run.sh</code></span></li>
+        </ul>
+      </li>
+    </ul>
+
+    <h2 class="group">web</h2>
+    <ul class="tree">
+      <li>
+        <span class="node"><code class="recipe">web</code><code class="script">dqlrs-web/run.sh</code></span>
+        <ul>
+          <li><span class="node"><code class="recipe">dynamo</code><code class="flag">unless --aws</code><code class="script">scripts/install_dynamodb_local.sh background</code></span></li>
+        </ul>
+      </li>
+      <li><span class="node"><code class="recipe">web-unit</code></span></li>
+      <li>
+        <span class="node"><code class="recipe">web-test</code></span>
+        <ul>
+          <li><span class="node"><span class="ord">1</span><code class="recipe">dynamo</code><code class="script">scripts/install_dynamodb_local.sh background</code></span></li>
+        </ul>
+      </li>
+      <li>
+        <span class="node"><code class="recipe">web-test-slow</code></span>
+        <ul>
+          <li>
+            <span class="node"><code class="recipe">web-test</code><code class="flag">--headed</code></span>
+            <ul>
+              <li><span class="node"><span class="ord">1</span><code class="recipe">dynamo</code><code class="script">scripts/install_dynamodb_local.sh background</code></span></li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+    </ul>
+
+    <h2 class="group">other</h2>
+    <ul class="tree">
+      <li><span class="node"><code class="recipe">version</code><code class="script">scripts/bump-version.sh</code></span></li>
+    </ul>
+
+    <h2 class="group">root</h2>
+    <ul class="tree">
+      <li>
+        <span class="node"><code class="recipe">check</code></span>
+        <ul>
+          <li><span class="node"><span class="ord">1</span><code class="recipe">py-sync</code></span></li>
+          <li><span class="node"><span class="ord">2</span><code class="recipe">py-fix</code></span></li>
+          <li><span class="node"><span class="ord">3</span><code class="recipe">rust-fix</code></span></li>
+        </ul>
+      </li>
+      <li>
+        <span class="node"><code class="recipe">test</code></span>
+        <ul>
+          <li><span class="node"><span class="ord">1</span><code class="recipe">dynamo</code><code class="script">scripts/install_dynamodb_local.sh background</code></span></li>
+          <li><span class="node"><span class="ord">2</span><code class="recipe">py-sync</code></span></li>
+          <li><span class="node"><span class="ord">3</span><code class="recipe">rust-build</code></span></li>
+          <li><span class="node"><span class="ord">4</span><code class="recipe">web-unit</code></span></li>
+          <li><span class="node"><span class="ord">5</span><code class="recipe">py-test</code></span></li>
+          <li><span class="node"><span class="ord">6</span><code class="recipe">rust-test</code></span></li>
+          <li><span class="node"><span class="ord">7</span><code class="recipe">rust-local</code></span></li>
+          <li><span class="node"><span class="ord">8</span><code class="recipe">rust-smoke</code><code class="script">scripts/rust-smoke-test.sh</code></span></li>
+          <li><span class="node"><span class="ord">9</span><code class="recipe">black-box</code><code class="script">black-box-tests/run.sh</code></span></li>
+          <li><span class="node"><span class="ord">10</span><code class="recipe">notebook-test</code><code class="script">notebook-tests/run.sh</code></span></li>
+          <li>
+            <span class="node"><span class="ord">11</span><code class="recipe">web-test</code></span>
+            <ul>
+              <li><span class="node"><span class="ord">1</span><code class="recipe">dynamo</code><code class="script">scripts/install_dynamodb_local.sh background</code></span></li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+      <li>
+        <span class="node"><code class="recipe">verify</code></span>
+        <ul>
+          <li><span class="node"><span class="ord">1</span><code class="recipe">dynamo</code><code class="script">scripts/install_dynamodb_local.sh background</code></span></li>
+          <li><span class="node"><span class="ord">2</span><code class="recipe">web-unit</code></span></li>
+          <li>
+            <span class="node"><span class="ord">3</span><code class="recipe">py</code></span>
+            <ul>
+              <li><span class="node"><span class="ord">1</span><code class="recipe">py-sync</code></span></li>
+              <li><span class="node"><span class="ord">2</span><code class="recipe">py-lint</code></span></li>
+              <li><span class="node"><span class="ord">3</span><code class="recipe">py-test</code></span></li>
+              <li><span class="node"><span class="ord">4</span><code class="recipe">py-build</code></span></li>
+            </ul>
+          </li>
+          <li>
+            <span class="node"><span class="ord">4</span><code class="recipe">rust</code></span>
+            <ul>
+              <li><span class="node"><span class="ord">1</span><code class="recipe">rust-fetch</code></span></li>
+              <li><span class="node"><span class="ord">2</span><code class="recipe">rust-fmt</code></span></li>
+              <li><span class="node"><span class="ord">3</span><code class="recipe">rust-clippy</code></span></li>
+              <li><span class="node"><span class="ord">4</span><code class="recipe">rust-test</code></span></li>
+              <li><span class="node"><span class="ord">5</span><code class="recipe">rust-local</code></span></li>
+              <li><span class="node"><span class="ord">6</span><code class="recipe">rust-build</code></span></li>
+              <li><span class="node"><span class="ord">7</span><code class="recipe">rust-smoke</code><code class="script">scripts/rust-smoke-test.sh</code></span></li>
+            </ul>
+          </li>
+          <li><span class="node"><span class="ord">5</span><code class="recipe">black-box</code><code class="script">black-box-tests/run.sh</code></span></li>
+          <li><span class="node"><span class="ord">6</span><code class="recipe">notebook-test</code><code class="script">notebook-tests/run.sh</code></span></li>
+          <li>
+            <span class="node"><span class="ord">7</span><code class="recipe">web-test</code></span>
+            <ul>
+              <li><span class="node"><span class="ord">1</span><code class="recipe">dynamo</code><code class="script">scripts/install_dynamodb_local.sh background</code></span></li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+      <li>
+        <span class="node"><code class="recipe">install</code></span>
+        <ul>
+          <li>
+            <span class="node"><span class="ord">1</span><code class="recipe">py</code></span>
+            <ul>
+              <li><span class="node"><span class="ord">1</span><code class="recipe">py-sync</code></span></li>
+              <li><span class="node"><span class="ord">2</span><code class="recipe">py-lint</code></span></li>
+              <li><span class="node"><span class="ord">3</span><code class="recipe">py-test</code></span></li>
+              <li><span class="node"><span class="ord">4</span><code class="recipe">py-build</code></span></li>
+            </ul>
+          </li>
+          <li>
+            <span class="node"><span class="ord">2</span><code class="recipe">rust</code></span>
+            <ul>
+              <li><span class="node"><span class="ord">1</span><code class="recipe">rust-fetch</code></span></li>
+              <li><span class="node"><span class="ord">2</span><code class="recipe">rust-fmt</code></span></li>
+              <li><span class="node"><span class="ord">3</span><code class="recipe">rust-clippy</code></span></li>
+              <li><span class="node"><span class="ord">4</span><code class="recipe">rust-test</code></span></li>
+              <li><span class="node"><span class="ord">5</span><code class="recipe">rust-local</code></span></li>
+              <li><span class="node"><span class="ord">6</span><code class="recipe">rust-build</code></span></li>
+              <li><span class="node"><span class="ord">7</span><code class="recipe">rust-smoke</code><code class="script">scripts/rust-smoke-test.sh</code></span></li>
+            </ul>
+          </li>
+          <li><span class="node"><span class="ord">3</span><code class="recipe">py-install</code></span></li>
+          <li><span class="node"><span class="ord">4</span><code class="recipe">rust-install</code></span></li>
+        </ul>
+      </li>
+    </ul>
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@12/dist/mermaid.esm.min.mjs';
+    const callGraphSource = document.querySelector('#call-graph pre.mermaid').textContent;
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'neutral',
+      sankey: { showValues: false, linkColor: 'source', nodeAlignment: 'left', width: 1040, height: 720 }
+    });
+    await mermaid.run();
+    highlightCallChain(document.querySelector('#call-graph svg'), callGraphSource);
+
+    function highlightCallChain(svg, source) {
+      const edges = [];
+      for (const line of source.split('\n')) {
+        const match = line.match(/^\s*(\w+)\s+-->\s*(?:\|[^|]*\|\s*)?(\w+)/);
+        if (match) edges.push([match[1], match[2]]);
+      }
+      const nodeEls = new Map();
+      for (const node of svg.querySelectorAll('g.node')) {
+        const match = node.id.match(/-flowchart-(.+)-\d+$/);
+        if (match) nodeEls.set(match[1], node);
+      }
+      const outgoing = new Map();
+      const incoming = new Map();
+      for (const id of nodeEls.keys()) {
+        outgoing.set(id, []);
+        incoming.set(id, []);
+      }
+      const edgeEls = edges.map(([from, to]) => {
+        outgoing.get(from)?.push(to);
+        incoming.get(to)?.push(from);
+        const marker = `L_${from}_${to}_`;
+        return {
+          from,
+          to,
+          path: [...svg.querySelectorAll('path.flowchart-link')].find((path) => path.id.includes(marker)),
+          label: svg.querySelector(`.edgeLabel .label[data-id^="${marker}"]`)?.closest('.edgeLabel')
+        };
+      });
+
+      function walk(start, neighbors) {
+        const seen = new Set();
+        const stack = [...(neighbors.get(start) || [])];
+        while (stack.length) {
+          const id = stack.pop();
+          if (seen.has(id)) continue;
+          seen.add(id);
+          stack.push(...(neighbors.get(id) || []));
+        }
+        return seen;
+      }
+
+      function clear() {
+        svg.classList.remove('chain');
+        for (const el of svg.querySelectorAll('.hot, .pinned')) {
+          el.classList.remove('hot');
+          el.classList.remove('pinned');
+        }
+      }
+
+      let pinned = null;
+
+      function nodeIdFrom(event) {
+        const node = event.target.closest('g.node');
+        if (!node) return null;
+        const match = node.id.match(/-flowchart-(.+)-\d+$/);
+        return match ? match[1] : null;
+      }
+
+      function show(id) {
+        if (!nodeEls.has(id)) return;
+        clear();
+        const hot = walk(id, incoming);
+        for (const next of walk(id, outgoing)) hot.add(next);
+        hot.add(id);
+        svg.classList.add('chain');
+        for (const nodeId of hot) nodeEls.get(nodeId)?.classList.add('hot');
+        if (pinned) nodeEls.get(pinned)?.classList.add('pinned');
+        for (const edge of edgeEls) {
+          if (!hot.has(edge.from) || !hot.has(edge.to)) continue;
+          edge.path?.classList.add('hot');
+          edge.label?.classList.add('hot');
+        }
+      }
+
+      svg.addEventListener('mouseover', (event) => {
+        if (pinned) return;
+        const id = nodeIdFrom(event);
+        if (id) show(id);
+      });
+      svg.addEventListener('mouseleave', () => {
+        if (!pinned) clear();
+      });
+      svg.addEventListener('click', (event) => {
+        const id = nodeIdFrom(event);
+        if (!id) return;
+        pinned = pinned === id ? null : id;
+        if (pinned) show(pinned);
+        else show(id);
+      });
+    }
+  </script>
+</body>
+</html>

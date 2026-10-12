@@ -283,6 +283,33 @@ pub fn renumber_rendered_expression(
     )
 }
 
+/// Merge placeholder maps from independently rendered expressions.
+pub fn merge_rendered_placeholders(parts: &[&RenderedExpression]) -> RenderedExpression {
+    let mut attribute_names = BTreeMap::new();
+    let mut expression_values = BTreeMap::new();
+    for part in parts {
+        if let Some(names) = &part.attribute_names {
+            attribute_names.extend(names.clone());
+        }
+        if let Some(values) = &part.expression_values {
+            expression_values.extend(values.clone());
+        }
+    }
+    RenderedExpression {
+        expression: String::new(),
+        attribute_names: (!attribute_names.is_empty()).then_some(attribute_names),
+        expression_values: (!expression_values.is_empty()).then_some(expression_values),
+    }
+}
+
+/// Shift `expr` so its `#f` / `:v` placeholders do not collide with `existing`.
+pub fn shift_rendered_expression(
+    expr: &RenderedExpression,
+    existing: &[&RenderedExpression],
+) -> RenderedExpression {
+    renumber_rendered_expression(expr, &merge_rendered_placeholders(existing))
+}
+
 fn renumber_with_offsets(
     expr: &RenderedExpression,
     value_offset: usize,
@@ -1254,6 +1281,50 @@ mod tests {
             update.expression_values.as_ref().unwrap()[":v1"],
             renumbered.expression_values.as_ref().unwrap()[":v2"]
         );
+    }
+
+    #[test]
+    fn shifts_projection_placeholders_off_filter_aliases() {
+        let Statement::Scan {
+            condition: Some(condition),
+            selection,
+            ..
+        } = parse_statement("SCAN title FROM t WHERE contains(name, 'hello')").unwrap()
+        else {
+            panic!("expected scan");
+        };
+        let filter = render_condition(&condition).unwrap();
+        assert_eq!(filter.expression, "contains(#f1, :v1)");
+        let projection = render_projection(&selection);
+        assert_eq!(projection.expression, "title");
+        let shifted = shift_rendered_expression(&projection, &[&filter]);
+        assert_eq!(shifted.expression, "title");
+        let merged = merge_rendered_placeholders(&[&filter, &shifted]);
+        assert_eq!(
+            merged.attribute_names.unwrap().get("#f1"),
+            Some(&"name".to_string())
+        );
+    }
+
+    #[test]
+    fn shifts_reserved_projection_away_from_contains_filter() {
+        let Statement::Scan {
+            condition: Some(condition),
+            selection,
+            ..
+        } = parse_statement("SCAN status FROM t WHERE contains(name, 'hello')").unwrap()
+        else {
+            panic!("expected scan");
+        };
+        let filter = render_condition(&condition).unwrap();
+        let projection = render_projection(&selection);
+        assert_eq!(projection.expression, "#f1");
+        let shifted = shift_rendered_expression(&projection, &[&filter]);
+        assert_eq!(shifted.expression, "#f2");
+        let merged = merge_rendered_placeholders(&[&filter, &shifted]);
+        let names = merged.attribute_names.unwrap();
+        assert_eq!(names.get("#f1"), Some(&"name".to_string()));
+        assert_eq!(names.get("#f2"), Some(&"status".to_string()));
     }
 
     #[test]

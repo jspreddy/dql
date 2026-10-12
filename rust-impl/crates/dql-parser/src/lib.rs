@@ -233,6 +233,8 @@ pub struct QueryOptions {
     pub throttle: Option<ThrottleConfig>,
     /// Optional `SAVE <filename>` target for SELECT/SCAN exports.
     pub save_file: Option<String>,
+    /// `SAVE <filename> CREATE PARENTS` creates missing parent directories at write time.
+    pub save_create_parents: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -570,6 +572,7 @@ fn merge_query_options(mut base: QueryOptions, tail: QueryOptions) -> QueryOptio
     if tail.save_file.is_some() {
         base.save_file = tail.save_file;
     }
+    base.save_create_parents |= tail.save_create_parents;
     base.consistent |= tail.consistent;
     base
 }
@@ -1051,6 +1054,16 @@ impl Parser {
                 options.throttle = Some(self.parse_throttle_clause()?);
             } else if self.accept_keyword("SAVE") {
                 options.save_file = Some(self.parse_filename()?);
+                if self.accept_keyword("CREATE") {
+                    self.expect_keyword("PARENTS")?;
+                    options.save_create_parents = true;
+                }
+            } else if self.peek_keyword("CREATE") {
+                return Err(self.error(if options.save_file.is_none() {
+                    "CREATE PARENTS requires SAVE"
+                } else {
+                    "CREATE PARENTS follows the SAVE filename"
+                }));
             } else {
                 return Err(self.error("unexpected token in query options"));
             }
@@ -1068,6 +1081,15 @@ impl Parser {
         loop {
             match self.peek().cloned() {
                 Some(Token::Ident(value)) | Some(Token::Number(value)) => {
+                    // `SAVE path CREATE PARENTS` keeps the clause out of an unquoted path.
+                    if value.eq_ignore_ascii_case("CREATE")
+                        && matches!(
+                            self.tokens.get(self.pos + 1),
+                            Some(Token::Ident(next)) if next.eq_ignore_ascii_case("PARENTS")
+                        )
+                    {
+                        break;
+                    }
                     self.pos += 1;
                     path.push_str(&value);
                 }
@@ -1376,16 +1398,23 @@ impl Parser {
         }
         let mut args = Vec::new();
         if !self.accept_symbol(')') {
-            loop {
+            // First operand is a document path. Python accepts a quoted name
+            // (`contains('foo', 'bar')`); treat that string as the field.
+            args.push(self.parse_function_path_arg()?);
+            while self.accept_symbol(',') {
                 args.push(self.parse_condition_operand()?);
-                if self.accept_symbol(',') {
-                    continue;
-                }
-                self.expect_symbol(')')?;
-                break;
             }
+            self.expect_symbol(')')?;
         }
         Ok(Condition::Function { name, args })
+    }
+
+    fn parse_function_path_arg(&mut self) -> Result<ConditionOperand, ParseError> {
+        if let Some(Token::String(value)) = self.peek().cloned() {
+            self.pos += 1;
+            return Ok(ConditionOperand::Field(value));
+        }
+        self.parse_condition_operand()
     }
 
     fn parse_condition_operand(&mut self) -> Result<ConditionOperand, ParseError> {
@@ -2117,9 +2146,44 @@ mod tests {
         match statement {
             Statement::Scan { options, .. } => {
                 assert_eq!(options.save_file.as_deref(), Some("/tmp/out.csv"));
+                assert!(!options.save_create_parents);
             }
             other => panic!("unexpected statement: {other:?}"),
         }
+
+        let statement =
+            parse_statement("SCAN * FROM t SAVE 'exports/out.json' CREATE PARENTS").unwrap();
+        match statement {
+            Statement::Scan { options, .. } => {
+                assert_eq!(options.save_file.as_deref(), Some("exports/out.json"));
+                assert!(options.save_create_parents);
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+
+        let statement =
+            parse_statement("SELECT * FROM t SAVE exports/out.json create parents").unwrap();
+        match statement {
+            Statement::Select { options, .. } => {
+                assert_eq!(options.save_file.as_deref(), Some("exports/out.json"));
+                assert!(options.save_create_parents);
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+
+        let err = parse_statement("SCAN * FROM t CREATE PARENTS").unwrap_err();
+        assert!(
+            err.to_string().contains("CREATE PARENTS requires SAVE"),
+            "{err}"
+        );
+        let err = parse_statement("SCAN * FROM t SAVE 'out.json' CREATE").unwrap_err();
+        assert!(err.to_string().contains("PARENTS"), "{err}");
+        let err =
+            parse_statement("SCAN * FROM t SAVE 'out.json' LIMIT 1 CREATE PARENTS").unwrap_err();
+        assert!(
+            err.to_string().contains("follows the SAVE filename"),
+            "{err}"
+        );
 
         let err = parse_statement("SELECT count(*) FROM t SAVE 'out.json'").unwrap_err();
         assert!(

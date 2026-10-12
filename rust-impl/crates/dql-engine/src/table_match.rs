@@ -219,10 +219,14 @@ fn token_similarity(needle: &str, token: &str) -> Similarity {
             fuzzy: 100,
         };
     }
+    // A 1-character token is what digit splitting produces inside generated
+    // names (`pwmv5es8cg12b1sa` → `b`). `needle.contains("b")` would then
+    // mark every ordinary word as a similar name.
+    let long_enough = needle.chars().count() >= 3 && token.chars().count() >= 3;
     let mut structural = 0;
-    if needle.chars().count() >= 3 && (token.starts_with(needle) || needle.starts_with(token)) {
+    if long_enough && (token.starts_with(needle) || needle.starts_with(token)) {
         structural = 92;
-    } else if needle.chars().count() >= 3 && (token.contains(needle) || needle.contains(token)) {
+    } else if long_enough && (token.contains(needle) || needle.contains(token)) {
         structural = 88;
     }
     let fuzzy = if needle.chars().count() >= 3 && token.chars().count() >= 3 {
@@ -416,6 +420,25 @@ mod tests {
         assert_eq!(posts.names, vec!["posts".to_string()]);
         let users = intelligent_matches(&tables, "usr").unwrap();
         assert_eq!(users.names, vec!["users".to_string()]);
+    }
+
+    #[test]
+    fn digit_bounded_letters_are_not_similar_names() {
+        assert!(intelligent_matches(&[named("pwmv5es8cg12b1sa", "id")], "zzqqbuyer").is_err());
+        let tables = vec![
+            named("pwmv5es8cg12b1sa", "id"),
+            named("orders", "zzqqbuyer"),
+            named("shipments", "zzqqbuyer"),
+        ];
+        let hit = intelligent_matches(&tables, "zzqqbuyer").unwrap();
+        assert_eq!(
+            hit.names,
+            vec!["orders".to_string(), "shipments".to_string()]
+        );
+        assert_eq!(
+            hit.note,
+            "No exact match for \"zzqqbuyer\", so showing related keys."
+        );
     }
 
     #[test]

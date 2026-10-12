@@ -9,9 +9,16 @@ flags, and examples: [`rust-docs/`](../rust-docs/). Python-to-Rust differences:
 This crate lives in [jspreddy/dql](https://github.com/jspreddy/dql), a fork of
 [stevearc/dql](https://github.com/stevearc/dql).
 
+## Target state
+
+The target state of this repository is Rust, not Python. `dqlrs` is the primary
+tool. Python remains for the original `dql` client and for integrations where
+Rust is not feasible. New `dqlrs` features, including the web UI, are
+implemented in Rust.
+
 | Crate | Role |
 | --- | --- |
-| `dql-cli` | `dqlrs` binary: clap flags, meta-commands, ratatui REPL |
+| `dql-cli` | `dqlrs` binary: clap flags, meta-commands, ratatui REPL, `dqlrs --web` |
 | `dql-parser` | Lexer/parser and typed statement AST |
 | `dql-expr` | Expression rendering, placeholders, value conversion |
 | `dql-models` | Table/index metadata and query planning |

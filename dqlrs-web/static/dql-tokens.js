@@ -13,7 +13,7 @@ const groups = {
     "DUMP", "LOAD", "EXPLAIN", "ANALYZE", "SHOW", "LIKE", "DESCRIBE",
     "FROM", "WHERE", "INTO", "VALUES", "SET", "ADD", "REMOVE", "USING",
     "LIMIT", "ORDER", "BY", "ASC", "DESC", "AS", "KEYS", "IN", "CONSISTENT",
-    "THROTTLE", "RETURNS", "SAVE",
+    "THROTTLE", "RETURNS", "SAVE", "PARENTS",
     "TABLE", "INDEX", "GLOBAL", "HASH", "RANGE", "KEY", "THROUGHPUT", "TP",
     "IF", "NOT", "EXISTS", "INCLUDE", "ALL", "SCHEMA",
     "AND", "OR", "BETWEEN",

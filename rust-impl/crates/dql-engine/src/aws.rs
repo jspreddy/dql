@@ -16,9 +16,9 @@ use aws_sdk_dynamodb::types::{
 use aws_sdk_dynamodb::Client;
 use dql_expr::{
     render_condition, render_projection, render_update, renumber_rendered_expression,
-    RenderedExpression, Visitor,
+    shift_rendered_expression, RenderedExpression, Visitor,
 };
-use dql_models::TableMeta;
+use dql_models::{TableMeta, TableStatus};
 use dql_parser::{AlterAction, Condition, QueryOptions, Selection, UpdateExpr};
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
@@ -232,6 +232,45 @@ impl SdkBackend {
             .is_some_and(|message| message.contains(needle))
             || format!("{err:?}").contains(needle)
     }
+
+    /// CreateTable can return before DynamoDB Local's sqlite table exists.
+    /// Describe until the table is ACTIVE so the next statement can use it.
+    fn wait_until_table_ready(&self, name: &str) -> Result<(), EngineError> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        let mut last = format!("Table '{name}' not found");
+        loop {
+            match self.describe_table(name) {
+                Ok(Some(meta)) if meta.status == TableStatus::Active => return Ok(()),
+                Ok(Some(meta)) => {
+                    last = format!("status is {:?}", meta.status);
+                }
+                Ok(None) => {
+                    last = format!("Table '{name}' not found");
+                }
+                Err(err) => {
+                    let text = err.to_string();
+                    if !table_not_ready_yet(&text) {
+                        return Err(err);
+                    }
+                    last = text;
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(EngineError::Runtime(format!(
+                    "Table '{name}' was not ready after create: {last}"
+                )));
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+fn table_not_ready_yet(message: &str) -> bool {
+    let text = message.to_ascii_lowercase();
+    text.contains("not found")
+        || text.contains("resourcenotfound")
+        || text.contains("non-existent table")
+        || text.contains("no such table")
 }
 
 fn aws_error_text<E>(err: &E) -> String
@@ -297,6 +336,7 @@ impl DynamoBackend for SdkBackend {
         match result {
             Ok(_) => {
                 self.invalidate_cache(&name);
+                self.wait_until_table_ready(&name)?;
                 Ok(BackendResponse::new(
                     "create_table",
                     &name,
@@ -946,11 +986,11 @@ impl SdkBackend {
                     query = query.set_expression_attribute_values(Some(values));
                 }
             }
-            if let Some(filter_condition) = filter_condition {
-                let filter_condition = match key_condition {
-                    Some(key) => renumber_rendered_expression(filter_condition, key),
-                    None => filter_condition.clone(),
-                };
+            let filter_condition = filter_condition.map(|filter| match key_condition {
+                Some(key) => renumber_rendered_expression(filter, key),
+                None => filter.clone(),
+            });
+            if let Some(filter_condition) = &filter_condition {
                 query = query
                     .filter_expression(filter_condition.expression.clone())
                     .set_expression_attribute_names(merge_names(
@@ -963,10 +1003,15 @@ impl SdkBackend {
                     )?);
             }
             if let Some(rendered) = self.read_projection(table, request)? {
+                let existing = [key_condition, filter_condition.as_ref()]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
+                let rendered = shift_rendered_expression(&rendered, &existing);
                 query = query
                     .projection_expression(rendered.expression.clone())
-                    .set_expression_attribute_names(names_to_hash(
-                        rendered.attribute_names.clone(),
+                    .set_expression_attribute_names(merge_expression_names(
+                        existing.iter().copied().chain(std::iter::once(&rendered)),
                     ));
             }
             if let Some(last_key) = &last_key {
@@ -1048,10 +1093,12 @@ impl SdkBackend {
                 }
             }
             if let Some(rendered) = self.read_projection(table, request)? {
+                let existing = filter_condition.into_iter().collect::<Vec<_>>();
+                let rendered = shift_rendered_expression(&rendered, &existing);
                 scan = scan
                     .projection_expression(rendered.expression.clone())
-                    .set_expression_attribute_names(names_to_hash(
-                        rendered.attribute_names.clone(),
+                    .set_expression_attribute_names(merge_expression_names(
+                        existing.iter().copied().chain(std::iter::once(&rendered)),
                     ));
             }
             if let Some(last_key) = &last_key {
@@ -1292,6 +1339,18 @@ fn merge_names(
             Some(merged)
         }
     }
+}
+
+fn merge_expression_names<'a>(
+    parts: impl IntoIterator<Item = &'a RenderedExpression>,
+) -> Option<HashMap<String, String>> {
+    let mut merged = HashMap::new();
+    for part in parts {
+        if let Some(names) = &part.attribute_names {
+            merged.extend(names.clone());
+        }
+    }
+    (!merged.is_empty()).then_some(merged)
 }
 
 fn names_to_hash(names: Option<BTreeMap<String, String>>) -> Option<HashMap<String, String>> {

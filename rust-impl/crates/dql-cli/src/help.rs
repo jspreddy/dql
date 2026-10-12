@@ -475,7 +475,7 @@ pub const SELECT: &str = r"
         [ LIMIT limit ]
         [ ORDER BY field ]
         [ ASC | DESC ]
-        [ SAVE file.json ]
+        [ SAVE file.json [ CREATE PARENTS ] ]
 
     Examples
     --------
@@ -483,6 +483,7 @@ pub const SELECT: &str = r"
     SELECT * FROM foobars KEYS IN 'id1', 'id2';
     SELECT * FROM foobars SAVE out.msgpack;
     SELECT * FROM foobars SAVE out.json.gz;
+    SELECT * FROM foobars SAVE 'exports/out.json' CREATE PARENTS;
 ";
 
 pub const UPDATE: &str = r"

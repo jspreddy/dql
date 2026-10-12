@@ -1379,6 +1379,16 @@ mod test_select_scan {
             }
             other => panic!("unexpected result: {other:?}"),
         }
+        let quoted = engine
+            .execute(r#"SCAN * FROM foobar WHERE contains('baz', 2)"#)
+            .unwrap();
+        match quoted {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("bar"), Some(&Value::Number("5".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 
     #[test]
@@ -1521,6 +1531,225 @@ mod test_select_scan {
             )
             .unwrap();
         engine
+    }
+}
+
+mod test_condition_functions {
+    use super::*;
+
+    fn seeded_function_table() -> InMemoryEngine {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY, sk STRING RANGE KEY);
+                 INSERT INTO foobar (
+                    id='store-1', sk='ITEM#mug', name='hello world', status='active',
+                    title='Blue mug', tags=('lighting', 'ceramic'),
+                    items=['handle', 'glaze'], qty=3);
+                 INSERT INTO foobar (
+                    id='store-1', sk='ITEM#lamp', name='goodbye', status='draft',
+                    title='Arc lamp', tags=('lighting', 'metal', 'floor'),
+                    items=['shade', 'cord'], qty=1);
+                 INSERT INTO foobar (id='store-1', sk='NOTE#1', name='memo', title='Field notes');
+                 INSERT INTO foobar (
+                    id='store-2', sk='ITEM#cable', name='usb world', status='active',
+                    title='USB-C cable', tags=('cable'), items=[], qty=12)",
+            )
+            .unwrap();
+        engine
+    }
+
+    fn titles(result: StatementResult) -> Vec<String> {
+        match result {
+            StatementResult::Items(items) => {
+                let mut titles: Vec<String> = items
+                    .iter()
+                    .map(|item| match item.get("title") {
+                        Some(Value::String(title)) => title.clone(),
+                        other => panic!("missing title: {other:?}"),
+                    })
+                    .collect();
+                titles.sort();
+                titles
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_begins_with_range_key() {
+        let mut engine = seeded_function_table();
+        assert_eq!(
+            titles(
+                engine
+                    .execute(
+                        "SELECT * FROM foobar WHERE id = 'store-1' AND begins_with(sk, 'ITEM#')"
+                    )
+                    .unwrap()
+            ),
+            vec!["Arc lamp", "Blue mug"]
+        );
+    }
+
+    #[test]
+    fn test_contains_reserved_name_projection() {
+        let mut engine = seeded_function_table();
+        assert_eq!(
+            titles(
+                engine
+                    .execute(
+                        "SELECT title FROM foobar WHERE id = 'store-1' AND contains(name, 'hello')"
+                    )
+                    .unwrap()
+            ),
+            vec!["Blue mug"]
+        );
+    }
+
+    #[test]
+    fn test_contains_quoted_field() {
+        let mut engine = seeded_function_table();
+        assert_eq!(
+            titles(
+                engine
+                    .execute("SCAN * FROM foobar WHERE contains('name', 'hello')")
+                    .unwrap()
+            ),
+            vec!["Blue mug"]
+        );
+    }
+
+    #[test]
+    fn test_contains_reserved_status_scan() {
+        let mut engine = seeded_function_table();
+        assert_eq!(
+            titles(
+                engine
+                    .execute("SCAN title FROM foobar WHERE contains(status, 'act')")
+                    .unwrap()
+            ),
+            vec!["Blue mug", "USB-C cable"]
+        );
+    }
+
+    #[test]
+    fn test_contains_set() {
+        let mut engine = seeded_function_table();
+        assert_eq!(
+            titles(
+                engine
+                    .execute("SCAN * FROM foobar WHERE contains(tags, 'metal')")
+                    .unwrap()
+            ),
+            vec!["Arc lamp"]
+        );
+    }
+
+    #[test]
+    fn test_contains_list() {
+        let mut engine = seeded_function_table();
+        assert_eq!(
+            titles(
+                engine
+                    .execute("SCAN * FROM foobar WHERE contains(items, 'cord')")
+                    .unwrap()
+            ),
+            vec!["Arc lamp"]
+        );
+    }
+
+    #[test]
+    fn test_begins_with_non_key() {
+        let mut engine = seeded_function_table();
+        assert_eq!(
+            titles(
+                engine
+                    .execute("SCAN * FROM foobar WHERE begins_with(title, 'Blue')")
+                    .unwrap()
+            ),
+            vec!["Blue mug"]
+        );
+    }
+
+    #[test]
+    fn test_attribute_exists() {
+        let mut engine = seeded_function_table();
+        assert_eq!(
+            titles(
+                engine
+                    .execute("SCAN * FROM foobar WHERE attribute_exists(tags)")
+                    .unwrap()
+            ),
+            vec!["Arc lamp", "Blue mug", "USB-C cable"]
+        );
+    }
+
+    #[test]
+    fn test_attribute_not_exists() {
+        let mut engine = seeded_function_table();
+        assert_eq!(
+            titles(
+                engine
+                    .execute("SCAN * FROM foobar WHERE attribute_not_exists(tags)")
+                    .unwrap()
+            ),
+            vec!["Field notes"]
+        );
+    }
+
+    #[test]
+    fn test_attribute_type() {
+        let mut engine = seeded_function_table();
+        assert_eq!(
+            titles(
+                engine
+                    .execute("SCAN * FROM foobar WHERE attribute_type(qty, N)")
+                    .unwrap()
+            ),
+            vec!["Arc lamp", "Blue mug", "USB-C cable"]
+        );
+    }
+
+    #[test]
+    fn test_size_set() {
+        let mut engine = seeded_function_table();
+        assert_eq!(
+            titles(
+                engine
+                    .execute("SCAN * FROM foobar WHERE size(tags) > 2")
+                    .unwrap()
+            ),
+            vec!["Arc lamp"]
+        );
+    }
+
+    #[test]
+    fn test_size_string() {
+        let mut engine = seeded_function_table();
+        assert_eq!(
+            titles(
+                engine
+                    .execute("SCAN * FROM foobar WHERE size(title) > 8")
+                    .unwrap()
+            ),
+            vec!["Field notes", "USB-C cable"]
+        );
+    }
+
+    #[test]
+    fn test_explain_contains() {
+        let mut engine = seeded_function_table();
+        let result = engine
+            .execute(
+                "EXPLAIN SELECT title FROM foobar WHERE id = 'store-1' AND contains(name, 'hello')",
+            )
+            .unwrap();
+        match result {
+            StatementResult::Schema(schema) => {
+                assert!(schema.contains("query foobar"), "{schema}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 }
 

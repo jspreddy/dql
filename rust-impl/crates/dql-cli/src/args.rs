@@ -54,6 +54,23 @@ pub struct CliArgs {
     )]
     pub bind: Option<String>,
 
+    #[arg(long = "web", help = "Serve the query editor and table browser")]
+    pub web: bool,
+
+    #[arg(
+        long = "listen",
+        value_name = "ADDR",
+        help = "With --web, listen on loopback HOST:PORT (default 127.0.0.1:8765)"
+    )]
+    pub listen: Option<String>,
+
+    #[arg(
+        long = "dir",
+        value_name = "DIR",
+        help = "With --web, folder of .dql files (default: current directory)"
+    )]
+    pub dir: Option<String>,
+
     #[arg(long = "version", help = "Print the version and exit")]
     pub version: bool,
 
@@ -75,6 +92,9 @@ pub fn help_text() -> String {
            --json               When used with --command, format results as JSON\n\
            --serve              Headless JSON-lines worker (stdio, or --bind on loopback). Not a TTY REPL.\n\
            --bind <ADDR>        With --serve, listen on loopback HOST:PORT (or PORT as 127.0.0.1:PORT)\n\
+           --web                Serve the query editor and table browser\n\
+           --listen <ADDR>      With --web, listen on loopback HOST:PORT (default 127.0.0.1:8765)\n\
+           --dir <DIR>          With --web, folder of .dql files (default: current directory)\n\
            notebook, --notebook Start JupyterLab with a DQL (Rust) kernel (this binary)\n\
            --version            Print the version and exit\n\n\
      Environment:\n\
@@ -124,5 +144,26 @@ mod tests {
         assert!(args.serve);
         assert_eq!(args.bind.as_deref(), Some("127.0.0.1:7400"));
         assert!(args.command.is_none());
+        assert!(!args.web);
+    }
+
+    #[test]
+    fn parses_web_listen_and_dir() {
+        let args = CliArgs::try_parse_from([
+            "dqlrs",
+            "--web",
+            "--listen",
+            "127.0.0.1:9000",
+            "--dir",
+            "/tmp/queries",
+            "-H",
+            "localhost",
+        ])
+        .unwrap();
+        assert!(args.web);
+        assert_eq!(args.listen.as_deref(), Some("127.0.0.1:9000"));
+        assert_eq!(args.dir.as_deref(), Some("/tmp/queries"));
+        assert_eq!(args.host.as_deref(), Some("localhost"));
+        assert!(!args.serve);
     }
 }

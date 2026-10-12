@@ -33,7 +33,7 @@
     <div class="endpoint" id="endpoint">localhost:8000</div>
   </header>
   <div class="body">
-    <aside class="side">
+    <aside class="side" id="side">
       <div class="side-head">
         <span class="side-heading">
           <span id="side-title">Files</span>
@@ -52,6 +52,9 @@
           <input id="table-search" type="search" placeholder="catalog" spellcheck="false" aria-label="Filter tables" title="Same matching as ls. A glob lists those tables. Otherwise similar names and related keys." />
         </div>
         <div id="table-list" class="table-list"></div>
+      </div>
+      <div id="side-resize" class="side-resize" role="separator" aria-orientation="vertical" aria-label="Resize navigation" title="Drag to resize the left nav" tabindex="0">
+        <span class="side-grip" aria-hidden="true"></span>
       </div>
     </aside>
     <div id="file-menu" class="menu" role="menu" hidden></div>
@@ -90,7 +93,15 @@
       </section>
       <section id="tables-view" class="view hidden">
         <div class="rows-head">
-          <span id="rows-title"></span>
+          <span class="rows-heading">
+            <span id="rows-title"></span>
+            <button type="button" id="rows-schema" class="schema-btn hidden" title="Show table structure" aria-label="Show table structure" aria-haspopup="dialog" aria-controls="schema-pop" aria-expanded="false">
+              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M2.5 3.2h11v9.6h-11z"/>
+                <path fill="none" stroke="currentColor" stroke-width="1.4" d="M2.5 6.4h11M6.7 3.2v9.6"/>
+              </svg>
+            </button>
+          </span>
           <span id="rows-meta" class="meta"></span>
         </div>
         <div id="rows-body" class="result-body"></div>
@@ -104,6 +115,36 @@
       </section>
     </main>
   </div>
+  <dialog id="schema-pop" aria-labelledby="schema-pop-title">
+    <div class="schema-pop-card">
+      <header class="schema-pop-head">
+        <div class="schema-pop-heading">
+          <div class="schema-pop-kicker-row">
+            <span id="schema-pop-kicker" class="schema-pop-kicker"></span>
+            <button type="button" id="schema-pop-info" class="schema-pop-info hidden" title="Based on this query result, not the entire table." aria-label="Based on this query result, not the entire table.">
+              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                <circle cx="7" cy="7" r="5.2" fill="none" stroke="currentColor" stroke-width="1.4"/>
+                <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M7 6.3v3.4M7 4.4v.2"/>
+              </svg>
+            </button>
+          </div>
+          <div class="schema-pop-title-row">
+            <h2 id="schema-pop-title">Structure</h2>
+            <div id="schema-pop-keys" class="schema-pop-keys"></div>
+          </div>
+          <div id="schema-pop-query" class="schema-pop-query" hidden></div>
+          <p id="schema-pop-summary" class="schema-pop-summary"></p>
+        </div>
+        <button type="button" id="schema-pop-close" title="Close" aria-label="Close structure">
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M2 2l8 8M10 2l-8 8"/>
+          </svg>
+        </button>
+      </header>
+      <div id="schema-pop-body" class="schema-pop-body"></div>
+      <p id="schema-pop-foot" class="schema-pop-foot"></p>
+    </div>
+  </dialog>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

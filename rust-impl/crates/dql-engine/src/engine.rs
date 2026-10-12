@@ -1,5 +1,5 @@
 use crate::convert::keys_in_to_items;
-use crate::file_io::{load_items as load_items_from_file, save_items};
+use crate::file_io::{load_items as load_items_from_file, save_items, validate_save_path};
 use crate::progress::ProgressSink;
 use crate::query_context::{query_context_from_read, LastQueryContext};
 use crate::throttle::RateLimit;
@@ -483,6 +483,7 @@ impl<B: DynamoBackend> Engine<B> {
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
+        self.ensure_save_path(options)?;
         let result = if options.keys_in.is_some() {
             self.capture_query_context(table, selection, options, None)?;
             self.execute_keys_in_read(table, selection, condition, options)?
@@ -502,6 +503,7 @@ impl<B: DynamoBackend> Engine<B> {
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
+        self.ensure_save_path(options)?;
         let result = if options.keys_in.is_some() {
             self.capture_query_context(table, selection, options, None)?;
             self.execute_keys_in_read(table, selection, condition, options)?
@@ -543,6 +545,14 @@ impl<B: DynamoBackend> Engine<B> {
         Ok(())
     }
 
+    fn ensure_save_path(&self, options: &QueryOptions) -> Result<(), EngineError> {
+        let Some(filename) = options.save_file.as_deref() else {
+            return Ok(());
+        };
+        validate_save_path(save_filename(filename), options.save_create_parents)
+            .map_err(EngineError::Runtime)
+    }
+
     fn maybe_save(
         &self,
         options: &QueryOptions,
@@ -556,9 +566,8 @@ impl<B: DynamoBackend> Engine<B> {
                 "Cannot use count(*) with SAVE".to_string(),
             ));
         };
-        let path = Path::new(filename.trim_matches('"').trim_matches('\''));
-        let count =
-            save_items(path, &items).map_err(|err| EngineError::Runtime(err.to_string()))?;
+        let count = save_items(save_filename(filename), &items, options.save_create_parents)
+            .map_err(|err| EngineError::Runtime(err.to_string()))?;
         Ok(StatementResult::Affected(count))
     }
 
@@ -849,6 +858,10 @@ impl<B: DynamoBackend> Engine<B> {
             }
         }
     }
+}
+
+fn save_filename(filename: &str) -> &Path {
+    Path::new(filename.trim_matches('"').trim_matches('\''))
 }
 
 fn format_explain_kwargs(kwargs: &BTreeMap<String, String>) -> String {
@@ -1550,6 +1563,112 @@ mod tests {
                 other => panic!("unexpected results for {name}: {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn save_checks_the_path_before_reading() {
+        let dir = std::env::temp_dir().join("dql_engine_save_preflight");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let missing = dir.join("missing").join("out.json");
+        let existing = dir.join("kept.json");
+        std::fs::write(&existing, "keep").unwrap();
+
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute(
+                "CREATE TABLE t (id STRING HASH KEY);
+                 INSERT INTO t (id) VALUES ('a')",
+            )
+            .unwrap();
+
+        let err = engine
+            .execute(&format!(
+                "EXPLAIN SCAN * FROM t SAVE '{}'",
+                missing.display()
+            ))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("No such file or directory"),
+            "{err}"
+        );
+        assert!(!missing.exists());
+        assert!(!dir.join("missing").exists());
+
+        let err = engine
+            .execute(&format!("SELECT * FROM t SAVE '{}'", missing.display()))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("No such file or directory"),
+            "{err}"
+        );
+
+        let err = engine
+            .execute(&format!(
+                "SCAN * FROM missing_table SAVE '{}'",
+                existing.display()
+            ))
+            .unwrap_err();
+        assert!(err.to_string().contains("not found"), "{err}");
+        assert_eq!(std::fs::read_to_string(&existing).unwrap(), "keep");
+
+        let pickle = dir.join("archive.p");
+        let err = engine
+            .execute(&format!("SCAN * FROM t SAVE '{}'", pickle.display()))
+            .unwrap_err();
+        assert!(err.to_string().contains("pickle"), "{err}");
+        assert!(!pickle.exists());
+    }
+
+    #[test]
+    fn save_create_parents_makes_directories_when_the_write_happens() {
+        let dir = std::env::temp_dir().join("dql_engine_save_create_parents");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let nested = dir.join("exports").join("deep").join("out.json");
+        let blocked = dir.join("not-a-dir");
+        std::fs::write(&blocked, "file").unwrap();
+        let blocked_target = blocked.join("out.json");
+
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute(
+                "CREATE TABLE t (id STRING HASH KEY);
+                 INSERT INTO t (id, name) VALUES ('a', 'alpha')",
+            )
+            .unwrap();
+
+        let err = engine
+            .execute(&format!(
+                "SCAN * FROM missing_table SAVE '{}' CREATE PARENTS",
+                nested.display()
+            ))
+            .unwrap_err();
+        assert!(err.to_string().contains("not found"), "{err}");
+        assert!(!dir.join("exports").exists());
+
+        let err = engine
+            .execute(&format!(
+                "EXPLAIN SCAN * FROM t SAVE '{}' CREATE PARENTS",
+                blocked_target.display()
+            ))
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("directory") || err.to_string().contains("Not a directory"),
+            "{err}"
+        );
+        assert!(blocked.is_file());
+        assert!(!blocked_target.exists());
+
+        let saved = engine
+            .execute(&format!(
+                "SCAN * FROM t SAVE '{}' CREATE PARENTS",
+                nested.display()
+            ))
+            .unwrap();
+        assert_eq!(saved, StatementResult::Affected(1));
+        let text = std::fs::read_to_string(&nested).unwrap();
+        assert!(text.contains("alpha"), "{text}");
     }
 
     #[test]
