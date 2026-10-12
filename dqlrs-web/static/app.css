@@ -1339,8 +1339,9 @@ th { background: #fafbfc; position: sticky; top: 0; }
 .schema-pop-kicker-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin: 0 0 2px;
+  gap: 5px;
+  margin: 0 0 8px;
+  min-height: 18px;
 }
 
 .schema-pop-kicker {
@@ -1356,8 +1357,8 @@ th { background: #fafbfc; position: sticky; top: 0; }
 
 .schema-pop-info {
   position: relative;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   padding: 0;
   display: inline-flex;
   align-items: center;
