@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>dqlrs packaging, install, and run</title>
+  <style>
+    :root {
+      --bg: #f3efe6;
+      --paper: #fffdf8;
+      --ink: #1c1915;
+      --muted: #5e564c;
+      --line: #d9cdb8;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 16px/1.5 "Iowan Old Style", Palatino, Georgia, serif;
+    }
+    a { color: #9a3412; }
+    header, main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+    header { padding: 28px 0 8px; }
+    .kicker {
+      margin: 0;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font: 600 12px/1.2 ui-sans-serif, system-ui, sans-serif;
+      color: var(--muted);
+    }
+    h1 { margin: 6px 0 8px; font-size: 40px; font-weight: 600; letter-spacing: -0.02em; }
+    header p { margin: 0; max-width: 68ch; color: var(--muted); }
+    nav { display: flex; flex-wrap: wrap; gap: 18px; margin: 16px 0 8px; font: 600 14px/1 ui-sans-serif, system-ui, sans-serif; }
+    main { padding-bottom: 48px; }
+    figure {
+      margin: 22px 0 8px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px 18px 12px;
+    }
+    figcaption h2, figcaption h3 { margin: 0 0 4px; font-size: 22px; }
+    figcaption h3 { font-size: 18px; }
+    figcaption p { margin: 0 0 12px; color: var(--muted); }
+    pre.mermaid { margin: 0; background: transparent; }
+    .mermaid svg { max-width: 100%; height: auto; }
+    figure.call-graph svg .node { cursor: pointer; }
+    figure.call-graph svg.chain .node,
+    figure.call-graph svg.chain path.flowchart-link,
+    figure.call-graph svg.chain .edgeLabel {
+      opacity: 0.14;
+      transition: opacity 120ms ease;
+    }
+    figure.call-graph svg.chain .node.hot,
+    figure.call-graph svg.chain path.flowchart-link.hot,
+    figure.call-graph svg.chain .edgeLabel.hot { opacity: 1; }
+    figure.call-graph svg.chain path.flowchart-link.hot { stroke: #9a3412; }
+    figure.call-graph svg .node.pinned > rect {
+      fill: #9a3412 !important;
+      stroke: #7c2d12 !important;
+      stroke-width: 3px;
+    }
+    figure.call-graph svg .node.pinned .nodeLabel { color: #fffdf8 !important; }
+    @media (prefers-reduced-motion: reduce) {
+      figure.call-graph svg.chain .node,
+      figure.call-graph svg.chain path.flowchart-link,
+      figure.call-graph svg.chain .edgeLabel { transition: none; }
+    }
+    code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.86em;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <p class="kicker">dqlrs</p>
+    <h1>Packaged, installed, and run</h1>
+    <p>
+      One Cargo workspace builds the <code>dqlrs</code> binary. Web assets and the notebook kernel are compiled into it, then each front door shares one session.
+    </p>
+    <nav>
+      <a href="#overview">Overview</a>
+      <a href="#packaged">Packaged</a>
+      <a href="#installed">Installed</a>
+      <a href="#runs">Runs</a>
+    </nav>
+  </header>
+  <main>
+    <figure id="overview">
+      <figcaption>
+        <h2>Overview</h2>
+        <p>The binary is the package. Install puts it on <code>PATH</code>. Run picks a front door.</p>
+      </figcaption>
+      <pre class="mermaid">
+mindmap
+  root((dqlrs))
+    Packaged
+      rust-impl workspace
+      dqlrs-web static
+      notebook kernel
+    Installed
+      cargo install
+      GitHub release
+      notebook data dir
+    Runs
+      REPL
+      -c
+      --serve
+      --web
+      notebook
+      </pre>
+    </figure>
+
+    <figure id="packaged" class="call-graph">
+      <figcaption>
+        <h2>Packaged</h2>
+        <p>Library crates stay inside the workspace. The shippable artifact is the <code>dqlrs</code> bin from <code>dql-cli</code>.</p>
+      </figcaption>
+      <pre class="mermaid">
+flowchart LR
+  dqlCli[dql-cli]
+  dqlOutput[dql-output]
+  dqlEngine[dql-engine]
+  dqlExpr[dql-expr]
+  dqlModels[dql-models]
+  dqlParser[dql-parser]
+  dqlCli --> dqlOutput
+  dqlCli --> dqlEngine
+  dqlCli --> dqlModels
+  dqlCli --> dqlParser
+  dqlOutput --> dqlEngine
+  dqlOutput --> dqlModels
+  dqlOutput --> dqlParser
+  dqlEngine --> dqlExpr
+  dqlEngine --> dqlModels
+  dqlEngine --> dqlParser
+  dqlExpr --> dqlParser
+  dqlModels --> dqlParser
+      </pre>
+      <p>An arrow means “depends on.” <code>dql-parser</code> has no workspace dependency. <code>dql-expr</code> is reached only through the engine. The optional <code>watch</code> feature turns on <code>dql-engine/cloudwatch</code>; the default build leaves it off. Hover a crate to see its dependency chain. Click to pin it.</p>
+    </figure>
+
+    <figure id="modules" class="call-graph">
+      <figcaption>
+        <h3>CLI modules</h3>
+        <p><code>main</code> only installs the panic handler, then <code>dql_cli::run</code> chooses a module.</p>
+      </figcaption>
+      <pre class="mermaid">
+flowchart LR
+  mainMod[main]
+  runFn[run]
+  notebook[notebook]
+  web[web]
+  serve[serve]
+  repl[repl]
+  session[session]
+  meta[meta]
+  history[history]
+  config[config]
+  mainMod --> runFn
+  runFn --> notebook
+  runFn --> web
+  runFn --> serve
+  runFn --> repl
+  runFn --> session
+  session --> meta
+  session --> history
+  session --> config
+      </pre>
+      <p><code>meta</code> holds the dot-commands: connect, file, history, lifecycle, ls, opt, throttle, and watch. <code>args</code>, <code>help</code>, <code>error</code>, and <code>throttle</code> support every door and are not drawn as a separate chain.</p>
+    </figure>
+
+    <figure id="embedded" class="call-graph">
+      <figcaption>
+        <h3>What the binary contains</h3>
+        <p>Web files and the notebook kernel are compiled in, so a <code>cargo install</code> does not need the checkout beside it.</p>
+      </figcaption>
+      <pre class="mermaid">
+flowchart LR
+  binary[dqlrs]
+  includeDir[include_dir]
+  staticDir["dqlrs-web/static"]
+  buildRs[build.rs]
+  kernelSrc["notebook/src/dql_notebook_kernel"]
+  exampleNb["getting-started-rust.ipynb"]
+  includeDir --> staticDir
+  includeDir --> binary
+  buildRs --> kernelSrc
+  buildRs --> exampleNb
+  buildRs --> binary
+      </pre>
+      <p>At runtime <code>--web</code> prefers a checkout of <code>dqlrs-web/static</code> when that directory is present, and otherwise serves the embedded copy. The notebook files are unpacked on first <code>dqlrs notebook</code>, not on every query.</p>
+    </figure>
+
+    <figure id="installed" class="call-graph">
+      <figcaption>
+        <h2>Installed</h2>
+        <p>Two installers, two binary names. The notebook’s Python environment is created later, by the binary itself.</p>
+      </figcaption>
+      <pre class="mermaid">
+flowchart LR
+  cargoInstall["cargo install dql-cli"]
+  dqlrsBin["~/.local/bin/dqlrs"]
+  releaseScript["scripts/rust-install.sh"]
+  dqlBin["dql on PATH"]
+  notebookCmd["dqlrs notebook"]
+  dataDir["~/.local/share/dqlrs/notebook"]
+  venv[venv]
+  cargoInstall --> dqlrsBin
+  releaseScript --> dqlBin
+  dqlrsBin --> notebookCmd
+  notebookCmd --> dataDir
+  notebookCmd --> venv
+      </pre>
+      <p><code>just rust-install</code> is <code>cargo install --path crates/dql-cli --locked --force --root ~/.local</code>, which writes <code>dqlrs</code>. <code>just rust-install-release</code> downloads a GitHub release tarball and installs a binary named <code>dql</code> into <code>/usr/local/bin</code> when that directory is writable, otherwise <code>~/.local/bin</code>. The first notebook launch needs Python 3.10+ or uv, then leaves Jupyter and the kernel under the data directory.</p>
+    </figure>
+
+    <figure id="runs" class="call-graph">
+      <figcaption>
+        <h2>Runs</h2>
+        <p><code>run</code> looks at argv before clap so notebook flags never share a parser with <code>--web</code> or <code>--serve</code>.</p>
+      </figcaption>
+      <pre class="mermaid">
+flowchart LR
+  mainMod[main]
+  runFn[run]
+  notebook[notebook]
+  web[web]
+  serve[serve]
+  command["-c"]
+  repl[repl]
+  session[session]
+  mainMod --> runFn
+  runFn --> notebook
+  runFn --> web
+  runFn --> serve
+  runFn --> command
+  runFn --> repl
+  web --> session
+  serve --> session
+  command --> session
+  repl --> session
+      </pre>
+      <p>Notebook returns before <code>CliArgs</code> is parsed. <code>--web</code> and <code>--serve</code> use <code>Session::new_for_serve</code> and skip history. <code>-c</code> and the REPL use <code>Session::new</code>. <code>--bind</code> is only valid with <code>--serve</code>; <code>--listen</code> and <code>--dir</code> are only valid with <code>--web</code>.</p>
+    </figure>
+
+    <figure id="web" class="call-graph">
+      <figcaption>
+        <h3>Web</h3>
+        <p>The browser talks to one process. That process already holds the session.</p>
+      </figcaption>
+      <pre class="mermaid">
+flowchart LR
+  webRun["web::run"]
+  server[server]
+  files[files]
+  shape[shape]
+  assets["dqlrs-web/static"]
+  session[session]
+  browser[browser]
+  webRun --> session
+  webRun --> server
+  server --> files
+  server --> shape
+  server --> assets
+  browser --> server
+      </pre>
+      <p>The default listen address is <code>127.0.0.1:8765</code>. <code>--dir</code> is the folder of <code>.dql</code> files; otherwise it is the current directory. Query results leave the server as NDJSON. Passing <code>-H</code> sets dummy AWS credentials so a local endpoint does not try instance metadata.</p>
+    </figure>
+
+    <figure id="notebook" class="call-graph">
+      <figcaption>
+        <h3>Notebook</h3>
+        <p>Jupyter is a parent. Rust cells are a long-lived <code>dqlrs --serve</code> child on stdio.</p>
+      </figcaption>
+      <pre class="mermaid">
+flowchart LR
+  nbRun["notebook::run"]
+  nbArgs[args]
+  layout[layout]
+  venv[venv]
+  kernel["dql_notebook_kernel"]
+  serveClient[serve_client]
+  serveRun["dqlrs --serve"]
+  nbRun --> nbArgs
+  nbRun --> layout
+  nbRun --> venv
+  layout --> kernel
+  venv --> kernel
+  kernel --> serveClient
+  serveClient --> serveRun
+      </pre>
+      <p><code>dqlrs notebook</code> and <code>dqlrs --notebook</code> are the same door. <code>--shutdown</code> stops servers this binary started. The kernel package is <code>dql_notebook_kernel</code>; <code>serve_client.py</code> keeps one <code>--serve</code> worker and sends cells as JSON lines. Python magics <code>%%dql</code> and <code>%%dqlrs</code> live in that same package.</p>
+    </figure>
+
+    <figure id="statement" class="call-graph">
+      <figcaption>
+        <h3>A statement</h3>
+        <p>Every front door ends in the same engine. Rendering differs after that.</p>
+      </figcaption>
+      <pre class="mermaid">
+flowchart LR
+  session[session]
+  parser[dql-parser]
+  models[dql-models]
+  expr[dql-expr]
+  engine[dql-engine]
+  output[dql-output]
+  envelope["JSON envelope"]
+  ndjson[NDJSON]
+  backend["DynamoDB or memory"]
+  session --> parser
+  parser --> models
+  parser --> expr
+  models --> engine
+  expr --> engine
+  engine --> backend
+  engine --> output
+  engine --> envelope
+  engine --> ndjson
+      </pre>
+      <p>The REPL and <code>-c</code> render through <code>dql-output</code>. <code>--serve</code> returns a JSON envelope, which is what the notebook displays. <code>--web</code> streams NDJSON. With no <code>-H</code> and <code>DQL_BACKEND=memory</code>, the engine uses an in-memory backend; <code>-H</code> selects DynamoDB Local, and the default credentials path selects AWS.</p>
+    </figure>
+  </main>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@12/dist/mermaid.esm.min.mjs';
+    const graphs = [...document.querySelectorAll('figure.call-graph pre.mermaid')].map((pre) => ({
+      figure: pre.closest('figure'),
+      source: pre.textContent
+    }));
+    mermaid.initialize({ startOnLoad: false, theme: 'neutral' });
+    await mermaid.run();
+    for (const graph of graphs) {
+      const svg = graph.figure.querySelector('svg');
+      if (svg) highlightCallChain(svg, graph.source);
+    }
+
+    function highlightCallChain(svg, source) {
+      const edges = [];
+      for (const line of source.split('\n')) {
+        const match = line.match(/^\s*(\w+)\s+-->\s*(?:\|[^|]*\|\s*)?(\w+)/);
+        if (match) edges.push([match[1], match[2]]);
+      }
+      const nodeEls = new Map();
+      for (const node of svg.querySelectorAll('g.node')) {
+        const match = node.id.match(/-flowchart-(.+)-\d+$/);
+        if (match) nodeEls.set(match[1], node);
+      }
+      const outgoing = new Map();
+      const incoming = new Map();
+      for (const id of nodeEls.keys()) {
+        outgoing.set(id, []);
+        incoming.set(id, []);
+      }
+      const edgeEls = edges.map(([from, to]) => {
+        outgoing.get(from)?.push(to);
+        incoming.get(to)?.push(from);
+        const marker = `L_${from}_${to}_`;
+        return {
+          from,
+          to,
+          path: [...svg.querySelectorAll('path.flowchart-link')].find((path) => path.id.includes(marker)),
+          label: svg.querySelector(`.edgeLabel .label[data-id^="${marker}"]`)?.closest('.edgeLabel')
+        };
+      });
+
+      function walk(start, neighbors) {
+        const seen = new Set();
+        const stack = [...(neighbors.get(start) || [])];
+        while (stack.length) {
+          const id = stack.pop();
+          if (seen.has(id)) continue;
+          seen.add(id);
+          stack.push(...(neighbors.get(id) || []));
+        }
+        return seen;
+      }
+
+      function clear() {
+        svg.classList.remove('chain');
+        for (const el of svg.querySelectorAll('.hot, .pinned')) {
+          el.classList.remove('hot');
+          el.classList.remove('pinned');
+        }
+      }
+
+      let pinned = null;
+
+      function nodeIdFrom(event) {
+        const node = event.target.closest('g.node');
+        if (!node) return null;
+        const match = node.id.match(/-flowchart-(.+)-\d+$/);
+        return match ? match[1] : null;
+      }
+
+      function show(id) {
+        if (!nodeEls.has(id)) return;
+        clear();
+        const hot = walk(id, incoming);
+        for (const next of walk(id, outgoing)) hot.add(next);
+        hot.add(id);
+        svg.classList.add('chain');
+        for (const nodeId of hot) nodeEls.get(nodeId)?.classList.add('hot');
+        if (pinned) nodeEls.get(pinned)?.classList.add('pinned');
+        for (const edge of edgeEls) {
+          if (!hot.has(edge.from) || !hot.has(edge.to)) continue;
+          edge.path?.classList.add('hot');
+          edge.label?.classList.add('hot');
+        }
+      }
+
+      svg.addEventListener('mouseover', (event) => {
+        if (pinned) return;
+        const id = nodeIdFrom(event);
+        if (id) show(id);
+      });
+      svg.addEventListener('mouseleave', () => {
+        if (!pinned) clear();
+      });
+      svg.addEventListener('click', (event) => {
+        const id = nodeIdFrom(event);
+        if (!id) return;
+        pinned = pinned === id ? null : id;
+        if (pinned) show(pinned);
+        else show(id);
+      });
+    }
+  </script>
+</body>
+</html>
