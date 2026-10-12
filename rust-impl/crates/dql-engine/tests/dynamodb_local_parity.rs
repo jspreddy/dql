@@ -206,6 +206,70 @@ fn parity_show_tables_like() {
 }
 
 #[test]
+fn parity_contains_reserved_projection() {
+    if skip_if_no_local() {
+        return;
+    }
+    let Some(mut harness) = LocalHarness::try_new() else {
+        return;
+    };
+    let table = LocalHarness::unique_table_name("parity_contains");
+    run_script(
+        &mut harness,
+        &table,
+        "CREATE TABLE {table} (id STRING HASH KEY);
+         INSERT INTO {table} (id, name, status, title) VALUES
+           ('a', 'hello world', 'active', 'Blue mug'),
+           ('b', 'goodbye', 'draft', 'Red mug')",
+    );
+    match harness
+        .query(&format!(
+            "SCAN title FROM {table} WHERE contains(name, 'hello')"
+        ))
+        .expect("contains scan with projection should succeed")
+    {
+        StatementResult::Items(items) => {
+            assert_eq!(items.len(), 1, "{items:?}");
+            assert_eq!(
+                items[0].get("title"),
+                Some(&Value::String("Blue mug".to_string()))
+            );
+        }
+        other => panic!("unexpected result: {other:?}"),
+    }
+    match harness
+        .query(&format!(
+            "SELECT title FROM {table} WHERE id = 'a' AND contains(status, 'act')"
+        ))
+        .expect("contains query with projection should succeed")
+    {
+        StatementResult::Items(items) => {
+            assert_eq!(items.len(), 1, "{items:?}");
+            assert_eq!(
+                items[0].get("title"),
+                Some(&Value::String("Blue mug".to_string()))
+            );
+        }
+        other => panic!("unexpected result: {other:?}"),
+    }
+    match harness
+        .query(&format!(
+            r#"SCAN title FROM {table} WHERE contains('name', "hello")"#
+        ))
+        .expect("quoted contains field should succeed")
+    {
+        StatementResult::Items(items) => {
+            assert_eq!(items.len(), 1, "{items:?}");
+            assert_eq!(
+                items[0].get("title"),
+                Some(&Value::String("Blue mug".to_string()))
+            );
+        }
+        other => panic!("unexpected result: {other:?}"),
+    }
+}
+
+#[test]
 fn parity_describe_table() {
     if skip_if_no_local() {
         return;

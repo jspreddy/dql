@@ -1379,6 +1379,16 @@ mod test_select_scan {
             }
             other => panic!("unexpected result: {other:?}"),
         }
+        let quoted = engine
+            .execute(r#"SCAN * FROM foobar WHERE contains('baz', 2)"#)
+            .unwrap();
+        match quoted {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("bar"), Some(&Value::Number("5".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 
     #[test]

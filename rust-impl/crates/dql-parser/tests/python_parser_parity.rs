@@ -1,6 +1,7 @@
 use dql_parser::{
     parse_fragment, parse_script, parse_selection, parse_statement, parse_update_expr, parse_value,
-    AttributeType, CompareOp, Condition, FragmentStatus, KeyType, OrderBy, Statement, Value,
+    AttributeType, CompareOp, Condition, ConditionOperand, FragmentStatus, KeyType, OrderBy,
+    Statement, Value,
 };
 
 fn assert_parse_ok(input: &str) {
@@ -319,6 +320,8 @@ mod test_expressions {
             "WHERE attribute_not_exists(foo)",
             "WHERE attribute_type(foo, N)",
             r#"WHERE contains(foo, "test")"#,
+            r#"WHERE contains('foo', "test")"#,
+            r#"WHERE contains("foo", 'test')"#,
             "WHERE foo between 1 and 5",
             "WHERE foo in (1, 5, 7)",
             r#"WHERE foo > utcts("2015-12-5")"#,
@@ -331,6 +334,31 @@ mod test_expressions {
         ] {
             parse_statement(&format!("SELECT * FROM foobars {expression}"))
                 .unwrap_or_else(|err| panic!("{expression:?} should parse: {err}"));
+        }
+    }
+
+    #[test]
+    fn test_contains_quoted_field_is_a_path() {
+        let statement =
+            parse_statement(r#"SCAN * FROM foobars WHERE contains('name', "hello")"#).unwrap();
+        match statement {
+            Statement::Scan {
+                condition: Some(Condition::Function { name, args }),
+                ..
+            } => {
+                assert_eq!(name, "contains");
+                assert!(
+                    matches!(
+                        args.as_slice(),
+                        [
+                            ConditionOperand::Field(field),
+                            ConditionOperand::Value(Value::String(value))
+                        ] if field == "name" && value == "hello"
+                    ),
+                    "{args:?}"
+                );
+            }
+            other => panic!("unexpected statement: {other:?}"),
         }
     }
 

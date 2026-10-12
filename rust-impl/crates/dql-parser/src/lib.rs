@@ -1398,16 +1398,23 @@ impl Parser {
         }
         let mut args = Vec::new();
         if !self.accept_symbol(')') {
-            loop {
+            // First operand is a document path. Python accepts a quoted name
+            // (`contains('foo', 'bar')`); treat that string as the field.
+            args.push(self.parse_function_path_arg()?);
+            while self.accept_symbol(',') {
                 args.push(self.parse_condition_operand()?);
-                if self.accept_symbol(',') {
-                    continue;
-                }
-                self.expect_symbol(')')?;
-                break;
             }
+            self.expect_symbol(')')?;
         }
         Ok(Condition::Function { name, args })
+    }
+
+    fn parse_function_path_arg(&mut self) -> Result<ConditionOperand, ParseError> {
+        if let Some(Token::String(value)) = self.peek().cloned() {
+            self.pos += 1;
+            return Ok(ConditionOperand::Field(value));
+        }
+        self.parse_condition_operand()
     }
 
     fn parse_condition_operand(&mut self) -> Result<ConditionOperand, ParseError> {

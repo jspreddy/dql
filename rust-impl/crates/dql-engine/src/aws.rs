@@ -16,7 +16,7 @@ use aws_sdk_dynamodb::types::{
 use aws_sdk_dynamodb::Client;
 use dql_expr::{
     render_condition, render_projection, render_update, renumber_rendered_expression,
-    RenderedExpression, Visitor,
+    shift_rendered_expression, RenderedExpression, Visitor,
 };
 use dql_models::{TableMeta, TableStatus};
 use dql_parser::{AlterAction, Condition, QueryOptions, Selection, UpdateExpr};
@@ -986,11 +986,11 @@ impl SdkBackend {
                     query = query.set_expression_attribute_values(Some(values));
                 }
             }
-            if let Some(filter_condition) = filter_condition {
-                let filter_condition = match key_condition {
-                    Some(key) => renumber_rendered_expression(filter_condition, key),
-                    None => filter_condition.clone(),
-                };
+            let filter_condition = filter_condition.map(|filter| match key_condition {
+                Some(key) => renumber_rendered_expression(filter, key),
+                None => filter.clone(),
+            });
+            if let Some(filter_condition) = &filter_condition {
                 query = query
                     .filter_expression(filter_condition.expression.clone())
                     .set_expression_attribute_names(merge_names(
@@ -1003,10 +1003,15 @@ impl SdkBackend {
                     )?);
             }
             if let Some(rendered) = self.read_projection(table, request)? {
+                let existing = [key_condition, filter_condition.as_ref()]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>();
+                let rendered = shift_rendered_expression(&rendered, &existing);
                 query = query
                     .projection_expression(rendered.expression.clone())
-                    .set_expression_attribute_names(names_to_hash(
-                        rendered.attribute_names.clone(),
+                    .set_expression_attribute_names(merge_expression_names(
+                        existing.iter().copied().chain(std::iter::once(&rendered)),
                     ));
             }
             if let Some(last_key) = &last_key {
@@ -1088,10 +1093,12 @@ impl SdkBackend {
                 }
             }
             if let Some(rendered) = self.read_projection(table, request)? {
+                let existing = filter_condition.into_iter().collect::<Vec<_>>();
+                let rendered = shift_rendered_expression(&rendered, &existing);
                 scan = scan
                     .projection_expression(rendered.expression.clone())
-                    .set_expression_attribute_names(names_to_hash(
-                        rendered.attribute_names.clone(),
+                    .set_expression_attribute_names(merge_expression_names(
+                        existing.iter().copied().chain(std::iter::once(&rendered)),
                     ));
             }
             if let Some(last_key) = &last_key {
@@ -1332,6 +1339,18 @@ fn merge_names(
             Some(merged)
         }
     }
+}
+
+fn merge_expression_names<'a>(
+    parts: impl IntoIterator<Item = &'a RenderedExpression>,
+) -> Option<HashMap<String, String>> {
+    let mut merged = HashMap::new();
+    for part in parts {
+        if let Some(names) = &part.attribute_names {
+            merged.extend(names.clone());
+        }
+    }
+    (!merged.is_empty()).then_some(merged)
 }
 
 fn names_to_hash(names: Option<BTreeMap<String, String>>) -> Option<HashMap<String, String>> {
