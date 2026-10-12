@@ -136,13 +136,6 @@ impl RuntimeEngine {
         }
     }
 
-    pub fn cancel(&self) -> &dql_engine::CancelFlag {
-        match self {
-            Self::Memory(engine) => engine.inner().cancel(),
-            Self::Remote(engine) => engine.inner().cancel(),
-        }
-    }
-
     pub fn rich_context(&self) -> Option<RichContext> {
         self.last_query_context().map(rich_context_from_engine)
     }
@@ -361,10 +354,6 @@ impl Session {
 
     pub fn progress(&self) -> &dql_engine::ProgressSink {
         self.engine.progress()
-    }
-
-    pub fn cancel(&self) -> &dql_engine::CancelFlag {
-        self.engine.cancel()
     }
 
     /// Build a session that always uses the in-memory backend (for unit tests).

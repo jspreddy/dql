@@ -304,32 +304,6 @@ test("shows an explain plan as operations and conditions", async ({ page, app })
   await expect(again.locator('[data-testid="explain-json"]')).toBeHidden();
 });
 
-test("stops a throttled insert from the stop button", async ({ page, app }) => {
-  const name = uniqueTable();
-  app.trackTable(name);
-  const tuples = Array.from({ length: 80 }, (_, index) => `('r${index}', ${index})`).join(", ");
-  await replaceEditor(
-    page,
-    [
-      `DROP TABLE IF EXISTS ${name};`,
-      `CREATE TABLE ${name} (id STRING HASH KEY);`,
-      `INSERT INTO ${name} (id, n) VALUES ${tuples} THROTTLE 5 5;`,
-    ].join("\n"),
-  );
-  await pressMod(page, "A");
-  await page.locator("#run").click();
-  await expect(page.locator("#stop")).toBeVisible();
-  await expect(page.locator("#run")).toBeHidden();
-  await expect(page.locator("#run-progress")).toBeVisible();
-  await expect(page.locator('[data-testid="run-status-running"]')).toBeVisible();
-  await page.locator("#stop").click();
-  await expect(page.locator('[data-testid="result-note"].error')).toContainText("Query stopped");
-  await expect(page.locator("#run")).toBeVisible();
-  await expect(page.locator("#run")).toBeEnabled();
-  await expect(page.locator("#stop")).toBeHidden();
-  await expect(page.locator("#run-progress")).toBeHidden();
-});
-
 test("shows a progress bar and a running gutter mark for a throttled insert", async ({ page, app }) => {
   const name = uniqueTable();
   app.trackTable(name);
@@ -344,14 +318,11 @@ test("shows a progress bar and a running gutter mark for a throttled insert", as
   );
   await pressMod(page, "A");
   await page.locator("#run").click();
-  await expect(page.locator("#stop")).toBeVisible();
-  await expect(page.locator("#run")).toBeHidden();
+  await expect(page.locator("#run")).toBeDisabled();
   await expect(page.locator("#run-progress")).toBeVisible();
   await expect(page.locator('[data-testid="run-status-running"]')).toBeVisible();
   await expect(page.locator("#run-progress")).toBeHidden({ timeout: 30_000 });
-  await expect(page.locator("#run")).toBeVisible();
   await expect(page.locator("#run")).toBeEnabled();
-  await expect(page.locator("#stop")).toBeHidden();
   await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "30 affected" })).toBeVisible();
   await expect(page.locator('[data-testid="run-status-error"]')).toHaveCount(0);
 });

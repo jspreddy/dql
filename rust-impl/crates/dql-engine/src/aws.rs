@@ -4,8 +4,8 @@ use crate::convert::{
 };
 use crate::throttle::RateLimit;
 use crate::{
-    BackendResponse, CancelFlag, CapacityRecord, DynamoBackend, EngineError, Item, ProgressSink,
-    ReadOperation, ReadRequest,
+    BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ProgressSink, ReadOperation,
+    ReadRequest,
 };
 use aws_sdk_dynamodb::error::ProvideErrorMetadata;
 use aws_sdk_dynamodb::types::{
@@ -67,7 +67,6 @@ pub struct SdkBackend {
     region: String,
     config: SdkConfig,
     progress: ProgressSink,
-    cancel: CancelFlag,
 }
 
 impl SdkBackend {
@@ -88,7 +87,6 @@ impl SdkBackend {
             region,
             config,
             progress: ProgressSink::default(),
-            cancel: CancelFlag::default(),
         })
     }
 
@@ -190,7 +188,9 @@ impl SdkBackend {
             return Ok(());
         };
         let wait = rate_limit.on_capacity(capacity.read_units, capacity.write_units);
-        self.cancel.sleep(wait)?;
+        if wait > Duration::ZERO {
+            std::thread::sleep(wait);
+        }
         Ok(())
     }
 
@@ -260,7 +260,7 @@ impl SdkBackend {
                     "Table '{name}' was not ready after create: {last}"
                 )));
             }
-            self.cancel.sleep(Duration::from_millis(20))?;
+            std::thread::sleep(Duration::from_millis(20));
         }
     }
 }
@@ -424,7 +424,7 @@ impl DynamoBackend for SdkBackend {
                 }
                 pending = response.unprocessed_items().cloned().unwrap_or_default();
                 if !pending.is_empty() {
-                    self.cancel.sleep(Duration::from_millis(100))?;
+                    std::thread::sleep(Duration::from_millis(100));
                 }
             }
             written += chunk.len();
@@ -505,7 +505,6 @@ impl DynamoBackend for SdkBackend {
         let mut read_units = 0.0;
         let mut write_units = 0.0;
         for key in keys {
-            self.cancel.check()?;
             let response = self
                 .block_on(async {
                     self.client
@@ -555,7 +554,6 @@ impl DynamoBackend for SdkBackend {
         let mut write_units = 0.0;
         let mut updated_items = Vec::new();
         for key in keys {
-            self.cancel.check()?;
             let response = self.send_update_item(
                 table,
                 key,
@@ -612,7 +610,6 @@ impl DynamoBackend for SdkBackend {
         let mut read_units = 0.0;
         let mut write_units = 0.0;
         for key_item in keys {
-            self.cancel.check()?;
             let key = primary_key_from_meta(&meta, key_item)?;
             let mut request = self
                 .client
@@ -673,7 +670,6 @@ impl DynamoBackend for SdkBackend {
         let mut write_units = 0.0;
         let mut updated_items = Vec::new();
         for key_item in keys {
-            self.cancel.check()?;
             let key = primary_key_from_meta(&meta, key_item)?;
             let response = self.send_update_item(
                 table,
@@ -873,10 +869,6 @@ impl DynamoBackend for SdkBackend {
     fn set_progress_sink(&mut self, sink: ProgressSink) {
         self.progress = sink;
     }
-
-    fn set_cancel_flag(&mut self, flag: CancelFlag) {
-        self.cancel = flag;
-    }
 }
 
 impl SdkBackend {
@@ -968,7 +960,6 @@ impl SdkBackend {
         let mut total_count = 0usize;
         let mut page_index = 0usize;
         loop {
-            self.cancel.check()?;
             let mut query = self
                 .client
                 .query()
@@ -1073,7 +1064,6 @@ impl SdkBackend {
         let mut total_count = 0usize;
         let mut page_index = 0usize;
         loop {
-            self.cancel.check()?;
             let mut scan = self
                 .client
                 .scan()

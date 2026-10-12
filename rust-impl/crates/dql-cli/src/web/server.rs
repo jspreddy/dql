@@ -21,7 +21,7 @@ use super::shape::{
     changes_schema, column_order, explain_index, list_tables, parse_table_shape, read_query,
     safe_table_name, split_statements, Column, ExecText, ListedTable, TableShape, PAGE_SIZE,
 };
-use crate::serve::protocol::{envelope_from_error, ServeEnvelope};
+use crate::serve::protocol::ServeEnvelope;
 use crate::session::Session;
 
 static ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../../dqlrs-web/static");
@@ -40,7 +40,6 @@ struct App {
     root: PathBuf,
     endpoint: String,
     state: Mutex<WebState>,
-    cancel: dql_engine::CancelFlag,
 }
 
 struct Incoming {
@@ -105,7 +104,6 @@ impl App {
             Some((host, port)) => format!("{host}:{port}"),
             None => session.region.clone(),
         };
-        let cancel = session.cancel().clone();
         Self {
             root,
             endpoint,
@@ -114,7 +112,6 @@ impl App {
                 shapes: std::collections::HashMap::new(),
                 table_catalog: None,
             }),
-            cancel,
         }
     }
 }
@@ -314,10 +311,6 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
 }
 
 fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
-    if path == "/api/stop" {
-        app.cancel.request();
-        return Reply::Json(200, json!({"ok": true}));
-    }
     if path == "/api/run" {
         let parsed = parse_json(body);
         let dql = parsed
@@ -380,7 +373,6 @@ fn handle_run(app: Arc<App>, dql: String) -> Reply {
 }
 
 fn run_script(app: Arc<App>, statements: Vec<String>, writer: impl Write + Send + 'static) {
-    app.cancel.clear();
     let writer = Arc::new(Mutex::new(writer));
     let mut state = lock_state(&app);
     for (index, statement) in statements.iter().enumerate() {
@@ -390,15 +382,6 @@ fn run_script(app: Arc<App>, statements: Vec<String>, writer: impl Write + Send 
         )
         .is_err()
         {
-            return;
-        }
-        if app.cancel.is_requested() {
-            let envelope = envelope_from_error(dql_engine::EngineError::Cancelled);
-            let result = public_result(statement, &envelope, None);
-            let _ = write_json(
-                &mut *lock_writer(&writer),
-                &json!({"event": "result", "index": index, "result": result}),
-            );
             return;
         }
         let progress = Arc::clone(&writer);
@@ -801,40 +784,6 @@ mod tests {
         assert!(ran.contains("\"event\":\"result\""), "{ran}");
         assert!(ran.contains("\"apple\":\"p\""), "{ran}");
         assert!(ran.contains("\"id\":\"a\""), "{ran}");
-        drop(guard);
-    }
-
-    #[test]
-    fn stop_ends_a_throttled_insert() {
-        let root = tempfile::tempdir().unwrap();
-        let (addr, guard) = spawn_server(root.path().to_path_buf());
-        let mut values = Vec::new();
-        for index in 0..30 {
-            values.push(format!("('{index}')"));
-        }
-        let script = format!(
-            "CREATE TABLE shelf (id STRING HASH KEY); INSERT INTO shelf (id) VALUES {} THROTTLE 10 10;",
-            values.join(", ")
-        );
-        let body = format!("{{\"dql\":{}}}", serde_json::to_string(&script).unwrap());
-        let pending = thread::spawn(move || http_body(addr, "POST", "/api/run", &body));
-        let started = Instant::now();
-        let mut stopped = false;
-        while started.elapsed() < Duration::from_secs(4) {
-            thread::sleep(Duration::from_millis(50));
-            let reply = http(addr, "POST", "/api/stop", "");
-            if reply.contains("\"ok\":true") {
-                stopped = true;
-                break;
-            }
-        }
-        assert!(stopped, "stop request did not succeed");
-        let ran = pending.join().expect("run thread");
-        assert!(
-            ran.contains("Query stopped") || ran.contains("\"code\":\"cancelled\""),
-            "{ran}"
-        );
-        assert!(started.elapsed() < Duration::from_secs(8), "{:?}", started.elapsed());
         drop(guard);
     }
 

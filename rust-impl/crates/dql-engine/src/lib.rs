@@ -1,5 +1,4 @@
 mod aws;
-mod cancel;
 #[cfg(feature = "cloudwatch")]
 mod cloudwatch;
 mod convert;
@@ -21,7 +20,6 @@ pub use throttle::RateLimit;
 pub use aws::{SdkBackend, SdkConfig};
 pub use engine::Engine;
 pub use memory::MemoryBackend;
-pub use cancel::CancelFlag;
 pub use progress::{ProgressEvent, ProgressSink, WRITE_PROGRESS_CHUNK};
 pub use query_context::{query_context_from_read, LastQueryContext};
 pub use table_match::{intelligent_like_matches, intelligent_matches, MatchTable};
@@ -91,7 +89,6 @@ impl<T> BackendResponse<T> {
 pub enum EngineError {
     Parse(dql_parser::ParseError),
     Runtime(String),
-    Cancelled,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,9 +184,6 @@ pub trait DynamoBackend {
     fn set_progress_sink(&mut self, sink: ProgressSink) {
         let _ = sink;
     }
-    fn set_cancel_flag(&mut self, flag: CancelFlag) {
-        let _ = flag;
-    }
 }
 
 pub fn in_memory_engine() -> InMemoryEngine {
@@ -249,7 +243,6 @@ impl fmt::Display for EngineError {
         match self {
             EngineError::Parse(err) => write!(f, "{err}"),
             EngineError::Runtime(message) => write!(f, "{message}"),
-            EngineError::Cancelled => write!(f, "Query stopped"),
         }
     }
 }
