@@ -130,6 +130,43 @@ test("saves and loads an absolute path", async ({ page, app }) => {
   }
 });
 
+test("SAVE CREATE PARENTS writes into a new directory", async ({ page, app }) => {
+  const source = uniqueTable();
+  const loaded = uniqueTable();
+  app.trackTable(source);
+  app.trackTable(loaded);
+  const folder = `exports-${source}`;
+
+  await runEditor(
+    page,
+    [
+      ...seed(source),
+      `SCAN * FROM ${source} SAVE '${folder}/rows.json' CREATE PARENTS;`,
+      `CREATE TABLE ${loaded} (id STRING HASH KEY);`,
+      `LOAD '${folder}/rows.json' INTO ${loaded};`,
+      `SCAN * FROM ${loaded};`,
+    ].join("\n"),
+  );
+
+  await expect(page.locator("#result-meta")).toHaveText("2 rows");
+  await expect(page.locator("#result-table")).toContainText("alpha");
+  await expect(page.locator("#result-table")).toContainText("beta");
+  await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
+  expect(fs.existsSync(path.join(app.workspace, folder))).toBe(false);
+
+  const items = fs
+    .readFileSync(path.join(app.cwd, folder, "rows.json"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(items).toEqual(
+    expect.arrayContaining([
+      { id: "a", name: "alpha", qty: 3 },
+      { id: "b", name: "beta", qty: 7 },
+    ]),
+  );
+});
+
 test("SAVE reports a missing parent directory", async ({ page, app }) => {
   const source = uniqueTable();
   app.trackTable(source);

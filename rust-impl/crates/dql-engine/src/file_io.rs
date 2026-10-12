@@ -91,7 +91,11 @@ fn is_pickle_filename(file_name: &str) -> bool {
 /// Pickle names, a missing parent directory, and a directory used as the file
 /// fail here. A new file is created and removed so the later write still
 /// starts empty. An existing file is opened for write and left unchanged.
-pub fn validate_save_path(path: &Path) -> Result<(), String> {
+///
+/// When `create_parents` is set, a missing parent is accepted if its first
+/// existing ancestor is a writable directory. The directories themselves are
+/// created later, by [`save_items`].
+pub fn validate_save_path(path: &Path, create_parents: bool) -> Result<(), String> {
     let spec = parse_file_spec(path)?;
     let target = &spec.path;
     if target.is_dir() {
@@ -117,12 +121,74 @@ pub fn validate_save_path(path: &Path) -> Result<(), String> {
                 .map_err(|err| format!("failed to create '{}': {err}", target.display()))?;
             Ok(())
         }
+        Err(err) if create_parents && err.kind() == ErrorKind::NotFound => {
+            ensure_parents_can_be_created(target)
+        }
         Err(err) => Err(format!("failed to create '{}': {err}", target.display())),
     }
 }
 
-pub fn save_items(path: &Path, items: &[Item]) -> Result<usize, String> {
+/// Walk up to the first existing directory and confirm a child can be created there.
+/// Missing directories are left uncreated.
+fn ensure_parents_can_be_created(target: &Path) -> Result<(), String> {
+    let mut current = match target.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    loop {
+        if current.exists() {
+            if !current.is_dir() {
+                return Err(format!(
+                    "failed to create '{}': Not a directory (os error 20)",
+                    target.display()
+                ));
+            }
+            return probe_directory_writable(&current, target);
+        }
+        match current.parent() {
+            Some(parent) if !parent.as_os_str().is_empty() && parent != current => {
+                current = parent.to_path_buf();
+            }
+            _ => return probe_directory_writable(Path::new("."), target),
+        }
+    }
+}
+
+fn probe_directory_writable(dir: &Path, target: &Path) -> Result<(), String> {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let probe = dir.join(format!(".dql-save-probe-{}-{nanos}", std::process::id()));
+    match OpenOptions::new().write(true).create_new(true).open(&probe) {
+        Ok(file) => {
+            drop(file);
+            std::fs::remove_file(&probe)
+                .map_err(|err| format!("failed to create '{}': {err}", target.display()))?;
+            Ok(())
+        }
+        Err(err) => Err(format!("failed to create '{}': {err}", target.display())),
+    }
+}
+
+fn create_parent_dirs(path: &Path) -> Result<(), String> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    if parent.as_os_str().is_empty() || parent.is_dir() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(parent)
+        .map_err(|err| format!("failed to create '{}': {err}", path.display()))
+}
+
+/// Write `items` to `path`. When `create_parents` is set, missing parent
+/// directories are created first.
+pub fn save_items(path: &Path, items: &[Item], create_parents: bool) -> Result<usize, String> {
     let spec = parse_file_spec(path)?;
+    if create_parents {
+        create_parent_dirs(&spec.path)?;
+    }
     match spec.format {
         FileFormat::Json => save_json(&spec, items),
         FileFormat::Csv => save_csv(&spec, items),
@@ -548,7 +614,7 @@ mod tests {
 
         for name in ["out.json", "out.json.gz", "out.csv", "out.csv.gz"] {
             let path = dir.join(name);
-            let count = save_items(&path, &items).unwrap();
+            let count = save_items(&path, &items, false).unwrap();
             assert_eq!(count, 2, "{name}");
             let loaded = load_items(&path).unwrap();
             assert_eq!(loaded.len(), 2, "{name}");
@@ -589,7 +655,7 @@ mod tests {
 
         for name in ["out.msgpack", "out.msgpack.gz", "out.bin"] {
             let path = dir.join(name);
-            save_items(&path, &[item.clone()]).unwrap();
+            save_items(&path, &[item.clone()], false).unwrap();
             let loaded = load_items(&path).unwrap();
             assert_eq!(loaded, vec![item.clone()], "{name}");
         }
@@ -610,16 +676,22 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let missing = dir.join("missing").join("out.json");
 
-        let err = validate_save_path(&missing).unwrap_err();
+        let err = validate_save_path(&missing, false).unwrap_err();
         assert!(err.contains("No such file or directory"), "{err}");
         assert!(!dir.join("missing").exists());
         assert!(!missing.exists());
 
-        let err = validate_save_path(&dir.join("archive.p")).unwrap_err();
+        validate_save_path(&missing, true).unwrap();
+        assert!(
+            !dir.join("missing").exists(),
+            "CREATE PARENTS must not create directories during validation"
+        );
+
+        let err = validate_save_path(&dir.join("archive.p"), true).unwrap_err();
         assert!(err.contains("pickle"), "{err}");
         assert!(!dir.join("archive.p").exists());
 
-        let err = validate_save_path(&dir).unwrap_err();
+        let err = validate_save_path(&dir, true).unwrap_err();
         assert!(
             err.contains("directory") || err.contains("Is a directory"),
             "{err}"

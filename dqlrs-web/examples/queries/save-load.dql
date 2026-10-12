@@ -3,6 +3,8 @@
 -- just web starts in the repository root, so saved.json and saved.csv land there.
 -- An absolute path is used as written. The parent folder must already exist.
 -- SCAN * FROM sample_save SAVE '/tmp/rows.json';
+-- CREATE PARENTS makes the missing directories when the write happens.
+-- SCAN * FROM sample_save SAVE 'exports/saved.json' CREATE PARENTS;
 
 DROP TABLE IF EXISTS sample_save;
 DROP TABLE IF EXISTS sample_save_loaded;
