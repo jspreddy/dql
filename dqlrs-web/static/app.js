@@ -346,18 +346,42 @@ document.querySelector("#mode-query").addEventListener("click", () => setMode("q
 document.querySelector("#mode-tables").addEventListener("click", () => setMode("tables"));
 document.querySelector("#new-file").addEventListener("click", createFile);
 const runButton = document.querySelector("#run");
+const stopButton = document.querySelector("#stop");
 const runShortcut = document.querySelector("#run-shortcut");
 const macShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
 const runShortcutLabel = macShortcut ? "⌘ Enter" : "Ctrl+Enter";
 runShortcut.textContent = runShortcutLabel;
 runButton.title = "Run selection (" + runShortcutLabel + ")";
 runButton.setAttribute("aria-keyshortcuts", macShortcut ? "Meta+Enter" : "Control+Enter");
+stopButton.title = "Stop running query (Esc)";
+stopButton.setAttribute("aria-keyshortcuts", "Escape");
 runButton.addEventListener("click", runSelection);
+stopButton.addEventListener("click", stopRun);
+window.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || stopButton.classList.contains("hidden")) return;
+  if (event.target.closest("input, textarea")) return;
+  event.preventDefault();
+  stopRun();
+});
 
 function setRunBusy(busy) {
   runButton.disabled = busy;
+  runButton.classList.toggle("hidden", busy);
+  stopButton.classList.toggle("hidden", !busy);
+  stopButton.disabled = !busy;
+  runShortcut.textContent = busy ? "Esc" : runShortcutLabel;
   const floating = editor.dom.querySelector(".run-float");
   if (floating) floating.disabled = busy;
+}
+
+async function stopRun() {
+  if (stopButton.classList.contains("hidden")) return;
+  stopButton.disabled = true;
+  try {
+    await api("/api/stop", { method: "POST" });
+  } catch {
+    /* the run stream still reports Query stopped */
+  }
 }
 
 function runFromEditor() {

@@ -1,3 +1,4 @@
+use crate::cancel::CancelFlag;
 use crate::convert::keys_in_to_items;
 use crate::file_io::{load_items as load_items_from_file, save_items, validate_save_path};
 use crate::progress::ProgressSink;
@@ -27,12 +28,15 @@ pub struct Engine<B: DynamoBackend> {
     pub cached_descriptions: HashMap<String, TableMeta>,
     last_query_context: Option<LastQueryContext>,
     progress: ProgressSink,
+    cancel: CancelFlag,
 }
 
 impl<B: DynamoBackend> Engine<B> {
     pub fn new(mut backend: B) -> Self {
         let progress = ProgressSink::default();
+        let cancel = CancelFlag::default();
         backend.set_progress_sink(progress.clone());
+        backend.set_cancel_flag(cancel.clone());
         Self {
             backend,
             explain: false,
@@ -44,6 +48,7 @@ impl<B: DynamoBackend> Engine<B> {
             cached_descriptions: HashMap::new(),
             last_query_context: None,
             progress,
+            cancel,
         }
     }
 
@@ -123,6 +128,10 @@ impl<B: DynamoBackend> Engine<B> {
         &self.progress
     }
 
+    pub fn cancel(&self) -> &CancelFlag {
+        &self.cancel
+    }
+
     fn report_progress(&self, done: u64, total: Option<u64>, phase: &str) {
         self.progress.report(done, total, phase);
     }
@@ -145,10 +154,11 @@ impl<B: DynamoBackend> Engine<B> {
         let mut written = 0usize;
         let mut last_capacity = None;
         for chunk in items.chunks(WRITE_PROGRESS_CHUNK) {
+            self.cancel.check()?;
             let response = self.backend.batch_write(table, chunk.to_vec())?;
             written += response.output;
             if let Some(capacity) = response.capacity {
-                self.capture_capacity(Some(capacity.clone()));
+                self.capture_capacity(Some(capacity.clone()))?;
                 last_capacity = Some(capacity);
             }
             self.report_progress(written as u64, Some(total as u64), "write");
@@ -180,10 +190,11 @@ impl<B: DynamoBackend> Engine<B> {
         let mut deleted = 0usize;
         let mut last_capacity = None;
         for chunk in keys.chunks(WRITE_PROGRESS_CHUNK) {
+            self.cancel.check()?;
             let response = self.backend.delete_by_keys(table, chunk, condition)?;
             deleted += response.output;
             if let Some(capacity) = response.capacity {
-                self.capture_capacity(Some(capacity.clone()));
+                self.capture_capacity(Some(capacity.clone()))?;
                 last_capacity = Some(capacity);
             }
             self.report_progress(deleted as u64, Some(total as u64), "write");
@@ -218,6 +229,7 @@ impl<B: DynamoBackend> Engine<B> {
         let mut last_capacity = None;
         let mut updated_items = Vec::new();
         for chunk in keys.chunks(WRITE_PROGRESS_CHUNK) {
+            self.cancel.check()?;
             let response =
                 self.backend
                     .update_by_keys(table, chunk, update, condition, return_items)?;
@@ -226,7 +238,7 @@ impl<B: DynamoBackend> Engine<B> {
                 updated_items.extend(items);
             }
             if let Some(capacity) = response.capacity {
-                self.capture_capacity(Some(capacity.clone()));
+                self.capture_capacity(Some(capacity.clone()))?;
                 last_capacity = Some(capacity);
             }
             self.report_progress(updated as u64, Some(total as u64), "write");
@@ -248,12 +260,14 @@ impl<B: DynamoBackend> Engine<B> {
         let mut last = StatementResult::None;
         self.consumed_capacities.clear();
         for statement in &statements {
+            self.cancel.check()?;
             last = self.run(statement)?;
         }
         Ok(last)
     }
 
     pub fn run(&mut self, statement: &Statement) -> Result<StatementResult, EngineError> {
+        self.cancel.check()?;
         match statement {
             Statement::CreateTable { if_not_exists, .. } => {
                 self.create_table(statement, *if_not_exists)
@@ -339,14 +353,14 @@ impl<B: DynamoBackend> Engine<B> {
             .map_err(|err| EngineError::Runtime(err.to_string()))?;
         self.record("create_table", &meta.name);
         let response = self.backend.create_table(meta, if_not_exists)?;
-        self.capture_capacity(response.capacity);
+        self.capture_capacity(response.capacity)?;
         Ok(StatementResult::Status(response.output))
     }
 
     fn drop_table(&mut self, if_exists: bool, name: &str) -> Result<StatementResult, EngineError> {
         self.record("delete_table", name);
         let response = self.backend.delete_table(name, if_exists)?;
-        self.capture_capacity(response.capacity);
+        self.capture_capacity(response.capacity)?;
         Ok(StatementResult::Status(response.output))
     }
 
@@ -428,7 +442,7 @@ impl<B: DynamoBackend> Engine<B> {
         let response = self
             .backend
             .delete_matching(table, condition, plan.as_ref(), options)?;
-        self.capture_capacity(response.capacity);
+        self.capture_capacity(response.capacity)?;
         self.report_progress(
             response.output as u64,
             Some(response.output as u64),
@@ -467,7 +481,7 @@ impl<B: DynamoBackend> Engine<B> {
         let response = self
             .backend
             .update_matching(table, update, condition, return_items)?;
-        self.capture_capacity(response.capacity.clone());
+        self.capture_capacity(response.capacity.clone())?;
         self.report_progress(
             response.output as u64,
             Some(response.output as u64),
@@ -586,7 +600,7 @@ impl<B: DynamoBackend> Engine<B> {
             .backend
             .batch_get_keys(table, &keys, options.consistent)?;
         let capacity = response.capacity.clone();
-        self.capture_capacity(capacity);
+        self.capture_capacity(capacity)?;
         finalize_read_result(response, selection, options.order_by.as_ref())
     }
 
@@ -654,7 +668,7 @@ impl<B: DynamoBackend> Engine<B> {
         };
         let response = self.backend.execute_read(table, &request)?;
         let capacity = response.capacity.clone();
-        self.capture_capacity(capacity);
+        self.capture_capacity(capacity)?;
         finalize_read_result(response, selection, ordering.client_order_by.as_ref())
     }
 
@@ -665,7 +679,7 @@ impl<B: DynamoBackend> Engine<B> {
     ) -> Result<StatementResult, EngineError> {
         self.record("update_table", table);
         let response = self.backend.alter_table(table, action)?;
-        self.capture_capacity(response.capacity);
+        self.capture_capacity(response.capacity)?;
         Ok(StatementResult::Status(response.output))
     }
 
@@ -843,7 +857,7 @@ impl<B: DynamoBackend> Engine<B> {
         result
     }
 
-    fn capture_capacity(&mut self, capacity: Option<CapacityRecord>) {
+    fn capture_capacity(&mut self, capacity: Option<CapacityRecord>) -> Result<(), EngineError> {
         if self.analyzing {
             if let Some(capacity) = capacity.clone() {
                 self.consumed_capacities.push(capacity);
@@ -852,11 +866,10 @@ impl<B: DynamoBackend> Engine<B> {
         if let Some(rate_limit) = self.rate_limit.as_mut() {
             if let Some(capacity) = capacity {
                 let wait = rate_limit.on_capacity(capacity.read_units, capacity.write_units);
-                if wait > std::time::Duration::ZERO {
-                    std::thread::sleep(wait);
-                }
+                self.cancel.sleep(wait)?;
             }
         }
+        Ok(())
     }
 }
 
@@ -1824,5 +1837,36 @@ mod tests {
                 (30, Some(30), "write".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn insert_stops_when_cancel_is_requested() {
+        use std::sync::{Arc, Mutex};
+
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE t (id STRING HASH KEY)")
+            .unwrap();
+        let cancel = engine.cancel().clone();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_cb = Arc::clone(&seen);
+        engine.progress().set(Some(Box::new(move |event| {
+            seen_cb.lock().unwrap().push(event.done);
+            if event.done >= 25 {
+                cancel.request();
+            }
+        })));
+        let mut values = Vec::new();
+        for i in 0..60 {
+            values.push(format!("('{i}')"));
+        }
+        let sql = format!("INSERT INTO t (id) VALUES {}", values.join(", "));
+        let err = engine.execute(&sql).unwrap_err();
+        assert!(matches!(err, EngineError::Cancelled));
+        assert_eq!(err.to_string(), "Query stopped");
+        engine.progress().clear();
+        let events = seen.lock().unwrap().clone();
+        assert!(events.contains(&25), "{events:?}");
+        assert!(!events.contains(&60), "{events:?}");
     }
 }
