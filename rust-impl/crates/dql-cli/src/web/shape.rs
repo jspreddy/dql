@@ -145,7 +145,10 @@ pub fn list_tables(
     if catalog.is_none() {
         *catalog = Some(load_table_catalog(refresh, &mut exec)?);
     }
-    Ok(filter_table_list(catalog.as_deref().unwrap_or(&[]), pattern))
+    Ok(filter_table_list(
+        catalog.as_deref().unwrap_or(&[]),
+        pattern,
+    ))
 }
 
 pub fn parse_table_shape(text: &str) -> Option<TableShape> {
@@ -350,11 +353,7 @@ fn load_table_catalog(
     refresh: bool,
     exec: &mut impl FnMut(&str) -> ExecText,
 ) -> Result<Vec<ListedTable>, String> {
-    let command = if refresh {
-        "ls refresh=True"
-    } else {
-        "ls"
-    };
+    let command = if refresh { "ls refresh=True" } else { "ls" };
     let summary = exec(command);
     if !summary.ok {
         let message = summary.failure();
