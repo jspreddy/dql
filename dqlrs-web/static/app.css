@@ -299,6 +299,25 @@ main { flex: 1; min-width: 0; min-height: 0; display: flex; }
 
 .primary:disabled { opacity: 0.6; cursor: default; }
 
+.stop {
+  background: #b91c1c;
+  color: white;
+  border: 0;
+  border-radius: 4px;
+  height: 22px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.stop:hover { background: #991b1b; }
+
+.stop:disabled { opacity: 0.6; cursor: default; }
+
+.stop:focus-visible {
+  outline: 2px solid #fca5a5;
+  outline-offset: 2px;
+}
+
 .run-box {
   display: flex;
   flex-direction: column;
