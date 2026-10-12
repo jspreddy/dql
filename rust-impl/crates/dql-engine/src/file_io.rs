@@ -8,8 +8,8 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use rmpv::Value as MsgValue;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::fs::{File, OpenOptions};
+use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 
 /// Optional magic prefix written before MessagePack records for future versioning.
@@ -84,6 +84,41 @@ fn is_pickle_filename(file_name: &str) -> bool {
         }
     }
     false
+}
+
+/// Confirm `path` can be written before a SAVE reads any items.
+///
+/// Pickle names, a missing parent directory, and a directory used as the file
+/// fail here. A new file is created and removed so the later write still
+/// starts empty. An existing file is opened for write and left unchanged.
+pub fn validate_save_path(path: &Path) -> Result<(), String> {
+    let spec = parse_file_spec(path)?;
+    let target = &spec.path;
+    if target.is_dir() {
+        return match File::create(target) {
+            Ok(_) => Err(format!(
+                "failed to create '{}': Is a directory",
+                target.display()
+            )),
+            Err(err) => Err(format!("failed to create '{}': {err}", target.display())),
+        };
+    }
+    match OpenOptions::new().write(true).create_new(true).open(target) {
+        Ok(file) => {
+            drop(file);
+            std::fs::remove_file(target)
+                .map_err(|err| format!("failed to create '{}': {err}", target.display()))?;
+            Ok(())
+        }
+        Err(err) if err.kind() == ErrorKind::AlreadyExists => {
+            OpenOptions::new()
+                .write(true)
+                .open(target)
+                .map_err(|err| format!("failed to create '{}': {err}", target.display()))?;
+            Ok(())
+        }
+        Err(err) => Err(format!("failed to create '{}': {err}", target.display())),
+    }
 }
 
 pub fn save_items(path: &Path, items: &[Item]) -> Result<usize, String> {
@@ -566,5 +601,28 @@ mod tests {
         assert!(err.contains("pickle"), "{err}");
         let err = parse_file_spec(Path::new("archive.pickle.gz")).unwrap_err();
         assert!(err.contains("MessagePack"), "{err}");
+    }
+
+    #[test]
+    fn validate_save_path_rejects_a_missing_parent_without_creating_it() {
+        let dir = std::env::temp_dir().join("dql_file_io_validate_save");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let missing = dir.join("missing").join("out.json");
+
+        let err = validate_save_path(&missing).unwrap_err();
+        assert!(err.contains("No such file or directory"), "{err}");
+        assert!(!dir.join("missing").exists());
+        assert!(!missing.exists());
+
+        let err = validate_save_path(&dir.join("archive.p")).unwrap_err();
+        assert!(err.contains("pickle"), "{err}");
+        assert!(!dir.join("archive.p").exists());
+
+        let err = validate_save_path(&dir).unwrap_err();
+        assert!(
+            err.contains("directory") || err.contains("Is a directory"),
+            "{err}"
+        );
     }
 }
