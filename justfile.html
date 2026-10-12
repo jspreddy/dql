@@ -178,8 +178,8 @@ verify,rust,1
 verify,black-box,1
 verify,notebook-test,1
 verify,web-test,1
-prep,py,1
-prep,rust,1
+install,py,1
+install,rust,1
 install,py-install,1
 install,rust-install,1
 dynamo,scripts/install_dynamodb_local.sh,5
@@ -247,7 +247,6 @@ mindmap
       default
       test
       verify
-      prep
       install
       </pre>
     </figure>
@@ -309,7 +308,6 @@ flowchart LR
     recipeDefault[default]
     test[test]
     verify[verify]
-    prep[prep]
     install[install]
   end
 
@@ -347,8 +345,8 @@ flowchart LR
   verify --> blackBox
   verify --> notebookTest
   verify --> webTest
-  prep --> py
-  prep --> rust
+  install --> py
+  install --> rust
   install --> pyInstall
   install --> rustInstall
 
@@ -545,7 +543,7 @@ flowchart LR
         </ul>
       </li>
       <li>
-        <span class="node"><code class="recipe">prep</code></span>
+        <span class="node"><code class="recipe">install</code></span>
         <ul>
           <li>
             <span class="node"><span class="ord">1</span><code class="recipe">py</code></span>
@@ -568,13 +566,8 @@ flowchart LR
               <li><span class="node"><span class="ord">7</span><code class="recipe">rust-smoke</code><code class="script">scripts/rust-smoke-test.sh</code></span></li>
             </ul>
           </li>
-        </ul>
-      </li>
-      <li>
-        <span class="node"><code class="recipe">install</code></span>
-        <ul>
-          <li><span class="node"><span class="ord">1</span><code class="recipe">py-install</code></span></li>
-          <li><span class="node"><span class="ord">2</span><code class="recipe">rust-install</code></span></li>
+          <li><span class="node"><span class="ord">3</span><code class="recipe">py-install</code></span></li>
+          <li><span class="node"><span class="ord">4</span><code class="recipe">rust-install</code></span></li>
         </ul>
       </li>
     </ul>
