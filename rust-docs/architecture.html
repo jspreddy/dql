@@ -83,6 +83,7 @@
       <a href="#architecture">Architecture</a>
       <a href="#packages">Packages</a>
       <a href="#runtime">Runtime</a>
+      <a href="#web-packaging">Web packaging</a>
     </nav>
   </header>
   <main>
@@ -356,6 +357,77 @@
         <text x="32" y="746" fill="#1c1915" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14" font-weight="700">Notebook path</text>
         <text x="32" y="770" fill="#5e564c" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">dqlrs notebook starts JupyterLab and a small Python kernel. The kernel opens dqlrs --serve --bind on loopback and sends each cell as exec. Jupyter is not inside the binary.</text>
       </svg>
+    </figure>
+
+    <figure id="web-packaging">
+      <figcaption>
+        <h2>Web packaging</h2>
+        <p>
+          <code>dqlrs --web</code> is the same binary. The HTTP server is Rust in <code>dql-cli</code>.
+          Browser files from <code>dqlrs-web/static</code> are compiled into that binary, and a checkout of the same folder wins at runtime when it is still on disk.
+        </p>
+      </figcaption>
+      <svg viewBox="0 0 1120 740" role="img" aria-labelledby="webTitle">
+        <title id="webTitle">How the web UI is packaged into dqlrs</title>
+        <defs>
+          <marker id="webArrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1.2 L 8 5 L 0 8.8 z" fill="#8a7d6b" />
+          </marker>
+        </defs>
+        <g font-family="ui-sans-serif, system-ui, sans-serif">
+          <text x="16" y="22" fill="#5e564c" font-size="12" font-weight="700" letter-spacing="1.2">COMPILE</text>
+          <rect x="16" y="36" width="520" height="150" rx="12" fill="#e7eef6" stroke="#1e3a5f" />
+          <text x="32" y="66" fill="#1e3a5f" font-size="16" font-weight="700">dqlrs-web/static</text>
+          <text x="32" y="90" fill="#5e564c" font-size="13">index.html · app.css · app.js · dql-mode.js</text>
+          <text x="32" y="112" fill="#5e564c" font-size="13">describe-card.js · dql-tokens.js · vendor/*.js</text>
+          <text x="32" y="140" fill="#1c1915" font-size="13">include_dir! from crates/dql-cli</text>
+          <text x="32" y="162" fill="#5e564c" font-size="13">../../../dqlrs-web/static → static ASSETS</text>
+
+          <rect x="584" y="36" width="520" height="150" rx="12" fill="#f8efe4" stroke="#7c4a12" />
+          <text x="600" y="66" fill="#7c4a12" font-size="16" font-weight="700">Rust modules, always linked</text>
+          <text x="600" y="90" fill="#5e564c" font-size="13">web/server.rs · HTTP on 127.0.0.1:8765</text>
+          <text x="600" y="112" fill="#5e564c" font-size="13">web/files.rs · .dql tree, read, write, move</text>
+          <text x="600" y="134" fill="#5e564c" font-size="13">web/shape.rs · ls parse, column order</text>
+          <text x="600" y="162" fill="#5e564c" font-size="13">Same Session as the CLI. No second process.</text>
+
+          <line x1="276" y1="186" x2="276" y2="228" stroke="#8a7d6b" stroke-width="1.5" marker-end="url(#webArrow)" />
+          <line x1="844" y1="186" x2="844" y2="228" stroke="#8a7d6b" stroke-width="1.5" marker-end="url(#webArrow)" />
+
+          <rect x="160" y="232" width="800" height="72" rx="12" fill="#fffdf8" stroke="#1c1915" />
+          <text x="180" y="262" fill="#1c1915" font-size="16" font-weight="700">dqlrs binary</text>
+          <text x="180" y="284" fill="#5e564c" font-size="13">Server code and a copy of every static file. cargo install and release builds carry the UI.</text>
+
+          <text x="16" y="340" fill="#5e564c" font-size="12" font-weight="700" letter-spacing="1.2">A STATIC GET, FIRST MATCH WINS</text>
+          <rect x="16" y="354" width="350" height="100" rx="12" fill="#f8ebe6" stroke="#9a3412" />
+          <text x="32" y="384" fill="#9a3412" font-size="15" font-weight="700">1 · DQLRS_WEB_STATIC</text>
+          <text x="32" y="408" fill="#5e564c" font-size="13">If that directory has index.html,</text>
+          <text x="32" y="428" fill="#5e564c" font-size="13">read the file from there.</text>
+
+          <rect x="386" y="354" width="350" height="100" rx="12" fill="#f8ebe6" stroke="#9a3412" />
+          <text x="402" y="384" fill="#9a3412" font-size="15" font-weight="700">2 · Build checkout</text>
+          <text x="402" y="408" fill="#5e564c" font-size="13">The path baked in at compile time,</text>
+          <text x="402" y="428" fill="#5e564c" font-size="13">when dqlrs-web/static is still there.</text>
+
+          <rect x="756" y="354" width="348" height="100" rx="12" fill="#e5f3ec" stroke="#1f5c45" />
+          <text x="772" y="384" fill="#1f5c45" font-size="15" font-weight="700">3 · Embedded bytes</text>
+          <text x="772" y="408" fill="#5e564c" font-size="13">ASSETS.get_file. This is what an</text>
+          <text x="772" y="428" fill="#5e564c" font-size="13">installed binary uses.</text>
+
+          <line x1="191" y1="454" x2="520" y2="500" stroke="#8a7d6b" stroke-width="1.5" marker-end="url(#webArrow)" />
+          <line x1="561" y1="454" x2="561" y2="500" stroke="#8a7d6b" stroke-width="1.5" marker-end="url(#webArrow)" />
+          <line x1="930" y1="454" x2="600" y2="500" stroke="#8a7d6b" stroke-width="1.5" marker-end="url(#webArrow)" />
+
+          <rect x="250" y="504" width="620" height="64" rx="12" fill="#eef2ea" stroke="#3d4a38" />
+          <text x="270" y="532" fill="#3d4a38" font-size="15" font-weight="700">Response with Content-Length</text>
+          <text x="270" y="552" fill="#5e564c" font-size="13">HTML, CSS, or JavaScript. One request finishes before the next is read.</text>
+
+          <rect x="16" y="592" width="1088" height="108" rx="12" fill="#fffdf8" stroke="#d9cdb8" />
+          <text x="32" y="622" fill="#1c1915" font-size="14" font-weight="700">Left outside the binary</text>
+          <text x="32" y="646" fill="#5e564c" font-size="13">The .dql workspace is --dir, or the current directory. Queries use this process's Session.</text>
+          <text x="32" y="668" fill="#5e564c" font-size="13">The web UI is not a separate package and not a Python server.</text>
+        </g>
+      </svg>
+      <p class="note">Developing inside this repo uses the checkout, so an edit under <code>dqlrs-web/static</code> shows up on the next refresh. A binary installed somewhere else no longer sees that path, so it serves the copy compiled in with <code>include_dir</code>.</p>
     </figure>
   </main>
 </body>
