@@ -300,7 +300,7 @@ test("tables-search-matches-like-ls", async ({ page, app }) => {
 test("opens result and table-browser structure from data already in hand", async ({ page, app }) => {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
-  await expect(page.locator("#result-schema")).toBeHidden();
+  await expect(page.locator(".result-card")).toHaveCount(0);
   await expect(page.locator("#rows-schema")).toBeHidden();
 
   const name = uniqueTable();
@@ -318,7 +318,10 @@ test("opens result and table-browser structure from data already in hand", async
   await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "extra"]);
-  await expect(page.locator("#result-schema")).toBeVisible();
+  const resultCard = page.locator(`.result-card[data-table="${name}"]`);
+  await expect(resultCard).toBeVisible();
+  await expect(resultCard.locator(".result-card-name")).toHaveText(name);
+  await expect(resultCard.locator(".result-schema")).toBeVisible();
 
   const afterResult = [];
   const watch = (request) => {
@@ -326,11 +329,11 @@ test("opens result and table-browser structure from data already in hand", async
     if (path === "/api/tables" || path === "/api/run" || path === "/api/rows") afterResult.push(path);
   };
   page.on("request", watch);
-  await page.locator("#result-schema").click();
+  await resultCard.locator(".result-schema").click();
   const pop = page.locator("#schema-pop");
   await expect(pop).toBeVisible();
   await expect(page.locator("#schema-pop-kicker")).toHaveText("Result structure");
-  await expect(page.locator("#schema-pop-title")).toHaveText("This result");
+  await expect(page.locator("#schema-pop-title")).toHaveText(name);
   await expect(page.locator("#schema-pop-summary")).toHaveText("3 columns · 3 rows");
   await expect(page.locator("#schema-table thead th")).toHaveText(["Column", "Type", "Role", "Present", "Sample"]);
   const resultId = page.locator('#schema-table tbody tr[data-column="id"]');
@@ -385,6 +388,65 @@ test("opens result and table-browser structure from data already in hand", async
   expect(afterRows).toEqual([]);
   await page.keyboard.press("Escape");
   await expect(pop).toBeHidden();
+});
+
+test("gives each query result its own named card and structure icon", async ({ page, app }) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const books = uniqueTable();
+  const orders = uniqueTable();
+  app.trackTable(books);
+  app.trackTable(orders);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${books};`,
+      `DROP TABLE IF EXISTS ${orders};`,
+      `CREATE TABLE ${books} (isbn STRING HASH KEY);`,
+      `CREATE TABLE ${orders} (id STRING HASH KEY, n NUMBER);`,
+      `INSERT INTO ${books} (isbn, title) VALUES ('978-1', 'DQL Guide');`,
+      `INSERT INTO ${orders} (id, n) VALUES ('o1', 4);`,
+      `SCAN * FROM ${books};`,
+      `SCAN * FROM ${orders};`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator(".result-card")).toHaveCount(2);
+  await expect(page.locator("#result-meta")).toHaveText("2 results");
+
+  const booksCard = page.locator(`.result-card[data-table="${books}"]`);
+  const ordersCard = page.locator(`.result-card[data-table="${orders}"]`);
+  await expect(booksCard.locator(".result-card-name")).toHaveText(books);
+  await expect(ordersCard.locator(".result-card-name")).toHaveText(orders);
+  await expect(booksCard).toContainText("DQL Guide");
+  await expect(ordersCard).toContainText("o1");
+  await expect(booksCard.locator(".result-schema")).toBeVisible();
+  await expect(ordersCard.locator(".result-schema")).toBeVisible();
+  await expect(page.locator("#result-table")).toHaveCount(1);
+
+  const extra = [];
+  const watch = (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/tables" || path === "/api/run" || path === "/api/rows") extra.push(path);
+  };
+  page.on("request", watch);
+  await booksCard.locator(".result-schema").click();
+  await expect(page.locator("#schema-pop")).toBeVisible();
+  await expect(page.locator("#schema-pop-title")).toHaveText(books);
+  await expect(page.locator('#schema-table tbody tr[data-column="isbn"]')).toContainText("STRING");
+  await expect(page.locator('#schema-table tbody tr[data-column="isbn"]')).toContainText("Hash key");
+  await expect(page.locator('#schema-table tbody tr[data-column="title"]')).toContainText("STRING");
+  await page.locator("#schema-pop-close").click();
+
+  await ordersCard.locator(".result-schema").click();
+  await expect(page.locator("#schema-pop-title")).toHaveText(orders);
+  await expect(page.locator('#schema-table tbody tr[data-column="id"]')).toContainText("STRING");
+  await expect(page.locator('#schema-table tbody tr[data-column="n"]')).toContainText("NUMBER");
+  expect(extra).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#schema-pop")).toBeHidden();
 });
 
 function uniqueTable() {

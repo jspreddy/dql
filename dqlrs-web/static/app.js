@@ -44,8 +44,8 @@ const state = {
   dragPath: "",
   tablesRequest: 0,
   listedTables: [],
-  resultSchema: null,
   browserSchema: null,
+  schemaKind: "",
 };
 
 const HIGHLIGHT_KEY = "dqlrs-web.highlight";
@@ -396,7 +396,6 @@ document.querySelector("#refresh-tables").addEventListener("click", () => {
 });
 document.querySelector("#page-prev").addEventListener("click", () => changePage(-1));
 document.querySelector("#page-next").addEventListener("click", () => changePage(1));
-const resultSchemaBtn = document.querySelector("#result-schema");
 const rowsSchemaBtn = document.querySelector("#rows-schema");
 const schemaPop = document.querySelector("#schema-pop");
 const schemaPopTitle = document.querySelector("#schema-pop-title");
@@ -405,8 +404,7 @@ const schemaPopSummary = document.querySelector("#schema-pop-summary");
 const schemaPopKeys = document.querySelector("#schema-pop-keys");
 const schemaPopBody = document.querySelector("#schema-pop-body");
 const schemaPopFoot = document.querySelector("#schema-pop-foot");
-resultSchemaBtn.addEventListener("click", () => openSchema("result"));
-rowsSchemaBtn.addEventListener("click", () => openSchema("browser"));
+rowsSchemaBtn.addEventListener("click", () => openSchema(state.browserSchema, rowsSchemaBtn));
 document.querySelector("#schema-pop-close").addEventListener("click", () => schemaPop.close());
 schemaPop.addEventListener("click", (event) => {
   const box = schemaPop.getBoundingClientRect();
@@ -420,8 +418,10 @@ schemaPop.addEventListener("click", (event) => {
   }
 });
 schemaPop.addEventListener("close", () => {
-  resultSchemaBtn.setAttribute("aria-expanded", "false");
-  rowsSchemaBtn.setAttribute("aria-expanded", "false");
+  state.schemaKind = "";
+  for (const button of document.querySelectorAll(".schema-btn")) {
+    button.setAttribute("aria-expanded", "false");
+  }
 });
 
 boot();
@@ -954,7 +954,7 @@ async function runSelection() {
   if (!dql.trim()) {
     resultMeta.textContent = "Nothing to run";
     resultBody.replaceChildren();
-    setResultSchema(null);
+    closeSchemaIfResult();
     hideProgress();
     return;
   }
@@ -964,7 +964,7 @@ async function runSelection() {
   setRunBusy(true);
   resultMeta.textContent = "Running…";
   resultBody.replaceChildren();
-  setResultSchema(null);
+  closeSchemaIfResult();
   showProgress(null, null);
   const results = [];
   try {
@@ -1007,13 +1007,36 @@ async function runSelection() {
 
 function renderResults(results) {
   resultBody.replaceChildren();
-  setResultSchema(null);
-  const lastItems = [...results].reverse().find((item) => item.kind === "items" && item.ok);
-  const notes = results.filter((item) => item !== lastItems);
+  closeSchemaIfResult();
+  const dataItems = results.filter((item) => item.ok && item.kind === "items" && !listedItemTables(item));
   let explainSteps = 0;
   let otherNotes = 0;
   let listedTables = 0;
-  for (const item of notes) {
+  let itemCards = 0;
+  let itemRows = 0;
+  for (const item of results) {
+    if (item.ok && item.kind === "items") {
+      const listed = listedItemTables(item);
+      if (listed) {
+        otherNotes += 1;
+        listedTables = listed.tables.length;
+        resultBody.append(intelligentSummary(listed.note, listed.summary, listed.tables));
+        continue;
+      }
+      const rows = item.items || [];
+      const tableName = tableNameFromStatement(item.statement);
+      const last = item === dataItems[dataItems.length - 1];
+      resultBody.append(resultCard({
+        source: "result",
+        title: tableName || "Result",
+        rows,
+        columns: item.columns || [],
+        keys: [],
+      }, last ? "result-table" : ""));
+      itemCards += 1;
+      itemRows += rows.length;
+      continue;
+    }
     const plan = item.ok && item.kind === "schema" ? parseExplainPlan(item.message || "") : null;
     if (plan) {
       explainSteps += plan.length;
@@ -1039,31 +1062,89 @@ function renderResults(results) {
     if (item.ok && item.kind === "affected") row.classList.add("ok");
     resultBody.append(row);
   }
-  if (lastItems) {
-    const rows = lastItems.items || [];
-    const listed = parseLsMessage(lastItems.message || "");
-    if (listed && listed.tables.length) {
-      const count = listed.tables.length;
-      resultMeta.textContent = count + (count === 1 ? " table" : " tables");
-      resultBody.append(intelligentSummary(listed.note, listed.summary, listed.tables));
-    } else {
-      resultMeta.textContent = rows.length + (rows.length === 1 ? " row" : " rows");
-      resultBody.append(dataTable(rows, "result-table", lastItems.columns));
-      setResultSchema({
-        source: "result",
-        title: "Results",
-        rows,
-        columns: lastItems.columns || [],
-        keys: [],
-      });
-    }
-  } else if (listedTables > 0 && otherNotes === 1) {
+  if (itemCards > 1) {
+    resultMeta.textContent = itemCards + " results";
+  } else if (itemCards === 1) {
+    resultMeta.textContent = itemRows + (itemRows === 1 ? " row" : " rows");
+  } else if (listedTables > 0) {
     resultMeta.textContent = listedTables + (listedTables === 1 ? " table" : " tables");
   } else if (explainSteps > 0 && otherNotes === 0) {
     resultMeta.textContent = explainSteps + (explainSteps === 1 ? " step" : " steps");
   } else {
     resultMeta.textContent = results.length ? "" : "Nothing to run";
   }
+}
+
+function listedItemTables(item) {
+  const listed = parseLsMessage(item.message || "");
+  return listed && listed.tables.length ? listed : null;
+}
+
+function tableNameFromStatement(statement) {
+  const stripped = String(statement || "").replace(/--[^\n]*/g, " ");
+  const match = stripped.match(/^\s*(?:select|scan)\s+[\s\S]*?\s+from\s+([A-Za-z_][A-Za-z0-9_.-]*)\b/i);
+  return match ? match[1] : "";
+}
+
+function resultCard(snapshot, tableId) {
+  const card = document.createElement("section");
+  card.className = "result-card";
+  card.dataset.testid = "result-card";
+  if (snapshot.title) card.dataset.table = snapshot.title;
+  const head = document.createElement("header");
+  head.className = "result-card-head";
+  const title = document.createElement("span");
+  title.className = "result-card-title";
+  const name = document.createElement("h2");
+  name.className = "result-card-name";
+  name.textContent = snapshot.title;
+  title.append(name);
+  if (schemaColumns(snapshot.rows, snapshot.columns, snapshot.keys).length) {
+    const button = schemaIconButton("Show result structure");
+    button.classList.add("result-schema");
+    button.addEventListener("click", () => openSchema(snapshot, button));
+    title.append(button);
+  }
+  const meta = document.createElement("span");
+  meta.className = "result-card-meta";
+  const count = (snapshot.rows || []).length;
+  meta.textContent = count + (count === 1 ? " row" : " rows");
+  head.append(title, meta);
+  const body = document.createElement("div");
+  body.className = "result-card-body";
+  body.append(dataTable(snapshot.rows, tableId, snapshot.columns));
+  card.append(head, body);
+  return card;
+}
+
+function schemaIconButton(label) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "schema-btn";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-haspopup", "dialog");
+  button.setAttribute("aria-controls", "schema-pop");
+  button.setAttribute("aria-expanded", "false");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  const frame = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  frame.setAttribute("fill", "none");
+  frame.setAttribute("stroke", "currentColor");
+  frame.setAttribute("stroke-width", "1.4");
+  frame.setAttribute("stroke-linejoin", "round");
+  frame.setAttribute("d", "M2.5 3.2h11v9.6h-11z");
+  const grid = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  grid.setAttribute("fill", "none");
+  grid.setAttribute("stroke", "currentColor");
+  grid.setAttribute("stroke-width", "1.4");
+  grid.setAttribute("d", "M2.5 6.4h11M6.7 3.2v9.6");
+  svg.append(frame, grid);
+  button.append(svg);
+  return button;
 }
 
 function parseExplainPlan(message) {
@@ -1552,10 +1633,8 @@ function tableColumns(rows, columns) {
   return ordered.concat(extra).map((name) => described.get(name) || { name });
 }
 
-function setResultSchema(snapshot) {
-  state.resultSchema = snapshot;
-  syncSchemaButton(resultSchemaBtn, snapshot);
-  if (!snapshot && resultSchemaBtn.getAttribute("aria-expanded") === "true") schemaPop.close();
+function closeSchemaIfResult() {
+  if (schemaPop.open && state.schemaKind === "result") schemaPop.close();
 }
 
 function setBrowserSchema(snapshot) {
@@ -1652,23 +1731,25 @@ function formatSample(value) {
   return text.length > 48 ? text.slice(0, 47) + "…" : text;
 }
 
-function openSchema(source) {
-  const snapshot = source === "browser" ? state.browserSchema : state.resultSchema;
+function openSchema(snapshot, button) {
   if (!snapshot) return;
   const columns = schemaColumns(snapshot.rows, snapshot.columns, snapshot.keys);
   if (!columns.length) return;
   const inspected = columns.map((column) => inspectColumn(column, snapshot.rows));
   const rowCount = (snapshot.rows || []).length;
-  resultSchemaBtn.setAttribute("aria-expanded", source === "result" ? "true" : "false");
-  rowsSchemaBtn.setAttribute("aria-expanded", source === "browser" ? "true" : "false");
-  schemaPopKicker.textContent = source === "browser" ? "Table structure" : "Result structure";
-  schemaPopTitle.textContent = source === "browser" ? snapshot.title : "This result";
+  const browser = snapshot.source === "browser";
+  state.schemaKind = snapshot.source || "result";
+  for (const other of document.querySelectorAll(".schema-btn")) {
+    other.setAttribute("aria-expanded", other === button ? "true" : "false");
+  }
+  schemaPopKicker.textContent = browser ? "Table structure" : "Result structure";
+  schemaPopTitle.textContent = snapshot.title || (browser ? "Table" : "Result");
   schemaPopSummary.textContent = inspected.length
     + (inspected.length === 1 ? " column" : " columns")
     + " · "
     + rowCount
     + (rowCount === 1 ? " row" : " rows")
-    + (source === "browser" ? " on this page" : "");
+    + (browser ? " on this page" : "");
   schemaPopKeys.replaceChildren();
   const keyChips = [];
   for (const item of inspected) {
@@ -1694,7 +1775,7 @@ function openSchema(source) {
     schemaPopKeys.append(chip);
   }
   schemaPopBody.replaceChildren(schemaTable(inspected));
-  schemaPopFoot.textContent = source === "browser"
+  schemaPopFoot.textContent = browser
     ? "Types come from this page and the keys already listed. No extra query was run."
     : "Types come from this result. No extra query was run.";
   schemaPop.showModal();
