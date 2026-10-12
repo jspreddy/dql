@@ -775,10 +775,10 @@ mod tests {
 
         let script = "CREATE TABLE shelf (id STRING HASH KEY); INSERT INTO shelf (id, apple) VALUES ('a', 'p'); SELECT * FROM shelf WHERE id = 'a';";
         let body = format!("{{\"dql\":{}}}", serde_json::to_string(script).unwrap());
-        let ran = http(addr, "POST", "/api/run", &body);
+        let ran = http_body(addr, "POST", "/api/run", &body);
         assert!(ran.contains("\"event\":\"result\""), "{ran}");
-        assert!(ran.contains("\"apple\""), "{ran}");
-        assert!(ran.contains("\"a\""), "{ran}");
+        assert!(ran.contains("\"apple\":\"p\""), "{ran}");
+        assert!(ran.contains("\"id\":\"a\""), "{ran}");
         drop(guard);
     }
 
@@ -855,8 +855,49 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             body.len()
         )
         .unwrap();
-        let mut buf = String::new();
-        let _ = stream.read_to_string(&mut buf);
-        buf
+        let mut buf = Vec::new();
+        let _ = stream.read_to_end(&mut buf);
+        String::from_utf8_lossy(&buf).into_owned()
+    }
+
+    /// Response body with chunk framing removed. `/api/run` flushes each NDJSON
+    /// event as its own chunk, so a raw read can split a JSON string.
+    fn http_body(addr: SocketAddr, method: &str, path: &str, body: &str) -> String {
+        let raw = http(addr, method, path, body);
+        let Some((headers, rest)) = raw.split_once("\r\n\r\n") else {
+            return raw;
+        };
+        if !headers
+            .to_ascii_lowercase()
+            .contains("transfer-encoding: chunked")
+        {
+            return rest.to_string();
+        }
+        let bytes = rest.as_bytes();
+        let mut index = 0;
+        let mut out = Vec::new();
+        while index < bytes.len() {
+            let Some(line_end) = bytes[index..].windows(2).position(|pair| pair == b"\r\n") else {
+                break;
+            };
+            let Ok(line) = std::str::from_utf8(&bytes[index..index + line_end]) else {
+                break;
+            };
+            let Ok(size) = usize::from_str_radix(line.split(';').next().unwrap_or("").trim(), 16)
+            else {
+                break;
+            };
+            index += line_end + 2;
+            if size == 0 {
+                break;
+            }
+            let end = index + size;
+            if end + 2 > bytes.len() || &bytes[end..end + 2] != b"\r\n" {
+                break;
+            }
+            out.extend_from_slice(&bytes[index..end]);
+            index = end + 2;
+        }
+        String::from_utf8_lossy(&out).into_owned()
     }
 }
