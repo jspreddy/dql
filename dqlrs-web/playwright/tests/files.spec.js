@@ -48,6 +48,7 @@ test("shows nested files, an empty folder, and opens a file", async ({ page }) =
   await expect(node(page, "queries")).toBeVisible();
   await expect(node(page, "queries/edit.dql")).toBeVisible();
   await expect(node(page, "queries/read.dql")).toBeVisible();
+  await expect(node(page, "queries/functions.dql")).toBeVisible();
   await expect(node(page, "queries/edit.dql")).toHaveClass(/selected/);
 
   await node(page, "queries").click();

@@ -1,0 +1,98 @@
+-- DynamoDB condition functions: contains, begins_with,
+-- attribute_exists, attribute_not_exists, attribute_type, and size
+DROP TABLE IF EXISTS sample_functions;
+
+CREATE TABLE sample_functions (
+  id STRING HASH KEY,
+  sk STRING RANGE KEY
+);
+
+-- string, reserved names, a set, a list, and a number
+INSERT INTO sample_functions (
+  id='store-1',
+  sk='ITEM#mug',
+  name='hello world',
+  status='active',
+  title='Blue mug',
+  tags=('lighting', 'ceramic'),
+  items=['handle', 'glaze'],
+  qty=3
+);
+
+INSERT INTO sample_functions (
+  id='store-1',
+  sk='ITEM#lamp',
+  name='goodbye',
+  status='draft',
+  title='Arc lamp',
+  tags=('lighting', 'metal', 'floor'),
+  items=['shade', 'cord'],
+  qty=1
+);
+
+-- sparse row: no tags, status, items, or qty
+INSERT INTO sample_functions (
+  id='store-1',
+  sk='NOTE#1',
+  name='memo',
+  title='Field notes'
+);
+
+INSERT INTO sample_functions (
+  id='store-2',
+  sk='ITEM#cable',
+  name='usb world',
+  status='active',
+  title='USB-C cable',
+  tags=('cable'),
+  items=[],
+  qty=12
+);
+
+-- begins_with on the range key is a Query
+SELECT * FROM sample_functions
+WHERE id = 'store-1' AND begins_with(sk, 'ITEM#');
+
+-- contains on a reserved name, projected off that column
+SELECT title FROM sample_functions
+WHERE id = 'store-1' AND contains(name, 'hello');
+
+-- quoted field name, same as contains(name, …)
+SCAN * FROM sample_functions
+WHERE contains('name', 'hello');
+
+-- contains on a reserved name as a Scan filter
+SCAN title FROM sample_functions
+WHERE contains(status, 'act');
+
+-- set membership
+SCAN * FROM sample_functions
+WHERE contains(tags, 'metal');
+
+-- list membership
+SCAN * FROM sample_functions
+WHERE contains(items, 'cord');
+
+-- begins_with as a Scan filter on a non-key
+SCAN * FROM sample_functions
+WHERE begins_with(title, 'Blue');
+
+SCAN * FROM sample_functions
+WHERE attribute_exists(tags);
+
+SCAN * FROM sample_functions
+WHERE attribute_not_exists(tags);
+
+SCAN * FROM sample_functions
+WHERE attribute_type(qty, N);
+
+-- set cardinality
+SCAN * FROM sample_functions
+WHERE size(tags) > 2;
+
+-- string length
+SCAN * FROM sample_functions
+WHERE size(title) > 8;
+
+EXPLAIN SELECT title FROM sample_functions
+WHERE id = 'store-1' AND contains(name, 'hello');
