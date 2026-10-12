@@ -1,0 +1,7 @@
+---
+alwaysApply: true
+---
+
+When git commiting, do not add cursor account user name or email to the commit message.
+
+Use "Sai Jonnala <jspreddy@users.noreply.github.com>"
