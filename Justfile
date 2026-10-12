@@ -89,6 +89,11 @@ rust-fetch: (_title "rust-fetch")
 rust-fmt: (_title "rust-fmt")
     cd "{{justfile_directory()}}/rust-impl" && cargo fmt --check
 
+# Format Rust and apply Clippy suggestions
+[group('rust')]
+rust-fix: (_title "rust-fix")
+    cd "{{justfile_directory()}}/rust-impl" && cargo fmt && cargo clippy --fix --workspace --allow-dirty --allow-staged
+
 # Lint Rust with clippy
 [group('rust')]
 rust-clippy: (_title "rust-clippy")
@@ -352,6 +357,9 @@ version *args: (_title "version")
     fi
 
 # Root recipes.
+
+# Format Python and Rust and apply Clippy suggestions. Syncs the Python env first.
+check: (_title "check") py-sync py-fix rust-fix
 
 # Every test suite. Starts DynamoDB Local, syncs Python, and builds release dqlrs first.
 test: (_title "test") dynamo py-sync rust-build web-unit py-test rust-test rust-local rust-smoke black-box notebook-test web-test

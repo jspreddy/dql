@@ -178,6 +178,9 @@ verify,rust,1
 verify,black-box,1
 verify,notebook-test,1
 verify,web-test,1
+check,py-sync,1
+check,py-fix,1
+check,rust-fix,1
 install,py,1
 install,rust,1
 install,py-install,1
@@ -221,6 +224,7 @@ mindmap
     rust
       rust-fetch
       rust-fmt
+      rust-fix
       rust-clippy
       rust-test
       rust-local
@@ -245,6 +249,7 @@ mindmap
       version
     root recipes
       default
+      check
       test
       verify
       install
@@ -277,6 +282,7 @@ flowchart LR
   subgraph rustg [rust]
     rustFetch[rust-fetch]
     rustFmt[rust-fmt]
+    rustFix[rust-fix]
     rustClippy[rust-clippy]
     rustTest[rust-test]
     rustLocal[rust-local]
@@ -306,6 +312,7 @@ flowchart LR
   end
   subgraph root [root]
     recipeDefault[default]
+    check[check]
     test[test]
     verify[verify]
     install[install]
@@ -345,6 +352,9 @@ flowchart LR
   verify --> blackBox
   verify --> notebookTest
   verify --> webTest
+  check --> pySync
+  check --> pyFix
+  check --> rustFix
   install --> py
   install --> rust
   install --> pyInstall
@@ -411,6 +421,7 @@ flowchart LR
     <ul class="tree">
       <li><span class="node"><code class="recipe">rust-fetch</code></span></li>
       <li><span class="node"><code class="recipe">rust-fmt</code></span></li>
+      <li><span class="node"><code class="recipe">rust-fix</code></span></li>
       <li><span class="node"><code class="recipe">rust-clippy</code></span></li>
       <li><span class="node"><code class="recipe">rust-test</code></span></li>
       <li><span class="node"><code class="recipe">rust-local</code></span></li>
@@ -485,6 +496,14 @@ flowchart LR
 
     <h2 class="group">root</h2>
     <ul class="tree">
+      <li>
+        <span class="node"><code class="recipe">check</code></span>
+        <ul>
+          <li><span class="node"><span class="ord">1</span><code class="recipe">py-sync</code></span></li>
+          <li><span class="node"><span class="ord">2</span><code class="recipe">py-fix</code></span></li>
+          <li><span class="node"><span class="ord">3</span><code class="recipe">rust-fix</code></span></li>
+        </ul>
+      </li>
       <li>
         <span class="node"><code class="recipe">test</code></span>
         <ul>

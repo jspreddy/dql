@@ -1172,9 +1172,7 @@ class TestConditionFunctions(BaseSystemTest):
 
     def setUp(self):
         super(TestConditionFunctions, self).setUp()
-        self.query(
-            "CREATE TABLE foobar (id STRING HASH KEY, sk STRING RANGE KEY)"
-        )
+        self.query("CREATE TABLE foobar (id STRING HASH KEY, sk STRING RANGE KEY)")
         self.query(
             "INSERT INTO foobar ("
             "id='store-1', sk='ITEM#mug', name='hello world', status='active', "
