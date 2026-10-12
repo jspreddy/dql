@@ -312,7 +312,7 @@ test("opens result and table-browser structure from data already in hand", async
       `CREATE TABLE ${name} (id STRING HASH KEY, sk NUMBER RANGE KEY);`,
       `INSERT INTO ${name} (id, sk, extra) VALUES ('a', 1, 'hello'), ('b', 2, 'hello');`,
       `INSERT INTO ${name} (id, sk) VALUES ('c', 3);`,
-      `SELECT * FROM ${name};`,
+      `SCAN * FROM ${name};`,
     ].join("\n"),
   );
   await pressMod(page, "A");
