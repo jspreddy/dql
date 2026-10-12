@@ -60,6 +60,10 @@ pub fn parse_bind(spec: &str) -> Result<SocketAddr, BindError> {
 
 pub fn run(session: &mut Session, addr: SocketAddr) -> io::Result<()> {
     let listener = TcpListener::bind(addr)?;
+    serve_listener(session, listener)
+}
+
+fn serve_listener(session: &mut Session, listener: TcpListener) -> io::Result<()> {
     let local = listener.local_addr()?;
     {
         let mut stderr = io::stderr();
@@ -248,13 +252,12 @@ mod tests {
         use std::io::{Read, Write};
         use std::time::Duration;
 
-        let probe = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = probe.local_addr().unwrap();
-        drop(probe);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
 
         let handle = thread::spawn(move || {
             let mut session = crate::session::Session::new_memory_headless("us-west-1");
-            run(&mut session, addr).unwrap();
+            serve_listener(&mut session, listener).unwrap();
         });
 
         let mut client = wait_connect(addr);
@@ -291,13 +294,12 @@ mod tests {
         use std::io::Write;
         use std::time::Duration;
 
-        let probe = TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = probe.local_addr().unwrap();
-        drop(probe);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
 
         let handle = thread::spawn(move || {
             let mut session = crate::session::Session::new_memory_headless("us-west-1");
-            run(&mut session, addr).unwrap();
+            serve_listener(&mut session, listener).unwrap();
         });
 
         let mut client = wait_connect(addr);
