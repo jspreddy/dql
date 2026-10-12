@@ -151,6 +151,10 @@ const resultsEl = document.querySelector("#results");
 const resultsResize = document.querySelector("#results-resize");
 const RESULTS_HEIGHT_KEY = "dqlrs-web.results-height";
 const EXPLAIN_JSON_KEY = "dqlrs-web.explain-json";
+const sideEl = document.querySelector("#side");
+const sideResize = document.querySelector("#side-resize");
+const SIDE_WIDTH_KEY = "dqlrs-web.side-width";
+const SIDE_WIDTH_SAVE_MS = 250;
 
 function resultsLimits() {
   const view = resultsEl.parentElement.getBoundingClientRect().height;
@@ -229,9 +233,113 @@ resultsResize.addEventListener("keydown", (event) => {
 });
 
 requestAnimationFrame(restoreResultsHeight);
+
+function sideLimits() {
+  const bodyWidth = sideEl.parentElement.getBoundingClientRect().width;
+  const min = 140;
+  const max = Math.max(min, Math.floor(bodyWidth - 360));
+  return { min, max };
+}
+
+let sideWidthSaveTimer = 0;
+let pendingSideWidth = null;
+
+function flushSideWidthSave() {
+  if (sideWidthSaveTimer) {
+    clearTimeout(sideWidthSaveTimer);
+    sideWidthSaveTimer = 0;
+  }
+  if (pendingSideWidth == null) return;
+  localStorage.setItem(SIDE_WIDTH_KEY, String(pendingSideWidth));
+  pendingSideWidth = null;
+}
+
+function scheduleSideWidthSave(width) {
+  pendingSideWidth = width;
+  if (sideWidthSaveTimer) clearTimeout(sideWidthSaveTimer);
+  sideWidthSaveTimer = setTimeout(flushSideWidthSave, SIDE_WIDTH_SAVE_MS);
+}
+
+function applySideWidth(width, persist) {
+  const { min, max } = sideLimits();
+  const next = Math.round(Math.min(max, Math.max(min, width)));
+  sideEl.style.width = next + "px";
+  sideResize.setAttribute("aria-valuemin", String(min));
+  sideResize.setAttribute("aria-valuemax", String(max));
+  sideResize.setAttribute("aria-valuenow", String(next));
+  if (persist) scheduleSideWidthSave(next);
+  return next;
+}
+
+function restoreSideWidth() {
+  const saved = Number(localStorage.getItem(SIDE_WIDTH_KEY));
+  if (!Number.isFinite(saved) || saved <= 0) {
+    const { min, max } = sideLimits();
+    sideResize.setAttribute("aria-valuemin", String(min));
+    sideResize.setAttribute("aria-valuemax", String(max));
+    sideResize.setAttribute("aria-valuenow", String(Math.round(sideEl.getBoundingClientRect().width)));
+    return;
+  }
+  applySideWidth(saved, false);
+}
+
+let sideDrag = null;
+
+sideResize.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  sideResize.setPointerCapture(event.pointerId);
+  sideDrag = {
+    x: event.clientX,
+    width: sideEl.getBoundingClientRect().width,
+  };
+  document.body.classList.add("side-resizing");
+});
+
+sideResize.addEventListener("pointermove", (event) => {
+  if (!sideDrag) return;
+  applySideWidth(sideDrag.width + (event.clientX - sideDrag.x), true);
+});
+
+function endSideDrag(event) {
+  if (!sideDrag) return;
+  if (event && sideResize.hasPointerCapture(event.pointerId)) {
+    sideResize.releasePointerCapture(event.pointerId);
+  }
+  sideDrag = null;
+  document.body.classList.remove("side-resizing");
+  applySideWidth(sideEl.getBoundingClientRect().width, true);
+  flushSideWidthSave();
+}
+
+sideResize.addEventListener("pointerup", endSideDrag);
+sideResize.addEventListener("pointercancel", endSideDrag);
+
+sideResize.addEventListener("dblclick", () => {
+  sideEl.style.width = "";
+  pendingSideWidth = null;
+  if (sideWidthSaveTimer) {
+    clearTimeout(sideWidthSaveTimer);
+    sideWidthSaveTimer = 0;
+  }
+  localStorage.removeItem(SIDE_WIDTH_KEY);
+  restoreSideWidth();
+});
+
+sideResize.addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  event.preventDefault();
+  const step = event.shiftKey ? 80 : 28;
+  const current = sideEl.getBoundingClientRect().width;
+  applySideWidth(current + (event.key === "ArrowRight" ? step : -step), true);
+  flushSideWidthSave();
+});
+
+requestAnimationFrame(restoreSideWidth);
 window.addEventListener("resize", () => {
-  if (resultsEl.offsetParent === null || !resultsEl.style.height) return;
-  applyResultsHeight(parseFloat(resultsEl.style.height), false);
+  if (resultsEl.offsetParent !== null && resultsEl.style.height) {
+    applyResultsHeight(parseFloat(resultsEl.style.height), false);
+  }
+  if (sideEl.style.width) applySideWidth(parseFloat(sideEl.style.width), false);
 });
 
 document.querySelector("#mode-query").addEventListener("click", () => setMode("query"));
