@@ -18,7 +18,7 @@ use dql_expr::{
     render_condition, render_projection, render_update, renumber_rendered_expression,
     RenderedExpression, Visitor,
 };
-use dql_models::TableMeta;
+use dql_models::{TableMeta, TableStatus};
 use dql_parser::{AlterAction, Condition, QueryOptions, Selection, UpdateExpr};
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
@@ -232,6 +232,45 @@ impl SdkBackend {
             .is_some_and(|message| message.contains(needle))
             || format!("{err:?}").contains(needle)
     }
+
+    /// CreateTable can return before DynamoDB Local's sqlite table exists.
+    /// Describe until the table is ACTIVE so the next statement can use it.
+    fn wait_until_table_ready(&self, name: &str) -> Result<(), EngineError> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        let mut last = format!("Table '{name}' not found");
+        loop {
+            match self.describe_table(name) {
+                Ok(Some(meta)) if meta.status == TableStatus::Active => return Ok(()),
+                Ok(Some(meta)) => {
+                    last = format!("status is {:?}", meta.status);
+                }
+                Ok(None) => {
+                    last = format!("Table '{name}' not found");
+                }
+                Err(err) => {
+                    let text = err.to_string();
+                    if !table_not_ready_yet(&text) {
+                        return Err(err);
+                    }
+                    last = text;
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(EngineError::Runtime(format!(
+                    "Table '{name}' was not ready after create: {last}"
+                )));
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+fn table_not_ready_yet(message: &str) -> bool {
+    let text = message.to_ascii_lowercase();
+    text.contains("not found")
+        || text.contains("resourcenotfound")
+        || text.contains("non-existent table")
+        || text.contains("no such table")
 }
 
 fn aws_error_text<E>(err: &E) -> String
@@ -297,6 +336,7 @@ impl DynamoBackend for SdkBackend {
         match result {
             Ok(_) => {
                 self.invalidate_cache(&name);
+                self.wait_until_table_ready(&name)?;
                 Ok(BackendResponse::new(
                     "create_table",
                     &name,

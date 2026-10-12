@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,6 +28,16 @@ ANSI_RE = re.compile(
 DEFAULT_TIMEOUT = 120
 PTY_ROWS = 40
 PTY_COLS = 120
+# DynamoDB Local can report a table missing for a moment after CreateTable.
+ONESHOT_ATTEMPTS = 4
+TRANSIENT_TABLE_RE = re.compile(
+    r"Table '[^']+' not found"
+    r'|Table "[^"]+" not found'
+    r"|ResourceNotFoundException"
+    r"|non-existent table"
+    r"|no such table",
+    re.IGNORECASE,
+)
 
 
 def strip_ansi(text: str) -> str:
@@ -105,27 +116,33 @@ class Cli:
         if json:
             argv.append("--json")
         argv.extend(["-c", script])
-        child = pexpect.spawn(
-            argv[0],
-            argv[1:],
-            encoding="utf-8",
-            timeout=self.timeout,
-            cwd=str(self.cwd),
-            env=dict(self.env),
-            echo=False,
-            dimensions=(PTY_ROWS, PTY_COLS),
-            codec_errors="replace",
-        )
-        child.expect(pexpect.EOF)
-        child.close()
-        stdout = strip_ansi(child.before or "")
-        if child.exitstatus is not None:
-            rc = child.exitstatus
-        elif child.signalstatus is not None:
-            rc = 128 + child.signalstatus
-        else:
-            rc = -1
-        result = Result(stdout=stdout, exitstatus=rc, argv=argv)
+        result = Result(stdout="", exitstatus=-1, argv=argv)
+        for attempt in range(ONESHOT_ATTEMPTS):
+            child = pexpect.spawn(
+                argv[0],
+                argv[1:],
+                encoding="utf-8",
+                timeout=self.timeout,
+                cwd=str(self.cwd),
+                env=dict(self.env),
+                echo=False,
+                dimensions=(PTY_ROWS, PTY_COLS),
+                codec_errors="replace",
+            )
+            child.expect(pexpect.EOF)
+            child.close()
+            stdout = strip_ansi(child.before or "")
+            if child.exitstatus is not None:
+                rc = child.exitstatus
+            elif child.signalstatus is not None:
+                rc = 128 + child.signalstatus
+            else:
+                rc = -1
+            result = Result(stdout=stdout, exitstatus=rc, argv=argv)
+            if attempt + 1 < ONESHOT_ATTEMPTS and TRANSIENT_TABLE_RE.search(stdout):
+                time.sleep(0.05 * (2**attempt))
+                continue
+            break
         self._emit_spawn_transcript(script, result, json_mode=json, check=check, step=step)
         if check and rc != 0:
             pytest.fail(
