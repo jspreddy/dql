@@ -85,7 +85,7 @@ test("colors SELECT and outlines the current query without covering the next one
     const span = [...document.querySelectorAll(".cm-content span")].find((el) => el.textContent === "SELECT");
     return span ? getComputedStyle(span).color : "";
   });
-  expect(color).toBe("rgb(15, 118, 110)");
+  expect(color).toBe("rgb(94, 234, 212)");
 
   await page.locator(".cm-line", { hasText: "WHERE id = 'a'" }).click();
   await expect(page.locator(".cm-run-fill")).toBeVisible();
@@ -157,7 +157,7 @@ test("frames a partial line selection as a whole line and highlights the text", 
   expect(metrics.fillRight).toBeGreaterThanOrEqual(metrics.textRight - 1);
   expect(metrics.selectWidth).toBeGreaterThan(4);
   expect(metrics.selectWidth).toBeLessThan(metrics.textWidth * 0.75);
-  expect(metrics.keyword).toBe("rgb(15, 118, 110)");
+  expect(metrics.keyword).toBe("rgb(94, 234, 212)");
   expect(metrics.highlight).not.toBe("rgba(0, 0, 0, 0)");
   const layerOrder = await page.evaluate(() => {
     const z = (selector) => Number(getComputedStyle(document.querySelector(selector)).zIndex);
@@ -630,7 +630,7 @@ async function expectDescription(card, tableName) {
   await expect(card.locator(".describe-query")).toContainText(`CREATE TABLE ${tableName}`);
   await expect(card.locator(".describe-query .tok-typeName", { hasText: "STRING" }).first()).toBeVisible();
   const color = await create.evaluate((el) => getComputedStyle(el).color);
-  expect(color).toBe("rgb(15, 118, 110)");
+  expect(color).toBe("rgb(94, 234, 212)");
 }
 
 function uniqueTable() {

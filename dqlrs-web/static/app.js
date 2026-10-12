@@ -16,16 +16,16 @@ import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
 import { parseLsMessage } from "./describe-card.js";
 
 const dqlHighlight = HighlightStyle.define([
-  { tag: tags.keyword, color: "#0f766e", fontWeight: "650" },
-  { tag: tags.deleted, color: "#dc2626", fontWeight: "700" },
-  { tag: tags.typeName, color: "#1d4ed8" },
-  { tag: tags.function(tags.variableName), color: "#6d28d9" },
-  { tag: tags.bool, color: "#0369a1", fontWeight: "650" },
-  { tag: tags.null, color: "#0369a1", fontWeight: "650" },
-  { tag: tags.string, color: "#9f1239" },
-  { tag: tags.number, color: "#b45309" },
-  { tag: tags.comment, color: "#6b7280", fontStyle: "italic" },
-  { tag: tags.operator, color: "#334155" },
+  { tag: tags.keyword, color: "var(--tok-keyword)", fontWeight: "650" },
+  { tag: tags.deleted, color: "var(--tok-deleted)", fontWeight: "700" },
+  { tag: tags.typeName, color: "var(--tok-type)" },
+  { tag: tags.function(tags.variableName), color: "var(--tok-function)" },
+  { tag: tags.bool, color: "var(--tok-literal)", fontWeight: "650" },
+  { tag: tags.null, color: "var(--tok-literal)", fontWeight: "650" },
+  { tag: tags.string, color: "var(--tok-string)" },
+  { tag: tags.number, color: "var(--tok-number)" },
+  { tag: tags.comment, color: "var(--tok-comment)", fontStyle: "italic" },
+  { tag: tags.operator, color: "var(--tok-operator)" },
 ]);
 
 let runMarks = [];
@@ -96,8 +96,8 @@ const editor = new EditorView({
           backgroundColor: "rgba(37, 99, 235, 0.28) !important",
         },
         ".cm-run-fill": {
-          backgroundColor: "rgba(16, 42, 96, 0.05)",
-          border: "1px solid #2563eb",
+          backgroundColor: "rgba(96, 165, 250, 0.16)",
+          border: "1px solid #60a5fa",
           borderRadius: "2px",
           boxSizing: "content-box",
         },
@@ -107,19 +107,19 @@ const editor = new EditorView({
         },
       })),
       EditorView.theme({
-        "&": { height: "100%", fontSize: "12.5px" },
-        "&.cm-focused": { outline: "none" },
+        "&": { height: "100%", fontSize: "13px", backgroundColor: "#0F172A", color: "#F8FAFC" },
+        "&.cm-focused": { outline: "2px solid #ffffff", outlineOffset: "-2px" },
         ".cm-scroller": {
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-          lineHeight: "1.4",
+          fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+          lineHeight: "1.45",
         },
-        ".cm-gutters": { background: "#fafbfc", color: "#8b97a3", border: "none" },
+        ".cm-gutters": { background: "#272F42", color: "#94A3B8", border: "none" },
         ".cm-run-status-gutter": { width: "16px" },
         ".cm-run-status-gutter .cm-gutterElement": { padding: "0 1px" },
-        ".cm-band-alt": { backgroundColor: "#f4f7f8" },
-        ".cm-band-write": { backgroundColor: "#fdecec" },
-        ".cm-band-write-even": { backgroundColor: "#f3c4c4" },
-        ".cm-dql-gutter": { width: "8px", background: "#fafbfc" },
+        ".cm-band-alt": { backgroundColor: "#172033" },
+        ".cm-band-write": { backgroundColor: "#3f1d24" },
+        ".cm-band-write-even": { backgroundColor: "#5c2430" },
+        ".cm-dql-gutter": { width: "8px", background: "#272F42" },
         ".cm-dql-gutter .cm-gutterElement": { padding: "0 0 0 3px" },
         ".cm-write-bar": {
           display: "block",
@@ -128,12 +128,12 @@ const editor = new EditorView({
           borderRadius: "1px",
           backgroundColor: "#fb7185",
         },
-        ".cm-write-bar-even": { backgroundColor: "#be123c" },
+        ".cm-write-bar-even": { backgroundColor: "#fda4af" },
         ".cm-activeLine": { backgroundColor: "transparent" },
-        ".cm-activeLineGutter": { background: "#f3f5f7" },
+        ".cm-activeLineGutter": { background: "#1E293B" },
         ".cm-content": { padding: "1lh 0 5lh" },
         ".cm-line": { padding: "0 8px", backgroundColor: "transparent" },
-        ".cm-placeholder": { color: "#8b97a3", fontStyle: "italic" },
+        ".cm-placeholder": { color: "#94A3B8", fontStyle: "italic" },
       }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged && !state.suppressSave) scheduleSave();
