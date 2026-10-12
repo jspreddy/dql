@@ -609,6 +609,10 @@ class TestSelectScan(BaseSystemTest):
             "* FROM foobar WHERE contains(baz, 2)",
             [{"id": "a", "bar": 5, "baz": set([1, 2, 3])}],
         )
+        self._run(
+            "* FROM foobar WHERE contains('baz', 2)",
+            [{"id": "a", "bar": 5, "baz": set([1, 2, 3])}],
+        )
 
     def test_filter_and(self):
         """SELECT scan can use multi-conditional filter"""
@@ -1161,6 +1165,136 @@ class TestDelete(BaseSystemTest):
         scan, update = ret
         self.assertEqual(scan[0], "scan")
         self.assertEqual(update[0], "delete_item")
+
+
+class TestConditionFunctions(BaseSystemTest):
+    """Parity coverage for DynamoDB condition functions"""
+
+    def setUp(self):
+        super(TestConditionFunctions, self).setUp()
+        self.query(
+            "CREATE TABLE foobar (id STRING HASH KEY, sk STRING RANGE KEY)"
+        )
+        self.query(
+            "INSERT INTO foobar ("
+            "id='store-1', sk='ITEM#mug', name='hello world', status='active', "
+            "title='Blue mug', tags=('lighting', 'ceramic'), "
+            "items=['handle', 'glaze'], qty=3)"
+        )
+        self.query(
+            "INSERT INTO foobar ("
+            "id='store-1', sk='ITEM#lamp', name='goodbye', status='draft', "
+            "title='Arc lamp', tags=('lighting', 'metal', 'floor'), "
+            "items=['shade', 'cord'], qty=1)"
+        )
+        self.query(
+            "INSERT INTO foobar (id='store-1', sk='NOTE#1', name='memo', title='Field notes')"
+        )
+        self.query(
+            "INSERT INTO foobar ("
+            "id='store-2', sk='ITEM#cable', name='usb world', status='active', "
+            "title='USB-C cable', tags=('cable'), items=[], qty=12)"
+        )
+
+    def _titles(self, query):
+        return sorted(row["title"] for row in self.query(query))
+
+    def test_begins_with_range_key(self):
+        """SELECT can Query with begins_with on the range key"""
+        self.assertEqual(
+            self._titles(
+                "SELECT * FROM foobar WHERE id = 'store-1' AND begins_with(sk, 'ITEM#')"
+            ),
+            ["Arc lamp", "Blue mug"],
+        )
+
+    def test_contains_reserved_name_projection(self):
+        """SELECT can filter contains() on a reserved name and project away from it"""
+        self.assertEqual(
+            self._titles(
+                "SELECT title FROM foobar WHERE id = 'store-1' AND contains(name, 'hello')"
+            ),
+            ["Blue mug"],
+        )
+
+    def test_contains_quoted_field(self):
+        """SCAN accepts a quoted contains() field name"""
+        self.assertEqual(
+            self._titles("SCAN * FROM foobar WHERE contains('name', 'hello')"),
+            ["Blue mug"],
+        )
+
+    def test_contains_reserved_status_scan(self):
+        """SCAN can filter contains() on a reserved name with a projection"""
+        self.assertEqual(
+            self._titles("SCAN title FROM foobar WHERE contains(status, 'act')"),
+            ["Blue mug", "USB-C cable"],
+        )
+
+    def test_contains_set(self):
+        """SCAN can filter if a set contains an item"""
+        self.assertEqual(
+            self._titles("SCAN * FROM foobar WHERE contains(tags, 'metal')"),
+            ["Arc lamp"],
+        )
+
+    def test_contains_list(self):
+        """SCAN can filter if a list contains an item"""
+        self.assertEqual(
+            self._titles("SCAN * FROM foobar WHERE contains(items, 'cord')"),
+            ["Arc lamp"],
+        )
+
+    def test_begins_with_non_key(self):
+        """SCAN can filter begins_with on a non-key attribute"""
+        self.assertEqual(
+            self._titles("SCAN * FROM foobar WHERE begins_with(title, 'Blue')"),
+            ["Blue mug"],
+        )
+
+    def test_attribute_exists(self):
+        """SCAN can filter attribute_exists"""
+        self.assertEqual(
+            self._titles("SCAN * FROM foobar WHERE attribute_exists(tags)"),
+            ["Arc lamp", "Blue mug", "USB-C cable"],
+        )
+
+    def test_attribute_not_exists(self):
+        """SCAN can filter attribute_not_exists"""
+        self.assertEqual(
+            self._titles("SCAN * FROM foobar WHERE attribute_not_exists(tags)"),
+            ["Field notes"],
+        )
+
+    def test_attribute_type(self):
+        """SCAN can filter attribute_type"""
+        self.assertEqual(
+            self._titles("SCAN * FROM foobar WHERE attribute_type(qty, N)"),
+            ["Arc lamp", "Blue mug", "USB-C cable"],
+        )
+
+    def test_size_set(self):
+        """SCAN can filter size() of a set"""
+        self.assertEqual(
+            self._titles("SCAN * FROM foobar WHERE size(tags) > 2"),
+            ["Arc lamp"],
+        )
+
+    def test_size_string(self):
+        """SCAN can filter size() of a string"""
+        self.assertEqual(
+            self._titles("SCAN * FROM foobar WHERE size(title) > 8"),
+            ["Field notes", "USB-C cable"],
+        )
+
+    def test_explain_contains(self):
+        """EXPLAIN SELECT with contains() uses a query plus filter"""
+        self.query(
+            "EXPLAIN SELECT title FROM foobar WHERE id = 'store-1' AND contains(name, 'hello')"
+        )
+        ret = self.engine._call_list
+        self.assertEqual(len(ret), 1)
+        self.assertEqual(ret[0][0], "query")
 
 
 class TestRegressions(BaseSystemTest):
