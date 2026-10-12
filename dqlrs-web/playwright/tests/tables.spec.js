@@ -333,7 +333,13 @@ test("opens result and table-browser structure from data already in hand", async
   const pop = page.locator("#schema-pop");
   await expect(pop).toBeVisible();
   await expect(page.locator("#schema-pop-kicker")).toHaveText("Result structure");
+  await expect(page.locator("#schema-pop-info")).toBeVisible();
+  await expect(page.locator("#schema-pop-info")).toHaveAttribute(
+    "title",
+    "Based on this query result, not the entire table.",
+  );
   await expect(page.locator("#schema-pop-title")).toHaveText(name);
+  await expect(page.locator(".schema-pop-title-row .schema-key-chip")).toHaveCount(2);
   await expect(page.locator("#schema-pop-summary")).toHaveText("3 columns · 3 rows");
   await expect(page.locator("#schema-pop-query")).toBeVisible();
   await expect(page.locator("#schema-pop-query")).toContainText(`SCAN * FROM ${name}`);
@@ -353,7 +359,6 @@ test("opens result and table-browser structure from data already in hand", async
   await expect(resultExtra.locator(".schema-role-muted")).toHaveText("—");
   await expect(resultExtra).toContainText("2/3");
   await expect(resultExtra).toContainText("hello");
-  await expect(page.locator(".schema-key-chip")).toHaveCount(2);
   await expect(page.locator("#schema-pop-foot")).toContainText("No extra query was run.");
   expect(afterResult).toEqual([]);
   await page.locator("#schema-pop-close").click();
@@ -377,7 +382,9 @@ test("opens result and table-browser structure from data already in hand", async
   await page.locator("#rows-schema").click();
   await expect(pop).toBeVisible();
   await expect(page.locator("#schema-pop-kicker")).toHaveText("Table structure");
+  await expect(page.locator("#schema-pop-info")).toBeHidden();
   await expect(page.locator("#schema-pop-title")).toHaveText(name);
+  await expect(page.locator(".schema-pop-title-row .schema-key-chip")).toHaveCount(2);
   await expect(page.locator("#schema-pop-summary")).toHaveText("3 columns · 3 rows on this page");
   await expect(page.locator("#schema-pop-query")).toBeHidden();
   const rowsId = page.locator('#schema-table tbody tr[data-column="id"]');

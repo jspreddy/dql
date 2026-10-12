@@ -400,6 +400,7 @@ const rowsSchemaBtn = document.querySelector("#rows-schema");
 const schemaPop = document.querySelector("#schema-pop");
 const schemaPopTitle = document.querySelector("#schema-pop-title");
 const schemaPopKicker = document.querySelector("#schema-pop-kicker");
+const schemaPopInfo = document.querySelector("#schema-pop-info");
 const schemaPopSummary = document.querySelector("#schema-pop-summary");
 const schemaPopKeys = document.querySelector("#schema-pop-keys");
 const schemaPopQuery = document.querySelector("#schema-pop-query");
@@ -1745,6 +1746,7 @@ function openSchema(snapshot, button) {
     other.setAttribute("aria-expanded", other === button ? "true" : "false");
   }
   schemaPopKicker.textContent = browser ? "Table structure" : "Result structure";
+  schemaPopInfo.classList.toggle("hidden", browser);
   schemaPopTitle.textContent = snapshot.title || (browser ? "Table" : "Result");
   schemaPopSummary.textContent = inspected.length
     + (inspected.length === 1 ? " column" : " columns")
