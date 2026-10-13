@@ -15,7 +15,7 @@
 | [`black-box-tests/`](black-box-tests/) | Black-box acceptance cases (binaries + DynamoDB Local) |
 | [`notebook/`](notebook/) | JupyterLab UI and DQL kernels |
 | [`dqlrs-web/`](dqlrs-web/) | Web UI assets and Playwright tests |
-| [`docs/images/`](docs/images/) | README screenshots |
+| [`screenshots/`](screenshots/) | README screenshots (`cli/`, `web/`, `notebook/`) |
 | [`scripts/`](scripts/) | Shared installers, version bump, helpers |
 | [`.github/workflows/`](.github/workflows/) | Python and Rust CI |
 

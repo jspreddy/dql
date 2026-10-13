@@ -85,6 +85,10 @@ omit `-H` for live AWS.
 
 ## Screenshots
 
+More shots live under [`screenshots/cli/`](screenshots/cli/),
+[`screenshots/web/`](screenshots/web/), and
+[`screenshots/notebook/`](screenshots/notebook/).
+
 ### REPL
 
 ```bash
@@ -92,7 +96,7 @@ dqlrs
 dqlrs -H localhost -p 8000
 ```
 
-![dqlrs interactive REPL](docs/images/repl.png)
+![dqlrs interactive REPL](screenshots/cli/repl.png)
 
 ### Web UI
 
@@ -104,7 +108,7 @@ dqlrs --web -H localhost -p 8000 --dir ~/queries
 Query editor, `.dql` file tree, table browser — default
 `http://127.0.0.1:8765`.
 
-![dqlrs web UI](docs/images/web.png)
+![dqlrs web UI](screenshots/web/query.png)
 
 ### Notebook
 
@@ -115,7 +119,7 @@ dqlrs notebook --local
 
 JupyterLab with a **DQL (Rust)** kernel.
 
-![dqlrs notebook](docs/images/notebook.png)
+![dqlrs notebook](screenshots/notebook/cosmos.png)
 
 ## Compare the three surfaces
 
