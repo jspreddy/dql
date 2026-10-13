@@ -88,6 +88,11 @@ def pad_svg(svg: str) -> tuple[str, int, int]:
     )
     svg = re.sub(r'\bwidth="[^"]+"', f'width="{width:.2f}"', svg, count=1)
     svg = re.sub(r'\bheight="[^"]+"', f'height="{height:.2f}"', svg, count=1)
+    svg = svg.replace('style="', 'style="background:#ffffff;', 1)
+    rect = (
+        f'<rect x="{min_x:.2f}" y="{min_y:.2f}" width="{width:.2f}" height="{height:.2f}" fill="#ffffff"/>'
+    )
+    svg = svg.replace(">", f">{rect}", 1)
     return svg, int(round(width)), int(round(height))
 
 
