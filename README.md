@@ -79,16 +79,11 @@ Run `dql` or `dql -r us-east-1`. Language docs:
 
 ### 2. Rust `dqlrs`
 
-Requires [Rust/Cargo](https://rustup.rs/). The Cargo workspace is under
-`rust-impl/`, so install from a checkout of that directory (not
-`cargo install --git` at the repo root):
+Requires [Rust/Cargo](https://rustup.rs/).
 
 ```bash
-git clone https://github.com/jspreddy/dql.git
-cd dql
-git checkout v-rust
-cd rust-impl
-cargo install --path crates/dql-cli --locked --root ~/.local
+cargo install --git https://github.com/jspreddy/dql.git --branch v-rust \
+  --locked --root ~/.local dql-cli
 ```
 
 Add `~/.local/bin` to your `PATH` if needed. The binary is `dqlrs`.
