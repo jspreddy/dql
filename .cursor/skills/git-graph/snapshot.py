@@ -86,7 +86,14 @@ def pad_svg(svg: str) -> str:
     )
     svg = re.sub(r'\bwidth="[^"]+"', f'width="{width:.2f}"', svg, count=1)
     svg = re.sub(r'\bheight="[^"]+"', f'height="{height:.2f}"', svg, count=1)
-    svg = svg.replace('style="', 'style="background:#ffffff;', 1)
+    return paint_white(svg, min_x, min_y, width, height)
+
+
+def paint_white(svg: str, min_x: float, min_y: float, width: float, height: float) -> str:
+    if 'style="' in svg:
+        svg = svg.replace('style="', 'style="background:#ffffff;', 1)
+    else:
+        svg = svg.replace("<svg ", '<svg style="background:#ffffff" ', 1)
     rect = (
         f'<rect x="{min_x:.2f}" y="{min_y:.2f}" width="{width:.2f}" height="{height:.2f}" fill="#ffffff"/>'
     )

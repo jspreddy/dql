@@ -44,8 +44,6 @@ When `/opt/cursor/artifacts` is missing, the file goes to `/tmp/dql-git-graph/`.
 
 Show that SVG. Do not write a PNG, and do not make a picture per commit or per branch.
 
-Before showing the SVG, paint it opaque white. The snapshot inserts a white rectangle covering the SVG viewBox and sets `background: #ffffff` on the root element.
-
 ## What the picture includes
 
 - The `v-rust` commit, as the base.
@@ -57,4 +55,4 @@ Remote-tracking branches are left out, so each branch name appears once. Uncommi
 
 ## Check
 
-Confirm the command printed one `svg:` path and no `png:` path. The file starts with a white rectangle. `v-rust` is the base, and every descendant local branch is labeled. There should be a single SVG, not a sequence.
+Confirm the command printed one `svg:` path and no `png:` path. `v-rust` is the base, and every descendant local branch is labeled. There should be a single SVG, not a sequence.
