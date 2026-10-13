@@ -52,7 +52,3 @@ Show that SVG. Do not write a PNG, and do not make a picture per commit or per b
 - A detached `HEAD`, when it is a descendant of `v-rust` and is not already a branch tip.
 
 Remote-tracking branches are left out, so each branch name appears once. Uncommitted files are not part of the graph.
-
-## Check
-
-Confirm the command printed one `svg:` path and no `png:` path. `v-rust` is the base, and every descendant local branch is labeled. There should be a single SVG, not a sequence.
