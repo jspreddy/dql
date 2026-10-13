@@ -40,7 +40,7 @@ In the REPL: `help` or `help <statement>`.
 
 ## Install
 
-Install from the **`v-rust`** branch on GitHub — no clone required.
+Install from the **`v-rust`** branch on GitHub.
 
 ### Rust `dqlrs` (recommended)
 
@@ -72,8 +72,11 @@ Language docs: [`py-docs/topics/getting_started.rst`](py-docs/topics/getting_sta
 Use `-c` / `--command` to run DQL (or a meta-command) and exit — no REPL:
 
 ```bash
-dqlrs -c "SELECT * FROM forum_threads WHERE name = 'Self Defense';"
-dqlrs --json -c "SCAN * FROM forum_threads LIMIT 5"
+dqlrs -H localhost -p 8000 -c \
+  "SELECT name, kind, class, radius_km FROM sample_cosmos
+   WHERE pk = 'SYSTEM#sol' AND begins_with(sk, 'PLANET#');"
+
+dqlrs --json -c "SCAN * FROM sample_cosmos WHERE habitable = TRUE LIMIT 5"
 dqlrs -H localhost -p 8000 -c "ls"
 ```
 
@@ -110,8 +113,7 @@ dqlrs notebook
 dqlrs notebook --local
 ```
 
-JupyterLab with a **DQL (Rust)** kernel. From a checkout:
-`./notebook/start.sh --local --start-local`.
+JupyterLab with a **DQL (Rust)** kernel.
 
 ![dqlrs notebook](docs/images/notebook.png)
 
@@ -148,62 +150,25 @@ In the REPL: `whoami`, `local [host] [port]`, `use <region>`. Config:
 
 ## Examples
 
+Cosmos sample (table + bodies + queries):
+
 ```sql
-CREATE TABLE forum_threads (name STRING HASH KEY, subject STRING RANGE KEY, THROUGHPUT (4, 2));
+CREATE TABLE sample_cosmos (
+  pk STRING HASH KEY,
+  sk STRING RANGE KEY
+) GLOBAL INDEX ('by-kind', kind STRING, name STRING);
 
-INSERT INTO forum_threads (name, subject, views, replies)
-VALUES ('Self Defense', 'Defense from Banana', 67, 4);
+SELECT name, kind, class, radius_km FROM sample_cosmos
+WHERE pk = 'SYSTEM#sol' AND begins_with(sk, 'PLANET#');
 
-SELECT * FROM forum_threads WHERE name = 'Self Defense';
+SELECT pk, sk, name, radius_km FROM sample_cosmos
+WHERE kind = 'moon'
+USING by-kind;
 
-help select
-whoami
+SCAN * FROM sample_cosmos WHERE habitable = TRUE;
+
+EXPLAIN SELECT * FROM sample_cosmos
+WHERE pk = 'PLANET#jupiter' AND begins_with(sk, 'MOON#');
 ```
 
-----
-
-## For maintainers
-
-[![Python CI](https://github.com/jspreddy/dql/actions/workflows/python-workflows.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/python-workflows.yml)
-
-[![Rust CI](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml)
-
-| Path | Contents |
-| --- | --- |
-| [`py-impl/`](py-impl/) | Python package, tests, packaging, tooling |
-| [`py-docs/`](py-docs/) | Sphinx docs for the Python client |
-| [`py-plans/`](py-plans/) | Python-only design notes |
-| [`rust-impl/`](rust-impl/) | Rust Cargo workspace (`dqlrs`) |
-| [`rust-docs/`](rust-docs/) | Markdown user docs for the Rust client |
-| [`rust-plans/`](rust-plans/) | Rust rewrite / architecture notes |
-| [`black-box-tests/`](black-box-tests/) | Black-box acceptance cases (binaries + DynamoDB Local) |
-| [`notebook/`](notebook/) | JupyterLab UI and DQL kernels |
-| [`dqlrs-web/`](dqlrs-web/) | Web UI assets and Playwright tests |
-| [`docs/images/`](docs/images/) | README screenshots |
-| [`scripts/`](scripts/) | Shared installers, version bump, helpers |
-| [`.github/workflows/`](.github/workflows/) | Python and Rust CI |
-
-### Local install from a clone
-
-```bash
-git clone https://github.com/jspreddy/dql.git
-cd dql
-git checkout v-rust
-```
-
-Python (editable):
-
-```bash
-cd py-impl
-uv tool install --python 3.9 --editable .
-```
-
-Rust:
-
-```bash
-cd rust-impl
-cargo install --path crates/dql-cli --locked --root ~/.local
-```
-
-Verifications: [`VERIFICATION.md`](VERIFICATION.md). From the repo root,
-[`just`](https://just.systems/) lists tasks; `just verify` runs the full check.
+Maintainer notes live in [`MAINTAINER.md`](MAINTAINER.md).
