@@ -64,14 +64,10 @@ pub fn dispatch(
         return Ok(None);
     }
     session.apply_rate_limit()?;
-    // `parse_fragment` requires a ';' to mark a statement complete. Keep the
-    // terminator the user typed (or restore one if they omitted it).
-    let sql = if trimmed.contains(';') {
-        trimmed.to_string()
-    } else {
-        format!("{trimmed};")
-    };
-    session.engine.execute_fragment(&sql)
+    // Keep the user's ';'. `parse_fragment` requires a terminator for Complete;
+    // do not strip it here (meta matching used `for_meta` above) and do not
+    // invent one — the REPL only submits SQL when the buffer ends with ';'.
+    session.engine.execute_fragment(trimmed)
 }
 
 fn registry() -> HashMap<&'static str, ReplCommand> {
@@ -144,17 +140,12 @@ mod tests {
         let trimmed = "SELECT name FROM t LIMIT 1;".trim();
         let for_meta = trimmed.trim_end_matches(';').trim();
         assert_eq!(for_meta, "SELECT name FROM t LIMIT 1");
-        let sql = if trimmed.contains(';') {
-            trimmed.to_string()
-        } else {
-            format!("{trimmed};")
-        };
         assert!(
             matches!(
-                dql_parser::parse_fragment(&sql),
+                dql_parser::parse_fragment(trimmed),
                 dql_parser::FragmentStatus::Complete(_)
             ),
-            "SQL passed to execute_fragment must remain Complete"
+            "SQL passed to execute_fragment must keep its ';'"
         );
         assert!(
             matches!(
@@ -163,5 +154,13 @@ mod tests {
             ),
             "stripped SQL must not be used with execute_fragment"
         );
+    }
+
+    #[test]
+    fn meta_commands_are_recognized_without_semicolon() {
+        assert!(is_meta_command("ls"));
+        assert!(is_meta_command("opt"));
+        assert!(!is_meta_command("SELECT"));
+        assert!(!is_meta_command("scan"));
     }
 }

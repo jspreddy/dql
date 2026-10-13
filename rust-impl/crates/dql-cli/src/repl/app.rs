@@ -280,26 +280,51 @@ fn repl_loop(
                     }
                     KeyCode::Enter => {
                         app.history_index = None;
-                        app.handle_submit()?;
-                        if !app.partial {
-                            ensure_inline_height(terminal, inline_height, panel_height(1))?;
-                            flush_to_scrollback(terminal, &mut app)?;
-                        }
-                        needs_redraw = true;
-                        if take_exit_request() {
-                            break;
-                        }
-                        #[cfg(feature = "watch")]
-                        if let Some(tables) = take_watch_request() {
-                            let watch_result =
-                                crate::meta::watch::run_monitor(app.session, &tables);
-                            enable_raw_mode()?;
-                            *inline_height = panel_height(1);
-                            *terminal = inline_terminal(*inline_height)?;
-                            if let Err(err) = watch_result {
-                                app.push_error(eyre!(err).wrap_err("watch failed"));
+                        // SQL runs only with a terminating ';'. Without one,
+                        // Enter inserts a newline so multi-line queries can be
+                        // typed. Meta-commands (`ls`, `opt`, …) still submit
+                        // without a semicolon.
+                        let text = app.command_text();
+                        let trimmed = text.trim_end();
+                        let first = trimmed
+                            .lines()
+                            .next()
+                            .unwrap_or("")
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or("")
+                            .trim_end_matches(';');
+                        let submit = trimmed.ends_with(';')
+                            || crate::meta::is_meta_command(first);
+                        if submit {
+                            app.handle_submit()?;
+                            if !app.partial {
+                                ensure_inline_height(
+                                    terminal,
+                                    inline_height,
+                                    panel_height(1),
+                                )?;
                                 flush_to_scrollback(terminal, &mut app)?;
                             }
+                            needs_redraw = true;
+                            if take_exit_request() {
+                                break;
+                            }
+                            #[cfg(feature = "watch")]
+                            if let Some(tables) = take_watch_request() {
+                                let watch_result =
+                                    crate::meta::watch::run_monitor(app.session, &tables);
+                                enable_raw_mode()?;
+                                *inline_height = panel_height(1);
+                                *terminal = inline_terminal(*inline_height)?;
+                                if let Err(err) = watch_result {
+                                    app.push_error(eyre!(err).wrap_err("watch failed"));
+                                    flush_to_scrollback(terminal, &mut app)?;
+                                }
+                                needs_redraw = true;
+                            }
+                        } else {
+                            app.insert_newline();
                             needs_redraw = true;
                         }
                     }
