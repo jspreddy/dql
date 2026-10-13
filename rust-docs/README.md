@@ -28,11 +28,14 @@ cargo build --release -p dql-cli
 install -m 0755 target/release/dqlrs ~/.local/bin/dqlrs
 ```
 
-**From a git checkout** (the Cargo workspace is not at the repository root):
+**From a git checkout** on the **`v-rust`** branch (the Cargo workspace is not
+at the repository root):
 
 ```bash
 git clone https://github.com/jspreddy/dql.git
-cd dql/rust-impl
+cd dql
+git checkout v-rust
+cd rust-impl
 cargo install --path crates/dql-cli --locked --root ~/.local
 ```
 

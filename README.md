@@ -51,7 +51,7 @@ Additionally, `whoami` command is available in the interactive shell.
    [Read the Docs](http://dql.readthedocs.org/) still belong to, and are
    published from, upstream.
 3. **Dual implementations.** The repo contains a Python client (`dql`) and a
-   Rust rewrite (`dqlrs`). Install instructions below assume the `v-next`
+   Rust rewrite (`dqlrs`). Install instructions below assume the `v-rust`
    branch.
 4. **Target state is Rust.** `dqlrs` is the primary tool. Python remains for
    the original `dql` client and for integrations where Rust is not feasible.
@@ -61,7 +61,7 @@ Additionally, `whoami` command is available in the interactive shell.
 
 ## Install instructions
 
-These install from GitHub on the **`v-next`** branch. The Python package is in
+These install from GitHub on the **`v-rust`** branch. The Python package is in
 `py-impl/`; the Rust workspace is in `rust-impl/`.
 
 ### 1. Python `dql`
@@ -71,7 +71,7 @@ Requires Python 3.9–3.11 and [uv](https://docs.astral.sh/uv/).
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 uv tool install --python 3.9 \
-  "git+https://github.com/jspreddy/dql.git@v-next#subdirectory=py-impl"
+  "git+https://github.com/jspreddy/dql.git@v-rust#subdirectory=py-impl"
 ```
 
 Run `dql` or `dql -r us-east-1`. Language docs:
@@ -79,14 +79,19 @@ Run `dql` or `dql -r us-east-1`. Language docs:
 
 ### 2. Rust `dqlrs`
 
-Requires [Rust/Cargo](https://rustup.rs/).
+Requires [Rust/Cargo](https://rustup.rs/). The Cargo workspace is under
+`rust-impl/`, so install from a checkout of that directory (not
+`cargo install --git` at the repo root):
 
 ```bash
-cargo install --git https://github.com/jspreddy/dql.git --branch v-next \
-  --locked --root ~/.local dql-cli
+git clone https://github.com/jspreddy/dql.git
+cd dql
+git checkout v-rust
+cd rust-impl
+cargo install --path crates/dql-cli --locked --root ~/.local
 ```
 
-Add `~/.local/bin` to your `PATH` if needed.
+Add `~/.local/bin` to your `PATH` if needed. The binary is `dqlrs`.
 
 More: [`rust-docs/README.md`](rust-docs/README.md).
 
@@ -130,7 +135,7 @@ Details: [`notebook/README.md`](notebook/README.md).
 ```bash
 git clone https://github.com/jspreddy/dql.git
 cd dql
-git checkout v-next
+git checkout v-rust
 ```
 
 #### Python (editable):
