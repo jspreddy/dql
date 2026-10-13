@@ -123,6 +123,24 @@ fn terminal_width() -> usize {
         .max(40)
 }
 
+/// SQL submits only when the buffer ends with `;`. Without one, Enter
+/// inserts a newline. Meta-commands (`ls`, `opt`, …) still submit without `;`.
+fn buffer_submits_on_enter(text: &str) -> bool {
+    let trimmed = text.trim_end();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let first = trimmed
+        .lines()
+        .next()
+        .unwrap_or("")
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(';');
+    trimmed.ends_with(';') || crate::meta::is_meta_command(first)
+}
+
 fn panel_height(content_lines: usize) -> u16 {
     let lines = content_lines.max(1) as u16;
     lines.saturating_add(PANEL_CHROME)
@@ -279,34 +297,13 @@ fn repl_loop(
                         break;
                     }
                     KeyCode::Enter => {
-                        app.history_index = None;
-                        // SQL runs only with a terminating ';'. Without one,
-                        // Enter inserts a newline so multi-line queries can be
-                        // typed. Meta-commands (`ls`, `opt`, …) still submit
-                        // without a semicolon.
-                        let text = app.command_text();
-                        let trimmed = text.trim_end();
-                        let first = trimmed
-                            .lines()
-                            .next()
-                            .unwrap_or("")
-                            .split_whitespace()
-                            .next()
-                            .unwrap_or("")
-                            .trim_end_matches(';');
-                        let submit = trimmed.ends_with(';')
-                            || crate::meta::is_meta_command(first);
-                        if submit {
-                            app.handle_submit()?;
-                            if !app.partial {
-                                ensure_inline_height(
-                                    terminal,
-                                    inline_height,
-                                    panel_height(1),
-                                )?;
-                                flush_to_scrollback(terminal, &mut app)?;
-                            }
-                            needs_redraw = true;
+                        let submitted = app.on_enter()?;
+                        if submitted && !app.partial {
+                            ensure_inline_height(terminal, inline_height, panel_height(1))?;
+                            flush_to_scrollback(terminal, &mut app)?;
+                        }
+                        needs_redraw = true;
+                        if submitted {
                             if take_exit_request() {
                                 break;
                             }
@@ -323,9 +320,6 @@ fn repl_loop(
                                 }
                                 needs_redraw = true;
                             }
-                        } else {
-                            app.insert_newline();
-                            needs_redraw = true;
                         }
                     }
                     KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -680,6 +674,18 @@ impl<'a> ReplApp<'a> {
         }
     }
 
+    /// Enter either runs the buffer or inserts a newline. Returns whether it submitted.
+    fn on_enter(&mut self) -> eyre::Result<bool> {
+        self.history_index = None;
+        if buffer_submits_on_enter(&self.command_text()) {
+            self.handle_submit()?;
+            Ok(true)
+        } else {
+            self.insert_newline();
+            Ok(false)
+        }
+    }
+
     fn handle_submit(&mut self) -> eyre::Result<()> {
         let execute_text = self.command_text();
         let first = execute_text
@@ -895,3 +901,7 @@ fn draw(frame: &mut Frame, app: &ReplApp<'_>) {
         });
     }
 }
+
+#[cfg(test)]
+#[path = "tui_tests.rs"]
+mod tui_tests;
