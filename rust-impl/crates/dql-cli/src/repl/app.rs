@@ -4,7 +4,10 @@ use crate::meta::lifecycle::{take_exit_request, take_history_edit_request};
 use crate::meta::watch::take_watch_request;
 use crate::session::Session;
 use color_eyre::eyre::{self, eyre, WrapErr};
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{
+    self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEventKind, KeyModifiers,
+};
+use crossterm::execute;
 #[cfg(feature = "watch")]
 use crossterm::terminal::enable_raw_mode;
 use dql_engine::StatementResult;
@@ -55,7 +58,13 @@ pub fn run_repl(session: &mut Session) -> eyre::Result<()> {
     let mut terminal = ratatui::init_with_options(TerminalOptions {
         viewport: Viewport::Inline(inline_height),
     });
+    // So multi-line pastes arrive as Event::Paste instead of synthetic Enter
+    // keypresses between lines (which would submit a partial statement).
+    if let Err(err) = execute!(io::stdout(), EnableBracketedPaste) {
+        eprintln!("failed to enable bracketed paste: {err}");
+    }
     let result = repl_loop(session, &mut terminal, &mut inline_height);
+    let _ = execute!(io::stdout(), DisableBracketedPaste);
     if let Err(err) = ratatui::try_restore() {
         eprintln!(
             "failed to restore terminal. Run `reset` or restart your terminal to recover: {err}"
@@ -251,6 +260,11 @@ fn repl_loop(
 
         match event::read()? {
             Event::Key(key) => {
+                // Crossterm may emit Press+Release when the terminal uses the
+                // kitty keyboard protocol; only handle Press.
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
                 let alt = key.modifiers.contains(KeyModifiers::ALT);
                 match key.code {
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -364,6 +378,10 @@ fn repl_loop(
                     }
                     _ => {}
                 }
+            }
+            Event::Paste(text) => {
+                app.insert_paste(&text);
+                needs_redraw = true;
             }
             Event::Resize(_, _) => {
                 needs_redraw = true;
@@ -532,9 +550,33 @@ impl<'a> ReplApp<'a> {
     }
 
     fn insert_char(&mut self, ch: char) {
+        if ch == '\n' {
+            self.insert_newline();
+            return;
+        }
+        if ch == '\r' {
+            return;
+        }
         let idx = self.byte_index_at_col();
         self.current_line_mut().insert(idx, ch);
         self.col += 1;
+    }
+
+    fn insert_newline(&mut self) {
+        let idx = self.byte_index_at_col();
+        let rest = self.current_line_mut().split_off(idx);
+        self.row += 1;
+        self.lines.insert(self.row, rest);
+        self.col = 0;
+    }
+
+    /// Insert clipboard / bracketed-paste text without treating embedded
+    /// newlines as submit.
+    fn insert_paste(&mut self, text: &str) {
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        for ch in normalized.chars() {
+            self.insert_char(ch);
+        }
     }
 
     fn backspace(&mut self) {
