@@ -17,10 +17,12 @@ uv sync --dev
 source .venv/bin/activate
 ```
 
-Install from git (this package is not at the repository root):
+Install from git on the **`v-rust`** branch (this package is not at the
+repository root):
 
 ```bash
-uv tool install --python 3.9 "git+https://github.com/jspreddy/dql.git#subdirectory=py-impl"
+uv tool install --python 3.9 \
+  "git+https://github.com/jspreddy/dql.git@v-rust#subdirectory=py-impl"
 ```
 
 ## Tasks
