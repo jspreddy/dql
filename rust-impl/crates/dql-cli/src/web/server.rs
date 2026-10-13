@@ -834,7 +834,11 @@ mod tests {
             ran.contains("Query stopped") || ran.contains("\"code\":\"cancelled\""),
             "{ran}"
         );
-        assert!(started.elapsed() < Duration::from_secs(8), "{:?}", started.elapsed());
+        assert!(
+            started.elapsed() < Duration::from_secs(8),
+            "{:?}",
+            started.elapsed()
+        );
         drop(guard);
     }
 

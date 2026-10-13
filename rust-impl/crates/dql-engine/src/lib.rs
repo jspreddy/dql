@@ -19,9 +19,9 @@ pub use fragment::FragmentEngine;
 pub use throttle::RateLimit;
 
 pub use aws::{SdkBackend, SdkConfig};
+pub use cancel::CancelFlag;
 pub use engine::Engine;
 pub use memory::MemoryBackend;
-pub use cancel::CancelFlag;
 pub use progress::{ProgressEvent, ProgressSink, WRITE_PROGRESS_CHUNK};
 pub use query_context::{query_context_from_read, LastQueryContext};
 pub use table_match::{intelligent_like_matches, intelligent_matches, MatchTable};
