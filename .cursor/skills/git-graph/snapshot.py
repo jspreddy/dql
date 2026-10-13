@@ -158,7 +158,8 @@ def main() -> None:
 <head>
 <meta charset="utf-8">
 <style>
-  html, body {{ margin: 0; background: #f6f3ee; }}
+  html {{ background: #ffffff; }}
+  body {{ margin: 0; background: #ffffff; }}
   .card {{ padding: 16px 20px 18px; }}
   h1 {{ font: 600 16px/1.3 ui-sans-serif, system-ui, sans-serif; color: #1c1917; margin: 0 0 4px; }}
   p {{ font: 13px/1.4 ui-sans-serif, system-ui, sans-serif; color: #57534e; margin: 0 0 12px; }}

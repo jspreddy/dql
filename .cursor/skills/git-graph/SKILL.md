@@ -45,6 +45,8 @@ When `/opt/cursor/artifacts` is missing, both files go to `/tmp/dql-git-graph/`.
 
 Show the user that one PNG. Do not make a picture per commit or per branch.
 
+Before showing the SVG, set the main `html` element's background to white. The snapshot page does this with `html { background: #ffffff; }`.
+
 ## What the picture includes
 
 - The `v-rust` commit, as the base.
