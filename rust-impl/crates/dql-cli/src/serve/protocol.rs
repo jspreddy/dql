@@ -122,6 +122,7 @@ pub fn envelope_from_error(err: EngineError) -> ServeEnvelope {
     match err {
         EngineError::Parse(parse_err) => ServeEnvelope::err("parse", parse_err.to_string()),
         EngineError::Runtime(message) => ServeEnvelope::err("runtime", message),
+        EngineError::Cancelled => ServeEnvelope::err("cancelled", err.to_string()),
     }
 }
 
@@ -203,6 +204,9 @@ mod tests {
         let runtime = envelope_from_error(EngineError::Runtime("boom".into()));
         assert_eq!(runtime.error.as_ref().unwrap().code, "runtime");
         assert_eq!(runtime.error.as_ref().unwrap().message, "boom");
+        let stopped = envelope_from_error(EngineError::Cancelled);
+        assert_eq!(stopped.error.as_ref().unwrap().code, "cancelled");
+        assert_eq!(stopped.error.as_ref().unwrap().message, "Query stopped");
     }
 
     #[test]

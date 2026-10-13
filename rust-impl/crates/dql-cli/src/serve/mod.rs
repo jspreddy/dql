@@ -100,6 +100,7 @@ fn handle_line<W: Write + Send + 'static>(
             Ok(LineResult::Shutdown)
         }
         "interrupt" => {
+            session.cancel().request();
             write_envelope(
                 &mut *lock_writer(writer)?,
                 &ServeEnvelope::success("none").with_id(id),
@@ -107,6 +108,7 @@ fn handle_line<W: Write + Send + 'static>(
             Ok(LineResult::Reply)
         }
         "exec" => {
+            session.cancel().clear();
             let dql = request.dql.clone().unwrap_or_default();
             let progress_writer = Arc::clone(writer);
             let progress_id = id.clone();
@@ -284,11 +286,12 @@ mod tests {
     }
 
     #[test]
-    fn interrupt_is_noop() {
+    fn interrupt_requests_cancel() {
         let mut session = Session::new_memory_headless("us-west-1");
         let (replies, _) = exchange(&mut session, &[r#"{"id":"i","op":"interrupt"}"#]);
         assert_eq!(replies[0]["ok"], true);
         assert_eq!(replies[0]["kind"], "none");
+        assert!(session.cancel().is_requested());
     }
 
     #[test]
