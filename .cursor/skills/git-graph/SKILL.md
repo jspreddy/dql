@@ -1,11 +1,11 @@
 ---
 name: git-graph
-description: Render one PNG of every local branch and commit on top of v-rust with the global git-graph tool. Use when the user asks for a git graph, a branch picture, or a screenshot of changes above v-rust. Run only when asked. Do not run it after a commit, a new branch, or a push.
+description: Render one SVG of every local branch and commit on top of v-rust with the global git-graph tool. Use when the user asks for a git graph, a branch picture, or the changes above v-rust. Run only when asked. Do not run it after a commit, a new branch, or a push.
 ---
 
 # Git graph
 
-Render one picture of the commits and local branches on top of `v-rust`. Do this only when the user asks for the graph. Do not render it after a commit, a branch creation, or a push, and do not install a git hook.
+Render one SVG of the commits and local branches on top of `v-rust`. Do this only when the user asks for the graph. Do not render it after a commit, a branch creation, or a push, and do not install a git hook.
 
 ## Install
 
@@ -34,18 +34,17 @@ From the repository, run:
 python3 .cursor/skills/git-graph/snapshot.py
 ```
 
-The script writes one SVG and one PNG. It prints:
+The script writes one SVG and prints:
 
 ```text
-png: /opt/cursor/artifacts/v-rust-branches.png
 svg: /opt/cursor/artifacts/v-rust-branches.svg
 ```
 
-When `/opt/cursor/artifacts` is missing, both files go to `/tmp/dql-git-graph/`.
+When `/opt/cursor/artifacts` is missing, the file goes to `/tmp/dql-git-graph/`.
 
-Show the user that one PNG. Do not make a picture per commit or per branch.
+Show that SVG. Do not write a PNG, and do not make a picture per commit or per branch.
 
-Before showing the SVG, paint it opaque white. The snapshot inserts a white rectangle covering the SVG viewBox, and the page's `html` element uses `background: #ffffff`.
+Before showing the SVG, paint it opaque white. The snapshot inserts a white rectangle covering the SVG viewBox and sets `background: #ffffff` on the root element.
 
 ## What the picture includes
 
@@ -58,4 +57,4 @@ Remote-tracking branches are left out, so each branch name appears once. Uncommi
 
 ## Check
 
-Confirm the command printed one `png:` path, and that the image shows `v-rust` at the base with every descendant local branch labeled. There should be a single image, not a sequence.
+Confirm the command printed one `svg:` path and no `png:` path. The file starts with a white rectangle. `v-rust` is the base, and every descendant local branch is labeled. There should be a single SVG, not a sequence.
