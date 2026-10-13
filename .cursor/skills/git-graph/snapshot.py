@@ -86,7 +86,25 @@ def pad_svg(svg: str) -> str:
     )
     svg = re.sub(r'\bwidth="[^"]+"', f'width="{width:.2f}"', svg, count=1)
     svg = re.sub(r'\bheight="[^"]+"', f'height="{height:.2f}"', svg, count=1)
-    return paint_white(svg, min_x, min_y, width, height)
+    return color_head(paint_white(svg, min_x, min_y, width, height))
+
+
+_HEAD_LABEL = re.compile(
+    r"<text(?P<text_attrs>[^>]*)>\s*HEAD\s*</text>\s*<path(?P<path_attrs>[^>]*)/>",
+)
+
+
+def color_head(svg: str) -> str:
+    def repl(match: re.Match[str]) -> str:
+        text_attrs = match.group("text_attrs")
+        path_attrs = re.sub(r'\bfill="[^"]*"', 'fill="#93c5fd"', match.group("path_attrs"))
+        if re.search(r'\bfill="', text_attrs):
+            text_attrs = re.sub(r'\bfill="[^"]*"', 'fill="#1d4ed8"', text_attrs)
+        else:
+            text_attrs += ' fill="#1d4ed8"'
+        return f"<path{path_attrs}/><text{text_attrs}>\nHEAD\n</text>"
+
+    return _HEAD_LABEL.sub(repl, svg, count=1)
 
 
 def paint_white(svg: str, min_x: float, min_y: float, width: float, height: float) -> str:
