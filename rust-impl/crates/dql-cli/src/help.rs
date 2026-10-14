@@ -149,7 +149,7 @@ const GROUPS: &[HelpGroup] = &[
             },
             HelpCommand {
                 name: "clear",
-                summary: "Clear the screen",
+                summary: "Scroll the screen so the input is at the top",
             },
             HelpCommand {
                 name: "shell",
@@ -522,7 +522,8 @@ pub const HELP: &str = r"
 ";
 
 pub const CLEAR: &str = r"
-    Clear the screen
+    Scroll the visible screen into the scrollback so the input line is at the top.
+    Previous output stays available with the scroll wheel.
 
     clear
     Aliases: cls, c

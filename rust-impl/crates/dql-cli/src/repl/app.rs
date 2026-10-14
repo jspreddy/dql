@@ -12,7 +12,7 @@ use crossterm::execute;
 use crossterm::terminal::enable_raw_mode;
 use dql_engine::StatementResult;
 use dql_output::{build_rich_layout, render_result, DisplayBackend, OutputFormat};
-use ratatui::backend::CrosstermBackend;
+use ratatui::backend::{Backend, ClearType, CrosstermBackend};
 use ratatui::layout::Position;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -254,6 +254,22 @@ fn flush_to_scrollback(terminal: &mut ReplTerminal, app: &mut ReplApp<'_>) -> io
     Ok(())
 }
 
+/// Scroll the visible screen into the terminal scrollback and leave the cursor
+/// at the top-left. History stays in the scrollback, so the scroll wheel can
+/// still move through it. This does not enter the alternate screen or erase
+/// scrollback.
+fn scroll_visible_screen_into_scrollback<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
+    let screen_height = terminal.size()?.height.max(1);
+    let bottom = screen_height.saturating_sub(1);
+    terminal.set_cursor_position(Position::new(0, bottom))?;
+    terminal.backend_mut().append_lines(screen_height)?;
+    terminal.set_cursor_position(Position::new(0, 0))?;
+    terminal
+        .backend_mut()
+        .clear_region(ClearType::AfterCursor)?;
+    Ok(())
+}
+
 fn repl_loop(
     session: &mut Session,
     terminal: &mut ReplTerminal,
@@ -299,8 +315,19 @@ fn repl_loop(
                     KeyCode::Enter => {
                         let submitted = app.on_enter()?;
                         if submitted && !app.partial {
-                            ensure_inline_height(terminal, inline_height, panel_height(1))?;
-                            flush_to_scrollback(terminal, &mut app)?;
+                            if app.take_scroll_to_top() {
+                                // `clear` scrolls the visible screen into the
+                                // terminal scrollback and parks a new input at
+                                // the top. The mouse wheel still reaches the
+                                // previous output.
+                                scroll_visible_screen_into_scrollback(terminal)?;
+                                let height = panel_height(app.live_content_line_count());
+                                *inline_height = height;
+                                *terminal = inline_terminal(height)?;
+                            } else {
+                                ensure_inline_height(terminal, inline_height, panel_height(1))?;
+                                flush_to_scrollback(terminal, &mut app)?;
+                            }
                         }
                         needs_redraw = true;
                         if submitted {
@@ -431,6 +458,8 @@ struct ReplApp<'a> {
     command_ok: bool,
     partial: bool,
     history_index: Option<usize>,
+    /// `clear` should scroll the visible screen into the terminal scrollback.
+    scroll_to_top: bool,
 }
 
 impl<'a> ReplApp<'a> {
@@ -445,7 +474,14 @@ impl<'a> ReplApp<'a> {
             command_ok: true,
             partial: false,
             history_index: None,
+            scroll_to_top: false,
         }
+    }
+
+    fn take_scroll_to_top(&mut self) -> bool {
+        let scroll = self.scroll_to_top;
+        self.scroll_to_top = false;
+        scroll
     }
 
     fn live_content_line_count(&self) -> usize {
@@ -779,6 +815,7 @@ impl<'a> ReplApp<'a> {
             self.command_ok = true;
             self.partial = false;
             self.reset_buffer();
+            self.scroll_to_top = true;
             return Ok(());
         }
 

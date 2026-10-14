@@ -326,4 +326,49 @@ fn clear_resets_the_editor_without_a_semicolon() {
     assert_eq!(app.lines, vec![String::new()]);
     assert!(app.output_lines.is_empty());
     assert!(app.committed_command.is_empty());
+    assert!(app.take_scroll_to_top());
+}
+
+#[test]
+fn clear_scrolls_the_visible_screen_into_scrollback() {
+    let mut terminal = Terminal::new(TestBackend::new(20, 6)).unwrap();
+    terminal
+        .draw(|frame| {
+            frame.render_widget(Paragraph::new("previous-history"), frame.area());
+        })
+        .unwrap();
+    super::scroll_visible_screen_into_scrollback(&mut terminal).unwrap();
+
+    let saved = buffer_plain(terminal.backend().scrollback());
+    let visible = buffer_plain(terminal.backend().buffer());
+    assert!(
+        saved.contains("previous-history"),
+        "scrollback lost the screen:\n{saved}"
+    );
+    assert!(
+        !visible.contains("previous-history"),
+        "visible screen still shows cleared text:\n{visible}"
+    );
+    assert_eq!(terminal.get_cursor_position().unwrap(), Position::new(0, 0));
+
+    let mut parked = Terminal::with_options(
+        terminal.backend().clone(),
+        ratatui::TerminalOptions {
+            viewport: ratatui::Viewport::Inline(4),
+        },
+    )
+    .unwrap();
+    assert_eq!(parked.get_frame().area().y, 0);
+}
+
+fn buffer_plain(buffer: &Buffer) -> String {
+    let width = buffer.area.width;
+    (0..buffer.area.height)
+        .map(|y| {
+            (0..width)
+                .map(|x| buffer[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
