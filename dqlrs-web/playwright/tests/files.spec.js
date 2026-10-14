@@ -68,6 +68,7 @@ test("context menu on a file offers the file actions", async ({ page }) => {
   await expect(page.locator("#menu-rename")).toBeVisible();
   await expect(page.locator("#menu-move")).toBeVisible();
   await expect(page.locator("#menu-delete")).toBeVisible();
+  await expect(page.locator("#menu-run-folder")).toHaveCount(0);
   await page.locator("#file-name").click();
   await expect(page.locator("#file-menu")).toBeHidden();
 });
@@ -90,10 +91,19 @@ test("sidebar background menu creates a file and a folder at the workspace root"
 
   await page.locator(".side-head").click({ button: "right" });
   await expect(page.locator("#menu-new-folder")).toBeVisible();
+  await expect(page.locator("#menu-run-folder")).toHaveCount(0);
   await expect(page.locator("#menu-duplicate")).toHaveCount(0);
   await page.locator("#menu-new-folder").click();
   await expect(node(page, "extra")).toBeVisible();
   await dialogs.stop();
+});
+
+test("runs an empty folder from the context menu", async ({ page }) => {
+  await node(page, "empty").click({ button: "right" });
+  await expect(page.locator("#menu-run-folder")).toBeVisible();
+  await page.locator("#menu-run-folder").click();
+  await expect(page.locator("#file-menu")).toBeHidden();
+  await expect(page.locator("#result-meta")).toHaveText("Nothing to run");
 });
 
 test("creates a file inside a folder from the context menu", async ({ page }) => {

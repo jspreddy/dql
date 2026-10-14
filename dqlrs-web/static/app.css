@@ -136,6 +136,39 @@ body.side-resizing * {
 
 .side-head { font-weight: 650; }
 
+.file-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+#file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#run-file {
+  flex: none;
+  border: 1px solid #cfd6de;
+  background: white;
+  border-radius: 4px;
+  padding: 0 7px;
+  height: 22px;
+  cursor: pointer;
+}
+
+#run-file:hover { background: #eef3f6; }
+
+#run-file:focus-visible {
+  background: #eef3f6;
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+#run-file:disabled { opacity: 0.5; cursor: default; }
+
 .side-heading {
   display: flex;
   align-items: center;
@@ -492,6 +525,13 @@ body.results-resizing * {
 }
 
 #result-body { background: #f7f9fb; }
+
+.run-file-label {
+  margin: 12px 12px 0;
+  color: #526071;
+  font-size: 12px;
+  font-weight: 650;
+}
 
 #result-body .result-card {
   margin: 10px 12px 14px;
