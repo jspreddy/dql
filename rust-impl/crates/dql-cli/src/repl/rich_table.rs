@@ -1,13 +1,14 @@
 use dql_engine::format_throughput;
 use dql_models::{ProjectionType, TableMeta, TableStatus};
 use dql_output::TableStats;
-use dql_output::{RichColumn, RichLayout};
+use dql_output::{ColumnKey, RichColumn, RichLayout};
 use humansize::{format_size, BINARY};
 use ratatui::backend::TestBackend;
-use ratatui::layout::Constraint;
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Alignment, Constraint, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Cell, Row, Table};
+use ratatui::widgets::{Block, BorderType, Cell, Row, Table, Widget};
 use ratatui::Terminal;
 
 struct StyledColumn {
@@ -36,6 +37,8 @@ pub fn rich_layout_to_lines(layout: &RichLayout, width: u16) -> Vec<Line<'static
         name: "...".to_string(),
         important: false,
         ellipsis: true,
+        table_key: ColumnKey::None,
+        index_key: ColumnKey::None,
     }];
     lines.extend(render_table_to_lines(
         "More columns available",
@@ -248,7 +251,7 @@ fn styled_table_to_lines(
                 .title_style(Style::default().fg(Color::Green)),
         );
     let height = (rows.len() + 3).max(3) as u16;
-    let backend = TestBackend::new(table_area_width(&width_constraints, width), height);
+    let backend = TestBackend::new(table_area_width(&width_constraints, width, 1), height);
     let mut terminal = Terminal::new(backend).expect("test backend");
     terminal
         .draw(|frame| frame.render_widget(table, frame.area()))
@@ -306,31 +309,188 @@ fn render_table_to_lines(
         return Vec::new();
     }
 
-    let column_names = columns
-        .iter()
-        .map(|column| column.name.clone())
-        .collect::<Vec<_>>();
-    let width_constraints = content_width_constraints(&column_names, rows);
-    let header = Row::new(columns.iter().map(|column| header_cell(column)));
+    let labels = columns.iter().map(header_label).collect::<Vec<_>>();
+    let width_constraints = content_width_constraints(&labels, rows);
+    let header = Row::new(columns.iter().map(header_cell))
+        .style(header_row_style())
+        .bottom_margin(1);
     let data_rows: Vec<Row> = rows
         .iter()
-        .map(|row| Row::new(row.iter().map(|value| Cell::from(value.clone()))))
+        .enumerate()
+        .map(|(index, row)| {
+            Row::new(
+                row.iter()
+                    .zip(columns)
+                    .map(|(value, column)| data_cell(value, column, index)),
+            )
+            .style(data_row_style(index))
+        })
         .collect();
     let table = Table::new(data_rows, width_constraints.clone())
         .header(header)
-        .block(
-            Block::default()
-                .title(title)
-                .title_style(Style::default().fg(Color::Green)),
-        );
+        .column_spacing(0)
+        .style(card_style())
+        .block(result_block(title, rows.len()));
 
-    let height = (rows.len() + 3).max(3) as u16;
-    let backend = TestBackend::new(table_area_width(&width_constraints, width), height);
-    let mut terminal = Terminal::new(backend).expect("test backend");
-    terminal
-        .draw(|frame| frame.render_widget(table, frame.area()))
-        .expect("draw table");
-    buffer_to_lines(terminal.backend().buffer())
+    let height = u16::try_from(rows.len() + 4).unwrap_or(u16::MAX).max(4);
+    let area = Rect::new(0, 0, table_area_width(&width_constraints, width, 0), height);
+    let mut buffer = Buffer::empty(area);
+    table.render(area, &mut buffer);
+    paint_header_rule(&mut buffer);
+    buffer_to_lines(&buffer)
+}
+
+/// Palette copied from the web results card (`#result-body` in `dqlrs-web/static/app.css`).
+const CARD: Color = Color::Rgb(255, 255, 255);
+const TEXT: Color = Color::Rgb(28, 36, 48);
+const TITLE: Color = Color::Rgb(18, 32, 43);
+const MUTED: Color = Color::Rgb(102, 116, 132);
+const BORDER: Color = Color::Rgb(225, 230, 235);
+const HEADER_BG: Color = Color::Rgb(244, 247, 248);
+const HEADER_FG: Color = Color::Rgb(82, 98, 115);
+const EVEN: Color = Color::Rgb(248, 250, 251);
+const TABLE_HEADER: Color = Color::Rgb(231, 246, 236);
+const TABLE_CELL: Color = Color::Rgb(245, 251, 247);
+const TABLE_ICON: Color = Color::Rgb(63, 111, 87);
+const INDEX_HEADER: Color = Color::Rgb(231, 241, 252);
+const INDEX_CELL: Color = Color::Rgb(245, 249, 254);
+const INDEX_ICON: Color = Color::Rgb(60, 99, 153);
+const BOTH_HEADER: Color = Color::Rgb(231, 243, 244);
+const BOTH_CELL: Color = Color::Rgb(245, 250, 251);
+const BOTH_ICON: Color = Color::Rgb(61, 116, 128);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ColumnTint {
+    Plain,
+    Table,
+    Index,
+    Both,
+}
+
+fn card_style() -> Style {
+    Style::default().fg(TEXT).bg(CARD)
+}
+
+fn header_row_style() -> Style {
+    Style::default().fg(HEADER_FG).bg(HEADER_BG)
+}
+
+fn data_row_style(row_index: usize) -> Style {
+    let bg = if row_index % 2 == 1 { EVEN } else { CARD };
+    Style::default().fg(TEXT).bg(bg)
+}
+
+fn result_block(title: &str, row_count: usize) -> Block<'static> {
+    let meta = row_meta(title, row_count);
+    Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(BORDER))
+        .style(card_style())
+        .title(Span::styled(
+            format!(" {title} "),
+            Style::default().fg(TITLE).add_modifier(Modifier::BOLD),
+        ))
+        .title(
+            Line::from(Span::styled(
+                format!(" {meta} "),
+                Style::default().fg(MUTED),
+            ))
+            .alignment(Alignment::Right),
+        )
+}
+
+fn row_meta(title: &str, count: usize) -> String {
+    let (singular, plural) = if title == "More columns available" {
+        ("column", "columns")
+    } else {
+        ("row", "rows")
+    };
+    if count == 1 {
+        format!("1 {singular}")
+    } else {
+        format!("{count} {plural}")
+    }
+}
+
+fn column_tint(column: &RichColumn) -> ColumnTint {
+    if column.ellipsis {
+        return ColumnTint::Plain;
+    }
+    let table = column.table_key != ColumnKey::None
+        || (column.important && column.index_key == ColumnKey::None);
+    let index = column.index_key != ColumnKey::None;
+    match (table, index) {
+        (true, true) => ColumnTint::Both,
+        (true, false) => ColumnTint::Table,
+        (false, true) => ColumnTint::Index,
+        (false, false) => ColumnTint::Plain,
+    }
+}
+
+fn header_bg(tint: ColumnTint) -> Color {
+    match tint {
+        ColumnTint::Plain => HEADER_BG,
+        ColumnTint::Table => TABLE_HEADER,
+        ColumnTint::Index => INDEX_HEADER,
+        ColumnTint::Both => BOTH_HEADER,
+    }
+}
+
+fn cell_bg(tint: ColumnTint, row_index: usize) -> Color {
+    match tint {
+        ColumnTint::Plain => {
+            if row_index % 2 == 1 {
+                EVEN
+            } else {
+                CARD
+            }
+        }
+        ColumnTint::Table => TABLE_CELL,
+        ColumnTint::Index => INDEX_CELL,
+        ColumnTint::Both => BOTH_CELL,
+    }
+}
+
+fn icon_color(tint: ColumnTint) -> Color {
+    match tint {
+        ColumnTint::Index => INDEX_ICON,
+        ColumnTint::Both => BOTH_ICON,
+        _ => TABLE_ICON,
+    }
+}
+
+fn key_marks(column: &RichColumn) -> Vec<&'static str> {
+    let mut marks = Vec::new();
+    if column.table_key == ColumnKey::Hash || column.index_key == ColumnKey::Hash {
+        marks.push("#");
+    }
+    if column.table_key == ColumnKey::Range || column.index_key == ColumnKey::Range {
+        marks.push("↕");
+    }
+    marks
+}
+
+fn header_label(column: &RichColumn) -> String {
+    let mut label = column.name.clone();
+    for mark in key_marks(column) {
+        label.push(' ');
+        label.push_str(mark);
+    }
+    label
+}
+
+fn paint_header_rule(buffer: &mut Buffer) {
+    let width = buffer.area.width;
+    let y = 2;
+    if width < 2 || buffer.area.height <= y {
+        return;
+    }
+    let rule = Style::default().fg(BORDER).bg(CARD);
+    buffer[(0, y)].set_symbol("├").set_style(rule);
+    buffer[(width - 1, y)].set_symbol("┤").set_style(rule);
+    for x in 1..width - 1 {
+        buffer[(x, y)].set_symbol("─").set_style(rule);
+    }
 }
 
 fn content_width_constraints(headers: &[String], rows: &[Vec<String>]) -> Vec<Constraint> {
@@ -350,7 +510,11 @@ fn column_width(header: &str, rows: &[Vec<String>], index: usize) -> u16 {
     content_width.saturating_add(2).min(u16::MAX as usize) as u16
 }
 
-fn table_area_width(width_constraints: &[Constraint], preferred_width: u16) -> u16 {
+fn table_area_width(
+    width_constraints: &[Constraint],
+    preferred_width: u16,
+    column_spacing: u16,
+) -> u16 {
     if width_constraints.is_empty() {
         return preferred_width.max(20);
     }
@@ -361,19 +525,34 @@ fn table_area_width(width_constraints: &[Constraint], preferred_width: u16) -> u
             _ => 0,
         })
         .sum();
-    let chrome = width_constraints.len().saturating_sub(1) as u16 + 2;
+    let gaps = width_constraints.len().saturating_sub(1) as u16 * column_spacing;
+    // Two extra columns cover a border, or a little trailing room when there is no border.
+    let chrome = gaps + 2;
     preferred_width.max(content_width + chrome).max(20)
 }
 
 fn header_cell(column: &RichColumn) -> Cell<'static> {
-    let style = if column.ellipsis {
-        Style::default().fg(Color::DarkGray)
-    } else if column.important {
-        Style::default().fg(Color::Green)
-    } else {
+    let tint = column_tint(column);
+    let name_fg = if column.ellipsis { MUTED } else { HEADER_FG };
+    let mut name_style = Style::default().fg(name_fg);
+    if !column.ellipsis {
+        name_style = name_style.add_modifier(Modifier::BOLD);
+    }
+    let mut spans = vec![Span::styled(format!(" {}", column.name), name_style)];
+    let icon = Style::default().fg(icon_color(tint));
+    for mark in key_marks(column) {
+        spans.push(Span::styled(format!(" {mark}"), icon));
+    }
+    Cell::from(Line::from(spans)).style(Style::default().fg(name_fg).bg(header_bg(tint)))
+}
+
+fn data_cell(value: &str, column: &RichColumn, row_index: usize) -> Cell<'static> {
+    let fg = if column.ellipsis { MUTED } else { TEXT };
+    Cell::from(format!(" {value}")).style(
         Style::default()
-    };
-    Cell::from(column.name.clone()).style(style.add_modifier(Modifier::BOLD))
+            .fg(fg)
+            .bg(cell_bg(column_tint(column), row_index)),
+    )
 }
 
 fn buffer_to_lines(buffer: &ratatui::buffer::Buffer) -> Vec<Line<'static>> {
@@ -431,6 +610,7 @@ mod tests {
         let context = RichContext {
             important_columns: vec!["id".to_string()],
             preserve_column_order: false,
+            ..RichContext::default()
         };
         let layout = build_rich_layout(&[item], Some(&context));
         let lines = rich_layout_to_lines(&layout, 80);
@@ -496,5 +676,97 @@ mod tests {
             content_width_constraints(&headers, &rows),
             vec![Constraint::Length(12)]
         );
+    }
+
+    fn column(name: &str, table_key: ColumnKey, index_key: ColumnKey) -> RichColumn {
+        RichColumn {
+            name: name.to_string(),
+            important: table_key != ColumnKey::None || index_key != ColumnKey::None,
+            ellipsis: false,
+            table_key,
+            index_key,
+        }
+    }
+
+    fn span_style(lines: &[Line<'_>], needle: &str) -> Style {
+        for line in lines {
+            for span in &line.spans {
+                if span.content.contains(needle) {
+                    return span.style;
+                }
+            }
+        }
+        panic!("missing {needle}");
+    }
+
+    #[test]
+    fn results_table_is_a_light_card_with_zebra_rows() {
+        let layout = RichLayout {
+            columns: vec![
+                column("id", ColumnKey::Hash, ColumnKey::None),
+                column("name", ColumnKey::None, ColumnKey::None),
+            ],
+            rows: vec![
+                vec!["a".to_string(), "Earth".to_string()],
+                vec!["b".to_string(), "Mars".to_string()],
+            ],
+            overflow_columns: Vec::new(),
+        };
+        let lines = rich_layout_to_lines(&layout, 40);
+        let rendered = lines
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("Results"), "{rendered}");
+        assert!(rendered.contains("2 rows"), "{rendered}");
+        assert!(rendered.contains('╭'), "{rendered}");
+        assert!(lines[2].to_string().contains('├'), "{rendered}");
+
+        let title = span_style(&lines, "Results");
+        assert_eq!(title.fg, Some(TITLE));
+        assert_eq!(title.bg, Some(CARD));
+        assert!(title.add_modifier.contains(Modifier::BOLD));
+
+        let id = span_style(&lines, "id");
+        assert_eq!(id.fg, Some(HEADER_FG));
+        assert_eq!(id.bg, Some(TABLE_HEADER));
+        assert_eq!(span_style(&lines, "#").fg, Some(TABLE_ICON));
+
+        let earth = span_style(&lines, "Earth");
+        assert_eq!(earth.fg, Some(TEXT));
+        assert_eq!(earth.bg, Some(CARD));
+        let mars = span_style(&lines, "Mars");
+        assert_eq!(mars.bg, Some(EVEN));
+
+        let id_value = span_style(&lines, " a");
+        assert_eq!(id_value.bg, Some(TABLE_CELL));
+        let second_key = span_style(&lines, " b");
+        assert_eq!(second_key.bg, Some(TABLE_CELL));
+    }
+
+    #[test]
+    fn index_and_shared_keys_use_the_web_column_colors() {
+        let layout = RichLayout {
+            columns: vec![
+                column("name", ColumnKey::None, ColumnKey::Hash),
+                column("sk", ColumnKey::Range, ColumnKey::Range),
+            ],
+            rows: vec![vec!["Earth".to_string(), "a".to_string()]],
+            overflow_columns: Vec::new(),
+        };
+        let lines = rich_layout_to_lines(&layout, 48);
+        assert_eq!(span_style(&lines, "name").bg, Some(INDEX_HEADER));
+        assert_eq!(span_style(&lines, "Earth").bg, Some(INDEX_CELL));
+        assert_eq!(span_style(&lines, "#").fg, Some(INDEX_ICON));
+        assert_eq!(span_style(&lines, "sk").bg, Some(BOTH_HEADER));
+        assert_eq!(span_style(&lines, " a").bg, Some(BOTH_CELL));
+        assert_eq!(span_style(&lines, "↕").fg, Some(BOTH_ICON));
+        let rendered = lines
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("1 row"), "{rendered}");
     }
 }

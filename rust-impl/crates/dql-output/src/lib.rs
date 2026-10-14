@@ -6,8 +6,8 @@ mod table_meta;
 pub use config::{OutputConfig, OutputFormat, PageSize, WidthSetting};
 pub use display::{less_display, stdout_display, DisplayBackend, DisplayMode};
 pub use formats::{
-    build_rich_layout, rich_layout_to_text, ColumnFormat, ExpandedFormat, Format, JsonFormat,
-    RichColumn, RichContext, RichFormat, RichLayout, SmartFormat,
+    build_rich_layout, rich_layout_to_text, ColumnFormat, ColumnKey, ExpandedFormat, Format,
+    JsonFormat, RichColumn, RichContext, RichFormat, RichLayout, SmartFormat,
 };
 pub use table_meta::{format_table_detail, format_table_summary_table, TableStats};
 

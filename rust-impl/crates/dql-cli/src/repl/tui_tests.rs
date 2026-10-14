@@ -54,11 +54,19 @@ fn screen_text(backend: &TestBackend) -> String {
 }
 
 fn fg_at(backend: &TestBackend, needle: &str) -> Option<Color> {
+    style_at(backend, needle).and_then(|style| style.fg)
+}
+
+fn bg_at(backend: &TestBackend, needle: &str) -> Option<Color> {
+    style_at(backend, needle).and_then(|style| style.bg)
+}
+
+fn style_at(backend: &TestBackend, needle: &str) -> Option<Style> {
     let height = backend.buffer().area.height;
     for y in 0..height {
         let line = line_text(backend, y);
         if let Some(index) = line.find(needle) {
-            return backend.buffer()[(index as u16, y)].style().fg;
+            return Some(backend.buffer()[(index as u16, y)].style());
         }
     }
     None
@@ -177,7 +185,9 @@ fn semicolon_runs_query_and_paints_rich_results() {
     assert!(screen.contains("Results"), "{screen}");
     assert!(screen.contains("name"), "{screen}");
     assert!(screen.contains("Earth"), "{screen}");
-    assert_eq!(fg_at(&painted, "Results"), Some(Color::Green));
+    assert_eq!(fg_at(&painted, "Results"), Some(Color::Rgb(18, 32, 43)));
+    assert_eq!(bg_at(&painted, "Results"), Some(Color::Rgb(255, 255, 255)));
+    assert_eq!(bg_at(&painted, "Earth"), Some(Color::Rgb(255, 255, 255)));
     assert!(app
         .session
         .history
