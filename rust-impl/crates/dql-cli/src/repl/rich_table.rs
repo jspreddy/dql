@@ -1,3 +1,4 @@
+use super::app::{live_panel_bg, status_panel_bg};
 use dql_engine::format_throughput;
 use dql_models::{ProjectionType, TableMeta, TableStatus};
 use dql_output::TableStats;
@@ -340,24 +341,13 @@ fn render_table_to_lines(
     buffer_to_lines(&buffer)
 }
 
-/// Palette copied from the web results card (`#result-body` in `dqlrs-web/static/app.css`).
-const CARD: Color = Color::Rgb(255, 255, 255);
-const TEXT: Color = Color::Rgb(28, 36, 48);
-const TITLE: Color = Color::Rgb(18, 32, 43);
-const MUTED: Color = Color::Rgb(102, 116, 132);
-const BORDER: Color = Color::Rgb(225, 230, 235);
-const HEADER_BG: Color = Color::Rgb(244, 247, 248);
-const HEADER_FG: Color = Color::Rgb(82, 98, 115);
-const EVEN: Color = Color::Rgb(248, 250, 251);
-const TABLE_HEADER: Color = Color::Rgb(231, 246, 236);
-const TABLE_CELL: Color = Color::Rgb(245, 251, 247);
-const TABLE_ICON: Color = Color::Rgb(63, 111, 87);
-const INDEX_HEADER: Color = Color::Rgb(231, 241, 252);
-const INDEX_CELL: Color = Color::Rgb(245, 249, 254);
-const INDEX_ICON: Color = Color::Rgb(60, 99, 153);
-const BOTH_HEADER: Color = Color::Rgb(231, 243, 244);
-const BOTH_CELL: Color = Color::Rgb(245, 250, 251);
-const BOTH_ICON: Color = Color::Rgb(61, 116, 128);
+fn card_bg() -> Color {
+    live_panel_bg()
+}
+
+fn table_key_bg() -> Color {
+    status_panel_bg(true)
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ColumnTint {
@@ -368,32 +358,33 @@ enum ColumnTint {
 }
 
 fn card_style() -> Style {
-    Style::default().fg(TEXT).bg(CARD)
+    Style::default().bg(card_bg())
 }
 
 fn header_row_style() -> Style {
-    Style::default().fg(HEADER_FG).bg(HEADER_BG)
+    Style::default().bg(card_bg()).add_modifier(Modifier::BOLD)
 }
 
-fn data_row_style(row_index: usize) -> Style {
-    let bg = if row_index % 2 == 1 { EVEN } else { CARD };
-    Style::default().fg(TEXT).bg(bg)
+fn data_row_style(_row_index: usize) -> Style {
+    Style::default().bg(card_bg())
 }
 
 fn result_block(title: &str, row_count: usize) -> Block<'static> {
     let meta = row_meta(title, row_count);
     Block::bordered()
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(BORDER))
+        .border_style(Style::default().fg(Color::Cyan))
         .style(card_style())
         .title(Span::styled(
             format!(" {title} "),
-            Style::default().fg(TITLE).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
         ))
         .title(
             Line::from(Span::styled(
                 format!(" {meta} "),
-                Style::default().fg(MUTED),
+                Style::default().fg(Color::DarkGray),
             ))
             .alignment(Alignment::Right),
         )
@@ -427,35 +418,26 @@ fn column_tint(column: &RichColumn) -> ColumnTint {
     }
 }
 
+fn accent(tint: ColumnTint) -> Option<Color> {
+    match tint {
+        ColumnTint::Plain => None,
+        ColumnTint::Table => Some(Color::Green),
+        ColumnTint::Index => Some(Color::Cyan),
+        ColumnTint::Both => Some(Color::Yellow),
+    }
+}
+
 fn header_bg(tint: ColumnTint) -> Color {
     match tint {
-        ColumnTint::Plain => HEADER_BG,
-        ColumnTint::Table => TABLE_HEADER,
-        ColumnTint::Index => INDEX_HEADER,
-        ColumnTint::Both => BOTH_HEADER,
+        ColumnTint::Table => table_key_bg(),
+        _ => card_bg(),
     }
 }
 
-fn cell_bg(tint: ColumnTint, row_index: usize) -> Color {
+fn cell_bg(tint: ColumnTint, _row_index: usize) -> Color {
     match tint {
-        ColumnTint::Plain => {
-            if row_index % 2 == 1 {
-                EVEN
-            } else {
-                CARD
-            }
-        }
-        ColumnTint::Table => TABLE_CELL,
-        ColumnTint::Index => INDEX_CELL,
-        ColumnTint::Both => BOTH_CELL,
-    }
-}
-
-fn icon_color(tint: ColumnTint) -> Color {
-    match tint {
-        ColumnTint::Index => INDEX_ICON,
-        ColumnTint::Both => BOTH_ICON,
-        _ => TABLE_ICON,
+        ColumnTint::Table => table_key_bg(),
+        _ => card_bg(),
     }
 }
 
@@ -485,7 +467,7 @@ fn paint_header_rule(buffer: &mut Buffer) {
     if width < 2 || buffer.area.height <= y {
         return;
     }
-    let rule = Style::default().fg(BORDER).bg(CARD);
+    let rule = Style::default().fg(Color::Cyan).bg(card_bg());
     buffer[(0, y)].set_symbol("├").set_style(rule);
     buffer[(width - 1, y)].set_symbol("┤").set_style(rule);
     for x in 1..width - 1 {
@@ -533,26 +515,35 @@ fn table_area_width(
 
 fn header_cell(column: &RichColumn) -> Cell<'static> {
     let tint = column_tint(column);
-    let name_fg = if column.ellipsis { MUTED } else { HEADER_FG };
-    let mut name_style = Style::default().fg(name_fg);
-    if !column.ellipsis {
+    let mut name_style = styled_accent(tint);
+    if column.ellipsis {
+        name_style = Style::default().fg(Color::DarkGray);
+    } else {
         name_style = name_style.add_modifier(Modifier::BOLD);
     }
     let mut spans = vec![Span::styled(format!(" {}", column.name), name_style)];
-    let icon = Style::default().fg(icon_color(tint));
-    for mark in key_marks(column) {
-        spans.push(Span::styled(format!(" {mark}"), icon));
+    if let Some(color) = accent(tint) {
+        let icon = Style::default().fg(color);
+        for mark in key_marks(column) {
+            spans.push(Span::styled(format!(" {mark}"), icon));
+        }
     }
-    Cell::from(Line::from(spans)).style(Style::default().fg(name_fg).bg(header_bg(tint)))
+    Cell::from(Line::from(spans)).style(styled_accent(tint).bg(header_bg(tint)))
 }
 
 fn data_cell(value: &str, column: &RichColumn, row_index: usize) -> Cell<'static> {
-    let fg = if column.ellipsis { MUTED } else { TEXT };
-    Cell::from(format!(" {value}")).style(
-        Style::default()
-            .fg(fg)
-            .bg(cell_bg(column_tint(column), row_index)),
-    )
+    let mut style = styled_accent(column_tint(column)).bg(cell_bg(column_tint(column), row_index));
+    if column.ellipsis {
+        style = style.fg(Color::DarkGray);
+    }
+    Cell::from(format!(" {value}")).style(style)
+}
+
+fn styled_accent(tint: ColumnTint) -> Style {
+    match accent(tint) {
+        Some(color) => Style::default().fg(color),
+        None => Style::default(),
+    }
 }
 
 fn buffer_to_lines(buffer: &ratatui::buffer::Buffer) -> Vec<Line<'static>> {
@@ -594,6 +585,7 @@ fn line_is_blank(line: Option<&Line<'_>>) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::super::app::{live_panel_bg, status_panel_bg};
     use super::*;
     use dql_models::TableMeta;
     use dql_output::{build_rich_layout, RichContext};
@@ -700,7 +692,7 @@ mod tests {
     }
 
     #[test]
-    fn results_table_is_a_light_card_with_zebra_rows() {
+    fn results_table_uses_the_dark_panel() {
         let layout = RichLayout {
             columns: vec![
                 column("id", ColumnKey::Hash, ColumnKey::None),
@@ -724,29 +716,32 @@ mod tests {
         assert!(lines[2].to_string().contains('├'), "{rendered}");
 
         let title = span_style(&lines, "Results");
-        assert_eq!(title.fg, Some(TITLE));
-        assert_eq!(title.bg, Some(CARD));
+        assert_eq!(title.fg, Some(Color::Green));
+        assert_eq!(title.bg, Some(live_panel_bg()));
         assert!(title.add_modifier.contains(Modifier::BOLD));
+        assert_eq!(span_style(&lines, "2 rows").fg, Some(Color::DarkGray));
+        assert_eq!(span_style(&lines, "╭").fg, Some(Color::Cyan));
 
         let id = span_style(&lines, "id");
-        assert_eq!(id.fg, Some(HEADER_FG));
-        assert_eq!(id.bg, Some(TABLE_HEADER));
-        assert_eq!(span_style(&lines, "#").fg, Some(TABLE_ICON));
+        assert_eq!(id.fg, Some(Color::Green));
+        assert_eq!(id.bg, Some(status_panel_bg(true)));
+        assert_eq!(span_style(&lines, "#").fg, Some(Color::Green));
 
         let earth = span_style(&lines, "Earth");
-        assert_eq!(earth.fg, Some(TEXT));
-        assert_eq!(earth.bg, Some(CARD));
+        assert_eq!(earth.fg, Some(Color::Reset));
+        assert_eq!(earth.bg, Some(live_panel_bg()));
         let mars = span_style(&lines, "Mars");
-        assert_eq!(mars.bg, Some(EVEN));
+        assert_eq!(mars.bg, Some(live_panel_bg()));
 
         let id_value = span_style(&lines, " a");
-        assert_eq!(id_value.bg, Some(TABLE_CELL));
+        assert_eq!(id_value.fg, Some(Color::Green));
+        assert_eq!(id_value.bg, Some(status_panel_bg(true)));
         let second_key = span_style(&lines, " b");
-        assert_eq!(second_key.bg, Some(TABLE_CELL));
+        assert_eq!(second_key.bg, Some(status_panel_bg(true)));
     }
 
     #[test]
-    fn index_and_shared_keys_use_the_web_column_colors() {
+    fn index_and_shared_keys_use_tui_accents() {
         let layout = RichLayout {
             columns: vec![
                 column("name", ColumnKey::None, ColumnKey::Hash),
@@ -756,12 +751,15 @@ mod tests {
             overflow_columns: Vec::new(),
         };
         let lines = rich_layout_to_lines(&layout, 48);
-        assert_eq!(span_style(&lines, "name").bg, Some(INDEX_HEADER));
-        assert_eq!(span_style(&lines, "Earth").bg, Some(INDEX_CELL));
-        assert_eq!(span_style(&lines, "#").fg, Some(INDEX_ICON));
-        assert_eq!(span_style(&lines, "sk").bg, Some(BOTH_HEADER));
-        assert_eq!(span_style(&lines, " a").bg, Some(BOTH_CELL));
-        assert_eq!(span_style(&lines, "↕").fg, Some(BOTH_ICON));
+        assert_eq!(span_style(&lines, "name").fg, Some(Color::Cyan));
+        assert_eq!(span_style(&lines, "name").bg, Some(live_panel_bg()));
+        assert_eq!(span_style(&lines, "Earth").fg, Some(Color::Cyan));
+        assert_eq!(span_style(&lines, "Earth").bg, Some(live_panel_bg()));
+        assert_eq!(span_style(&lines, "#").fg, Some(Color::Cyan));
+        assert_eq!(span_style(&lines, "sk").fg, Some(Color::Yellow));
+        assert_eq!(span_style(&lines, "sk").bg, Some(live_panel_bg()));
+        assert_eq!(span_style(&lines, " a").fg, Some(Color::Yellow));
+        assert_eq!(span_style(&lines, "↕").fg, Some(Color::Yellow));
         let rendered = lines
             .iter()
             .map(|line| line.to_string())

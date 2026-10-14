@@ -185,9 +185,9 @@ fn semicolon_runs_query_and_paints_rich_results() {
     assert!(screen.contains("Results"), "{screen}");
     assert!(screen.contains("name"), "{screen}");
     assert!(screen.contains("Earth"), "{screen}");
-    assert_eq!(fg_at(&painted, "Results"), Some(Color::Rgb(18, 32, 43)));
-    assert_eq!(bg_at(&painted, "Results"), Some(Color::Rgb(255, 255, 255)));
-    assert_eq!(bg_at(&painted, "Earth"), Some(Color::Rgb(255, 255, 255)));
+    assert_eq!(fg_at(&painted, "Results"), Some(Color::Green));
+    assert_eq!(bg_at(&painted, "Results"), Some(live_panel_bg()));
+    assert_eq!(bg_at(&painted, "Earth"), Some(live_panel_bg()));
     assert!(app
         .session
         .history
