@@ -1005,7 +1005,7 @@ mod tests {
                 .iter()
                 .map(|span| span.content.chars().count())
                 .sum::<usize>();
-            assert_eq!(width, 40, "{}", line.to_string());
+            assert_eq!(width, 40, "{line}");
         }
         let fitting = rich_layout_to_lines(&layout, 200);
         let fitting_text = fitting

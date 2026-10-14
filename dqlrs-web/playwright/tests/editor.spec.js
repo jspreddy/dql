@@ -221,6 +221,68 @@ test("runs the query at the cursor with Ctrl+Enter and marks a failure", async (
   await expect(page.locator("#run")).toBeEnabled();
 });
 
+test("opens a hovered result row as highlighted JSON", async ({ page, app }) => {
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, sk NUMBER RANGE KEY) GLOBAL INDEX ('by-n', n NUMBER, sk NUMBER);`,
+      `INSERT INTO ${name} (id, sk, label, n) VALUES ('a', 2, 'alpha', 7);`,
+      `SELECT * FROM ${name} WHERE n = 7 AND sk = 2 USING by-n;`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  const row = page.locator("#result-table tbody tr");
+  const peek = row.locator("[data-testid='row-peek']");
+  await expect(row).toContainText("alpha");
+  await page.mouse.move(0, 0);
+  await expect(peek).toHaveCSS("opacity", "0");
+  await row.hover();
+  await expect(peek).toHaveCSS("opacity", "1");
+  await peek.click();
+  const dialog = page.locator("#row-pop");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#row-pop-title")).toHaveText("id = a");
+  const chips = dialog.locator("[data-testid='row-key-chip']");
+  await expect(chips).toHaveCount(2);
+  await expect(chips.nth(0)).toContainText("sk = 2");
+  await expect(chips.nth(0).locator('[data-key="range"]')).toBeVisible();
+  await expect(chips.nth(1)).toContainText("n = 7");
+  await expect(chips.nth(1).locator('[data-key="hash"]')).toBeVisible();
+  const titleBox = await dialog.locator("#row-pop-title").boundingBox();
+  const chipBox = await chips.nth(0).boundingBox();
+  expect(chipBox.y).toBeGreaterThan(titleBox.y + titleBox.height - 1);
+  const json = dialog.locator("[data-testid='row-json']");
+  await expect(json).toContainText('"label": "alpha"');
+  await expect(json).toContainText('"n": 7');
+  await expect(json.locator(".tok-key", { hasText: '"label"' })).toBeVisible();
+  await expect(json.locator(".tok-string", { hasText: '"alpha"' })).toBeVisible();
+  await expect(json.locator(".tok-number", { hasText: "7" })).toBeVisible();
+  const keyColor = await json.locator(".tok-key").first().evaluate((el) => getComputedStyle(el).color);
+  expect(keyColor).toBe("rgb(15, 118, 110)");
+  await page.locator("#row-pop-close").click();
+  await expect(dialog).toBeHidden();
+  await peek.click();
+  await expect(dialog).toBeVisible();
+  await page.mouse.click(8, 8);
+  await expect(dialog).toBeHidden();
+
+  await page.locator("#mode-tables").click();
+  await page.locator("#table-search").fill(name);
+  const browserRow = page.locator("#rows-table tbody tr").first();
+  await expect(browserRow).toContainText("alpha");
+  await browserRow.hover();
+  await browserRow.locator("[data-testid='row-peek']").click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#row-pop-title")).toHaveText("id = a");
+  await expect(chips).toHaveCount(1);
+  await expect(chips).toContainText("sk = 2");
+  await expect(chips.locator('[data-key="range"]')).toBeVisible();
+});
+
 test("runs a selection and shows the result table", async ({ page, app }) => {
   const name = uniqueTable();
   app.trackTable(name);
