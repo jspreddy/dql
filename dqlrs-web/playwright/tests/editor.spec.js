@@ -256,6 +256,10 @@ test("opens a hovered result row as highlighted JSON", async ({ page, app }) => 
   expect(keyColor).toBe("rgb(15, 118, 110)");
   await page.locator("#row-pop-close").click();
   await expect(dialog).toBeHidden();
+  await peek.click();
+  await expect(dialog).toBeVisible();
+  await page.mouse.click(8, 8);
+  await expect(dialog).toBeHidden();
 });
 
 test("runs a selection and shows the result table", async ({ page, app }) => {

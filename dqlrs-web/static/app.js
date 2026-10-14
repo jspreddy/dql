@@ -436,6 +436,17 @@ const rowPopBody = document.querySelector("#row-pop-body");
 rowsSchemaBtn.addEventListener("click", () => openSchema(state.browserSchema, rowsSchemaBtn));
 document.querySelector("#schema-pop-close").addEventListener("click", () => schemaPop.close());
 document.querySelector("#row-pop-close").addEventListener("click", () => rowPop.close());
+rowPop.addEventListener("click", (event) => {
+  const box = rowPop.getBoundingClientRect();
+  if (
+    event.clientX < box.left
+    || event.clientX > box.right
+    || event.clientY < box.top
+    || event.clientY > box.bottom
+  ) {
+    rowPop.close();
+  }
+});
 schemaPop.addEventListener("click", (event) => {
   const box = schemaPop.getBoundingClientRect();
   if (
