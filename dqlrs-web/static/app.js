@@ -824,7 +824,7 @@ function menuItems(target) {
   const dir = target.type === "dir" ? target.path : parentOf(target.path || ".");
   const items = [];
   if (target.type === "dir") {
-    items.push({ label: "Run folder", icon: "forward", run: () => runFolder(target.path) }, "-");
+    items.push({ label: "Run folder", icon: "forward", danger: true, run: () => runFolder(target.path) }, "-");
   }
   items.push(
     { label: "New file", run: () => createNamedFile(dir) },

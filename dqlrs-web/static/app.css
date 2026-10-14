@@ -154,21 +154,22 @@ body.side-resizing * {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid #cfd6de;
+  border: 1px solid #fecaca;
   background: white;
   border-radius: 4px;
   padding: 0 7px;
   height: 22px;
+  color: #b91c1c;
   cursor: pointer;
 }
 
 .ff-icon { display: block; flex: none; }
 
-#run-file:hover { background: #eef3f6; }
+#run-file:hover { background: #fef2f2; }
 
 #run-file:focus-visible {
-  background: #eef3f6;
-  outline: 2px solid var(--teal);
+  background: #fef2f2;
+  outline: 2px solid #fca5a5;
   outline-offset: 2px;
 }
 

@@ -226,6 +226,7 @@ test("runs the whole file from the button beside the filename", async ({ page, a
   app.trackTable(name);
   await expect(page.locator("#run-file")).toBeVisible();
   await expect(page.locator("#run-file .ff-icon")).toBeVisible();
+  await expect(page.locator("#run-file")).toHaveCSS("color", "rgb(185, 28, 28)");
   const nameBox = await page.locator("#file-name").boundingBox();
   const buttonBox = await page.locator("#run-file").boundingBox();
   expect(buttonBox.x).toBeGreaterThan(nameBox.x + nameBox.width - 1);
