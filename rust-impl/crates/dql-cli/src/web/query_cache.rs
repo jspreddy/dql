@@ -1,4 +1,6 @@
-//! Per-file query results under `workspace/.cache/<path-hash>/`.
+//! One directory per query file: `workspace/.cache/<sha256 of the workspace-relative path>/`.
+//! Each `query_result_<unix-ms>.json` is a single statement:
+//! `{ "query": "<one statement>", "result": { ... }, "success": bool }`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -12,6 +14,7 @@ use super::files::{self, PathError};
 
 const MAX_RESULTS: usize = 50;
 
+/// One executed statement. `result` is that statement's result object.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct StoredQuery {
     pub query: String,
@@ -143,7 +146,7 @@ mod tests {
                 root.path(),
                 "notes.dql",
                 &format!("SELECT {index};"),
-                json!([{"ok": index != 3}]),
+                json!({"statement": format!("SELECT {index};"), "ok": index != 3}),
                 index != 3,
             )
             .unwrap();
@@ -152,7 +155,7 @@ mod tests {
             root.path(),
             "queries/other.dql",
             "SELECT 'other';",
-            json!([]),
+            json!({"statement": "SELECT 'other';", "ok": true}),
             true,
         )
         .unwrap();
@@ -163,7 +166,8 @@ mod tests {
         assert_eq!(notes[49].query, "SELECT 50;");
         assert!(!notes.iter().any(|entry| entry.query == "SELECT 0;"));
         assert!(!notes[2].success);
-        assert!(notes[2].result[0]["ok"].is_boolean());
+        assert!(notes[2].result.is_object());
+        assert_eq!(notes[2].result["ok"], json!(false));
 
         let names: Vec<_> = fs::read_dir(cache_dir(root.path(), "notes.dql").unwrap())
             .unwrap()

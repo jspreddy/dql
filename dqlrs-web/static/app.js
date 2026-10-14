@@ -1011,6 +1011,36 @@ async function storeQueryResult(path, query, result, success) {
   if (path === state.path) await loadFileResults(path);
 }
 
+function resultList(result) {
+  if (Array.isArray(result)) return result;
+  if (result && typeof result === "object") return [result];
+  return [];
+}
+
+async function storeStatementResults(path, text, results) {
+  const spans = statementSpans(text || "");
+  const entries = results.map((result, index) => {
+    const span = spans[index];
+    const sliced = span ? String(text || "").slice(span.from, span.to).trim() : "";
+    return {
+      query: String(result.statement || sliced || "").trim(),
+      result,
+      success: Boolean(result.ok),
+    };
+  });
+  if (!path) {
+    showResults(entries);
+    return;
+  }
+  for (const entry of entries) {
+    await api("/api/query-results", {
+      method: "POST",
+      body: { path, query: entry.query, result: entry.result, success: entry.success },
+    });
+  }
+  if (path === state.path) await loadFileResults(path);
+}
+
 function showResults(entries) {
   resultBody.replaceChildren();
   closeSchemaIfResult();
@@ -1020,17 +1050,18 @@ function showResults(entries) {
     return;
   }
   let summary = "";
+  const latestItems = entries.reduce((found, item, itemIndex) => (
+    resultList(item.result).some((part) => part && part.ok && part.kind === "items" && !listedItemTables(part))
+      ? itemIndex
+      : found
+  ), -1);
   entries.forEach((entry, index) => {
     const block = document.createElement("section");
     block.className = "query-result" + (entry.success ? "" : " is-error");
     block.dataset.testid = "query-result";
     const body = document.createElement("div");
     block.append(body);
-    const rendered = Array.isArray(entry.result) ? entry.result : [];
-    summary = renderResults(rendered, body, index === entries.length - 1);
-    if (!Array.isArray(entry.result) && entry.result && entry.result.error) {
-      body.append(note(String(entry.result.error), true));
-    }
+    summary = renderResults(resultList(entry.result), body, index === latestItems);
     resultBody.append(block);
   });
   resultMeta.textContent = summary;
@@ -1183,6 +1214,7 @@ async function runDocuments(documents) {
   closeRowPop();
   showProgress(null, null);
   let touchedShown = false;
+  let active = null;
   try {
     for (const doc of runnable) {
       const marked = typeof doc.base === "number";
@@ -1192,6 +1224,7 @@ async function runDocuments(documents) {
         paintRunMarks();
       }
       const results = [];
+      active = { doc, results };
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1214,10 +1247,9 @@ async function runDocuments(documents) {
           markStatement(origins[event.index], result.ok ? "ok" : "error");
         }
       });
-      const success = results.length > 0 && results.every((item) => item.ok);
-      await storeQueryResult(doc.path || "", doc.text, results, success);
+      await storeStatementResults(doc.path || "", doc.text, results);
       if ((doc.path || "") === state.path) touchedShown = true;
-      if (!success) break;
+      if (!results.length || results.some((item) => !item.ok)) break;
     }
   } catch (error) {
     const running = runMarks.find((mark) => mark.status === "running");
@@ -1225,10 +1257,21 @@ async function runDocuments(documents) {
       running.status = "error";
       paintRunMarks();
     }
-    const doc = runnable.find((item) => (item.path || "") === state.path) || runnable[0];
+    const doc = active ? active.doc : runnable[0];
+    const done = active ? active.results : [];
     if (doc) {
       try {
-        await storeQueryResult(doc.path || "", doc.text, [{ ok: false, kind: "text", message: error.message, error: error.message }], false);
+        if (done.length) await storeStatementResults(doc.path || "", doc.text, done);
+        const spans = statementSpans(doc.text || "");
+        const span = spans[done.length];
+        const query = span ? doc.text.slice(span.from, span.to).trim() : "";
+        await storeQueryResult(doc.path || "", query, {
+          statement: query,
+          ok: false,
+          kind: "text",
+          message: error.message,
+          error: error.message,
+        }, false);
         if ((doc.path || "") === state.path) touchedShown = true;
       } catch (storeError) {
         resultMeta.textContent = "";
@@ -1236,7 +1279,7 @@ async function runDocuments(documents) {
       }
     } else {
       resultMeta.textContent = "";
-        resultBody.append(note(error.message, true));
+      resultBody.append(note(error.message, true));
     }
   } finally {
     hideProgress();

@@ -265,16 +265,16 @@ test("runs the whole file from the button beside the filename", async ({ page, a
     ].join("\n"),
   );
   await page.locator("#run-file").click();
-  await expect(page.locator(".query-result")).toHaveCount(1);
+  await expect(page.locator(".query-result")).toHaveCount(5);
   await expect(page.locator(".result-card")).toHaveCount(2);
-  await expect(page.locator("#result-meta")).toHaveText("2 results");
+  await expect(page.locator("#result-meta")).toHaveText("1 row");
   await expect(page.locator("#result-body")).toContainText("alpha");
   await expect(page.locator("#result-body")).toContainText("beta");
 
   await page.locator(".cm-line", { hasText: "id = 'a'" }).click();
   await page.locator("#run").click();
   const latest = page.locator(".query-result").last();
-  await expect(page.locator(".query-result")).toHaveCount(2);
+  await expect(page.locator(".query-result")).toHaveCount(6);
   await expect(latest.locator(".result-card")).toHaveCount(1);
   await expect(latest).toContainText("alpha");
   await expect(latest).not.toContainText("beta");
@@ -322,13 +322,13 @@ test("runs every dql file in a folder from the context menu", async ({ page, app
   await expect(page.locator("#run")).toBeEnabled();
   await node(page, `${folder}/one.dql`).click();
   await expect(page.locator(".query-result").last()).toContainText("from-a");
-  await expect(page.locator(".query-result")).not.toContainText("from-b");
+  await expect(page.locator(".query-result").filter({ hasText: "from-b" })).toHaveCount(0);
   await node(page, `${folder}/two.dql`).click();
-  await expect(page.locator(".query-result")).toContainText("from-b");
-  await expect(page.locator(".query-result")).not.toContainText("from-a");
+  await expect(page.locator(".query-result").filter({ hasText: "from-b" })).toHaveCount(1);
+  await expect(page.locator(".query-result").filter({ hasText: "from-a" })).toHaveCount(0);
   await node(page, `${folder}/nested/three.dql`).click();
-  await expect(page.locator(".query-result")).toContainText("from-c");
-  await expect(page.locator(".query-result")).not.toContainText("from-b");
+  await expect(page.locator(".query-result").filter({ hasText: "from-c" })).toHaveCount(1);
+  await expect(page.locator(".query-result").filter({ hasText: "from-b" })).toHaveCount(0);
 });
 
 test("keeps results with the query file and clears them", async ({ page, app }) => {
@@ -353,9 +353,9 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   await replaceEditor(page, `SELECT * FROM ${name}_missing WHERE id = 'a';`);
   await pressMod(page, "A");
   await page.locator("#run").click();
-  await expect(page.locator(".query-result")).toHaveCount(2);
-  await expect(page.locator(".query-result").nth(0)).toContainText("alpha");
-  await expect(page.locator(".query-result").nth(1).locator('[data-testid="result-note"].error')).toBeVisible();
+  await expect(page.locator(".query-result")).toHaveCount(5);
+  await expect(page.locator(".query-result").nth(3)).toContainText("alpha");
+  await expect(page.locator(".query-result").nth(4).locator('[data-testid="result-note"].error')).toBeVisible();
 
   await node(page, "queries/read.dql").click();
   await expect(page.locator("#file-name")).toHaveText("read.dql");
@@ -363,20 +363,22 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   await expect(page.locator("#result-body")).not.toContainText("alpha");
 
   await node(page, "queries/edit.dql").click();
-  await expect(page.locator(".query-result")).toHaveCount(2);
+  await expect(page.locator(".query-result")).toHaveCount(5);
   await page.reload();
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
-  await expect(page.locator(".query-result")).toHaveCount(2);
-  await expect(page.locator(".query-result").nth(0)).toContainText("alpha");
-  await expect(page.locator(".query-result").nth(0).locator("table")).toContainText("alpha");
+  await expect(page.locator(".query-result")).toHaveCount(5);
+  await expect(page.locator(".query-result").nth(3)).toContainText("alpha");
+  await expect(page.locator(".query-result").nth(3).locator("table")).toContainText("alpha");
 
   const cached = cachedResults(app.workspace).filter((file) => file.body.query.includes(name));
-  expect(cached).toHaveLength(2);
-  expect(cached[0].body.query).toContain("INSERT");
-  expect(cached[0].body.success).toBe(true);
-  expect(Array.isArray(cached[0].body.result)).toBe(true);
-  expect(cached[1].body.query).toContain(`${name}_missing`);
-  expect(cached[1].body.success).toBe(false);
+  expect(cached).toHaveLength(5);
+  expect(cached[0].body.query).toMatch(/^DROP TABLE/i);
+  expect(cached[2].body.query).toContain("INSERT");
+  expect(cached[2].body.success).toBe(true);
+  expect(Array.isArray(cached[2].body.result)).toBe(false);
+  expect(cached[2].body.result.ok).toBe(true);
+  expect(cached[4].body.query).toContain(`${name}_missing`);
+  expect(cached[4].body.success).toBe(false);
 
   await page.locator("#clear-results").click();
   await expect(page.locator(".query-result")).toHaveCount(0);
