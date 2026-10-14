@@ -24,6 +24,11 @@ pub fn rich_layout_to_lines(layout: &RichLayout, width: u16) -> Vec<Line<'static
     }
 
     let mut lines = render_table_to_lines("Results", &layout.columns, &layout.rows, width);
+    let cut_off = columns_cut_off(&layout.columns, &layout.rows, width);
+    if !cut_off.is_empty() {
+        lines.push(Line::from(""));
+        lines.extend(cutoff_note(&cut_off, width));
+    }
     if layout.overflow_columns.is_empty() {
         return lines;
     }
@@ -339,6 +344,87 @@ fn render_table_to_lines(
     table.render(area, &mut buffer);
     paint_header_rule(&mut buffer);
     buffer_to_lines(&buffer)
+}
+
+/// Columns whose cells run past the terminal width. The flush paints into a
+/// viewport-width buffer, so those cells are clipped and never reach the screen.
+fn columns_cut_off(
+    columns: &[RichColumn],
+    rows: &[Vec<String>],
+    terminal_width: u16,
+) -> Vec<String> {
+    let labels = columns.iter().map(header_label).collect::<Vec<_>>();
+    let widths = content_width_constraints(&labels, rows);
+    let mut x = 1u16;
+    let mut cut_off = Vec::new();
+    for (column, constraint) in columns.iter().zip(widths) {
+        let Constraint::Length(width) = constraint else {
+            continue;
+        };
+        let end = x.saturating_add(width);
+        if end > terminal_width && !column.ellipsis {
+            cut_off.push(column.name.clone());
+        }
+        x = end;
+    }
+    cut_off
+}
+
+fn cutoff_note(names: &[String], terminal_width: u16) -> Vec<Line<'static>> {
+    let message = format!(
+        "More columns cut off, not enough room on screen: {}",
+        names.join(", ")
+    );
+    wrap_to_width(&message, terminal_width as usize)
+        .into_iter()
+        .map(|text| Line::from(Span::styled(text, Style::default().fg(Color::DarkGray))))
+        .collect()
+}
+
+fn wrap_to_width(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![text.to_string()];
+    }
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    for word in text.split(' ') {
+        if current.is_empty() {
+            current = word.to_string();
+        } else if current.chars().count() + 1 + word.chars().count() <= width {
+            current.push(' ');
+            current.push_str(word);
+        } else {
+            lines.push(std::mem::take(&mut current));
+            current = word.to_string();
+        }
+    }
+    if !current.is_empty() {
+        lines.push(current);
+    }
+    let mut wrapped = Vec::new();
+    for line in lines {
+        let mut rest = line.as_str();
+        while rest.chars().count() > width {
+            let (head, tail) = split_at_chars(rest, width);
+            wrapped.push(head.to_string());
+            rest = tail;
+        }
+        if !rest.is_empty() {
+            wrapped.push(rest.to_string());
+        }
+    }
+    wrapped
+}
+
+fn split_at_chars(text: &str, width: usize) -> (&str, &str) {
+    let mut end = text.len();
+    for (index, (byte, _)) in text.char_indices().enumerate() {
+        if index == width {
+            end = byte;
+            break;
+        }
+    }
+    text.split_at(end)
 }
 
 fn card_bg() -> Color {
@@ -766,5 +852,67 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(rendered.contains("1 row"), "{rendered}");
+        assert!(!rendered.contains("not enough room"), "{rendered}");
+    }
+
+    #[test]
+    fn wide_table_names_the_columns_cut_off_by_the_screen() {
+        let columns = (0..6)
+            .map(|index| {
+                column(
+                    &format!("column_{index:02}"),
+                    ColumnKey::None,
+                    ColumnKey::None,
+                )
+            })
+            .collect::<Vec<_>>();
+        let rows = vec![(0..6)
+            .map(|index| format!("value-{index:02}-xxxxxxxx"))
+            .collect::<Vec<_>>()];
+        let layout = RichLayout {
+            columns,
+            rows,
+            overflow_columns: Vec::new(),
+        };
+        let lines = rich_layout_to_lines(&layout, 40);
+        let rendered = lines
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let note_at = rendered
+            .find("More columns cut off, not enough room")
+            .expect(&rendered);
+        let note = &rendered[note_at..];
+        assert!(note.contains("column_02"), "{note}");
+        assert!(note.contains("column_05"), "{note}");
+        assert!(!note.contains("column_00"), "{note}");
+        assert!(!note.contains("column_01"), "{note}");
+        let note_lines: Vec<_> = lines
+            .iter()
+            .filter(|line| {
+                !line.spans.is_empty()
+                    && line
+                        .spans
+                        .iter()
+                        .all(|span| span.style.fg == Some(Color::DarkGray))
+            })
+            .collect();
+        assert!(!note_lines.is_empty());
+        for line in &note_lines {
+            let width = line
+                .spans
+                .iter()
+                .map(|span| span.content.chars().count())
+                .sum::<usize>();
+            assert!(width <= 40, "{width} {}", line.to_string());
+        }
+        let fitting = rich_layout_to_lines(&layout, 200);
+        let fitting_text = fitting
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!fitting_text.contains("not enough room"), "{fitting_text}");
     }
 }
