@@ -9,7 +9,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Cell, Row, Table, Widget};
+use ratatui::widgets::{Block, BorderType, Cell, Paragraph, Row, Table, Widget};
 use ratatui::Terminal;
 
 struct StyledColumn {
@@ -370,35 +370,34 @@ fn columns_cut_off(
     cut_off
 }
 
-/// Info panel naming the columns the viewport clipped. Same chrome as the
-/// command panels: a rule, a title, then the body, filled to the terminal width
-/// so the flush does not clip the note itself.
+/// Card naming the columns the viewport clipped. Same block as the results
+/// table, and no wider than the terminal, so the flush keeps the whole card.
 fn cutoff_panel(columns: &[RichColumn], terminal_width: u16) -> Vec<Line<'static>> {
-    let width = usize::from(terminal_width).max(1);
-    let bg = info_panel_bg();
-    let title = Style::default()
-        .fg(Color::Cyan)
-        .bg(bg)
-        .add_modifier(Modifier::BOLD);
-    let grey = Style::default().fg(Color::DarkGray).bg(bg);
-    let mut lines = vec![
-        panel_line(vec![Span::styled("─".repeat(width), title)], width, bg),
-        panel_line(
-            vec![Span::styled("more columns available", title)],
-            width,
-            bg,
-        ),
-    ];
-    for text in wrap_to_width("Result was wider than the viewport.", width) {
-        lines.push(panel_line(vec![Span::styled(text, grey)], width, bg));
+    let width = terminal_width.max(4);
+    let inner_width = usize::from(width.saturating_sub(2)).max(1);
+    let grey = Style::default().fg(Color::DarkGray).bg(card_bg());
+    let mut body = Vec::new();
+    for text in wrap_to_width("Result was wider than the viewport.", inner_width) {
+        body.push(Line::from(Span::styled(text, grey)));
     }
-    lines.extend(cutoff_name_lines(columns, width, bg));
-    lines.push(panel_line(Vec::new(), width, bg));
-    lines
+    body.extend(cutoff_name_lines(columns, inner_width));
+
+    let height = u16::try_from(body.len().saturating_add(2))
+        .unwrap_or(u16::MAX)
+        .max(3);
+    let area = Rect::new(0, 0, width, height);
+    let mut buffer = Buffer::empty(area);
+    let block = card_block("more columns available", &column_count_label(columns.len()));
+    let inner = block.inner(area);
+    block.render(area, &mut buffer);
+    Paragraph::new(body)
+        .style(card_style())
+        .render(inner, &mut buffer);
+    buffer_to_lines(&buffer)
 }
 
-fn cutoff_name_lines(columns: &[RichColumn], width: usize, bg: Color) -> Vec<Line<'static>> {
-    let comma = Style::default().fg(Color::DarkGray).bg(bg);
+fn cutoff_name_lines(columns: &[RichColumn], width: usize) -> Vec<Line<'static>> {
+    let comma = Style::default().fg(Color::DarkGray).bg(card_bg());
     let mut rows: Vec<Vec<Span<'static>>> = vec![Vec::new()];
     let mut used = 0usize;
     for column in columns {
@@ -421,7 +420,7 @@ fn cutoff_name_lines(columns: &[RichColumn], width: usize, bg: Color) -> Vec<Lin
     }
     rows.into_iter()
         .filter(|row| !row.is_empty())
-        .map(|spans| panel_line(spans, width, bg))
+        .map(Line::from)
         .collect()
 }
 
@@ -449,21 +448,6 @@ fn column_list_style(column: &RichColumn) -> Style {
         Some(color) => style.fg(color),
         None => style.fg(Color::Reset),
     }
-}
-
-fn info_panel_bg() -> Color {
-    live_panel_bg()
-}
-
-fn panel_line(mut spans: Vec<Span<'static>>, width: usize, bg: Color) -> Line<'static> {
-    let used: usize = spans.iter().map(|span| span.content.chars().count()).sum();
-    if used < width {
-        spans.push(Span::styled(
-            " ".repeat(width - used),
-            Style::default().bg(bg),
-        ));
-    }
-    Line::from(spans)
 }
 
 fn wrap_to_width(text: &str, width: usize) -> Vec<String> {
@@ -541,7 +525,10 @@ fn data_row_style(_row_index: usize) -> Style {
 }
 
 fn result_block(title: &str, row_count: usize) -> Block<'static> {
-    let meta = row_meta(title, row_count);
+    card_block(title, &row_meta(title, row_count))
+}
+
+fn card_block(title: &str, meta: &str) -> Block<'static> {
     Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(Color::Cyan))
@@ -559,6 +546,14 @@ fn result_block(title: &str, row_count: usize) -> Block<'static> {
             ))
             .alignment(Alignment::Right),
         )
+}
+
+fn column_count_label(count: usize) -> String {
+    if count == 1 {
+        "1 column".to_string()
+    } else {
+        format!("{count} columns")
+    }
 }
 
 fn row_meta(title: &str, count: usize) -> String {
@@ -979,11 +974,13 @@ mod tests {
             .iter()
             .position(|line| line.to_string().contains("more columns available"))
             .expect(&rendered);
-        let panel = &lines[title_at - 1..];
-        assert!(panel[0].to_string().contains('─'), "{rendered}");
+        let panel = &lines[title_at..];
+        assert!(panel[0].to_string().contains('╭'), "{rendered}");
+        assert_eq!(span_style(panel, "╭").fg, Some(Color::Cyan));
+        assert_eq!(span_style(panel, "╭").bg, Some(live_panel_bg()));
         assert_eq!(
             span_style(panel, "more columns available").fg,
-            Some(Color::Cyan)
+            Some(Color::Green)
         );
         assert!(span_style(panel, "more columns available")
             .add_modifier
@@ -992,9 +989,14 @@ mod tests {
             span_style(panel, "more columns available").bg,
             Some(live_panel_bg())
         );
+        assert_eq!(span_style(panel, "4 columns").fg, Some(Color::DarkGray));
         assert_eq!(
             span_style(panel, "Result was wider").fg,
             Some(Color::DarkGray)
+        );
+        assert_eq!(
+            span_style(panel, "Result was wider").bg,
+            Some(live_panel_bg())
         );
         assert_eq!(span_style(panel, "column_02").fg, Some(Color::Reset));
         for line in panel {
