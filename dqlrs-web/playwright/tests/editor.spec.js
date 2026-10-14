@@ -228,9 +228,9 @@ test("opens a hovered result row as highlighted JSON", async ({ page, app }) => 
     page,
     [
       `DROP TABLE IF EXISTS ${name};`,
-      `CREATE TABLE ${name} (id STRING HASH KEY);`,
-      `INSERT INTO ${name} (id, label, n) VALUES ('a', 'alpha', 7);`,
-      `SELECT * FROM ${name} WHERE id = 'a';`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, sk NUMBER RANGE KEY) GLOBAL INDEX ('by-n', n NUMBER, sk NUMBER);`,
+      `INSERT INTO ${name} (id, sk, label, n) VALUES ('a', 2, 'alpha', 7);`,
+      `SELECT * FROM ${name} WHERE n = 7 AND sk = 2 USING by-n;`,
     ].join("\n"),
   );
   await pressMod(page, "A");
@@ -246,6 +246,15 @@ test("opens a hovered result row as highlighted JSON", async ({ page, app }) => 
   const dialog = page.locator("#row-pop");
   await expect(dialog).toBeVisible();
   await expect(dialog.locator("#row-pop-title")).toHaveText("id = a");
+  const chips = dialog.locator("[data-testid='row-key-chip']");
+  await expect(chips).toHaveCount(2);
+  await expect(chips.nth(0)).toContainText("sk = 2");
+  await expect(chips.nth(0).locator('[data-key="range"]')).toBeVisible();
+  await expect(chips.nth(1)).toContainText("n = 7");
+  await expect(chips.nth(1).locator('[data-key="hash"]')).toBeVisible();
+  const titleBox = await dialog.locator("#row-pop-title").boundingBox();
+  const chipBox = await chips.nth(0).boundingBox();
+  expect(chipBox.y).toBeGreaterThan(titleBox.y + titleBox.height - 1);
   const json = dialog.locator("[data-testid='row-json']");
   await expect(json).toContainText('"label": "alpha"');
   await expect(json).toContainText('"n": 7');
@@ -260,6 +269,18 @@ test("opens a hovered result row as highlighted JSON", async ({ page, app }) => 
   await expect(dialog).toBeVisible();
   await page.mouse.click(8, 8);
   await expect(dialog).toBeHidden();
+
+  await page.locator("#mode-tables").click();
+  await page.locator("#table-search").fill(name);
+  const browserRow = page.locator("#rows-table tbody tr").first();
+  await expect(browserRow).toContainText("alpha");
+  await browserRow.hover();
+  await browserRow.locator("[data-testid='row-peek']").click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#row-pop-title")).toHaveText("id = a");
+  await expect(chips).toHaveCount(1);
+  await expect(chips).toContainText("sk = 2");
+  await expect(chips.locator('[data-key="range"]')).toBeVisible();
 });
 
 test("runs a selection and shows the result table", async ({ page, app }) => {

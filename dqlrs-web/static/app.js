@@ -432,6 +432,7 @@ const schemaPopBody = document.querySelector("#schema-pop-body");
 const schemaPopFoot = document.querySelector("#schema-pop-foot");
 const rowPop = document.querySelector("#row-pop");
 const rowPopTitle = document.querySelector("#row-pop-title");
+const rowPopKeys = document.querySelector("#row-pop-keys");
 const rowPopBody = document.querySelector("#row-pop-body");
 rowsSchemaBtn.addEventListener("click", () => openSchema(state.browserSchema, rowsSchemaBtn));
 document.querySelector("#schema-pop-close").addEventListener("click", () => schemaPop.close());
@@ -2040,7 +2041,11 @@ function rowPeekButton(row, columns) {
 
 function openRowJson(row, columns) {
   const ordered = orderedRow(row, columns);
-  rowPopTitle.textContent = rowPopupTitle(ordered, columns);
+  const titleColumn = rowPopupTitleColumn(ordered, columns);
+  rowPopTitle.textContent = titleColumn
+    ? titleColumn.name + " = " + ordered[titleColumn.name]
+    : "Row";
+  fillRowKeyChips(ordered, columns, titleColumn);
   rowPopBody.replaceChildren(highlightedJson(JSON.stringify(ordered, null, 2)));
   rowPop.showModal();
 }
@@ -2064,16 +2069,55 @@ function orderedRow(row, columns) {
   return out;
 }
 
-function rowPopupTitle(row, columns) {
+function rowPopupTitleColumn(row, columns) {
   const hash = columns.find((column) => column.table === "hash");
   const preferred = hash ? [hash, ...columns] : columns;
   for (const column of preferred) {
     const value = row[column.name];
-    if (typeof value === "string" && value && value.length <= 48) {
-      return column.name + " = " + value;
-    }
+    if (typeof value === "string" && value && value.length <= 48) return column;
   }
-  return "Row";
+  return null;
+}
+
+function fillRowKeyChips(row, columns, titleColumn) {
+  rowPopKeys.replaceChildren();
+  for (const column of columns) {
+    if (titleColumn && column.name === titleColumn.name) continue;
+    if (!isKeyColumn(column)) continue;
+    if (!Object.prototype.hasOwnProperty.call(row, column.name)) continue;
+    rowPopKeys.append(rowKeyChip(column, row[column.name]));
+  }
+}
+
+function isKeyColumn(column) {
+  return column.table === "hash" || column.table === "range"
+    || column.index === "hash" || column.index === "range";
+}
+
+function rowKeyChip(column, value) {
+  const chip = document.createElement("span");
+  chip.className = "schema-key-chip";
+  chip.dataset.testid = "row-key-chip";
+  const role = rowChipRole(column);
+  if (role) chip.dataset.role = role;
+  for (const icon of keyIcons(column)) chip.append(icon);
+  const label = document.createElement("span");
+  label.textContent = column.name + " = " + chipValue(value);
+  chip.append(label);
+  return chip;
+}
+
+function rowChipRole(column) {
+  if (column.table && column.index) return "both";
+  if (column.table === "hash" || column.table === "range") return column.table;
+  if (column.index === "hash" || column.index === "range") return "index";
+  return "";
+}
+
+function chipValue(value) {
+  if (value === null) return "null";
+  const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+  return text.length > 48 ? text.slice(0, 47) + "…" : text;
 }
 
 function highlightedJson(text) {
