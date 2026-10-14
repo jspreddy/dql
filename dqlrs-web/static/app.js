@@ -359,6 +359,8 @@ runButton.setAttribute("aria-keyshortcuts", macShortcut ? "Meta+Enter" : "Contro
 stopButton.title = "Stop running query (Esc)";
 stopButton.setAttribute("aria-keyshortcuts", "Escape");
 runButton.addEventListener("click", runSelection);
+const runFileButton = document.querySelector("#run-file");
+runFileButton.addEventListener("click", runFile);
 stopButton.addEventListener("click", stopRun);
 window.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || stopButton.classList.contains("hidden")) return;
@@ -373,6 +375,7 @@ function setRunBusy(busy) {
   stopButton.classList.toggle("hidden", !busy);
   stopButton.disabled = !busy;
   runShortcut.textContent = busy ? "Esc" : runShortcutLabel;
+  runFileButton.disabled = busy || !state.path;
   const floating = editor.dom.querySelector(".run-float");
   if (floating) floating.disabled = busy;
 }
@@ -391,6 +394,12 @@ function runFromEditor() {
   if (runButton.disabled) return true;
   runSelection();
   return true;
+}
+
+async function runFile() {
+  if (runButton.disabled || !state.path) return;
+  await flushSave();
+  await runDocuments([{ text: editorText(), base: 0 }]);
 }
 
 setRunRequest(runFromEditor);
@@ -650,9 +659,8 @@ function nodeButton(twist, label, selected) {
 async function openFile(path) {
   await flushSave();
   const file = await api("/api/file?path=" + encodeURIComponent(path));
-  state.path = file.path;
   setEditorText(file.text);
-  document.querySelector("#file-name").textContent = file.path.split("/").pop();
+  showOpenFile(file.path);
   setMode("query");
   await refreshTree();
 }
@@ -720,9 +728,8 @@ async function deleteEntry(path, kind) {
   clearTimeout(state.saveTimer);
   const removingOpen = state.path === path || (kind === "dir" && state.path.startsWith(path + "/"));
   if (removingOpen) {
-    state.path = "";
     setEditorText("");
-    document.querySelector("#file-name").textContent = "No file open";
+    showOpenFile("");
   }
   try {
     await api("/api/delete", { method: "POST", body: { path } });
@@ -737,8 +744,7 @@ async function relocate(from, to) {
   await flushSave();
   const moved = await api("/api/move", { method: "POST", body: { from, to } });
   if (state.path === from || state.path.startsWith(from + "/")) {
-    state.path = moved.path + state.path.slice(from.length);
-    document.querySelector("#file-name").textContent = state.path.split("/").pop();
+    showOpenFile(moved.path + state.path.slice(from.length));
   }
   remapExpanded(from, moved.path);
   expandParents(parentOf(moved.path));
@@ -816,10 +822,14 @@ function beginRename(path) {
 
 function menuItems(target) {
   const dir = target.type === "dir" ? target.path : parentOf(target.path || ".");
-  const items = [
+  const items = [];
+  if (target.type === "dir") {
+    items.push({ label: "Run folder", icon: "forward", danger: true, run: () => runFolder(target.path) }, "-");
+  }
+  items.push(
     { label: "New file", run: () => createNamedFile(dir) },
     { label: "New folder", run: () => createNamedFolder(dir) },
-  ];
+  );
   if (!target.path || target.type === "root") return items;
   items.push(
     "-",
@@ -833,6 +843,7 @@ function menuItems(target) {
 }
 
 const menuIds = {
+  "Run folder": "menu-run-folder",
   "New file": "menu-new-file",
   "New folder": "menu-new-folder",
   Duplicate: "menu-duplicate",
@@ -854,7 +865,8 @@ function showMenu(x, y, items) {
     button.type = "button";
     button.role = "menuitem";
     button.id = menuIds[item.label];
-    button.textContent = item.label;
+    if (item.icon === "forward") button.append(fastForwardIcon());
+    button.append(item.label);
     if (item.danger) button.className = "danger";
     button.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -917,6 +929,27 @@ async function flushSave() {
 
 function editorText() {
   return editor.state.doc.toString();
+}
+
+function fastForwardIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "ff-icon");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("fill", "currentColor");
+  path.setAttribute("d", "M1.6 3.1 7.2 8 1.6 12.9Zm6.8 0L14 8 8.4 12.9Z");
+  svg.append(path);
+  return svg;
+}
+
+function showOpenFile(path) {
+  state.path = path || "";
+  document.querySelector("#file-name").textContent = state.path ? state.path.split("/").pop() : "No file open";
+  runFileButton.classList.toggle("hidden", !state.path);
+  runFileButton.disabled = !state.path || runButton.disabled;
 }
 
 function setEditorText(text) {
@@ -993,48 +1026,116 @@ async function runSelection() {
   await flushSave();
   const range = currentRunRange();
   const dql = range ? editor.state.sliceDoc(range.from, range.to) : "";
-  if (!dql.trim()) {
+  await runDocuments([{ text: dql, base: range ? range.from : 0 }]);
+}
+
+async function runFolder(path) {
+  if (runButton.disabled) return;
+  await flushSave();
+  let documents = [];
+  try {
+    documents = await folderDocuments(path);
+  } catch (error) {
+    window.alert(error.message);
+    return;
+  }
+  await runDocuments(documents);
+}
+
+async function folderDocuments(path) {
+  const root = await api("/api/tree");
+  const folder = findTreeNode(root, path);
+  if (!folder) return [];
+  const documents = [];
+  for (const file of dqlFilesUnder(folder)) {
+    const text = file.path === state.path
+      ? editorText()
+      : (await api("/api/file?path=" + encodeURIComponent(file.path))).text;
+    documents.push({
+      text,
+      path: file.path,
+      base: file.path === state.path ? 0 : null,
+    });
+  }
+  return documents;
+}
+
+function findTreeNode(node, path) {
+  if (!node) return null;
+  if (node.path === path) return node;
+  for (const child of node.children || []) {
+    const found = findTreeNode(child, path);
+    if (found) return found;
+  }
+  return null;
+}
+
+function dqlFilesUnder(node) {
+  const children = node.children || [];
+  const files = children.filter((child) => child.type === "file");
+  const nested = children.filter((child) => child.type === "dir").flatMap(dqlFilesUnder);
+  return files.concat(nested);
+}
+
+async function runDocuments(documents) {
+  const runnable = documents.filter((doc) => statementSpans(doc.text || "").length);
+  if (!runnable.length) {
     resultMeta.textContent = "Nothing to run";
     resultBody.replaceChildren();
     closeSchemaIfResult();
+    closeRowPop();
     hideProgress();
+    runMarks = [];
+    paintRunMarks();
     return;
   }
-  const origins = statementSpans(dql).map((span) => range.from + span.from);
-  runMarks = origins.length ? [{ from: origins[0], status: "running" }] : [];
-  paintRunMarks();
   setRunBusy(true);
   resultMeta.textContent = "Running…";
   resultBody.replaceChildren();
   closeSchemaIfResult();
+  closeRowPop();
   showProgress(null, null);
-  const results = [];
+  const groups = [];
+  let failed = false;
   try {
-    const response = await fetch("/api/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dql }),
-    });
-    await readNdjson(response, (event) => {
-      if (event.event === "error") throw new Error(event.error || "failed");
-      if (event.event === "statement") {
-        markStatement(origins[event.index], "running");
-        showProgress(null, null);
-        return;
+    for (const doc of runnable) {
+      const marked = typeof doc.base === "number";
+      const origins = marked ? statementSpans(doc.text).map((span) => doc.base + span.from) : [];
+      if (marked) {
+        runMarks = origins.length ? [{ from: origins[0], status: "running" }] : [];
+        paintRunMarks();
       }
-      if (event.event === "progress") {
-        showProgress(event.done, event.total);
-        return;
-      }
-      if (event.event === "result") {
-        const result = event.result || {};
-        results.push(result);
-        markStatement(origins[event.index], result.ok ? "ok" : "error");
-      }
-    });
-    renderResults(results);
+      const results = [];
+      const response = await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dql: doc.text }),
+      });
+      await readNdjson(response, (event) => {
+        if (event.event === "error") throw new Error(event.error || "failed");
+        if (event.event === "statement") {
+          markStatement(origins[event.index], "running");
+          showProgress(null, null);
+          return;
+        }
+        if (event.event === "progress") {
+          showProgress(event.done, event.total);
+          return;
+        }
+        if (event.event === "result") {
+          const result = event.result || {};
+          results.push(result);
+          markStatement(origins[event.index], result.ok ? "ok" : "error");
+          if (!result.ok) failed = true;
+        }
+      });
+      groups.push({ path: doc.path || "", results });
+      if (failed) break;
+    }
+    renderRunGroups(groups);
   } catch (error) {
     resultMeta.textContent = "";
+    if (groups.length) renderRunGroups(groups);
     resultBody.append(note(error.message, true));
     const running = runMarks.find((mark) => mark.status === "running");
     if (running) {
@@ -1047,10 +1148,33 @@ async function runSelection() {
   }
 }
 
-function renderResults(results) {
+function renderRunGroups(groups) {
+  if (groups.length < 2) {
+    renderResults(groups.length ? groups[0].results : []);
+    return;
+  }
   resultBody.replaceChildren();
   closeSchemaIfResult();
   closeRowPop();
+  for (const group of groups) {
+    const label = document.createElement("div");
+    label.className = "run-file-label";
+    label.dataset.testid = "run-file-label";
+    label.textContent = group.path;
+    const block = document.createElement("div");
+    resultBody.append(label, block);
+    renderResults(group.results, block);
+  }
+  resultMeta.textContent = groups.length + " files";
+}
+
+function renderResults(results, host) {
+  const target = host || resultBody;
+  target.replaceChildren();
+  if (!host) {
+    closeSchemaIfResult();
+    closeRowPop();
+  }
   const dataItems = results.filter((item) => item.ok && item.kind === "items" && !listedItemTables(item));
   let explainSteps = 0;
   let otherNotes = 0;
@@ -1063,13 +1187,13 @@ function renderResults(results) {
       if (listed) {
         otherNotes += 1;
         listedTables = listed.tables.length;
-        resultBody.append(intelligentSummary(listed.note, listed.summary, listed.tables));
+        target.append(intelligentSummary(listed.note, listed.summary, listed.tables));
         continue;
       }
       const rows = item.items || [];
       const tableName = tableNameFromStatement(item.statement);
-      const last = item === dataItems[dataItems.length - 1];
-      resultBody.append(resultCard({
+      const last = !host && item === dataItems[dataItems.length - 1];
+      target.append(resultCard({
         source: "result",
         title: tableName || "Result",
         statement: item.statement || "",
@@ -1084,7 +1208,7 @@ function renderResults(results) {
     const plan = item.ok && item.kind === "schema" ? parseExplainPlan(item.message || "") : null;
     if (plan) {
       explainSteps += plan.length;
-      resultBody.append(explainPlan(plan));
+      target.append(explainPlan(plan));
       continue;
     }
     const listed = item.ok && (item.kind === "schema" || item.kind === "text")
@@ -1092,20 +1216,21 @@ function renderResults(results) {
       : null;
     if (listed && listed.description) {
       otherNotes += 1;
-      resultBody.append(describeCard(listed.description, listed.note));
+      target.append(describeCard(listed.description, listed.note));
       continue;
     }
     if (listed && (listed.tables.length || listed.note)) {
       otherNotes += 1;
       listedTables = listed.tables.length;
-      resultBody.append(intelligentSummary(listed.note, listed.summary, listed.tables));
+      target.append(intelligentSummary(listed.note, listed.summary, listed.tables));
       continue;
     }
     otherNotes += 1;
     const row = note(resultLabel(item), !item.ok);
     if (item.ok && item.kind === "affected") row.classList.add("ok");
-    resultBody.append(row);
+    target.append(row);
   }
+  if (host) return;
   if (itemCards > 1) {
     resultMeta.textContent = itemCards + " results";
   } else if (itemCards === 1) {

@@ -221,6 +221,90 @@ test("runs the query at the cursor with Ctrl+Enter and marks a failure", async (
   await expect(page.locator("#run")).toBeEnabled();
 });
 
+test("runs the whole file from the button beside the filename", async ({ page, app }) => {
+  const name = uniqueTable();
+  app.trackTable(name);
+  await expect(page.locator("#run-file")).toBeVisible();
+  await expect(page.locator("#run-file .ff-icon")).toBeVisible();
+  await expect(page.locator("#run-file")).toHaveCSS("color", "rgb(185, 28, 28)");
+  const nameBox = await page.locator("#file-name").boundingBox();
+  const buttonBox = await page.locator("#run-file").boundingBox();
+  expect(buttonBox.x).toBeGreaterThan(nameBox.x + nameBox.width - 1);
+  expect(Math.abs(buttonBox.y + buttonBox.height / 2 - (nameBox.y + nameBox.height / 2))).toBeLessThan(8);
+
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY);`,
+      `INSERT INTO ${name} (id, label) VALUES ('a', 'alpha'), ('b', 'beta');`,
+      `SELECT * FROM ${name} WHERE id = 'a';`,
+      `SELECT * FROM ${name} WHERE id = 'b';`,
+    ].join("\n"),
+  );
+  await page.locator("#run-file").click();
+  await expect(page.locator(".result-card")).toHaveCount(2);
+  await expect(page.locator("#result-meta")).toHaveText("2 results");
+  await expect(page.locator("#result-body")).toContainText("alpha");
+  await expect(page.locator("#result-body")).toContainText("beta");
+
+  await page.locator(".cm-line", { hasText: "id = 'a'" }).click();
+  await page.locator("#run").click();
+  await expect(page.locator(".result-card")).toHaveCount(1);
+  await expect(page.locator("#result-body")).toContainText("alpha");
+  await expect(page.locator("#result-body")).not.toContainText("beta");
+});
+
+test("runs every dql file in a folder from the context menu", async ({ page, app }) => {
+  const name = uniqueTable();
+  app.trackTable(name);
+  const folder = `batch${name}`;
+  await writeWorkspaceFile(
+    page,
+    `${folder}/one.dql`,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY);`,
+      `INSERT INTO ${name} (id, label) VALUES ('a', 'from-a');`,
+      `SELECT * FROM ${name} WHERE id = 'a';`,
+    ].join("\n"),
+  );
+  await writeWorkspaceFile(
+    page,
+    `${folder}/two.dql`,
+    [
+      `INSERT INTO ${name} (id, label) VALUES ('b', 'from-b');`,
+      `SELECT * FROM ${name} WHERE id = 'b';`,
+    ].join("\n"),
+  );
+  await writeWorkspaceFile(
+    page,
+    `${folder}/nested/three.dql`,
+    [
+      `INSERT INTO ${name} (id, label) VALUES ('c', 'from-c');`,
+      `SELECT * FROM ${name} WHERE id = 'c';`,
+    ].join("\n"),
+  );
+  await page.reload();
+  await expect(page.locator("#file-name")).toBeVisible();
+  await node(page, `${folder}/one.dql`).click({ button: "right" });
+  await expect(page.locator("#menu-run-folder")).toHaveCount(0);
+  await page.locator("#file-name").click();
+  await expect(page.locator("#file-menu")).toBeHidden();
+  await node(page, folder).click({ button: "right" });
+  await page.locator("#menu-run-folder").click();
+  const labels = page.locator("[data-testid='run-file-label']");
+  await expect(labels).toHaveText([
+    `${folder}/one.dql`,
+    `${folder}/two.dql`,
+    `${folder}/nested/three.dql`,
+  ]);
+  await expect(page.locator("#result-meta")).toHaveText("3 files");
+  await expect(page.locator("#result-body")).toContainText("from-a");
+  await expect(page.locator("#result-body")).toContainText("from-b");
+  await expect(page.locator("#result-body")).toContainText("from-c");
+});
+
 test("opens a hovered result row as highlighted JSON", async ({ page, app }) => {
   const name = uniqueTable();
   app.trackTable(name);
@@ -726,4 +810,23 @@ async function expectDescription(card, tableName) {
 
 function uniqueTable() {
   return `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function writeWorkspaceFile(page, path, text) {
+  const error = await page.evaluate(async ({ path, text }) => {
+    const headers = { "Content-Type": "application/json" };
+    const created = await fetch("/api/file", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ path }),
+    });
+    if (!created.ok) return await created.text();
+    const saved = await fetch("/api/file", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ path, text }),
+    });
+    return saved.ok ? "" : await saved.text();
+  }, { path, text });
+  if (error) throw new Error(error);
 }
