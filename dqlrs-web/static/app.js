@@ -1403,15 +1403,19 @@ function resultCard(snapshot, tableId) {
   const body = document.createElement("div");
   body.className = "result-card-body";
   body.append(dataTable(snapshot.rows, tableId, snapshot.columns));
+  const face = document.createElement("div");
+  face.className = "result-card-face";
   const queryText = String(snapshot.statement || "").trim();
   if (queryText) {
     const query = highlightedQuery(queryText, "result-card-query");
     query.dataset.testid = "result-card-query";
     query.hidden = true;
     const toggle = queryToggle(query);
-    card.append(query, head, body, toggle);
+    face.append(query, head, body);
+    card.append(toggle, face);
   } else {
-    card.append(head, body);
+    face.append(head, body);
+    card.append(face);
   }
   return card;
 }
@@ -1424,20 +1428,6 @@ function queryToggle(query) {
   button.title = "Show query";
   button.setAttribute("aria-label", "Show query");
   button.setAttribute("aria-expanded", "false");
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("width", "9");
-  svg.setAttribute("height", "9");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "currentColor");
-  path.setAttribute("stroke-width", "1.8");
-  path.setAttribute("stroke-linecap", "round");
-  path.setAttribute("stroke-linejoin", "round");
-  path.setAttribute("d", "M6 3.5 10.5 8 6 12.5");
-  svg.append(path);
-  button.append(svg);
   button.addEventListener("click", (event) => {
     event.stopPropagation();
     const open = query.hidden;

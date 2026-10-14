@@ -477,7 +477,7 @@ test("runs a selection and shows the result table", async ({ page, app }) => {
   await expect(page.locator("#run-progress")).toBeHidden();
 });
 
-test("expands a result card query from the left chevron", async ({ page, app }) => {
+test("expands a result card query from the left dot", async ({ page, app }) => {
   const name = uniqueTable();
   app.trackTable(name);
   await replaceEditor(
@@ -494,34 +494,51 @@ test("expands a result card query from the left chevron", async ({ page, app }) 
 
   const card = page.locator(".result-card");
   const query = card.locator("[data-testid='result-card-query']");
-  const chevron = card.locator("[data-testid='result-query-toggle']");
+  const dot = card.locator("[data-testid='result-query-toggle']");
   await expect(query).toBeHidden();
-  await expect(chevron).toHaveCSS("opacity", "0");
+  await expect(dot).toHaveCSS("background-color", "rgb(154, 163, 173)");
+  await expect(dot).toHaveCSS("transform", "matrix(1, 0, 0, 1, -4, 0)");
+
+  const noteBox = await page.locator("#result-body [data-testid='result-note']").first().boundingBox();
+  const resting = await chevronPlacement(card, dot);
+  const center = resting.iconBox.x + resting.iconBox.width / 2;
+  expect(Math.abs(resting.cardBox.x - noteBox.x)).toBeLessThan(2);
+  expect(Math.abs(center - resting.cardBox.x)).toBeLessThan(2);
+  expect(resting.iconBox.x).toBeLessThan(resting.cardBox.x - 1);
+  expect(resting.iconBox.y - resting.cardBox.y).toBeGreaterThanOrEqual(0);
+  expect(resting.iconBox.y - resting.cardBox.y).toBeLessThan(14);
+  expect(resting.iconBox.width).toBeLessThanOrEqual(10);
 
   await card.hover();
-  await expect(chevron).toHaveCSS("opacity", "1");
-  const noteBox = await page.locator("#result-body [data-testid='result-note']").first().boundingBox();
-  const small = await chevronPlacement(card, chevron);
-  expect(Math.abs(small.cardBox.x - noteBox.x)).toBeLessThan(2);
-  expect(small.iconBox.y - small.cardBox.y).toBeGreaterThanOrEqual(0);
-  expect(small.iconBox.y - small.cardBox.y).toBeLessThan(12);
-  expect(small.iconBox.width).toBeLessThanOrEqual(14);
+  await expect(dot).toHaveCSS("transform", "matrix(1.75, 0, 0, 1.75, -4, 0)");
+  const popped = await chevronPlacement(card, dot);
+  expect(popped.iconBox.width).toBeGreaterThan(resting.iconBox.width + 3);
+  expect(popped.iconBox.x).toBeLessThan(resting.iconBox.x - 2);
 
   const before = await card.boundingBox();
-  const beforeChevron = small.iconBox.y - small.cardBox.y;
-  await chevron.click();
+  const beforeTop = popped.iconBox.y - popped.cardBox.y;
+  await dot.click();
   await expect(query).toBeVisible();
   await expect(query).toContainText(`SELECT * FROM ${name}`);
-  await expect(chevron).toHaveAttribute("aria-expanded", "true");
+  await expect(dot).toHaveAttribute("aria-expanded", "true");
+  await expect(dot).toHaveCSS("background-color", "rgb(15, 118, 110)");
   const opened = await card.boundingBox();
-  const openedPlace = await chevronPlacement(card, chevron);
+  const openedPlace = await chevronPlacement(card, dot);
   expect(opened.height).toBeGreaterThan(before.height + 8);
   expect(Math.abs(opened.x - before.x)).toBeLessThan(1);
-  expect(Math.abs((openedPlace.iconBox.y - openedPlace.cardBox.y) - beforeChevron)).toBeLessThan(1);
+  expect(Math.abs((openedPlace.iconBox.y - openedPlace.cardBox.y) - beforeTop)).toBeLessThan(1);
+  await page.mouse.move(0, 0);
+  await expect(dot).toHaveCSS("transform", "matrix(1, 0, 0, 1, -4, 0)");
+  await expect(dot).toHaveCSS("background-color", "rgb(15, 118, 110)");
+  const openRest = await chevronPlacement(card, dot);
+  expect(Math.abs((openRest.iconBox.y - openRest.cardBox.y) - (resting.iconBox.y - resting.cardBox.y))).toBeLessThan(1);
 
-  await chevron.click();
+  await card.hover();
+  await expect(dot).toHaveCSS("transform", "matrix(1.75, 0, 0, 1.75, -4, 0)");
+  await dot.click();
   await expect(query).toBeHidden();
-  await expect(chevron).toHaveAttribute("aria-expanded", "false");
+  await expect(dot).toHaveAttribute("aria-expanded", "false");
+  await expect(dot).toHaveCSS("background-color", "rgb(154, 163, 173)");
 
   const rows = Array.from({ length: 12 }, (_, index) => `('r${index}', 'v${index}')`).join(", ");
   await replaceEditor(
@@ -535,10 +552,9 @@ test("expands a result card query from the left chevron", async ({ page, app }) 
   await page.locator("#run").click();
   const tall = page.locator(".result-card").last();
   await expect(tall.locator("tbody tr")).toHaveCount(13);
-  const tallChevron = tall.locator("[data-testid='result-query-toggle']");
-  await tall.hover();
-  const large = await chevronPlacement(tall, tallChevron);
-  expect(large.iconBox.y - large.cardBox.y).toBeLessThan(12);
+  const tallDot = tall.locator("[data-testid='result-query-toggle']");
+  const large = await chevronPlacement(tall, tallDot);
+  expect(large.iconBox.y - large.cardBox.y).toBeLessThan(14);
   expect(Math.abs(large.icon - large.card)).toBeGreaterThan(40);
 });
 
