@@ -500,17 +500,24 @@ test("expands a result card query from the left chevron", async ({ page, app }) 
 
   await card.hover();
   await expect(chevron).toHaveCSS("opacity", "1");
+  const noteBox = await page.locator("#result-body [data-testid='result-note']").first().boundingBox();
   const small = await chevronPlacement(card, chevron);
-  expect(Math.abs(small.icon - small.card)).toBeLessThan(8);
-  expect(small.iconBox.x + small.iconBox.width).toBeLessThanOrEqual(small.cardBox.x + 2);
+  expect(Math.abs(small.cardBox.x - noteBox.x)).toBeLessThan(2);
+  expect(small.iconBox.y - small.cardBox.y).toBeGreaterThanOrEqual(0);
+  expect(small.iconBox.y - small.cardBox.y).toBeLessThan(12);
+  expect(small.iconBox.width).toBeLessThanOrEqual(14);
 
   const before = await card.boundingBox();
+  const beforeChevron = small.iconBox.y - small.cardBox.y;
   await chevron.click();
   await expect(query).toBeVisible();
   await expect(query).toContainText(`SELECT * FROM ${name}`);
   await expect(chevron).toHaveAttribute("aria-expanded", "true");
   const opened = await card.boundingBox();
+  const openedPlace = await chevronPlacement(card, chevron);
   expect(opened.height).toBeGreaterThan(before.height + 8);
+  expect(Math.abs(opened.x - before.x)).toBeLessThan(1);
+  expect(Math.abs((openedPlace.iconBox.y - openedPlace.cardBox.y) - beforeChevron)).toBeLessThan(1);
 
   await chevron.click();
   await expect(query).toBeHidden();
@@ -531,8 +538,8 @@ test("expands a result card query from the left chevron", async ({ page, app }) 
   const tallChevron = tall.locator("[data-testid='result-query-toggle']");
   await tall.hover();
   const large = await chevronPlacement(tall, tallChevron);
-  expect(Math.abs(large.icon - large.head)).toBeLessThan(6);
-  expect(Math.abs(large.icon - large.head)).toBeLessThan(Math.abs(large.icon - large.card));
+  expect(large.iconBox.y - large.cardBox.y).toBeLessThan(12);
+  expect(Math.abs(large.icon - large.card)).toBeGreaterThan(40);
 });
 
 async function chevronPlacement(card, chevron) {

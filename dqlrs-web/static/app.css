@@ -568,7 +568,7 @@ body.results-resizing * {
 
 #result-body .result-card {
   position: relative;
-  margin: 10px 12px 14px 28px;
+  margin: 10px 12px 14px;
   background: #fff;
   border: 1px solid #e1e6eb;
   border-radius: 10px;
@@ -577,23 +577,22 @@ body.results-resizing * {
 
 #result-body .result-query-toggle {
   position: absolute;
-  left: -24px;
-  top: 18px;
+  left: -10px;
+  top: 6px;
   z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
   padding: 0;
   border: 0;
-  border-radius: 4px;
+  border-radius: 3px;
   background: transparent;
   color: #64748b;
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(-50%);
 }
 
 #result-body .result-card:hover .result-query-toggle,
