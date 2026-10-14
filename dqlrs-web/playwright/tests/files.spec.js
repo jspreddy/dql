@@ -101,6 +101,7 @@ test("sidebar background menu creates a file and a folder at the workspace root"
 test("runs an empty folder from the context menu", async ({ page }) => {
   await node(page, "empty").click({ button: "right" });
   await expect(page.locator("#menu-run-folder")).toBeVisible();
+  await expect(page.locator("#menu-run-folder .ff-icon")).toBeVisible();
   await page.locator("#menu-run-folder").click();
   await expect(page.locator("#file-menu")).toBeHidden();
   await expect(page.locator("#result-meta")).toHaveText("Nothing to run");

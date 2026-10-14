@@ -824,7 +824,7 @@ function menuItems(target) {
   const dir = target.type === "dir" ? target.path : parentOf(target.path || ".");
   const items = [];
   if (target.type === "dir") {
-    items.push({ label: "Run folder", run: () => runFolder(target.path) }, "-");
+    items.push({ label: "Run folder", icon: "forward", run: () => runFolder(target.path) }, "-");
   }
   items.push(
     { label: "New file", run: () => createNamedFile(dir) },
@@ -865,7 +865,8 @@ function showMenu(x, y, items) {
     button.type = "button";
     button.role = "menuitem";
     button.id = menuIds[item.label];
-    button.textContent = item.label;
+    if (item.icon === "forward") button.append(fastForwardIcon());
+    button.append(item.label);
     if (item.danger) button.className = "danger";
     button.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -928,6 +929,20 @@ async function flushSave() {
 
 function editorText() {
   return editor.state.doc.toString();
+}
+
+function fastForwardIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "ff-icon");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("fill", "currentColor");
+  path.setAttribute("d", "M1.6 3.1 7.2 8 1.6 12.9Zm6.8 0L14 8 8.4 12.9Z");
+  svg.append(path);
+  return svg;
 }
 
 function showOpenFile(path) {

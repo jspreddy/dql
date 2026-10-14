@@ -225,6 +225,7 @@ test("runs the whole file from the button beside the filename", async ({ page, a
   const name = uniqueTable();
   app.trackTable(name);
   await expect(page.locator("#run-file")).toBeVisible();
+  await expect(page.locator("#run-file .ff-icon")).toBeVisible();
   const nameBox = await page.locator("#file-name").boundingBox();
   const buttonBox = await page.locator("#run-file").boundingBox();
   expect(buttonBox.x).toBeGreaterThan(nameBox.x + nameBox.width - 1);

@@ -151,6 +151,9 @@ body.side-resizing * {
 
 #run-file {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   border: 1px solid #cfd6de;
   background: white;
   border-radius: 4px;
@@ -158,6 +161,8 @@ body.side-resizing * {
   height: 22px;
   cursor: pointer;
 }
+
+.ff-icon { display: block; flex: none; }
 
 #run-file:hover { background: #eef3f6; }
 
@@ -284,7 +289,9 @@ body.side-resizing * {
 }
 
 .menu button {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   border: 0;
   background: transparent;
