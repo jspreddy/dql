@@ -1024,12 +1024,8 @@ function showResults(entries) {
     const block = document.createElement("section");
     block.className = "query-result" + (entry.success ? "" : " is-error");
     block.dataset.testid = "query-result";
-    const query = document.createElement("pre");
-    query.className = "query-result-query";
-    query.dataset.testid = "query-result-query";
-    query.textContent = entry.query || "";
     const body = document.createElement("div");
-    block.append(query, body);
+    block.append(body);
     const rendered = Array.isArray(entry.result) ? entry.result : [];
     summary = renderResults(rendered, body, index === entries.length - 1);
     if (!Array.isArray(entry.result) && entry.result && entry.result.error) {
