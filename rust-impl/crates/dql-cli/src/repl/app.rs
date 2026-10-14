@@ -146,11 +146,11 @@ fn panel_height(content_lines: usize) -> u16 {
     lines.saturating_add(PANEL_CHROME)
 }
 
-fn live_panel_bg() -> Color {
+pub(crate) fn live_panel_bg() -> Color {
     Color::Rgb(15, 35, 45)
 }
 
-fn status_panel_bg(ok: bool) -> Color {
+pub(crate) fn status_panel_bg(ok: bool) -> Color {
     if ok {
         Color::Rgb(10, 40, 20)
     } else {
