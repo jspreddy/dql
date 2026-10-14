@@ -371,6 +371,53 @@ fn clear_scrolls_the_visible_screen_into_scrollback() {
     assert_eq!(parked.get_frame().area().y, 0);
 }
 
+#[test]
+fn right_arrow_scrolls_a_wide_result_when_the_editor_is_empty() {
+    let mut session = session();
+    let mut app = ReplApp::new(&mut session);
+    app.output_lines = vec![Line::from("abcdefghijklmnopqrstuvwxyz"), Line::from("note")];
+    assert!(app.pin_if_wide(10, 24));
+    assert!(app.output_lines.is_empty());
+
+    let (backend, _) = render_app(&app, 10, 6);
+    assert!(
+        line_text(&backend, 0).starts_with("abcdefghij"),
+        "{}",
+        line_text(&backend, 0)
+    );
+    assert!(
+        line_text(&backend, 1).starts_with("note"),
+        "{}",
+        line_text(&backend, 1)
+    );
+
+    assert!(app.scroll_result_by(1, 10));
+    let (backend, _) = render_app(&app, 10, 6);
+    assert!(
+        line_text(&backend, 0).starts_with("cdefghijkl"),
+        "{}",
+        line_text(&backend, 0)
+    );
+    assert!(
+        line_text(&backend, 1).starts_with("note"),
+        "{}",
+        line_text(&backend, 1)
+    );
+
+    type_str(&mut app, "ls");
+    assert!(!app.scroll_result_by(1, 10));
+    assert_eq!(app.col, 2);
+}
+
+#[test]
+fn narrow_results_stay_in_the_flush_buffer() {
+    let mut session = session();
+    let mut app = ReplApp::new(&mut session);
+    app.output_lines = vec![Line::from("short")];
+    assert!(!app.pin_if_wide(10, 24));
+    assert_eq!(app.output_lines.len(), 1);
+}
+
 fn buffer_plain(buffer: &Buffer) -> String {
     let width = buffer.area.width;
     (0..buffer.area.height)
