@@ -46,9 +46,9 @@ Show that SVG. Do not write a PNG, and do not make a picture per commit or per b
 
 ## What the picture includes
 
-- The `v-rust` commit, as the base.
-- Every local branch whose tip is a descendant of `v-rust`.
-- The commits reachable from those tips and not reachable from `v-rust`.
-- A detached `HEAD`, when it is a descendant of `v-rust` and is not already a branch tip.
+- The `v-rust` commit, as the base. History already contained in `v-rust` is left out.
+- Every local branch that has commits `v-rust` does not contain.
+- Those commits. A commit whose parent is already in `v-rust` is drawn on `v-rust`.
+- A detached `HEAD`, when it has commits `v-rust` does not contain and it is not already a branch tip.
 
 Remote-tracking branches are left out, so each branch name appears once. Uncommitted files are not part of the graph.
