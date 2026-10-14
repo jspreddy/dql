@@ -430,8 +430,12 @@ const schemaPopKeys = document.querySelector("#schema-pop-keys");
 const schemaPopQuery = document.querySelector("#schema-pop-query");
 const schemaPopBody = document.querySelector("#schema-pop-body");
 const schemaPopFoot = document.querySelector("#schema-pop-foot");
+const rowPop = document.querySelector("#row-pop");
+const rowPopTitle = document.querySelector("#row-pop-title");
+const rowPopBody = document.querySelector("#row-pop-body");
 rowsSchemaBtn.addEventListener("click", () => openSchema(state.browserSchema, rowsSchemaBtn));
 document.querySelector("#schema-pop-close").addEventListener("click", () => schemaPop.close());
+document.querySelector("#row-pop-close").addEventListener("click", () => rowPop.close());
 schemaPop.addEventListener("click", (event) => {
   const box = schemaPop.getBoundingClientRect();
   if (
@@ -1034,6 +1038,7 @@ async function runSelection() {
 function renderResults(results) {
   resultBody.replaceChildren();
   closeSchemaIfResult();
+  closeRowPop();
   const dataItems = results.filter((item) => item.ok && item.kind === "items" && !listedItemTables(item));
   let explainSteps = 0;
   let otherNotes = 0;
@@ -1528,8 +1533,13 @@ function dataTable(rows, tableId, columns) {
   const table = document.createElement("table");
   if (tableId) table.id = tableId;
   const head = document.createElement("tr");
+  let headerLead = true;
   for (const column of keys) {
     const cell = document.createElement("th");
+    if (headerLead) {
+      cell.classList.add("row-lead");
+      headerLead = false;
+    }
     paintKeyColumn(cell, column);
     const label = document.createElement("span");
     label.className = "col-label";
@@ -1545,11 +1555,17 @@ function dataTable(rows, tableId, columns) {
   const body = document.createElement("tbody");
   for (const row of rows) {
     const tr = document.createElement("tr");
+    let lead = true;
     for (const column of keys) {
       const cell = document.createElement("td");
+      if (lead) {
+        cell.classList.add("row-lead");
+        cell.append(rowPeekButton(row, keys));
+        lead = false;
+      }
       paintKeyColumn(cell, column);
       const value = row[column.name];
-      cell.textContent = value === null || value === undefined ? "" : typeof value === "object" ? JSON.stringify(value) : String(value);
+      cell.append(document.createTextNode(value === null || value === undefined ? "" : typeof value === "object" ? JSON.stringify(value) : String(value)));
       tr.append(cell);
     }
     body.append(tr);
@@ -1975,6 +1991,118 @@ function selectTable(name) {
   loadRows();
 }
 
+function rowPeekButton(row, columns) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "row-peek-btn";
+  button.dataset.testid = "row-peek";
+  button.title = "Show row JSON";
+  button.setAttribute("aria-label", "Show row JSON");
+  button.setAttribute("aria-haspopup", "dialog");
+  button.setAttribute("aria-controls", "row-pop");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("aria-hidden", "true");
+  const outline = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  outline.setAttribute("fill", "none");
+  outline.setAttribute("stroke", "currentColor");
+  outline.setAttribute("stroke-width", "1.4");
+  outline.setAttribute("stroke-linejoin", "round");
+  outline.setAttribute("d", "M1.4 8s2.5-4.2 6.6-4.2S14.6 8 14.6 8s-2.5 4.2-6.6 4.2S1.4 8 1.4 8z");
+  const pupil = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  pupil.setAttribute("cx", "8");
+  pupil.setAttribute("cy", "8");
+  pupil.setAttribute("r", "1.7");
+  pupil.setAttribute("fill", "none");
+  pupil.setAttribute("stroke", "currentColor");
+  pupil.setAttribute("stroke-width", "1.4");
+  svg.append(outline, pupil);
+  button.append(svg);
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openRowJson(row, columns);
+  });
+  return button;
+}
+
+function openRowJson(row, columns) {
+  const ordered = orderedRow(row, columns);
+  rowPopTitle.textContent = rowPopupTitle(ordered, columns);
+  rowPopBody.replaceChildren(highlightedJson(JSON.stringify(ordered, null, 2)));
+  rowPop.showModal();
+}
+
+function closeRowPop() {
+  if (rowPop.open) rowPop.close();
+}
+
+function orderedRow(row, columns) {
+  const out = {};
+  const seen = new Set();
+  for (const column of columns) {
+    if (Object.prototype.hasOwnProperty.call(row, column.name)) {
+      out[column.name] = row[column.name];
+      seen.add(column.name);
+    }
+  }
+  for (const key of Object.keys(row)) {
+    if (!seen.has(key)) out[key] = row[key];
+  }
+  return out;
+}
+
+function rowPopupTitle(row, columns) {
+  const hash = columns.find((column) => column.table === "hash");
+  const preferred = hash ? [hash, ...columns] : columns;
+  for (const column of preferred) {
+    const value = row[column.name];
+    if (typeof value === "string" && value && value.length <= 48) {
+      return column.name + " = " + value;
+    }
+  }
+  return "Row";
+}
+
+function highlightedJson(text) {
+  const pre = document.createElement("pre");
+  pre.className = "row-json";
+  pre.dataset.testid = "row-json";
+  for (const part of jsonParts(text)) {
+    if (!part.style) {
+      pre.append(part.text);
+      continue;
+    }
+    const span = document.createElement("span");
+    span.className = "tok-" + part.style;
+    span.textContent = part.text;
+    pre.append(span);
+  }
+  return pre;
+}
+
+function jsonParts(text) {
+  const parts = [];
+  const pattern = /"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null|[{}\[\],:]|\s+/g;
+  let last = 0;
+  for (const match of text.matchAll(pattern)) {
+    if (match.index > last) parts.push({ text: text.slice(last, match.index) });
+    const token = match[0];
+    let style = "";
+    if (token.startsWith('"')) {
+      style = /^\s*:/.test(text.slice(match.index + token.length)) ? "key" : "string";
+    } else if (token === "true" || token === "false") style = "bool";
+    else if (token === "null") style = "null";
+    else if (/^-?\d/.test(token)) style = "number";
+    else if (!/^\s+$/.test(token)) style = "operator";
+    parts.push(style ? { text: token, style } : { text: token });
+    last = match.index + token.length;
+  }
+  if (last < text.length) parts.push({ text: text.slice(last) });
+  return parts;
+}
+
 function clearRows() {
   document.querySelector("#rows-title").textContent = "";
   document.querySelector("#rows-meta").textContent = "";
@@ -1986,6 +2114,7 @@ function clearRows() {
 }
 
 async function loadRows() {
+  closeRowPop();
   if (!state.table) return;
   const body = document.querySelector("#rows-body");
   document.querySelector("#rows-title").textContent = state.table;

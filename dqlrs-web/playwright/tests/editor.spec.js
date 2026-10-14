@@ -221,6 +221,43 @@ test("runs the query at the cursor with Ctrl+Enter and marks a failure", async (
   await expect(page.locator("#run")).toBeEnabled();
 });
 
+test("opens a hovered result row as highlighted JSON", async ({ page, app }) => {
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY);`,
+      `INSERT INTO ${name} (id, label, n) VALUES ('a', 'alpha', 7);`,
+      `SELECT * FROM ${name} WHERE id = 'a';`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  const row = page.locator("#result-table tbody tr");
+  const peek = row.locator("[data-testid='row-peek']");
+  await expect(row).toContainText("alpha");
+  await page.mouse.move(0, 0);
+  await expect(peek).toHaveCSS("opacity", "0");
+  await row.hover();
+  await expect(peek).toHaveCSS("opacity", "1");
+  await peek.click();
+  const dialog = page.locator("#row-pop");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#row-pop-title")).toHaveText("id = a");
+  const json = dialog.locator("[data-testid='row-json']");
+  await expect(json).toContainText('"label": "alpha"');
+  await expect(json).toContainText('"n": 7');
+  await expect(json.locator(".tok-key", { hasText: '"label"' })).toBeVisible();
+  await expect(json.locator(".tok-string", { hasText: '"alpha"' })).toBeVisible();
+  await expect(json.locator(".tok-number", { hasText: "7" })).toBeVisible();
+  const keyColor = await json.locator(".tok-key").first().evaluate((el) => getComputedStyle(el).color);
+  expect(keyColor).toBe("rgb(15, 118, 110)");
+  await page.locator("#row-pop-close").click();
+  await expect(dialog).toBeHidden();
+});
+
 test("runs a selection and shows the result table", async ({ page, app }) => {
   const name = uniqueTable();
   app.trackTable(name);
