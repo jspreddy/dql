@@ -1,5 +1,27 @@
+import fs from "node:fs";
+import path from "node:path";
 import { test, expect } from "../support/app.js";
 import { lineByText, lineOverlaps, mod, node, openApp, pressMod, replaceEditor } from "../support/helpers.js";
+
+function cachedResults(workspace) {
+  const root = path.join(workspace, ".cache");
+  if (!fs.existsSync(root)) return [];
+  const files = [];
+  for (const dir of fs.readdirSync(root)) {
+    const folder = path.join(root, dir);
+    if (!fs.statSync(folder).isDirectory()) continue;
+    for (const name of fs.readdirSync(folder)) {
+      const stamp = /^query_result_(\d+)\.json$/.exec(name);
+      if (!stamp) continue;
+      const file = path.join(folder, name);
+      files.push({
+        stamp: Number(stamp[1]),
+        body: JSON.parse(fs.readFileSync(file, "utf8")),
+      });
+    }
+  }
+  return files.sort((left, right) => left.stamp - right.stamp);
+}
 
 test.beforeEach(async ({ page, app }) => {
   await openApp(page, app);
@@ -243,6 +265,7 @@ test("runs the whole file from the button beside the filename", async ({ page, a
     ].join("\n"),
   );
   await page.locator("#run-file").click();
+  await expect(page.locator(".query-result")).toHaveCount(1);
   await expect(page.locator(".result-card")).toHaveCount(2);
   await expect(page.locator("#result-meta")).toHaveText("2 results");
   await expect(page.locator("#result-body")).toContainText("alpha");
@@ -250,9 +273,11 @@ test("runs the whole file from the button beside the filename", async ({ page, a
 
   await page.locator(".cm-line", { hasText: "id = 'a'" }).click();
   await page.locator("#run").click();
-  await expect(page.locator(".result-card")).toHaveCount(1);
-  await expect(page.locator("#result-body")).toContainText("alpha");
-  await expect(page.locator("#result-body")).not.toContainText("beta");
+  const latest = page.locator(".query-result").last();
+  await expect(page.locator(".query-result")).toHaveCount(2);
+  await expect(latest.locator(".result-card")).toHaveCount(1);
+  await expect(latest).toContainText("alpha");
+  await expect(latest).not.toContainText("beta");
 });
 
 test("runs every dql file in a folder from the context menu", async ({ page, app }) => {
@@ -292,17 +317,79 @@ test("runs every dql file in a folder from the context menu", async ({ page, app
   await page.locator("#file-name").click();
   await expect(page.locator("#file-menu")).toBeHidden();
   await node(page, folder).click({ button: "right" });
+  await expect(page.locator("#menu-clear-results")).toHaveCount(0);
   await page.locator("#menu-run-folder").click();
-  const labels = page.locator("[data-testid='run-file-label']");
-  await expect(labels).toHaveText([
-    `${folder}/one.dql`,
-    `${folder}/two.dql`,
-    `${folder}/nested/three.dql`,
-  ]);
-  await expect(page.locator("#result-meta")).toHaveText("3 files");
-  await expect(page.locator("#result-body")).toContainText("from-a");
-  await expect(page.locator("#result-body")).toContainText("from-b");
-  await expect(page.locator("#result-body")).toContainText("from-c");
+  await expect(page.locator("#run")).toBeEnabled();
+  await node(page, `${folder}/one.dql`).click();
+  await expect(page.locator(".query-result").last()).toContainText("from-a");
+  await expect(page.locator(".query-result")).not.toContainText("from-b");
+  await node(page, `${folder}/two.dql`).click();
+  await expect(page.locator(".query-result")).toContainText("from-b");
+  await expect(page.locator(".query-result")).not.toContainText("from-a");
+  await node(page, `${folder}/nested/three.dql`).click();
+  await expect(page.locator(".query-result")).toContainText("from-c");
+  await expect(page.locator(".query-result")).not.toContainText("from-b");
+});
+
+test("keeps results with the query file and clears them", async ({ page, app }) => {
+  const name = uniqueTable();
+  app.trackTable(name);
+  await expect(page.locator("#clear-results")).toBeVisible();
+  await expect(page.locator("#clear-results")).toHaveText("Clear results");
+
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY);`,
+      `INSERT INTO ${name} (id, label) VALUES ('a', 'alpha');`,
+      `SELECT * FROM ${name} WHERE id = 'a';`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator("#result-table")).toContainText("alpha");
+
+  await replaceEditor(page, `SELECT * FROM ${name}_missing WHERE id = 'a';`);
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator(".query-result")).toHaveCount(2);
+  await expect(page.locator(".query-result").nth(0)).toContainText("alpha");
+  await expect(page.locator(".query-result").nth(1).locator('[data-testid="result-note"].error')).toBeVisible();
+
+  await node(page, "queries/read.dql").click();
+  await expect(page.locator("#file-name")).toHaveText("read.dql");
+  await expect(page.locator(".query-result")).toHaveCount(0);
+  await expect(page.locator("#result-body")).not.toContainText("alpha");
+
+  await node(page, "queries/edit.dql").click();
+  await expect(page.locator(".query-result")).toHaveCount(2);
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await expect(page.locator(".query-result")).toHaveCount(2);
+  await expect(page.locator(".query-result").nth(0)).toContainText("alpha");
+  await expect(page.locator(".query-result").nth(0).locator("table")).toContainText("alpha");
+
+  const cached = cachedResults(app.workspace).filter((file) => file.body.query.includes(name));
+  expect(cached).toHaveLength(2);
+  expect(cached[0].body.query).toContain("INSERT");
+  expect(cached[0].body.success).toBe(true);
+  expect(Array.isArray(cached[0].body.result)).toBe(true);
+  expect(cached[1].body.query).toContain(`${name}_missing`);
+  expect(cached[1].body.success).toBe(false);
+
+  await page.locator("#clear-results").click();
+  await expect(page.locator(".query-result")).toHaveCount(0);
+  expect(cachedResults(app.workspace).filter((file) => file.body.query.includes(name))).toHaveLength(0);
+
+  await replaceEditor(page, `SELECT * FROM ${name} WHERE id = 'a';`);
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator(".query-result")).toHaveCount(1);
+  await node(page, "queries/edit.dql").click({ button: "right" });
+  await page.locator("#menu-clear-results").click();
+  await expect(page.locator(".query-result")).toHaveCount(0);
+  expect(cachedResults(app.workspace)).toHaveLength(0);
 });
 
 test("opens a hovered result row as highlighted JSON", async ({ page, app }) => {
@@ -418,7 +505,7 @@ test("shows an explain plan as operations and conditions", async ({ page, app })
   await expect(field("filter")).toContainText("id = ");
   await expect(field("index")).toHaveText("TABLE");
   await expect(page.locator("#result-meta")).toHaveText("1 step");
-  await expect(page.locator('[data-testid="result-note"]')).toHaveCount(0);
+  await expect(page.locator(".query-result").last().locator('[data-testid="result-note"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="run-status-error"]')).toHaveCount(0);
 
   const toggle = plan.locator('[data-testid="explain-raw"]');
@@ -442,7 +529,7 @@ test("shows an explain plan as operations and conditions", async ({ page, app })
   await replaceEditor(page, `EXPLAIN SELECT * FROM ${name} WHERE id = 'a' AND n > 1;`);
   await pressMod(page, "A");
   await page.locator("#run").click();
-  const again = page.locator('[data-testid="explain-plan"]');
+  const again = page.locator(".query-result").last().locator('[data-testid="explain-plan"]');
   await expect(again.locator('[data-testid="explain-raw"]')).toBeChecked();
   await expect(again.locator('[data-testid="explain-json"]')).toBeVisible();
   await again.locator('[data-testid="explain-raw"]').uncheck();
@@ -583,10 +670,10 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
 
   await runEditor(`ls ${name}`);
-  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" })).toContainText("THROUGHPUT (0, 0)");
+  await expect(page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" })).toContainText("THROUGHPUT (0, 0)");
 
   await runEditor(`ls ${name}* refresh=True`);
-  const fresh = page.locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
+  const fresh = page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
   await expect(fresh).toContainText("THROUGHPUT (2, 3)");
   await expect(fresh).toContainText(name);
   await expect(fresh).not.toContainText(other);
@@ -595,12 +682,12 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
   await expect(page.locator("#result-table")).toContainText(name);
   await expect(page.locator("#result-table")).not.toContainText(other);
   await expect(page.locator("#result-meta")).toHaveText("1 row");
-  await expect(page.locator("[data-testid='intelligent-match']")).toHaveCount(0);
+  await expect(page.locator(".query-result").last().locator("[data-testid='intelligent-match']")).toHaveCount(0);
 
   await runEditor(`SHOW TABLES LIKE '${name}%';`);
   await expect(page.locator("#result-table")).toContainText(name);
   await expect(page.locator("#result-meta")).toHaveText("1 row");
-  await expect(page.locator("[data-testid='intelligent-match']")).toHaveCount(0);
+  await expect(page.locator(".query-result").last().locator("[data-testid='intelligent-match']")).toHaveCount(0);
 });
 
 test("show-tables-like-intelligent-match notes similar names and related keys", async ({ page, app }) => {
@@ -640,7 +727,7 @@ test("show-tables-like-intelligent-match notes similar names and related keys", 
   await runEditor(`SHOW TABLES LIKE '${catalog}';`);
   await expect(page.locator("#result-table")).toContainText(catalog);
   await expect(page.locator("#result-table")).not.toContainText(editions);
-  await expect(page.locator("[data-testid='intelligent-match']")).toHaveCount(0);
+  await expect(page.locator(".query-result").last().locator("[data-testid='intelligent-match']")).toHaveCount(0);
 
   await runEditor(
     [
@@ -661,7 +748,7 @@ test("show-tables-like-intelligent-match notes similar names and related keys", 
 
   // qqqxxyyzz scores as a related key of the zzqq… hash above.
   await runEditor("SHOW TABLES LIKE 'mnvv77kk';");
-  await expect(page.locator("[data-testid='intelligent-match']")).toHaveCount(0);
+  await expect(page.locator(".query-result").last().locator("[data-testid='intelligent-match']")).toHaveCount(0);
   await expect(page.locator("#result-meta")).toHaveText("0 rows");
   await expect(page.locator("#result-body")).toContainText("No rows");
 });
@@ -692,17 +779,17 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   await expect(described).not.toContainText(other);
 
   await runEditor(`ls ${name}`);
-  const listed = page.locator(".describe").filter({ hasText: "Hash Key" });
+  const listed = page.locator(".query-result").last().locator(".describe").filter({ hasText: "Hash Key" });
   await expectDescription(listed, name);
   await expect(listed).not.toContainText(other);
 
   await runEditor(`ls ${name}*`);
-  const globbed = page.locator(".describe").filter({ hasText: "Hash Key" });
+  const globbed = page.locator(".query-result").last().locator(".describe").filter({ hasText: "Hash Key" });
   await expect(globbed.locator(".describe-name")).toHaveText(name);
   await expect(globbed).not.toContainText(other);
 
   await runEditor(`ls ${stem}*`);
-  const summary = page.locator(".describe").filter({ hasText: stem });
+  const summary = page.locator(".query-result").last().locator(".describe").filter({ hasText: stem });
   await expect(summary.locator(".describe-table-name", { hasText: name })).toHaveCount(1);
   await expect(summary.locator(".describe-table-name", { hasText: other })).toHaveCount(1);
   await expect(summary.locator("th", { hasText: "Items" })).toBeVisible();
@@ -712,7 +799,7 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   await expect(summary.locator("#result-table")).toHaveCount(0);
 
   await runEditor("ls;");
-  const all = page.locator(".describe").filter({ hasText: name });
+  const all = page.locator(".query-result").last().locator(".describe").filter({ hasText: name });
   await expect(all.locator("th", { hasText: "Status" })).toBeVisible();
   await expect(all.locator(".describe-table-name", { hasText: name })).toHaveCount(1);
   await expect(all.locator(".describe-table-name", { hasText: other })).toHaveCount(1);
@@ -720,7 +807,7 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   await expect(page.locator("#result-meta")).toHaveText(/\d+ tables?/);
 
   await runEditor("SHOW TABLES;");
-  const shown = page.locator(".describe").filter({ hasText: name });
+  const shown = page.locator(".query-result").last().locator(".describe").filter({ hasText: name });
   await expect(shown.locator("th", { hasText: "Items" })).toBeVisible();
   await expect(shown.locator(".describe-table-name", { hasText: name })).toHaveCount(1);
   await expect(shown.locator(".describe-table-name", { hasText: other })).toHaveCount(1);

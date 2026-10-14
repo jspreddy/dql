@@ -38,6 +38,7 @@ const state = {
   saveTimer: 0,
   searchTimer: 0,
   table: "",
+  entries: [],
   page: 0,
   hasMore: false,
   suppressSave: false,
@@ -361,6 +362,8 @@ stopButton.setAttribute("aria-keyshortcuts", "Escape");
 runButton.addEventListener("click", runSelection);
 const runFileButton = document.querySelector("#run-file");
 runFileButton.addEventListener("click", runFile);
+const clearResultsButton = document.querySelector("#clear-results");
+clearResultsButton.addEventListener("click", () => clearFileResults(state.path));
 stopButton.addEventListener("click", stopRun);
 window.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || stopButton.classList.contains("hidden")) return;
@@ -376,6 +379,7 @@ function setRunBusy(busy) {
   stopButton.disabled = !busy;
   runShortcut.textContent = busy ? "Esc" : runShortcutLabel;
   runFileButton.disabled = busy || !state.path;
+  syncClearResults();
   const floating = editor.dom.querySelector(".run-float");
   if (floating) floating.disabled = busy;
 }
@@ -399,7 +403,7 @@ function runFromEditor() {
 async function runFile() {
   if (runButton.disabled || !state.path) return;
   await flushSave();
-  await runDocuments([{ text: editorText(), base: 0 }]);
+  await runDocuments([{ text: editorText(), path: state.path, base: 0 }]);
 }
 
 setRunRequest(runFromEditor);
@@ -661,8 +665,10 @@ async function openFile(path) {
   const file = await api("/api/file?path=" + encodeURIComponent(path));
   setEditorText(file.text);
   showOpenFile(file.path);
+  state.entries = [];
+  showResults([]);
   setMode("query");
-  await refreshTree();
+  await Promise.all([refreshTree(), loadFileResults(file.path)]);
 }
 
 async function createFile() {
@@ -836,6 +842,11 @@ function menuItems(target) {
     { label: "Duplicate", run: () => duplicateEntry(target.path) },
     { label: "Rename", run: () => beginRename(target.path) },
     { label: "Move to…", run: () => moveEntry(target.path) },
+  );
+  if (target.type === "file") {
+    items.push({ label: "Clear results", run: () => clearFileResults(target.path) });
+  }
+  items.push(
     "-",
     { label: "Delete", danger: true, run: () => deleteEntry(target.path, target.type) },
   );
@@ -849,6 +860,7 @@ const menuIds = {
   Duplicate: "menu-duplicate",
   Rename: "menu-rename",
   "Move to…": "menu-move",
+  "Clear results": "menu-clear-results",
   Delete: "menu-delete",
 };
 
@@ -950,6 +962,84 @@ function showOpenFile(path) {
   document.querySelector("#file-name").textContent = state.path ? state.path.split("/").pop() : "No file open";
   runFileButton.classList.toggle("hidden", !state.path);
   runFileButton.disabled = !state.path || runButton.disabled;
+  if (!state.path) {
+    state.entries = [];
+    showResults([]);
+  }
+  syncClearResults();
+}
+
+function syncClearResults() {
+  const open = Boolean(state.path);
+  clearResultsButton.classList.toggle("hidden", !open);
+  clearResultsButton.disabled = !open || runButton.disabled;
+}
+
+let resultsRequest = 0;
+
+async function loadFileResults(path) {
+  const request = ++resultsRequest;
+  if (!path) {
+    state.entries = [];
+    showResults([]);
+    return;
+  }
+  const payload = await api("/api/query-results?path=" + encodeURIComponent(path));
+  if (request !== resultsRequest || path !== state.path) return;
+  state.entries = payload.results || [];
+  showResults(state.entries);
+}
+
+async function clearFileResults(path) {
+  if (!path || runButton.disabled) return;
+  await api("/api/query-results/clear", { method: "POST", body: { path } });
+  if (path === state.path) {
+    state.entries = [];
+    showResults([]);
+  }
+}
+
+async function storeQueryResult(path, query, result, success) {
+  if (!path) {
+    showResults([{ query, result, success }]);
+    return;
+  }
+  await api("/api/query-results", {
+    method: "POST",
+    body: { path, query, result, success: Boolean(success) },
+  });
+  if (path === state.path) await loadFileResults(path);
+}
+
+function showResults(entries) {
+  resultBody.replaceChildren();
+  closeSchemaIfResult();
+  closeRowPop();
+  if (!entries.length) {
+    resultMeta.textContent = "";
+    return;
+  }
+  let summary = "";
+  entries.forEach((entry, index) => {
+    const block = document.createElement("section");
+    block.className = "query-result" + (entry.success ? "" : " is-error");
+    block.dataset.testid = "query-result";
+    const query = document.createElement("pre");
+    query.className = "query-result-query";
+    query.dataset.testid = "query-result-query";
+    query.textContent = entry.query || "";
+    const body = document.createElement("div");
+    block.append(query, body);
+    const rendered = Array.isArray(entry.result) ? entry.result : [];
+    summary = renderResults(rendered, body, index === entries.length - 1);
+    if (!Array.isArray(entry.result) && entry.result && entry.result.error) {
+      body.append(note(String(entry.result.error), true));
+    }
+    resultBody.append(block);
+  });
+  resultMeta.textContent = summary;
+  const latest = resultBody.lastElementChild;
+  if (latest) latest.scrollIntoView({ block: "nearest" });
 }
 
 function setEditorText(text) {
@@ -1026,7 +1116,7 @@ async function runSelection() {
   await flushSave();
   const range = currentRunRange();
   const dql = range ? editor.state.sliceDoc(range.from, range.to) : "";
-  await runDocuments([{ text: dql, base: range ? range.from : 0 }]);
+  await runDocuments([{ text: dql, path: state.path, base: range ? range.from : 0 }]);
 }
 
 async function runFolder(path) {
@@ -1080,23 +1170,23 @@ function dqlFilesUnder(node) {
 async function runDocuments(documents) {
   const runnable = documents.filter((doc) => statementSpans(doc.text || "").length);
   if (!runnable.length) {
-    resultMeta.textContent = "Nothing to run";
-    resultBody.replaceChildren();
-    closeSchemaIfResult();
-    closeRowPop();
     hideProgress();
     runMarks = [];
     paintRunMarks();
+    if (!state.entries.length) {
+      resultMeta.textContent = "Nothing to run";
+      resultBody.replaceChildren();
+      closeSchemaIfResult();
+      closeRowPop();
+    }
     return;
   }
   setRunBusy(true);
   resultMeta.textContent = "Running…";
-  resultBody.replaceChildren();
   closeSchemaIfResult();
   closeRowPop();
   showProgress(null, null);
-  const groups = [];
-  let failed = false;
+  let touchedShown = false;
   try {
     for (const doc of runnable) {
       const marked = typeof doc.base === "number";
@@ -1126,49 +1216,46 @@ async function runDocuments(documents) {
           const result = event.result || {};
           results.push(result);
           markStatement(origins[event.index], result.ok ? "ok" : "error");
-          if (!result.ok) failed = true;
         }
       });
-      groups.push({ path: doc.path || "", results });
-      if (failed) break;
+      const success = results.length > 0 && results.every((item) => item.ok);
+      await storeQueryResult(doc.path || "", doc.text, results, success);
+      if ((doc.path || "") === state.path) touchedShown = true;
+      if (!success) break;
     }
-    renderRunGroups(groups);
   } catch (error) {
-    resultMeta.textContent = "";
-    if (groups.length) renderRunGroups(groups);
-    resultBody.append(note(error.message, true));
     const running = runMarks.find((mark) => mark.status === "running");
     if (running) {
       running.status = "error";
       paintRunMarks();
     }
+    const doc = runnable.find((item) => (item.path || "") === state.path) || runnable[0];
+    if (doc) {
+      try {
+        await storeQueryResult(doc.path || "", doc.text, [{ ok: false, kind: "text", message: error.message, error: error.message }], false);
+        if ((doc.path || "") === state.path) touchedShown = true;
+      } catch (storeError) {
+        resultMeta.textContent = "";
+        resultBody.append(note(storeError.message || error.message, true));
+      }
+    } else {
+      resultMeta.textContent = "";
+        resultBody.append(note(error.message, true));
+    }
   } finally {
     hideProgress();
     setRunBusy(false);
+    if (state.path && !touchedShown) {
+      try {
+        await loadFileResults(state.path);
+      } catch {
+        /* the finished runs are already on disk */
+      }
+    }
   }
 }
 
-function renderRunGroups(groups) {
-  if (groups.length < 2) {
-    renderResults(groups.length ? groups[0].results : []);
-    return;
-  }
-  resultBody.replaceChildren();
-  closeSchemaIfResult();
-  closeRowPop();
-  for (const group of groups) {
-    const label = document.createElement("div");
-    label.className = "run-file-label";
-    label.dataset.testid = "run-file-label";
-    label.textContent = group.path;
-    const block = document.createElement("div");
-    resultBody.append(label, block);
-    renderResults(group.results, block);
-  }
-  resultMeta.textContent = groups.length + " files";
-}
-
-function renderResults(results, host) {
+function renderResults(results, host, markTable = !host) {
   const target = host || resultBody;
   target.replaceChildren();
   if (!host) {
@@ -1192,7 +1279,7 @@ function renderResults(results, host) {
       }
       const rows = item.items || [];
       const tableName = tableNameFromStatement(item.statement);
-      const last = !host && item === dataItems[dataItems.length - 1];
+      const last = markTable && item === dataItems[dataItems.length - 1];
       target.append(resultCard({
         source: "result",
         title: tableName || "Result",
@@ -1230,18 +1317,13 @@ function renderResults(results, host) {
     if (item.ok && item.kind === "affected") row.classList.add("ok");
     target.append(row);
   }
-  if (host) return;
-  if (itemCards > 1) {
-    resultMeta.textContent = itemCards + " results";
-  } else if (itemCards === 1) {
-    resultMeta.textContent = itemRows + (itemRows === 1 ? " row" : " rows");
-  } else if (listedTables > 0) {
-    resultMeta.textContent = listedTables + (listedTables === 1 ? " table" : " tables");
-  } else if (explainSteps > 0 && otherNotes === 0) {
-    resultMeta.textContent = explainSteps + (explainSteps === 1 ? " step" : " steps");
-  } else {
-    resultMeta.textContent = results.length ? "" : "Nothing to run";
-  }
+  if (itemCards > 1) return itemCards + " results";
+  if (itemCards === 1) return itemRows + (itemRows === 1 ? " row" : " rows");
+  if (listedTables > 0) return listedTables + (listedTables === 1 ? " table" : " tables");
+  if (explainSteps > 0 && otherNotes === 0) return explainSteps + (explainSteps === 1 ? " step" : " steps");
+  const summary = results.length ? "" : "Nothing to run";
+  if (!host) resultMeta.textContent = summary;
+  return summary;
 }
 
 function listedItemTables(item) {

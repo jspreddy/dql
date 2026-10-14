@@ -161,6 +161,15 @@ pub fn read_text(root: &Path, relative: &str) -> Result<String, PathError> {
     fs::read_to_string(path).map_err(|err| PathError(err.to_string()))
 }
 
+pub fn normalized_dql(root: &Path, relative: &str) -> Result<String, PathError> {
+    let path = dql_path(root, relative)?;
+    let root = canonical_root(root)?;
+    let relative = path
+        .strip_prefix(&root)
+        .map_err(|_| PathError("path must stay inside the workspace".to_string()))?;
+    Ok(relative.to_string_lossy().replace('\\', "/"))
+}
+
 pub fn write_text(root: &Path, relative: &str, text: &str) -> Result<(), PathError> {
     let path = dql_path(root, relative)?;
     if let Some(parent) = path.parent() {
