@@ -1063,6 +1063,7 @@ function showResults(entries) {
     block.append(body);
     summary = renderResults(resultList(entry.result), body, index === latestItems);
     resultBody.append(block);
+    block.querySelectorAll(".result-card").forEach(placeQueryToggle);
   });
   resultMeta.textContent = summary;
   const latest = resultBody.lastElementChild;
@@ -1403,8 +1404,64 @@ function resultCard(snapshot, tableId) {
   const body = document.createElement("div");
   body.className = "result-card-body";
   body.append(dataTable(snapshot.rows, tableId, snapshot.columns));
-  card.append(head, body);
+  const queryText = String(snapshot.statement || "").trim();
+  if (queryText) {
+    const query = highlightedQuery(queryText, "result-card-query");
+    query.dataset.testid = "result-card-query";
+    query.hidden = true;
+    const toggle = queryToggle(query);
+    card.append(query, head, body, toggle);
+  } else {
+    card.append(head, body);
+  }
   return card;
+}
+
+function placeQueryToggle(card) {
+  const head = card.querySelector(".result-card-head");
+  const button = card.querySelector(".result-query-toggle");
+  if (!head || !button) return;
+  const titleCenter = head.offsetTop + head.offsetHeight / 2;
+  const cardCenter = card.offsetHeight / 2;
+  const small = card.offsetHeight <= head.offsetTop + head.offsetHeight + 80;
+  button.style.top = (small ? cardCenter : titleCenter) + "px";
+}
+
+function queryToggle(query) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "result-query-toggle";
+  button.dataset.testid = "result-query-toggle";
+  button.title = "Show query";
+  button.setAttribute("aria-label", "Show query");
+  button.setAttribute("aria-expanded", "false");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.6");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  path.setAttribute("d", "M6 3.5 10.5 8 6 12.5");
+  svg.append(path);
+  button.append(svg);
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const open = query.hidden;
+    query.hidden = !open;
+    const card = button.closest(".result-card");
+    card.classList.toggle("is-query-open", open);
+    button.setAttribute("aria-expanded", open ? "true" : "false");
+    const label = open ? "Hide query" : "Show query";
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    placeQueryToggle(card);
+  });
+  return button;
 }
 
 function schemaIconButton(label) {

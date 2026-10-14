@@ -567,12 +567,83 @@ body.results-resizing * {
 }
 
 #result-body .result-card {
-  margin: 10px 12px 14px;
+  position: relative;
+  margin: 10px 12px 14px 28px;
   background: #fff;
   border: 1px solid #e1e6eb;
   border-radius: 10px;
   box-shadow: 0 1px 2px rgba(20, 30, 40, 0.04);
+}
+
+#result-body .result-query-toggle {
+  position: absolute;
+  left: -24px;
+  top: 18px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+#result-body .result-card:hover .result-query-toggle,
+#result-body .result-card.is-query-open .result-query-toggle,
+#result-body .result-query-toggle:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+#result-body .result-query-toggle:hover,
+#result-body .result-query-toggle:focus-visible {
+  background: #e8eef3;
+  outline: none;
+}
+
+#result-body .result-query-toggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+#result-body .result-card-query {
+  margin: 0;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e1e6eb;
+  border-radius: 9px 9px 0 0;
+  color: #334155;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+#result-body .result-card:not(.is-query-open) .result-card-head {
+  border-radius: 9px 9px 0 0;
+}
+
+#result-body .result-card-query .tok-keyword { color: #0f766e; font-weight: 650; }
+#result-body .result-card-query .tok-deleted { color: #dc2626; font-weight: 700; }
+#result-body .result-card-query .tok-typeName { color: #1d4ed8; }
+#result-body .result-card-query .tok-variableName-function { color: #6d28d9; }
+#result-body .result-card-query .tok-bool,
+#result-body .result-card-query .tok-null { color: #0369a1; font-weight: 650; }
+#result-body .result-card-query .tok-string { color: #9f1239; }
+#result-body .result-card-query .tok-number { color: #b45309; }
+#result-body .result-card-query .tok-comment { color: #6b7280; font-style: italic; }
+#result-body .result-card-query .tok-operator { color: #334155; }
+
+#result-body .result-card-body {
   overflow: hidden;
+  border-radius: 0 0 9px 9px;
 }
 
 #result-body .result-card-head {

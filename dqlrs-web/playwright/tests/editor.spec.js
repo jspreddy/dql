@@ -477,6 +477,77 @@ test("runs a selection and shows the result table", async ({ page, app }) => {
   await expect(page.locator("#run-progress")).toBeHidden();
 });
 
+test("expands a result card query from the left chevron", async ({ page, app }) => {
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY);`,
+      `INSERT INTO ${name} (id, label) VALUES ('a', 'alpha');`,
+      `SELECT * FROM ${name} WHERE id = 'a';`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+
+  const card = page.locator(".result-card");
+  const query = card.locator("[data-testid='result-card-query']");
+  const chevron = card.locator("[data-testid='result-query-toggle']");
+  await expect(query).toBeHidden();
+  await expect(chevron).toHaveCSS("opacity", "0");
+
+  await card.hover();
+  await expect(chevron).toHaveCSS("opacity", "1");
+  const small = await chevronPlacement(card, chevron);
+  expect(Math.abs(small.icon - small.card)).toBeLessThan(8);
+  expect(small.iconBox.x + small.iconBox.width).toBeLessThanOrEqual(small.cardBox.x + 2);
+
+  const before = await card.boundingBox();
+  await chevron.click();
+  await expect(query).toBeVisible();
+  await expect(query).toContainText(`SELECT * FROM ${name}`);
+  await expect(chevron).toHaveAttribute("aria-expanded", "true");
+  const opened = await card.boundingBox();
+  expect(opened.height).toBeGreaterThan(before.height + 8);
+
+  await chevron.click();
+  await expect(query).toBeHidden();
+  await expect(chevron).toHaveAttribute("aria-expanded", "false");
+
+  const rows = Array.from({ length: 12 }, (_, index) => `('r${index}', 'v${index}')`).join(", ");
+  await replaceEditor(
+    page,
+    [
+      `INSERT INTO ${name} (id, label) VALUES ${rows};`,
+      `SCAN * FROM ${name};`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  const tall = page.locator(".result-card").last();
+  await expect(tall.locator("tbody tr")).toHaveCount(13);
+  const tallChevron = tall.locator("[data-testid='result-query-toggle']");
+  await tall.hover();
+  const large = await chevronPlacement(tall, tallChevron);
+  expect(Math.abs(large.icon - large.head)).toBeLessThan(6);
+  expect(Math.abs(large.icon - large.head)).toBeLessThan(Math.abs(large.icon - large.card));
+});
+
+async function chevronPlacement(card, chevron) {
+  const cardBox = await card.boundingBox();
+  const headBox = await card.locator(".result-card-head").boundingBox();
+  const iconBox = await chevron.boundingBox();
+  return {
+    cardBox,
+    iconBox,
+    icon: iconBox.y + iconBox.height / 2,
+    head: headBox.y + headBox.height / 2,
+    card: cardBox.y + cardBox.height / 2,
+  };
+}
+
 test("shows an explain plan as operations and conditions", async ({ page, app }) => {
   const name = uniqueTable();
   app.trackTable(name);
