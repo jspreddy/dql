@@ -4,12 +4,15 @@ use crate::meta::lifecycle::{take_exit_request, take_history_edit_request};
 use crate::meta::watch::take_watch_request;
 use crate::session::Session;
 use color_eyre::eyre::{self, eyre, WrapErr};
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{
+    self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEventKind, KeyModifiers,
+};
+use crossterm::execute;
 #[cfg(feature = "watch")]
 use crossterm::terminal::enable_raw_mode;
 use dql_engine::StatementResult;
 use dql_output::{build_rich_layout, render_result, DisplayBackend, OutputFormat};
-use ratatui::backend::CrosstermBackend;
+use ratatui::backend::{Backend, ClearType, CrosstermBackend};
 use ratatui::layout::Position;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -55,7 +58,13 @@ pub fn run_repl(session: &mut Session) -> eyre::Result<()> {
     let mut terminal = ratatui::init_with_options(TerminalOptions {
         viewport: Viewport::Inline(inline_height),
     });
+    // So multi-line pastes arrive as Event::Paste instead of synthetic Enter
+    // keypresses between lines (which would submit a partial statement).
+    if let Err(err) = execute!(io::stdout(), EnableBracketedPaste) {
+        eprintln!("failed to enable bracketed paste: {err}");
+    }
     let result = repl_loop(session, &mut terminal, &mut inline_height);
+    let _ = execute!(io::stdout(), DisableBracketedPaste);
     if let Err(err) = ratatui::try_restore() {
         eprintln!(
             "failed to restore terminal. Run `reset` or restart your terminal to recover: {err}"
@@ -112,6 +121,24 @@ fn terminal_width() -> usize {
         .map(|(width, _)| width as usize)
         .unwrap_or(80)
         .max(40)
+}
+
+/// SQL submits only when the buffer ends with `;`. Without one, Enter
+/// inserts a newline. Meta-commands (`ls`, `opt`, …) still submit without `;`.
+fn buffer_submits_on_enter(text: &str) -> bool {
+    let trimmed = text.trim_end();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let first = trimmed
+        .lines()
+        .next()
+        .unwrap_or("")
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .trim_end_matches(';');
+    trimmed.ends_with(';') || crate::meta::is_meta_command(first)
 }
 
 fn panel_height(content_lines: usize) -> u16 {
@@ -227,6 +254,22 @@ fn flush_to_scrollback(terminal: &mut ReplTerminal, app: &mut ReplApp<'_>) -> io
     Ok(())
 }
 
+/// Scroll the visible screen into the terminal scrollback and leave the cursor
+/// at the top-left. History stays in the scrollback, so the scroll wheel can
+/// still move through it. This does not enter the alternate screen or erase
+/// scrollback.
+fn scroll_visible_screen_into_scrollback<B: Backend>(terminal: &mut Terminal<B>) -> io::Result<()> {
+    let screen_height = terminal.size()?.height.max(1);
+    let bottom = screen_height.saturating_sub(1);
+    terminal.set_cursor_position(Position::new(0, bottom))?;
+    terminal.backend_mut().append_lines(screen_height)?;
+    terminal.set_cursor_position(Position::new(0, 0))?;
+    terminal
+        .backend_mut()
+        .clear_region(ClearType::AfterCursor)?;
+    Ok(())
+}
+
 fn repl_loop(
     session: &mut Session,
     terminal: &mut ReplTerminal,
@@ -251,6 +294,11 @@ fn repl_loop(
 
         match event::read()? {
             Event::Key(key) => {
+                // Crossterm may emit Press+Release when the terminal uses the
+                // kitty keyboard protocol; only handle Press.
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
                 let alt = key.modifiers.contains(KeyModifiers::ALT);
                 match key.code {
                     KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -265,28 +313,40 @@ fn repl_loop(
                         break;
                     }
                     KeyCode::Enter => {
-                        app.history_index = None;
-                        app.handle_submit()?;
-                        if !app.partial {
-                            ensure_inline_height(terminal, inline_height, panel_height(1))?;
-                            flush_to_scrollback(terminal, &mut app)?;
-                        }
-                        needs_redraw = true;
-                        if take_exit_request() {
-                            break;
-                        }
-                        #[cfg(feature = "watch")]
-                        if let Some(tables) = take_watch_request() {
-                            let watch_result =
-                                crate::meta::watch::run_monitor(app.session, &tables);
-                            enable_raw_mode()?;
-                            *inline_height = panel_height(1);
-                            *terminal = inline_terminal(*inline_height)?;
-                            if let Err(err) = watch_result {
-                                app.push_error(eyre!(err).wrap_err("watch failed"));
+                        let submitted = app.on_enter()?;
+                        if submitted && !app.partial {
+                            if app.take_scroll_to_top() {
+                                // `clear` scrolls the visible screen into the
+                                // terminal scrollback and parks a new input at
+                                // the top. The mouse wheel still reaches the
+                                // previous output.
+                                scroll_visible_screen_into_scrollback(terminal)?;
+                                let height = panel_height(app.live_content_line_count());
+                                *inline_height = height;
+                                *terminal = inline_terminal(height)?;
+                            } else {
+                                ensure_inline_height(terminal, inline_height, panel_height(1))?;
                                 flush_to_scrollback(terminal, &mut app)?;
                             }
-                            needs_redraw = true;
+                        }
+                        needs_redraw = true;
+                        if submitted {
+                            if take_exit_request() {
+                                break;
+                            }
+                            #[cfg(feature = "watch")]
+                            if let Some(tables) = take_watch_request() {
+                                let watch_result =
+                                    crate::meta::watch::run_monitor(app.session, &tables);
+                                enable_raw_mode()?;
+                                *inline_height = panel_height(1);
+                                *terminal = inline_terminal(*inline_height)?;
+                                if let Err(err) = watch_result {
+                                    app.push_error(eyre!(err).wrap_err("watch failed"));
+                                    flush_to_scrollback(terminal, &mut app)?;
+                                }
+                                needs_redraw = true;
+                            }
                         }
                     }
                     KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -365,6 +425,10 @@ fn repl_loop(
                     _ => {}
                 }
             }
+            Event::Paste(text) => {
+                app.insert_paste(&text);
+                needs_redraw = true;
+            }
             Event::Resize(_, _) => {
                 needs_redraw = true;
             }
@@ -394,6 +458,8 @@ struct ReplApp<'a> {
     command_ok: bool,
     partial: bool,
     history_index: Option<usize>,
+    /// `clear` should scroll the visible screen into the terminal scrollback.
+    scroll_to_top: bool,
 }
 
 impl<'a> ReplApp<'a> {
@@ -408,7 +474,14 @@ impl<'a> ReplApp<'a> {
             command_ok: true,
             partial: false,
             history_index: None,
+            scroll_to_top: false,
         }
+    }
+
+    fn take_scroll_to_top(&mut self) -> bool {
+        let scroll = self.scroll_to_top;
+        self.scroll_to_top = false;
+        scroll
     }
 
     fn live_content_line_count(&self) -> usize {
@@ -532,9 +605,33 @@ impl<'a> ReplApp<'a> {
     }
 
     fn insert_char(&mut self, ch: char) {
+        if ch == '\n' {
+            self.insert_newline();
+            return;
+        }
+        if ch == '\r' {
+            return;
+        }
         let idx = self.byte_index_at_col();
         self.current_line_mut().insert(idx, ch);
         self.col += 1;
+    }
+
+    fn insert_newline(&mut self) {
+        let idx = self.byte_index_at_col();
+        let rest = self.current_line_mut().split_off(idx);
+        self.row += 1;
+        self.lines.insert(self.row, rest);
+        self.col = 0;
+    }
+
+    /// Insert clipboard / bracketed-paste text without treating embedded
+    /// newlines as submit.
+    fn insert_paste(&mut self, text: &str) {
+        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
+        for ch in normalized.chars() {
+            self.insert_char(ch);
+        }
     }
 
     fn backspace(&mut self) {
@@ -610,6 +707,18 @@ impl<'a> ReplApp<'a> {
         let full = lines.join("\n");
         if crate::history::should_record_history(&full) {
             self.session.history.add_entry(full);
+        }
+    }
+
+    /// Enter either runs the buffer or inserts a newline. Returns whether it submitted.
+    fn on_enter(&mut self) -> eyre::Result<bool> {
+        self.history_index = None;
+        if buffer_submits_on_enter(&self.command_text()) {
+            self.handle_submit()?;
+            Ok(true)
+        } else {
+            self.insert_newline();
+            Ok(false)
         }
     }
 
@@ -706,6 +815,7 @@ impl<'a> ReplApp<'a> {
             self.command_ok = true;
             self.partial = false;
             self.reset_buffer();
+            self.scroll_to_top = true;
             return Ok(());
         }
 
@@ -828,3 +938,7 @@ fn draw(frame: &mut Frame, app: &ReplApp<'_>) {
         });
     }
 }
+
+#[cfg(test)]
+#[path = "tui_tests.rs"]
+mod tui_tests;

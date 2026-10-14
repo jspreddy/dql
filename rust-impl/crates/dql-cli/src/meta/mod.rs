@@ -47,12 +47,14 @@ pub fn dispatch(
     out: &mut dyn Write,
     repl: bool,
 ) -> Result<Option<StatementResult>, dql_engine::EngineError> {
-    // Scripts and the web UI terminate statements with ';'. That mark is not
-    // part of a flag value (`refresh=True;`).
-    let line = line.trim().trim_end_matches(';').trim();
-    let (command, arglist) = match line.split_once(char::is_whitespace) {
+    let trimmed = line.trim();
+    // Meta-commands may be typed with a trailing ';' (`ls;`). Strip that mark
+    // before matching the command name — it is not part of a flag value
+    // (`refresh=True;`).
+    let for_meta = trimmed.trim_end_matches(';').trim();
+    let (command, arglist) = match for_meta.split_once(char::is_whitespace) {
         Some((command, rest)) => (command, rest.trim()),
-        None => (line, ""),
+        None => (for_meta, ""),
     };
     let name = command.to_ascii_lowercase();
     if let Some(entry) = COMMANDS.get(name.as_str()) {
@@ -62,7 +64,10 @@ pub fn dispatch(
         return Ok(None);
     }
     session.apply_rate_limit()?;
-    session.engine.execute_fragment(line)
+    // Keep the user's ';'. `parse_fragment` requires a terminator for Complete;
+    // do not strip it here (meta matching used `for_meta` above) and do not
+    // invent one — the REPL only submits SQL when the buffer ends with ';'.
+    session.engine.execute_fragment(trimmed)
 }
 
 fn registry() -> HashMap<&'static str, ReplCommand> {
@@ -126,5 +131,36 @@ mod tests {
         let (args, kwargs) = parse_repl_args("a second=b");
         assert_eq!(args, vec!["a"]);
         assert_eq!(kwargs.get("second"), Some(&"b".to_string()));
+    }
+
+    #[test]
+    fn sql_dispatch_keeps_semicolon_for_fragment_parser() {
+        // Regression: stripping ';' before execute_fragment left every SQL
+        // statement Incomplete (parse_fragment requires a terminator).
+        let trimmed = "SELECT name FROM t LIMIT 1;".trim();
+        let for_meta = trimmed.trim_end_matches(';').trim();
+        assert_eq!(for_meta, "SELECT name FROM t LIMIT 1");
+        assert!(
+            matches!(
+                dql_parser::parse_fragment(trimmed),
+                dql_parser::FragmentStatus::Complete(_)
+            ),
+            "SQL passed to execute_fragment must keep its ';'"
+        );
+        assert!(
+            matches!(
+                dql_parser::parse_fragment(for_meta),
+                dql_parser::FragmentStatus::Incomplete
+            ),
+            "stripped SQL must not be used with execute_fragment"
+        );
+    }
+
+    #[test]
+    fn meta_commands_are_recognized_without_semicolon() {
+        assert!(is_meta_command("ls"));
+        assert!(is_meta_command("opt"));
+        assert!(!is_meta_command("SELECT"));
+        assert!(!is_meta_command("scan"));
     }
 }
