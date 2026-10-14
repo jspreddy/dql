@@ -27,7 +27,7 @@ pub fn rich_layout_to_lines(layout: &RichLayout, width: u16) -> Vec<Line<'static
     let cut_off = columns_cut_off(&layout.columns, &layout.rows, width);
     if !cut_off.is_empty() {
         lines.push(Line::from(""));
-        lines.extend(cutoff_note(&cut_off, width));
+        lines.extend(cutoff_panel(&cut_off, width));
     }
     if layout.overflow_columns.is_empty() {
         return lines;
@@ -352,7 +352,7 @@ fn columns_cut_off(
     columns: &[RichColumn],
     rows: &[Vec<String>],
     terminal_width: u16,
-) -> Vec<String> {
+) -> Vec<RichColumn> {
     let labels = columns.iter().map(header_label).collect::<Vec<_>>();
     let widths = content_width_constraints(&labels, rows);
     let mut x = 1u16;
@@ -363,22 +363,107 @@ fn columns_cut_off(
         };
         let end = x.saturating_add(width);
         if end > terminal_width && !column.ellipsis {
-            cut_off.push(column.name.clone());
+            cut_off.push(column.clone());
         }
         x = end;
     }
     cut_off
 }
 
-fn cutoff_note(names: &[String], terminal_width: u16) -> Vec<Line<'static>> {
-    let message = format!(
-        "More columns cut off, not enough room on screen: {}",
-        names.join(", ")
-    );
-    wrap_to_width(&message, terminal_width as usize)
-        .into_iter()
-        .map(|text| Line::from(Span::styled(text, Style::default().fg(Color::DarkGray))))
+/// Info panel naming the columns the viewport clipped. Same chrome as the
+/// command panels: a rule, a title, then the body, filled to the terminal width
+/// so the flush does not clip the note itself.
+fn cutoff_panel(columns: &[RichColumn], terminal_width: u16) -> Vec<Line<'static>> {
+    let width = usize::from(terminal_width).max(1);
+    let bg = info_panel_bg();
+    let title = Style::default()
+        .fg(Color::Cyan)
+        .bg(bg)
+        .add_modifier(Modifier::BOLD);
+    let grey = Style::default().fg(Color::DarkGray).bg(bg);
+    let mut lines = vec![
+        panel_line(vec![Span::styled("─".repeat(width), title)], width, bg),
+        panel_line(
+            vec![Span::styled("more columns available", title)],
+            width,
+            bg,
+        ),
+    ];
+    for text in wrap_to_width("Result was wider than the viewport.", width) {
+        lines.push(panel_line(vec![Span::styled(text, grey)], width, bg));
+    }
+    lines.extend(cutoff_name_lines(columns, width, bg));
+    lines.push(panel_line(Vec::new(), width, bg));
+    lines
+}
+
+fn cutoff_name_lines(columns: &[RichColumn], width: usize, bg: Color) -> Vec<Line<'static>> {
+    let comma = Style::default().fg(Color::DarkGray).bg(bg);
+    let mut rows: Vec<Vec<Span<'static>>> = vec![Vec::new()];
+    let mut used = 0usize;
+    for column in columns {
+        for (index, piece) in split_pieces(&column.name, width).into_iter().enumerate() {
+            let piece_width = piece.chars().count();
+            let prefix = used > 0 && index == 0;
+            let prefix_width = if prefix { 2 } else { 0 };
+            if used > 0 && used + prefix_width + piece_width > width {
+                rows.push(Vec::new());
+                used = 0;
+            }
+            let row = rows.last_mut().unwrap();
+            if used > 0 && index == 0 {
+                row.push(Span::styled(", ", comma));
+                used += 2;
+            }
+            row.push(Span::styled(piece, column_list_style(column)));
+            used += piece_width;
+        }
+    }
+    rows.into_iter()
+        .filter(|row| !row.is_empty())
+        .map(|spans| panel_line(spans, width, bg))
         .collect()
+}
+
+fn split_pieces(text: &str, width: usize) -> Vec<String> {
+    if width == 0 || text.chars().count() <= width {
+        return vec![text.to_string()];
+    }
+    let mut pieces = Vec::new();
+    let mut rest = text;
+    while rest.chars().count() > width {
+        let (head, tail) = split_at_chars(rest, width);
+        pieces.push(head.to_string());
+        rest = tail;
+    }
+    if !rest.is_empty() {
+        pieces.push(rest.to_string());
+    }
+    pieces
+}
+
+fn column_list_style(column: &RichColumn) -> Style {
+    let tint = column_tint(column);
+    let style = Style::default().bg(header_bg(tint));
+    match accent(tint) {
+        Some(color) => style.fg(color),
+        None => style.fg(Color::Reset),
+    }
+}
+
+fn info_panel_bg() -> Color {
+    live_panel_bg()
+}
+
+fn panel_line(mut spans: Vec<Span<'static>>, width: usize, bg: Color) -> Line<'static> {
+    let used: usize = spans.iter().map(|span| span.content.chars().count()).sum();
+    if used < width {
+        spans.push(Span::styled(
+            " ".repeat(width - used),
+            Style::default().bg(bg),
+        ));
+    }
+    Line::from(spans)
 }
 
 fn wrap_to_width(text: &str, width: usize) -> Vec<String> {
@@ -852,7 +937,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(rendered.contains("1 row"), "{rendered}");
-        assert!(!rendered.contains("not enough room"), "{rendered}");
+        assert!(!rendered.contains("Result was wider"), "{rendered}");
     }
 
     #[test]
@@ -880,32 +965,45 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        let note_at = rendered
-            .find("More columns cut off, not enough room")
-            .expect(&rendered);
+        let note_at = rendered.find("more columns available").expect(&rendered);
         let note = &rendered[note_at..];
+        assert!(
+            note.contains("Result was wider than the viewport."),
+            "{note}"
+        );
         assert!(note.contains("column_02"), "{note}");
         assert!(note.contains("column_05"), "{note}");
         assert!(!note.contains("column_00"), "{note}");
         assert!(!note.contains("column_01"), "{note}");
-        let note_lines: Vec<_> = lines
+        let title_at = lines
             .iter()
-            .filter(|line| {
-                !line.spans.is_empty()
-                    && line
-                        .spans
-                        .iter()
-                        .all(|span| span.style.fg == Some(Color::DarkGray))
-            })
-            .collect();
-        assert!(!note_lines.is_empty());
-        for line in &note_lines {
+            .position(|line| line.to_string().contains("more columns available"))
+            .expect(&rendered);
+        let panel = &lines[title_at - 1..];
+        assert!(panel[0].to_string().contains('─'), "{rendered}");
+        assert_eq!(
+            span_style(panel, "more columns available").fg,
+            Some(Color::Cyan)
+        );
+        assert!(span_style(panel, "more columns available")
+            .add_modifier
+            .contains(Modifier::BOLD));
+        assert_eq!(
+            span_style(panel, "more columns available").bg,
+            Some(live_panel_bg())
+        );
+        assert_eq!(
+            span_style(panel, "Result was wider").fg,
+            Some(Color::DarkGray)
+        );
+        assert_eq!(span_style(panel, "column_02").fg, Some(Color::Reset));
+        for line in panel {
             let width = line
                 .spans
                 .iter()
                 .map(|span| span.content.chars().count())
                 .sum::<usize>();
-            assert!(width <= 40, "{width} {}", line.to_string());
+            assert_eq!(width, 40, "{}", line.to_string());
         }
         let fitting = rich_layout_to_lines(&layout, 200);
         let fitting_text = fitting
@@ -913,6 +1011,48 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(!fitting_text.contains("not enough room"), "{fitting_text}");
+        assert!(!fitting_text.contains("Result was wider"), "{fitting_text}");
+    }
+
+    #[test]
+    fn cutoff_panel_uses_the_column_colors() {
+        let layout = RichLayout {
+            columns: vec![
+                column("id", ColumnKey::Hash, ColumnKey::None),
+                column("name", ColumnKey::None, ColumnKey::Hash),
+                column("pk", ColumnKey::Hash, ColumnKey::None),
+                column("sk", ColumnKey::Range, ColumnKey::Range),
+                column("note", ColumnKey::None, ColumnKey::None),
+            ],
+            rows: vec![vec![
+                "a".to_string(),
+                "n".to_string(),
+                "p".repeat(24),
+                "y".repeat(20),
+                "z".repeat(20),
+            ]],
+            overflow_columns: Vec::new(),
+        };
+        let lines = rich_layout_to_lines(&layout, 40);
+        let title_at = lines
+            .iter()
+            .position(|line| line.to_string().contains("more columns available"))
+            .unwrap();
+        let panel = &lines[title_at..];
+        let rendered = panel
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("pk"), "{rendered}");
+        assert!(rendered.contains("sk"), "{rendered}");
+        assert!(rendered.contains("note"), "{rendered}");
+        assert!(!rendered.contains("name"), "{rendered}");
+        assert_eq!(span_style(panel, "pk").fg, Some(Color::Green));
+        assert_eq!(span_style(panel, "pk").bg, Some(status_panel_bg(true)));
+        assert_eq!(span_style(panel, "sk").fg, Some(Color::Yellow));
+        assert_eq!(span_style(panel, "sk").bg, Some(live_panel_bg()));
+        assert_eq!(span_style(panel, "note").fg, Some(Color::Reset));
+        assert_eq!(span_style(panel, "note").bg, Some(live_panel_bg()));
     }
 }
