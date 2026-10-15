@@ -562,7 +562,15 @@ body.results-resizing * {
   overflow: auto;
 }
 
-#result-body { background: #f7f9fb; }
+#result-body {
+  position: relative;
+  background: #f7f9fb;
+  overflow-anchor: none;
+}
+
+#result-body .result-scroll-spacer {
+  pointer-events: none;
+}
 
 .run-file-label {
   margin: 12px 12px 0;

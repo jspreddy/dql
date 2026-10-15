@@ -491,6 +491,66 @@ test("runs a selection and shows the result table", async ({ page, app }) => {
   await expect(page.locator("#run-progress")).toBeHidden();
 });
 
+test("pins the latest result at the top of the results pane", async ({ page, app }) => {
+  const name = uniqueTable();
+  app.trackTable(name);
+  const rows = Array.from({ length: 12 }, (_, index) => `('r${index}', 'v${index}')`).join(", ");
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY);`,
+      `INSERT INTO ${name} (id, label) VALUES ${rows};`,
+      `SCAN * FROM ${name};`,
+      `SELECT * FROM ${name} WHERE id = 'r0';`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+
+  const body = page.locator("#result-body");
+  const results = page.locator(".query-result");
+  await expect(results).toHaveCount(5);
+  await expect(results.last()).toContainText("v0");
+  await expect(results.last().locator("tbody tr")).toHaveCount(1);
+
+  const placed = await body.evaluate((node) => {
+    const pane = node.getBoundingClientRect();
+    const shells = [...node.querySelectorAll(".query-result .result-shell")];
+    const latest = shells[shells.length - 1].getBoundingClientRect();
+    const earlier = shells[0].getBoundingClientRect();
+    return {
+      gap: latest.top - pane.top,
+      roomBelow: pane.bottom - latest.bottom,
+      earlierAbove: pane.top - earlier.bottom,
+      scrollTop: node.scrollTop,
+      maxScroll: node.scrollHeight - node.clientHeight,
+    };
+  });
+  expect(placed.gap).toBeGreaterThanOrEqual(6);
+  expect(placed.gap).toBeLessThan(16);
+  expect(placed.roomBelow).toBeGreaterThan(80);
+  expect(placed.scrollTop).toBeGreaterThan(20);
+  expect(Math.abs(placed.maxScroll - placed.scrollTop)).toBeLessThan(3);
+  expect(placed.earlierAbove).toBeGreaterThan(0);
+
+  await body.evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  const revealed = await body.evaluate((node) => {
+    const pane = node.getBoundingClientRect();
+    const first = node.querySelector(".query-result .result-shell").getBoundingClientRect();
+    const latest = node.querySelector(".query-result:last-of-type .result-shell").getBoundingClientRect();
+    return {
+      firstGap: first.top - pane.top,
+      latestBelow: latest.top > pane.bottom,
+    };
+  });
+  expect(revealed.firstGap).toBeGreaterThanOrEqual(6);
+  expect(revealed.firstGap).toBeLessThan(16);
+  expect(revealed.latestBelow).toBe(true);
+});
+
 test("expands a result card query from the left dot", async ({ page, app }) => {
   const name = uniqueTable();
   app.trackTable(name);

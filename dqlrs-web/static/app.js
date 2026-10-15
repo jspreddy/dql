@@ -1041,7 +1041,60 @@ async function storeStatementResults(path, text, results) {
   if (path === state.path) await loadFileResults(path);
 }
 
+let resultPin = null;
+
+function releaseResultPin() {
+  if (!resultPin) return;
+  resultPin.abort();
+  resultPin = null;
+}
+
+// History is oldest-first, so the latest result is last. A trailing spacer
+// makes a short last result able to sit at the top of the pane; scrolling
+// up uncovers the older results above it.
+function pinLatestResult() {
+  releaseResultPin();
+  const latest = resultBody.querySelector(".query-result:last-of-type");
+  if (!latest) return;
+  const shell = latest.querySelector(".result-shell") || latest;
+  const spacer = document.createElement("div");
+  spacer.className = "result-scroll-spacer";
+  spacer.setAttribute("aria-hidden", "true");
+  resultBody.append(spacer);
+  const controller = new AbortController();
+  resultPin = controller;
+  let stick = true;
+  let fitting = false;
+  const metrics = () => {
+    const style = getComputedStyle(shell);
+    const marginTop = parseFloat(style.marginTop) || 0;
+    const marginBottom = parseFloat(style.marginBottom) || 0;
+    return {
+      marginTop,
+      block: marginTop + shell.offsetHeight + marginBottom,
+      top: Math.max(0, shell.offsetTop - marginTop),
+    };
+  };
+  const fit = () => {
+    fitting = true;
+    const { block, top } = metrics();
+    spacer.style.height = Math.max(0, resultBody.clientHeight - block) + "px";
+    if (stick && Math.abs(resultBody.scrollTop - top) > 1) resultBody.scrollTop = top;
+    fitting = false;
+  };
+  resultBody.addEventListener("scroll", () => {
+    if (fitting) return;
+    stick = Math.abs(resultBody.scrollTop - metrics().top) <= 2;
+  }, { signal: controller.signal, passive: true });
+  const observer = new ResizeObserver(() => fit());
+  controller.signal.addEventListener("abort", () => observer.disconnect());
+  observer.observe(resultBody);
+  observer.observe(shell);
+  fit();
+}
+
 function showResults(entries) {
+  releaseResultPin();
   resultBody.replaceChildren();
   closeSchemaIfResult();
   closeRowPop();
@@ -1065,8 +1118,7 @@ function showResults(entries) {
     resultBody.append(block);
   });
   resultMeta.textContent = summary;
-  const latest = resultBody.lastElementChild;
-  if (latest) latest.scrollIntoView({ block: "nearest" });
+  pinLatestResult();
 }
 
 function setEditorText(text) {
@@ -1202,6 +1254,7 @@ async function runDocuments(documents) {
     paintRunMarks();
     if (!state.entries.length) {
       resultMeta.textContent = "Nothing to run";
+      releaseResultPin();
       resultBody.replaceChildren();
       closeSchemaIfResult();
       closeRowPop();
