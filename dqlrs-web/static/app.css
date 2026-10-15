@@ -415,6 +415,56 @@ body.side-resizing * {
 
 .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
 
+.complete-list {
+  position: fixed;
+  z-index: 40;
+  min-width: 180px;
+  max-width: 360px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 4px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px var(--shadow-menu);
+}
+
+.complete-list[hidden] { display: none; }
+
+.complete-list button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+  padding: 4px 8px;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.complete-list button[aria-selected="true"],
+.complete-list button:hover { background: var(--hover); }
+
+.complete-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.complete-role {
+  flex: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: lowercase;
+}
+
 .twist {
   width: 14px;
   flex: none;

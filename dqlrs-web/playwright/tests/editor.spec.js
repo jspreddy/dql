@@ -1238,6 +1238,72 @@ async function expectDescription(page, card, tableName) {
   await expect(create).toHaveCSS("color", await themeColor(page, "--tok-keyword"));
 }
 
+test("suggests catalog tables and keys in the editor", async ({ page, app }) => {
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(page, `CREATE TABLE ${name} (id STRING HASH KEY, sk NUMBER RANGE KEY);\n`);
+  await page.locator("#run-file").click();
+  await expect(page.locator('[data-testid="run-status-ok"]')).toBeVisible();
+
+  await page.locator("#editor-content").click();
+  await pressMod(page, "End");
+  await page.keyboard.insertText(`SELECT * FROM ${name.slice(0, -1)}`);
+  const options = page.locator("[data-testid='complete-option']");
+  const tableOption = options.filter({ has: page.locator(".complete-name", { hasText: name }) });
+  await expect(tableOption).toHaveCount(1);
+  await expect(options).toHaveCount(1);
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#editor-content")).toContainText(`SELECT * FROM ${name}`);
+  await expect(options).toHaveCount(0);
+
+  await page.keyboard.insertText(" WHERE ");
+  await expect(options.locator(".complete-name")).toHaveText(["id", "sk"]);
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#editor-content")).toContainText("WHERE sk");
+  await expect(options).toHaveCount(0);
+
+  await page.keyboard.insertText(" AND ");
+  await options.filter({ has: page.locator(".complete-name", { hasText: /^id$/ }) }).click();
+  await expect(page.locator("#editor-content")).toContainText("AND id");
+
+  await page.keyboard.insertText(" OR ");
+  await expect(options).toHaveCount(2);
+  await page.keyboard.press("Escape");
+  await expect(options).toHaveCount(0);
+  await page.keyboard.insertText("i");
+  await expect(options.locator(".complete-name")).toHaveText("id");
+  await page.keyboard.press("Tab");
+  await expect(page.locator("#editor-content")).toContainText("OR id");
+
+  await page.keyboard.insertText(" AND ");
+  await expect(options).toHaveCount(2);
+  await pressMod(page, "Enter");
+  await expect(page.locator('[data-testid="result-note"].error')).toBeVisible();
+});
+
+test("scrolls a failing statement into view", async ({ page }) => {
+  const missing = `missing${uniqueTable()}`;
+  const bad = `SELECT * FROM ${missing} WHERE id = 'a';`;
+  const pad = Array.from({ length: 80 }, () => "-- keep the failing statement below the fold").join("\n");
+  await replaceEditor(page, `${pad}\n${bad}`);
+  await pressMod(page, "Home");
+  expect(await statementInView(page, missing)).toBe(false);
+  await page.locator("#run-file").click();
+  await expect(page.locator('[data-testid="result-note"].error')).toContainText(missing);
+  await expect.poll(() => statementInView(page, missing)).toBe(true);
+});
+
+function statementInView(page, text) {
+  return page.locator("#editor .cm-scroller").evaluate((scroller, needle) => {
+    const line = [...scroller.querySelectorAll(".cm-line")].find((node) => node.textContent.includes(needle));
+    if (!line) return false;
+    const view = scroller.getBoundingClientRect();
+    const box = line.getBoundingClientRect();
+    return box.bottom > view.top + 2 && box.top < view.bottom - 2;
+  }, text);
+}
+
 function uniqueTable() {
   return `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }

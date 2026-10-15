@@ -48,7 +48,18 @@ const state = {
   browserSchema: null,
   schemaKind: "",
   environment: null,
+  catalog: null,
 };
+
+const completeList = document.querySelector("#complete-list");
+let completeItems = [];
+let completeIndex = 0;
+let completeReplace = null;
+let completeSeq = 0;
+let catalogPromise = null;
+let catalogRequest = 0;
+let skipComplete = false;
+let editorReady = false;
 
 const HIGHLIGHT_KEY = "dqlrs-web.highlight";
 const THEME_KEY = "dqlrs-web.theme";
@@ -104,6 +115,13 @@ const editor = new EditorView({
       highlightActiveLineGutter(),
       history(),
       keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
+      Prec.highest(keymap.of([
+        { key: "ArrowDown", run: () => moveComplete(1) },
+        { key: "ArrowUp", run: () => moveComplete(-1) },
+        { key: "Enter", run: acceptComplete },
+        { key: "Tab", run: acceptComplete },
+        { key: "Escape", run: dismissComplete },
+      ])),
       Prec.high(keymap.of([{ key: "Mod-Enter", run: runFromEditor }])),
       dqlLanguage,
       highlightCompartment.of(queryHighlight(highlightOptions)),
@@ -166,10 +184,12 @@ const editor = new EditorView({
         if (update.docChanged && runMarks.length) {
           runMarks = runMarks.map((mark) => ({ ...mark, from: update.changes.mapPos(mark.from, 1) }));
         }
+        if (editorReady && !skipComplete && (update.docChanged || update.selectionSet)) scheduleComplete();
       }),
     ],
   }),
 });
+editorReady = true;
 const resultBody = document.querySelector("#result-body");
 const runProgress = document.querySelector("#run-progress");
 const resultMeta = document.querySelector("#result-meta");
@@ -647,6 +667,7 @@ function setMode(mode) {
   document.querySelector("#new-file").classList.toggle("hidden", tables);
   document.querySelector("#refresh-tables").classList.toggle("hidden", !tables);
   document.querySelector("#side-title").textContent = tables ? "Tables" : "Files";
+  closeComplete();
   if (tables) loadTables();
 }
 
@@ -1291,7 +1312,267 @@ function markStatement(from, status) {
   if (existing) existing.status = status;
   else runMarks.push({ from, status });
   paintRunMarks();
+  if (status === "error") scrollEditorTo(from);
 }
+
+function statementCodePos(pos) {
+  const src = editor.state.doc.toString();
+  const start = Math.max(0, Math.min(pos, src.length));
+  let i = start;
+  while (i < src.length) {
+    const ch = src[i];
+    const nxt = src[i + 1] || "";
+    if (ch === "-" && nxt === "-") {
+      while (i < src.length && src[i] !== "\n") i += 1;
+      if (src[i] === "\n") i += 1;
+      continue;
+    }
+    if (ch === ";") return start;
+    if (!/\s/.test(ch)) return i;
+    i += 1;
+  }
+  return start;
+}
+
+function scrollEditorTo(pos) {
+  if (typeof pos !== "number") return;
+  const clamped = statementCodePos(pos);
+  const place = () => {
+    const block = editor.lineBlockAt(clamped);
+    const scroller = editor.scrollDOM;
+    const line = Math.max(1, block.bottom - block.top);
+    const top = block.top - Math.max(0, (scroller.clientHeight - line) / 2);
+    scroller.scrollTop = Math.max(0, top);
+  };
+  editor.dispatch({
+    selection: { anchor: clamped },
+    scrollIntoView: true,
+    effects: EditorView.scrollIntoView(clamped, { y: "center" }),
+  });
+  place();
+  requestAnimationFrame(place);
+}
+
+function changesSchema(statement) {
+  const stripped = String(statement || "").replace(/--[^\n]*/g, " ").trim();
+  return /^(?:create|drop|alter)\s+table\b/i.test(stripped);
+}
+
+function invalidateCatalog() {
+  state.catalog = null;
+  catalogPromise = null;
+  catalogRequest += 1;
+}
+
+async function ensureCatalog() {
+  if (state.catalog) return state.catalog;
+  if (catalogPromise) return catalogPromise;
+  const request = ++catalogRequest;
+  catalogPromise = api("/api/tables")
+    .then((payload) => {
+      if (request !== catalogRequest) return state.catalog || [];
+      state.catalog = payload.tables || [];
+      return state.catalog;
+    })
+    .finally(() => {
+      if (request === catalogRequest) catalogPromise = null;
+    });
+  return catalogPromise;
+}
+
+function siteAt(pos) {
+  const src = editor.state.doc.toString();
+  const end = Math.max(0, Math.min(pos, src.length));
+  let start = 0;
+  let quote = null;
+  let comment = false;
+  for (let i = 0; i < end; i += 1) {
+    const ch = src[i];
+    const nxt = src[i + 1] || "";
+    if (comment) {
+      if (ch === "\n") comment = false;
+      continue;
+    }
+    if (quote) {
+      if (ch === quote && src[i - 1] !== "\\") quote = null;
+      continue;
+    }
+    if (ch === "-" && nxt === "-") {
+      comment = true;
+      i += 1;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      continue;
+    }
+    if (ch === ";") start = i + 1;
+  }
+  if (quote || comment) return null;
+  const statement = src.slice(start, end);
+  const table = statement.match(/(?:^|[\s(,])(?:from|into)\s+([A-Za-z_][A-Za-z0-9_.-]*)?$/i);
+  if (table) return { kind: "table", prefix: table[1] || "" };
+  const key = statement.match(/(?:^|[\s(,])(?:where|and|or)\s+([A-Za-z_][A-Za-z0-9_.-]*)?$/i);
+  if (!key) return null;
+  const named = statement.match(/\b(?:from|into)\s+([A-Za-z_][A-Za-z0-9_.-]*)/i);
+  if (!named) return null;
+  return { kind: "key", prefix: key[1] || "", table: named[1] };
+}
+
+function suggestionsFor(tables, site) {
+  const needle = site.prefix.toLowerCase();
+  if (site.kind === "table") {
+    return tables
+      .filter((table) => table.name.toLowerCase().startsWith(needle))
+      .slice(0, 50)
+      .map((table) => ({ name: table.name, role: "" }));
+  }
+  const wanted = site.table.toLowerCase();
+  const found = tables.find((table) => table.name === site.table)
+    || tables.find((table) => table.name.toLowerCase() === wanted);
+  return ((found && found.keys) || [])
+    .filter((key) => String(key.name || "").toLowerCase().startsWith(needle))
+    .slice(0, 50)
+    .map((key) => ({ name: key.name, role: key.role || "" }));
+}
+
+function scheduleComplete() {
+  const pos = editor.state.selection.main.head;
+  const site = siteAt(pos);
+  if (!site) {
+    closeComplete();
+    return;
+  }
+  const seq = ++completeSeq;
+  ensureCatalog().then((tables) => {
+    if (seq !== completeSeq) return;
+    const nowPos = editor.state.selection.main.head;
+    const now = siteAt(nowPos);
+    if (!now || now.kind !== site.kind || now.prefix !== site.prefix || now.table !== site.table) return;
+    const items = suggestionsFor(tables, now);
+    if (!items.length) {
+      closeComplete();
+      return;
+    }
+    openComplete(items, now, nowPos);
+  }).catch(() => {
+    if (seq === completeSeq) closeComplete();
+  });
+}
+
+function openComplete(items, site, pos) {
+  completeItems = items;
+  completeIndex = Math.min(completeIndex, items.length - 1);
+  if (!completeReplace || completeReplace.prefix !== site.prefix || completeReplace.kind !== site.kind) {
+    completeIndex = 0;
+  }
+  completeReplace = { from: pos - site.prefix.length, to: pos, prefix: site.prefix, kind: site.kind };
+  completeList.replaceChildren();
+  items.forEach((item, index) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "complete-option";
+    option.dataset.testid = "complete-option";
+    option.setAttribute("role", "option");
+    const name = document.createElement("span");
+    name.className = "complete-name";
+    name.textContent = item.name;
+    option.append(name);
+    if (item.role) {
+      const role = document.createElement("span");
+      role.className = "complete-role";
+      role.textContent = item.role;
+      option.append(role);
+    }
+    option.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      completeIndex = index;
+    });
+    option.addEventListener("click", () => acceptComplete());
+    completeList.append(option);
+  });
+  placeComplete(pos);
+  paintCompleteSelection();
+}
+
+function placeComplete(pos) {
+  const coords = editor.coordsAtPos(pos);
+  if (!coords) {
+    closeComplete();
+    return;
+  }
+  completeList.hidden = false;
+  const width = completeList.offsetWidth;
+  const height = completeList.offsetHeight;
+  let left = coords.left;
+  let top = coords.bottom + 4;
+  if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
+  if (top + height > window.innerHeight - 8) top = Math.max(8, coords.top - height - 4);
+  completeList.style.left = left + "px";
+  completeList.style.top = top + "px";
+}
+
+function paintCompleteSelection() {
+  const options = [...completeList.children];
+  options.forEach((option, index) => {
+    option.setAttribute("aria-selected", index === completeIndex ? "true" : "false");
+  });
+  const selected = options[completeIndex];
+  if (!selected) return;
+  const top = selected.offsetTop;
+  const bottom = top + selected.offsetHeight;
+  if (top < completeList.scrollTop) completeList.scrollTop = top;
+  else if (bottom > completeList.scrollTop + completeList.clientHeight) {
+    completeList.scrollTop = bottom - completeList.clientHeight;
+  }
+}
+
+function moveComplete(delta) {
+  if (completeList.hidden || !completeItems.length) return false;
+  completeIndex = (completeIndex + delta + completeItems.length) % completeItems.length;
+  paintCompleteSelection();
+  return true;
+}
+
+function acceptComplete() {
+  if (completeList.hidden || !completeItems.length || !completeReplace) return false;
+  const name = completeItems[completeIndex].name;
+  const { from, to } = completeReplace;
+  skipComplete = true;
+  editor.dispatch({
+    changes: { from, to, insert: name },
+    selection: { anchor: from + name.length },
+  });
+  skipComplete = false;
+  closeComplete();
+  return true;
+}
+
+function dismissComplete() {
+  if (completeList.hidden) return false;
+  closeComplete();
+  return true;
+}
+
+function closeComplete() {
+  completeSeq += 1;
+  completeItems = [];
+  completeIndex = 0;
+  completeReplace = null;
+  if (!completeList) return;
+  completeList.replaceChildren();
+  completeList.hidden = true;
+}
+
+document.addEventListener("mousedown", (event) => {
+  if (!completeList || completeList.hidden) return;
+  if (completeList.contains(event.target) || editor.dom.contains(event.target)) return;
+  closeComplete();
+});
+editor.scrollDOM.addEventListener("scroll", () => {
+  if (completeList.hidden || !completeReplace) return;
+  placeComplete(completeReplace.to);
+});
 
 function showProgress(done, total) {
   runProgress.hidden = false;
@@ -1442,9 +1723,12 @@ async function runDocuments(documents) {
           const result = event.result || {};
           results.push(result);
           markStatement(origins[event.index], result.ok ? "ok" : "error");
+          if (result.ok && changesSchema(result.statement)) invalidateCatalog();
         }
       });
       await storeStatementResults(doc.path || "", doc.text, results);
+      const failed = results.findIndex((item) => !item.ok);
+      if (marked && failed >= 0) scrollEditorTo(origins[failed]);
       if ((doc.path || "") === state.path) touchedShown = true;
       if (!results.length || results.some((item) => !item.ok)) break;
     }
@@ -1453,6 +1737,7 @@ async function runDocuments(documents) {
     if (running) {
       running.status = "error";
       paintRunMarks();
+      scrollEditorTo(running.from);
     }
     const doc = active ? active.doc : runnable[0];
     const done = active ? active.results : [];
@@ -1469,6 +1754,7 @@ async function runDocuments(documents) {
           message: error.message,
           error: error.message,
         }, false);
+        if (span && typeof doc.base === "number") scrollEditorTo(doc.base + span.from);
         if ((doc.path || "") === state.path) touchedShown = true;
       } catch (storeError) {
         resultMeta.textContent = "";
@@ -2504,6 +2790,8 @@ async function loadTables(options = {}) {
       return;
     }
     state.listedTables = payload.tables;
+    if (!pattern) state.catalog = payload.tables;
+    else if (refresh) state.catalog = null;
     if (!payload.tables.some((table) => table.name === state.table)) {
       state.table = payload.tables[0].name;
       state.page = 0;
