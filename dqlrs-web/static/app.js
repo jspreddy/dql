@@ -47,6 +47,7 @@ const state = {
   listedTables: [],
   browserSchema: null,
   schemaKind: "",
+  environment: null,
 };
 
 const HIGHLIGHT_KEY = "dqlrs-web.highlight";
@@ -480,11 +481,24 @@ schemaPop.addEventListener("close", () => {
   }
 });
 
+const endpointButton = document.querySelector("#endpoint");
+const envPop = document.querySelector("#env-pop");
+
+envPop.addEventListener("toggle", (event) => {
+  if (endpointButton.dataset.kind !== "aws") {
+    if (envPop.matches(":popover-open")) envPop.hidePopover();
+    return;
+  }
+  endpointButton.setAttribute("aria-expanded", event.newState === "open" ? "true" : "false");
+  if (event.newState !== "open") return;
+  void loadEnvironment();
+});
+
 boot();
 
 async function boot() {
   const config = await api("/api/config");
-  document.querySelector("#endpoint").textContent = config.endpoint;
+  applyEnvironment(config);
   await refreshTree();
   if (location.hash === "#tables") {
     setMode("tables");
@@ -492,6 +506,109 @@ async function boot() {
   }
   const file = treeEl.querySelector('.node[data-kind="file"]');
   if (file) file.click();
+}
+
+function applyEnvironment(config) {
+  const environment = config.environment || { kind: "local", label: config.endpoint || "" };
+  state.environment = environment;
+  const label = environment.label || config.endpoint || "";
+  endpointButton.textContent = label;
+  endpointButton.title = label;
+  endpointButton.dataset.kind = environment.kind || "local";
+  if (environment.kind === "aws") {
+    endpointButton.setAttribute("popovertarget", "env-pop");
+    endpointButton.setAttribute("aria-haspopup", "dialog");
+    endpointButton.setAttribute("aria-controls", "env-pop");
+    endpointButton.setAttribute("aria-expanded", "false");
+  } else {
+    endpointButton.removeAttribute("popovertarget");
+    endpointButton.removeAttribute("aria-haspopup");
+    endpointButton.removeAttribute("aria-controls");
+    endpointButton.removeAttribute("aria-expanded");
+  }
+}
+
+function formatExpiration(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const formatted = date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return date.getTime() < Date.now() ? formatted + " · expired" : formatted;
+}
+
+function environmentRows(environment, identity) {
+  const rows = [];
+  if (environment.profile) rows.push(["Profile", environment.profile]);
+  if (environment.region) rows.push(["Region", environment.region]);
+  if (environment.access_key) rows.push(["Access key", environment.access_key]);
+  if (environment.expiration) rows.push(["Expires", formatExpiration(environment.expiration)]);
+  if (identity && identity.ok) {
+    if (identity.account) rows.push(["Account", identity.account]);
+    if (identity.principal) rows.push(["Principal", identity.principal]);
+    if (identity.user_id) rows.push(["User ID", identity.user_id]);
+    if (identity.arn) rows.push(["ARN", identity.arn]);
+  }
+  return rows;
+}
+
+function renderEnvironment(environment, identity) {
+  const facts = document.createElement("dl");
+  facts.className = "env-pop-facts";
+  for (const [name, value] of environmentRows(environment, identity)) {
+    const term = document.createElement("dt");
+    term.textContent = name;
+    const detail = document.createElement("dd");
+    detail.textContent = value;
+    facts.append(term, detail);
+  }
+  envPop.replaceChildren();
+  const head = document.createElement("div");
+  head.className = "env-pop-head";
+  const kicker = document.createElement("span");
+  kicker.className = "env-pop-kicker";
+  kicker.textContent = "Environment";
+  const title = document.createElement("strong");
+  title.id = "env-pop-title";
+  title.textContent = environment.label || "AWS";
+  head.append(kicker, title);
+  envPop.append(head, facts);
+  if (!identity) {
+    const status = document.createElement("p");
+    status.className = "env-pop-status";
+    status.textContent = "Looking up caller identity…";
+    envPop.append(status);
+  } else if (!identity.ok) {
+    const status = document.createElement("p");
+    status.className = "env-pop-status is-error";
+    status.textContent = identity.error || "Caller identity is unavailable.";
+    envPop.append(status);
+  }
+}
+
+function placeEnvironment() {
+  const chip = endpointButton.getBoundingClientRect();
+  const pop = envPop.getBoundingClientRect();
+  const width = pop.width || 340;
+  envPop.style.inset = "auto";
+  envPop.style.margin = "0";
+  envPop.style.top = Math.round(chip.bottom + 6) + "px";
+  envPop.style.left = Math.max(8, Math.round(chip.right - width)) + "px";
+}
+
+async function loadEnvironment() {
+  const environment = state.environment;
+  if (!environment || environment.kind !== "aws") return;
+  renderEnvironment(environment, null);
+  placeEnvironment();
+  try {
+    const identity = await api("/api/identity");
+    if (!envPop.matches(":popover-open")) return;
+    renderEnvironment(environment, identity);
+    placeEnvironment();
+  } catch (error) {
+    if (!envPop.matches(":popover-open")) return;
+    renderEnvironment(environment, { ok: false, error: error.message });
+    placeEnvironment();
+  }
 }
 
 function setMode(mode) {

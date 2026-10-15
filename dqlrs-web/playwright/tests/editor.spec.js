@@ -85,11 +85,67 @@ test("resizes the results pane from the top handle", async ({ page }) => {
 test("shows the endpoint and the editor shortcut", async ({ page }) => {
   const mac = mod === "Meta";
   await expect(page.locator("#endpoint")).toHaveText("localhost:8000");
+  await expect(page.locator("#endpoint")).toHaveAttribute("data-kind", "local");
+  await expect(page.locator("#endpoint")).not.toHaveAttribute("aria-haspopup", "dialog");
+  await page.locator("#endpoint").click();
+  await expect(page.locator("#env-pop")).toBeHidden();
   await expect(page.locator("#run-shortcut")).toHaveText(mac ? "⌘ Enter" : "Ctrl+Enter");
   await expect(page.locator("#run")).toHaveAttribute(
     "aria-keyshortcuts",
     mac ? "Meta+Enter" : "Control+Enter",
   );
+});
+
+test("opens aws environment details from the header", async ({ page }) => {
+  await page.route("**/api/config", async (route) => {
+    const response = await route.fetch();
+    const json = await response.json();
+    json.environment = {
+      kind: "aws",
+      label: "jonsmith · us-east-1",
+      profile: "jonsmith",
+      region: "us-east-1",
+      access_key: "AKIA…MPLE",
+      expiration: "2020-04-16T11:16:27Z",
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
+  });
+  await page.route("**/api/identity", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        account: "123456789012",
+        arn: "arn:aws:iam::123456789012:user/jonsmith",
+        user_id: "AIDAEXAMPLEUSER",
+        principal: "jonsmith",
+      }),
+    });
+  });
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  const chip = page.locator("#endpoint");
+  await expect(chip).toHaveText("jonsmith · us-east-1");
+  await expect(chip).toHaveAttribute("data-kind", "aws");
+  await chip.click();
+  const pop = page.locator("#env-pop");
+  await expect(pop).toBeVisible();
+  await expect(pop).toContainText("Environment");
+  await expect(pop).toContainText("jonsmith");
+  await expect(pop).toContainText("us-east-1");
+  await expect(pop).toContainText("AKIA…MPLE");
+  await expect(pop).toContainText("expired");
+  await expect(pop).toContainText("123456789012");
+  await expect(pop).toContainText("arn:aws:iam::123456789012:user/jonsmith");
+  await expect(pop).toContainText("AIDAEXAMPLEUSER");
+  await expect(pop).not.toContainText("AKIAIOSFODNN7EXAMPLE");
+  await chip.click();
+  await expect(pop).toBeHidden();
 });
 
 test("pads one line above the editor and five lines below it", async ({ page }) => {

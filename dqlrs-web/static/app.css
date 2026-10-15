@@ -61,11 +61,92 @@ button, input, textarea { font: inherit; color: inherit; }
 .modes button.active { background: var(--teal); color: white; }
 
 .endpoint {
+  appearance: none;
+  max-width: min(320px, 40vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   border: 1px solid #45566b;
   border-radius: 999px;
+  background: transparent;
+  color: inherit;
   padding: 1px 8px;
   font-size: 12px;
+  line-height: 1.4;
 }
+
+.endpoint[data-kind="aws"] { cursor: pointer; }
+
+.endpoint[data-kind="aws"]:hover,
+.endpoint[data-kind="aws"]:focus-visible {
+  border-color: #8aa0b8;
+  outline: none;
+}
+
+.endpoint[data-kind="local"],
+.endpoint[data-kind="memory"] { cursor: default; }
+
+.env-pop {
+  inset: auto;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+  padding: 0;
+  width: 340px;
+  max-width: calc(100vw - 16px);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+}
+
+.env-pop-head {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.env-pop-kicker {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#env-pop-title {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+}
+
+.env-pop-facts {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 5px 10px;
+  margin: 0;
+  padding: 10px 12px 12px;
+}
+
+.env-pop-facts dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.env-pop-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.env-pop-status {
+  margin: 0;
+  padding: 0 12px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.env-pop-status.is-error { color: #9f1239; }
 
 .body { flex: 1; display: flex; min-height: 0; }
 

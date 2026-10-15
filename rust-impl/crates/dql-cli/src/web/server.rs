@@ -42,6 +42,7 @@ struct App {
     endpoint: String,
     state: Mutex<WebState>,
     cancel: dql_engine::CancelFlag,
+    identity: Mutex<Option<dql_engine::CallerIdentity>>,
 }
 
 struct Incoming {
@@ -116,6 +117,7 @@ impl App {
                 table_catalog: None,
             }),
             cancel,
+            identity: Mutex::new(None),
         }
     }
 }
@@ -250,6 +252,60 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
     }))
 }
 
+fn config_payload(app: &App) -> Value {
+    let (local, region, memory) = {
+        let state = app.state.lock().expect("web session");
+        (
+            state.session.local_endpoint.clone(),
+            state.session.region.clone(),
+            state.session.engine.is_memory(),
+        )
+    };
+    let environment = super::environment::environment_view(
+        local.as_ref().map(|(host, port)| (host.as_str(), *port)),
+        &region,
+        memory,
+        &super::environment::EnvFacts::from_env(),
+    );
+    json!({
+        "endpoint": app.endpoint,
+        "root": app.root.display().to_string(),
+        "page_size": PAGE_SIZE,
+        "environment": environment,
+    })
+}
+
+fn identity_reply(app: &App) -> Value {
+    let (local, memory) = {
+        let state = app.state.lock().expect("web session");
+        (
+            state.session.local_endpoint.is_some(),
+            state.session.engine.is_memory(),
+        )
+    };
+    if local {
+        return json!({"ok": false, "error": "localhost has no caller identity"});
+    }
+    if memory {
+        return json!({"ok": false, "error": "memory backend has no caller identity"});
+    }
+    if let Some(identity) = app.identity.lock().expect("caller identity").clone() {
+        return super::environment::identity_payload(&identity);
+    }
+    let fetched = {
+        let state = app.state.lock().expect("web session");
+        state.session.engine.caller_identity()
+    };
+    match fetched {
+        Ok(identity) => {
+            let payload = super::environment::identity_payload(&identity);
+            *app.identity.lock().expect("caller identity") = Some(identity);
+            payload
+        }
+        Err(err) => json!({"ok": false, "error": err.to_string()}),
+    }
+}
+
 fn dispatch(app: &Arc<App>, request: &Incoming) -> Reply {
     let path = request.path.as_str();
     let query = request.query.as_str();
@@ -263,14 +319,8 @@ fn dispatch(app: &Arc<App>, request: &Incoming) -> Reply {
 
 fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
     match path {
-        "/api/config" => Reply::Json(
-            200,
-            json!({
-                "endpoint": app.endpoint,
-                "root": app.root.display().to_string(),
-                "page_size": PAGE_SIZE,
-            }),
-        ),
+        "/api/config" => Reply::Json(200, config_payload(app)),
+        "/api/identity" => Reply::Json(200, identity_reply(app)),
         "/api/tree" => match files::tree(&app.root) {
             Ok(node) => Reply::Json(200, serde_json::to_value(node).unwrap_or(Value::Null)),
             Err(err) => json_error(400, &err),
@@ -815,6 +865,10 @@ mod tests {
         let config = http(addr, "GET", "/api/config", "");
         assert!(config.contains("\"page_size\":50"), "{config}");
         assert!(config.contains("\"endpoint\":\"memory\""));
+        assert!(config.contains("\"kind\":\"memory\""), "{config}");
+        assert!(config.contains("\"label\":\"memory\""), "{config}");
+        let identity = http(addr, "GET", "/api/identity", "");
+        assert!(identity.contains("\"ok\":false"), "{identity}");
 
         let created = http(addr, "POST", "/api/file", r#"{"path":"notes.dql"}"#);
         assert!(created.contains("notes.dql"));
