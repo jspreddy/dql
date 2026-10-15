@@ -30,7 +30,21 @@ test.beforeEach(async ({ page, app }) => {
 test("resizes the results pane from the top handle", async ({ page }) => {
   const results = page.locator("#results");
   const handle = page.locator("#results-resize");
+  const resultsGrip = page.locator(".results-grip");
+  const sideGrip = page.locator(".side-grip");
   await expect(handle).toBeVisible();
+  await expect(resultsGrip).toHaveCSS("background-color", "rgb(148, 163, 184)");
+  await expect(resultsGrip).toHaveCSS("opacity", "0.45");
+  await expect(resultsGrip).toHaveCSS("height", "4px");
+  await expect(resultsGrip).toHaveCSS("width", "42px");
+  await expect(sideGrip).toHaveCSS("background-color", "rgb(148, 163, 184)");
+  await expect(sideGrip).toHaveCSS("opacity", "0.45");
+  await expect(sideGrip).toHaveCSS("width", "4px");
+  await expect(sideGrip).toHaveCSS("height", "42px");
+  await expect(handle).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await handle.hover();
+  await expect(resultsGrip).toHaveCSS("opacity", "1");
+  await expect(resultsGrip).toHaveCSS("width", "56px");
   const before = await results.boundingBox();
   const grip = await handle.boundingBox();
   const x = grip.x + grip.width / 2;

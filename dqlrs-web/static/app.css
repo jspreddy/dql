@@ -470,27 +470,31 @@ main { flex: 1; min-width: 0; min-height: 0; display: flex; }
 }
 
 .results-bar {
+  position: relative;
   flex: none;
   background: #fff;
+  border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
 
 .results-resize {
+  position: absolute;
+  top: -5px;
+  left: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 12px;
+  width: 100%;
+  height: 10px;
   cursor: ns-resize;
   touch-action: none;
   user-select: none;
-  background: #f3f5f7;
-  border-top: 1px solid var(--line);
 }
 
 .results-resize:hover,
 .results-resize:focus-visible,
 body.results-resizing .results-resize {
-  background: #e7eef8;
   outline: none;
 }
 
@@ -498,15 +502,16 @@ body.results-resizing .results-resize {
   width: 42px;
   height: 4px;
   border-radius: 999px;
-  background: #c3cdd6;
-  transition: width 0.12s ease, background 0.12s ease;
+  background: #94a3b8;
+  opacity: 0.45;
+  transition: width 0.12s ease, opacity 0.12s ease;
 }
 
 .results-resize:hover .results-grip,
 .results-resize:focus-visible .results-grip,
 body.results-resizing .results-grip {
   width: 56px;
-  background: #64748b;
+  opacity: 1;
 }
 
 body.results-resizing,
