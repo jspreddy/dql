@@ -349,7 +349,9 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   const name = uniqueTable();
   app.trackTable(name);
   await expect(page.locator("#clear-results")).toBeVisible();
-  await expect(page.locator("#clear-results")).toHaveText("Clear results");
+  await expect(page.locator("#clear-results")).toHaveAttribute("aria-label", "Clear results");
+  await expect(page.locator("#result-count")).toHaveText("0 results");
+  await expect(page.locator(".results-title")).toContainText("Results");
 
   await replaceEditor(
     page,
@@ -363,17 +365,37 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator("#result-table")).toContainText("alpha");
+  await expect(page.locator("#result-count")).toHaveText("4 results");
+  const aligned = await page.locator(".results-head").evaluate((node) => {
+    const title = node.querySelector(".results-title").getBoundingClientRect();
+    const chip = node.querySelector(".results-chip").getBoundingClientRect();
+    const meta = node.querySelector("#result-meta").getBoundingClientRect();
+    const bar = node.getBoundingClientRect();
+    const mid = (box) => box.top + box.height / 2;
+    return {
+      titleChip: Math.abs(mid(title) - mid(chip)),
+      titleMeta: Math.abs(mid(title) - mid(meta)),
+      chipRight: bar.right - chip.right,
+      chipAfterTitle: chip.left > title.right,
+    };
+  });
+  expect(aligned.titleChip).toBeLessThan(2);
+  expect(aligned.titleMeta).toBeLessThan(2);
+  expect(aligned.chipRight).toBeLessThan(16);
+  expect(aligned.chipAfterTitle).toBe(true);
 
   await replaceEditor(page, `SELECT * FROM ${name}_missing WHERE id = 'a';`);
   await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator(".query-result")).toHaveCount(5);
+  await expect(page.locator("#result-count")).toHaveText("5 results");
   await expect(page.locator(".query-result").nth(3)).toContainText("alpha");
   await expect(page.locator(".query-result").nth(4).locator('[data-testid="result-note"].error')).toBeVisible();
 
   await node(page, "queries/read.dql").click();
   await expect(page.locator("#file-name")).toHaveText("read.dql");
   await expect(page.locator(".query-result")).toHaveCount(0);
+  await expect(page.locator("#result-count")).toHaveText("0 results");
   await expect(page.locator("#result-body")).not.toContainText("alpha");
 
   await node(page, "queries/edit.dql").click();
@@ -396,12 +418,14 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
 
   await page.locator("#clear-results").click();
   await expect(page.locator(".query-result")).toHaveCount(0);
+  await expect(page.locator("#result-count")).toHaveText("0 results");
   expect(cachedResults(app.workspace).filter((file) => file.body.query.includes(name))).toHaveLength(0);
 
   await replaceEditor(page, `SELECT * FROM ${name} WHERE id = 'a';`);
   await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator(".query-result")).toHaveCount(1);
+  await expect(page.locator("#result-count")).toHaveText("1 result");
   await node(page, "queries/edit.dql").click({ button: "right" });
   await page.locator("#menu-clear-results").click();
   await expect(page.locator(".query-result")).toHaveCount(0);

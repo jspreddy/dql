@@ -151,6 +151,7 @@ const editor = new EditorView({
 const resultBody = document.querySelector("#result-body");
 const runProgress = document.querySelector("#run-progress");
 const resultMeta = document.querySelector("#result-meta");
+const resultCount = document.querySelector("#result-count");
 const resultsEl = document.querySelector("#results");
 const resultsResize = document.querySelector("#results-resize");
 const RESULTS_HEIGHT_KEY = "dqlrs-web.results-height";
@@ -1093,8 +1094,14 @@ function pinLatestResult() {
   fit();
 }
 
+function setResultCount(count) {
+  const total = Math.max(0, Number(count) || 0);
+  resultCount.textContent = total === 1 ? "1 result" : total + " results";
+}
+
 function showResults(entries) {
   releaseResultPin();
+  setResultCount(entries.length);
   resultBody.replaceChildren();
   closeSchemaIfResult();
   closeRowPop();
