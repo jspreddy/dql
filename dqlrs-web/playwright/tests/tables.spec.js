@@ -1,5 +1,5 @@
 import { test, expect } from "../support/app.js";
-import { pressMod, replaceEditor } from "../support/helpers.js";
+import { colorPattern, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
 
 test("opens the table browser from the #tables hash", async ({ page, app }) => {
   await page.goto(`${app.baseURL}/#tables`);
@@ -155,16 +155,26 @@ test("orders table and result columns by keys, index, then selection or name", a
   await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "apple", "n", "zebra"]);
   await expect(page.locator("#result-table thead th").nth(0)).toHaveClass(/col-table/);
   await expect(page.locator("#result-table thead th").nth(0).locator('[data-key="hash"]')).toBeVisible();
-  await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("background-color", "rgb(231, 246, 236)");
-  await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("box-shadow", /rgb\(215, 229, 220\)/);
+  const tableHead = await themeColor(page, "--col-table-head");
+  const tableLine = colorPattern(await themeColor(page, "--col-table-line"));
+  const tableCell = await themeColor(page, "--col-table-cell");
+  const tableCellLine = colorPattern(await themeColor(page, "--col-table-cell-line"));
+  const bothHead = await themeColor(page, "--col-both-head");
+  const bothLine = colorPattern(await themeColor(page, "--col-both-line"));
+  const bothCell = await themeColor(page, "--col-both-cell");
+  const indexHead = await themeColor(page, "--col-index-head");
+  const indexLine = colorPattern(await themeColor(page, "--col-index-line"));
+  const indexCell = await themeColor(page, "--col-index-cell");
+  await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("background-color", tableHead);
+  await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("box-shadow", tableLine);
   const headerIcons = await page.locator("#result-table thead th").nth(0).locator(".col-label").evaluate((label) =>
     [...label.children].map((child) => child.dataset.key || child.textContent.trim()),
   );
   expect(headerIcons).toEqual(["id", "hash"]);
   await expect(page.locator("#result-table thead th").nth(1)).toHaveClass(/col-table/);
   await expect(page.locator("#result-table thead th").nth(1).locator('[data-key="range"]')).toBeVisible();
-  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("background-color", "rgb(245, 251, 247)");
-  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("box-shadow", /rgb\(231, 237, 233\)/);
+  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("background-color", tableCell);
+  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("box-shadow", tableCellLine);
 
   await replaceEditor(page, `SELECT zebra, apple, id FROM ${name} WHERE id = 'a' AND sk = 1;`);
   await pressMod(page, "A");
@@ -176,17 +186,17 @@ test("orders table and result columns by keys, index, then selection or name", a
   await page.locator("#run").click();
   await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "n", "apple", "zebra"]);
   await expect(page.locator("#result-table thead th").nth(0)).toHaveClass(/col-table/);
-  await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("background-color", "rgb(231, 246, 236)");
+  await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("background-color", tableHead);
   await expect(page.locator("#result-table thead th").nth(1)).toHaveClass(/col-both/);
-  await expect(page.locator("#result-table thead th").nth(1)).toHaveCSS("background-color", "rgb(231, 243, 244)");
-  await expect(page.locator("#result-table thead th").nth(1)).toHaveCSS("box-shadow", /rgb\(215, 226, 227\)/);
+  await expect(page.locator("#result-table thead th").nth(1)).toHaveCSS("background-color", bothHead);
+  await expect(page.locator("#result-table thead th").nth(1)).toHaveCSS("box-shadow", bothLine);
   await expect(page.locator("#result-table thead th").nth(1).locator('[data-key="range"]')).toBeVisible();
   await expect(page.locator("#result-table thead th").nth(2)).toHaveClass(/col-index/);
-  await expect(page.locator("#result-table thead th").nth(2)).toHaveCSS("background-color", "rgb(231, 241, 252)");
+  await expect(page.locator("#result-table thead th").nth(2)).toHaveCSS("background-color", indexHead);
   await expect(page.locator("#result-table thead th").nth(2).locator('[data-key="hash"]')).toBeVisible();
-  await expect(page.locator("#result-table tbody td").nth(1)).toHaveCSS("background-color", "rgb(245, 250, 251)");
-  await expect(page.locator("#result-table thead th").nth(2)).toHaveCSS("box-shadow", /rgb\(215, 224, 234\)/);
-  await expect(page.locator("#result-table tbody td").nth(2)).toHaveCSS("background-color", "rgb(245, 249, 254)");
+  await expect(page.locator("#result-table tbody td").nth(1)).toHaveCSS("background-color", bothCell);
+  await expect(page.locator("#result-table thead th").nth(2)).toHaveCSS("box-shadow", indexLine);
+  await expect(page.locator("#result-table tbody td").nth(2)).toHaveCSS("background-color", indexCell);
 
   await replaceEditor(page, `SELECT * FROM ${name} WHERE apple = 'p' AND id = 'a' USING by-apple;`);
   await pressMod(page, "A");
@@ -194,8 +204,8 @@ test("orders table and result columns by keys, index, then selection or name", a
   await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "apple", "n", "zebra"]);
   const shared = page.locator("#result-table thead th").nth(0);
   await expect(shared).toHaveClass(/col-both/);
-  await expect(shared).toHaveCSS("background-color", "rgb(231, 243, 244)");
-  await expect(shared).toHaveCSS("box-shadow", /rgb\(215, 226, 227\)/);
+  await expect(shared).toHaveCSS("background-color", bothHead);
+  await expect(shared).toHaveCSS("box-shadow", bothLine);
   await expect(shared.locator('[data-key="hash"]')).toHaveAttribute("aria-label", "Table hash key");
   await expect(shared.locator('[data-key="range"]')).toHaveAttribute("aria-label", "Index range key");
   const sharedIcons = await shared.locator(".col-label").evaluate((label) =>
@@ -206,14 +216,14 @@ test("orders table and result columns by keys, index, then selection or name", a
   await expect(page.locator("#result-table thead th").nth(1)).not.toHaveClass(/col-both/);
   const indexHash = page.locator("#result-table thead th").nth(2);
   await expect(indexHash).toHaveClass(/col-index/);
-  await expect(indexHash).toHaveCSS("background-color", "rgb(231, 241, 252)");
+  await expect(indexHash).toHaveCSS("background-color", indexHead);
   await expect(indexHash.locator('[data-key="hash"]')).toHaveAttribute("aria-label", "Index hash key");
   await expect(indexHash.locator('[data-key="range"]')).toHaveCount(0);
   await expect(page.locator("#result-table tbody tr")).toHaveCount(1);
   await expect(page.locator("#result-table tbody td").nth(0)).toHaveText("a");
   await expect(page.locator("#result-table tbody td").nth(2)).toHaveText("p");
-  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("background-color", "rgb(245, 250, 251)");
-  await expect(page.locator("#result-table tbody td").nth(2)).toHaveCSS("background-color", "rgb(245, 249, 254)");
+  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("background-color", bothCell);
+  await expect(page.locator("#result-table tbody td").nth(2)).toHaveCSS("background-color", indexCell);
 
   await page.locator("#mode-tables").click();
   await page.locator("#table-search").fill(name);
@@ -221,7 +231,7 @@ test("orders table and result columns by keys, index, then selection or name", a
   await expect(page.locator("#rows-table thead th")).toHaveText(["id", "sk", "apple", "n", "zebra"]);
   await expect(page.locator("#rows-table thead th").nth(0)).toHaveClass(/col-table/);
   await expect(page.locator("#rows-table thead th").nth(0).locator('[data-key="hash"]')).toBeVisible();
-  await expect(page.locator("#rows-table thead th").nth(0)).toHaveCSS("background-color", "rgb(231, 246, 236)");
+  await expect(page.locator("#rows-table thead th").nth(0)).toHaveCSS("background-color", tableHead);
   await expect(page.locator("#rows-table thead th").nth(1).locator('[data-key="range"]')).toBeVisible();
   await expect(page.locator("#rows-table thead th").nth(3)).not.toHaveClass(/col-/);
   const listed = page.locator(`#table-${name}`);
