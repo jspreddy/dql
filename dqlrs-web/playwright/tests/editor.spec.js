@@ -499,6 +499,9 @@ test("expands a result card query from the left dot", async ({ page, app }) => {
   const drop = shells.nth(0);
   const dropDot = drop.locator("[data-testid='result-query-toggle']");
   const dropQuery = drop.locator("[data-testid='result-card-query']");
+  const noteText = await drop.locator(".note-text").boundingBox();
+  const noteDot = await dropDot.boundingBox();
+  expect(Math.abs((noteDot.y + noteDot.height / 2) - (noteText.y + noteText.height / 2))).toBeLessThan(3);
   await expect(dropQuery).toBeHidden();
   await expect(dropDot).toHaveCSS("opacity", "0.5");
   await drop.hover();
@@ -532,8 +535,8 @@ test("expands a result card query from the left dot", async ({ page, app }) => {
   expect(Math.abs(resting.cardBox.x - noteBox.x)).toBeLessThan(2);
   expect(Math.abs(center - resting.cardBox.x)).toBeLessThan(2);
   expect(resting.iconBox.x).toBeLessThan(resting.cardBox.x - 1);
-  expect(resting.iconBox.y - resting.cardBox.y).toBeGreaterThanOrEqual(0);
-  expect(resting.iconBox.y - resting.cardBox.y).toBeLessThan(14);
+  expect(resting.iconBox.y - resting.cardBox.y).toBeGreaterThanOrEqual(8);
+  expect(Math.abs(resting.icon - resting.head)).toBeLessThan(4);
   expect(resting.iconBox.width).toBeLessThanOrEqual(10);
 
   await card.hover();
@@ -562,7 +565,7 @@ test("expands a result card query from the left dot", async ({ page, app }) => {
   await expect(dot).toHaveCSS("opacity", "0.75");
   await expect(dot).toHaveCSS("background-color", "rgb(15, 118, 110)");
   const openRest = await chevronPlacement(card, dot);
-  expect(openRest.iconBox.y - openRest.cardBox.y).toBeLessThan(14);
+  expect(Math.abs((openRest.iconBox.y - openRest.cardBox.y) - (resting.iconBox.y - resting.cardBox.y))).toBeLessThan(3);
 
   await card.hover();
   await expect(dot).toHaveCSS("transform", "matrix(1.25, 0, 0, 1.25, -4, 0)");
@@ -589,7 +592,7 @@ test("expands a result card query from the left dot", async ({ page, app }) => {
   await expect(tall.locator("tbody tr")).toHaveCount(13);
   const tallDot = tallShell.locator("[data-testid='result-query-toggle']");
   const large = await chevronPlacement(tall, tallDot);
-  expect(large.iconBox.y - large.cardBox.y).toBeLessThan(14);
+  expect(Math.abs(large.icon - large.head)).toBeLessThan(4);
   expect(Math.abs(large.icon - large.card)).toBeGreaterThan(40);
 });
 

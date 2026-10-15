@@ -617,7 +617,7 @@ body.results-resizing * {
 #result-body .result-query-toggle {
   position: absolute;
   z-index: 0;
-  top: 8px;
+  top: 13px;
   left: 0;
   width: 8px;
   height: 8px;
