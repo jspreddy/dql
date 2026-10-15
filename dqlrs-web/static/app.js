@@ -1060,8 +1060,8 @@ function showResults(entries) {
     block.className = "query-result" + (entry.success ? "" : " is-error");
     block.dataset.testid = "query-result";
     const body = document.createElement("div");
-    block.append(body);
     summary = renderResults(resultList(entry.result), body, index === latestItems);
+    block.append(queryShell(entry.query, body));
     resultBody.append(block);
   });
   resultMeta.textContent = summary;
@@ -1405,22 +1405,40 @@ function resultCard(snapshot, tableId) {
   body.append(dataTable(snapshot.rows, tableId, snapshot.columns));
   const face = document.createElement("div");
   face.className = "result-card-face";
-  const queryText = String(snapshot.statement || "").trim();
-  if (queryText) {
-    const query = highlightedQuery(queryText, "result-card-query");
-    query.dataset.testid = "result-card-query";
-    query.hidden = true;
-    const toggle = queryToggle(query);
-    face.append(query, head, body);
-    card.append(toggle, face);
-  } else {
-    face.append(head, body);
-    card.append(face);
-  }
+  face.append(head, body);
+  card.append(face);
   return card;
 }
 
-function queryToggle(query) {
+function queryShell(queryText, content) {
+  const shell = document.createElement("div");
+  shell.className = "result-shell";
+  const visuals = [...content.children];
+  const text = String(queryText || "").trim();
+  if (!text || !visuals.length) {
+    shell.append(visuals.length === 1 ? visuals[0] : content);
+    return shell;
+  }
+  const visual = visuals.length === 1 ? visuals[0] : content;
+  if (visuals.length !== 1) visual.classList.add("result-query-host");
+  const host = visual.classList.contains("result-card")
+    ? visual.querySelector(".result-card-face") || visual
+    : visual;
+  if (host.classList.contains("note")) {
+    const inner = document.createElement("div");
+    inner.className = "note-text";
+    while (host.firstChild) inner.append(host.firstChild);
+    host.append(inner);
+    host.classList.add("result-query-host");
+  }
+  const query = highlightedQuery(text, "result-card-query");
+  query.dataset.testid = "result-card-query";
+  query.hidden = true;
+  shell.append(queryToggle(query, host), visual);
+  return shell;
+}
+
+function queryToggle(query, host) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "result-query-toggle";
@@ -1431,8 +1449,10 @@ function queryToggle(query) {
   button.addEventListener("click", (event) => {
     event.stopPropagation();
     const open = query.hidden;
+    if (open) host.prepend(query);
+    else query.remove();
     query.hidden = !open;
-    button.closest(".result-card").classList.toggle("is-query-open", open);
+    button.closest(".result-shell").classList.toggle("is-query-open", open);
     button.setAttribute("aria-expanded", open ? "true" : "false");
     const label = open ? "Hide query" : "Show query";
     button.title = label;
