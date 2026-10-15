@@ -1,4 +1,4 @@
-//! One directory per query file: `workspace/.cache/<sha256 of the workspace-relative path>/`.
+//! One directory per query file: `workspace/.dqlrs-web-cache/<sha256 of the workspace-relative path>/`.
 //! Each `query_result_<unix-ms>.json` is a single statement:
 //! `{ "query": "<one statement>", "result": { ... }, "success": bool }`.
 
@@ -13,6 +13,7 @@ use sha2::{Digest, Sha256};
 use super::files::{self, PathError};
 
 const MAX_RESULTS: usize = 50;
+const CACHE_DIR: &str = ".dqlrs-web-cache";
 
 /// One executed statement. `result` is that statement's result object.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -73,10 +74,53 @@ pub fn clear(root: &Path, relative: &str) -> Result<(), PathError> {
     Ok(())
 }
 
+/// Drop the cache directories for a file, or for every `.dql` file under a folder.
+/// The directory name is the sha256 of the workspace-relative path.
+pub fn clear_at(root: &Path, relative: &str) -> Result<Vec<String>, PathError> {
+    let paths = covered_paths(root, relative)?;
+    for path in &paths {
+        clear(root, path)?;
+    }
+    Ok(paths)
+}
+
+fn covered_paths(root: &Path, relative: &str) -> Result<Vec<String>, PathError> {
+    let target = relative.trim().trim_matches('/');
+    let target = if target.is_empty() { "." } else { target };
+    let tree = files::tree(root)?;
+    let node = find_node(&tree, target)
+        .ok_or_else(|| PathError("choose a file or folder in the workspace".to_string()))?;
+    let mut paths = Vec::new();
+    collect_files(node, &mut paths);
+    Ok(paths)
+}
+
+fn find_node<'a>(node: &'a files::Node, target: &str) -> Option<&'a files::Node> {
+    if node.path == target {
+        return Some(node);
+    }
+    for child in node.children.as_deref().unwrap_or(&[]) {
+        if let Some(found) = find_node(child, target) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+fn collect_files(node: &files::Node, paths: &mut Vec<String>) {
+    if node.kind == "file" {
+        paths.push(node.path.clone());
+        return;
+    }
+    for child in node.children.as_deref().unwrap_or(&[]) {
+        collect_files(child, paths);
+    }
+}
+
 fn cache_dir(root: &Path, relative: &str) -> Result<PathBuf, PathError> {
     let relative = files::normalized_dql(root, relative)?;
     let digest = Sha256::digest(relative.as_bytes());
-    Ok(root.join(".cache").join(hex_encode(&digest)))
+    Ok(root.join(CACHE_DIR).join(hex_encode(&digest)))
 }
 
 fn result_files(dir: &Path) -> Result<Vec<(u128, PathBuf)>, PathError> {
@@ -179,8 +223,13 @@ mod tests {
                 .and_then(|rest| rest.parse::<u128>().ok())
                 .is_some()
         }));
-        let hash = cache_dir(root.path(), "notes.dql")
-            .unwrap()
+        let notes_dir = cache_dir(root.path(), "notes.dql").unwrap();
+        assert_eq!(
+            notes_dir.parent().and_then(|path| path.file_name()),
+            Some(std::ffi::OsStr::new(CACHE_DIR))
+        );
+        assert!(!root.path().join(".cache").exists());
+        let hash = notes_dir
             .file_name()
             .unwrap()
             .to_string_lossy()
@@ -197,5 +246,37 @@ mod tests {
         assert!(list(root.path(), "notes.dql").unwrap().is_empty());
         assert!(!cache_dir(root.path(), "notes.dql").unwrap().exists());
         assert_eq!(list(root.path(), "queries/other.dql").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn clear_at_removes_the_hashes_for_the_chosen_paths() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("queries")).unwrap();
+        fs::create_dir(root.path().join("queries/nested")).unwrap();
+        fs::write(root.path().join("queries/one.dql"), "").unwrap();
+        fs::write(root.path().join("queries/nested/two.dql"), "").unwrap();
+        fs::write(root.path().join("keep.dql"), "").unwrap();
+        for path in ["queries/one.dql", "queries/nested/two.dql", "keep.dql"] {
+            save(root.path(), path, "SELECT 1;", json!({"ok": true}), true).unwrap();
+        }
+
+        let cleared = clear_at(root.path(), "queries").unwrap();
+        assert_eq!(
+            cleared,
+            vec![
+                "queries/nested/two.dql".to_string(),
+                "queries/one.dql".to_string(),
+            ]
+        );
+        assert!(list(root.path(), "queries/one.dql").unwrap().is_empty());
+        assert!(list(root.path(), "queries/nested/two.dql")
+            .unwrap()
+            .is_empty());
+        assert!(!cache_dir(root.path(), "queries/one.dql").unwrap().exists());
+        assert_eq!(list(root.path(), "keep.dql").unwrap().len(), 1);
+
+        let one = clear_at(root.path(), "keep.dql").unwrap();
+        assert_eq!(one, vec!["keep.dql".to_string()]);
+        assert!(list(root.path(), "keep.dql").unwrap().is_empty());
     }
 }

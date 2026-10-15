@@ -996,7 +996,10 @@ function menuItems(target) {
     { label: "New file", run: () => createNamedFile(dir) },
     { label: "New folder", run: () => createNamedFolder(dir) },
   );
-  if (!target.path || target.type === "root") return items;
+  if (!target.path || target.type === "root") {
+    items.push("-", { label: "Clear cache", run: () => clearCache(".") });
+    return items;
+  }
   items.push(
     "-",
     { label: "Duplicate", run: () => duplicateEntry(target.path) },
@@ -1007,6 +1010,7 @@ function menuItems(target) {
     items.push({ label: "Clear results", run: () => clearFileResults(target.path) });
   }
   items.push(
+    { label: "Clear cache", run: () => clearCache(target.path) },
     "-",
     { label: "Delete", danger: true, run: () => deleteEntry(target.path, target.type) },
   );
@@ -1021,6 +1025,7 @@ const menuIds = {
   Rename: "menu-rename",
   "Move to…": "menu-move",
   "Clear results": "menu-clear-results",
+  "Clear cache": "menu-clear-cache",
   Delete: "menu-delete",
 };
 
@@ -1152,10 +1157,20 @@ async function loadFileResults(path) {
 
 async function clearFileResults(path) {
   if (!path || runButton.disabled) return;
-  await api("/api/query-results/clear", { method: "POST", body: { path } });
-  if (path === state.path) {
-    state.entries = [];
-    showResults([]);
+  await clearCache(path);
+}
+
+async function clearCache(path) {
+  if (!path || runButton.disabled) return;
+  try {
+    const payload = await api("/api/query-results/clear", { method: "POST", body: { path } });
+    const cleared = payload.paths || [];
+    if (state.path && cleared.includes(state.path)) {
+      state.entries = [];
+      showResults([]);
+    }
+  } catch (error) {
+    window.alert(error.message);
   }
 }
 
