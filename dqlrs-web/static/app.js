@@ -16,16 +16,16 @@ import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
 import { parseLsMessage } from "./describe-card.js";
 
 const dqlHighlight = HighlightStyle.define([
-  { tag: tags.keyword, color: "#0f766e", fontWeight: "650" },
-  { tag: tags.deleted, color: "#dc2626", fontWeight: "700" },
-  { tag: tags.typeName, color: "#1d4ed8" },
-  { tag: tags.function(tags.variableName), color: "#6d28d9" },
-  { tag: tags.bool, color: "#0369a1", fontWeight: "650" },
-  { tag: tags.null, color: "#0369a1", fontWeight: "650" },
-  { tag: tags.string, color: "#9f1239" },
-  { tag: tags.number, color: "#b45309" },
-  { tag: tags.comment, color: "#6b7280", fontStyle: "italic" },
-  { tag: tags.operator, color: "#334155" },
+  { tag: tags.keyword, color: "var(--tok-keyword)", fontWeight: "650" },
+  { tag: tags.deleted, color: "var(--tok-deleted)", fontWeight: "700" },
+  { tag: tags.typeName, color: "var(--tok-type)" },
+  { tag: tags.function(tags.variableName), color: "var(--tok-fn)" },
+  { tag: tags.bool, color: "var(--tok-bool)", fontWeight: "650" },
+  { tag: tags.null, color: "var(--tok-bool)", fontWeight: "650" },
+  { tag: tags.string, color: "var(--tok-string)" },
+  { tag: tags.number, color: "var(--tok-number)" },
+  { tag: tags.comment, color: "var(--tok-comment)", fontStyle: "italic" },
+  { tag: tags.operator, color: "var(--tok-operator)" },
 ]);
 
 let runMarks = [];
@@ -51,6 +51,27 @@ const state = {
 };
 
 const HIGHLIGHT_KEY = "dqlrs-web.highlight";
+const THEME_KEY = "dqlrs-web.theme";
+const themeToggle = document.querySelector("#theme-toggle");
+
+function currentTheme() {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+function applyTheme(theme, persist) {
+  const dark = theme === "dark";
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  if (!themeToggle) return;
+  themeToggle.setAttribute("aria-pressed", dark ? "true" : "false");
+  themeToggle.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
+  themeToggle.title = dark ? "Light mode" : "Dark mode";
+  if (persist) localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
+}
+
+applyTheme(currentTheme(), false);
+themeToggle?.addEventListener("click", () => {
+  applyTheme(currentTheme() === "dark" ? "light" : "dark", true);
+});
 
 function loadHighlightOptions() {
   try {
@@ -98,11 +119,11 @@ const editor = new EditorView({
       EditorView.contentAttributes.of({ spellcheck: "false", id: "editor-content" }),
       Prec.highest(EditorView.theme({
         ".cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground": {
-          backgroundColor: "rgba(37, 99, 235, 0.28) !important",
+          backgroundColor: "var(--selection) !important",
         },
         ".cm-run-fill": {
-          backgroundColor: "rgba(16, 42, 96, 0.05)",
-          border: "1px solid #2563eb",
+          backgroundColor: "var(--run-fill)",
+          border: "1px solid var(--blue)",
           borderRadius: "2px",
           boxSizing: "content-box",
         },
@@ -118,27 +139,27 @@ const editor = new EditorView({
           fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
           lineHeight: "1.4",
         },
-        ".cm-gutters": { background: "#fafbfc", color: "#8b97a3", border: "none" },
+        ".cm-gutters": { background: "var(--gutter)", color: "var(--placeholder)", border: "none" },
         ".cm-run-status-gutter": { width: "16px" },
         ".cm-run-status-gutter .cm-gutterElement": { padding: "0 1px" },
-        ".cm-band-alt": { backgroundColor: "#f4f7f8" },
-        ".cm-band-write": { backgroundColor: "#fdecec" },
-        ".cm-band-write-even": { backgroundColor: "#f3c4c4" },
-        ".cm-dql-gutter": { width: "8px", background: "#fafbfc" },
+        ".cm-band-alt": { backgroundColor: "var(--raised)" },
+        ".cm-band-write": { backgroundColor: "var(--write)" },
+        ".cm-band-write-even": { backgroundColor: "var(--write-even)" },
+        ".cm-dql-gutter": { width: "8px", background: "var(--gutter)" },
         ".cm-dql-gutter .cm-gutterElement": { padding: "0 0 0 3px" },
         ".cm-write-bar": {
           display: "block",
           width: "3px",
           height: "100%",
           borderRadius: "1px",
-          backgroundColor: "#fb7185",
+          backgroundColor: "var(--write-bar)",
         },
-        ".cm-write-bar-even": { backgroundColor: "#be123c" },
+        ".cm-write-bar-even": { backgroundColor: "var(--write-bar-even)" },
         ".cm-activeLine": { backgroundColor: "transparent" },
-        ".cm-activeLineGutter": { background: "#f3f5f7" },
-        ".cm-content": { padding: "1lh 0 5lh" },
+        ".cm-activeLineGutter": { background: "var(--side)" },
+        ".cm-content": { padding: "1lh 0 5lh", color: "var(--text)" },
         ".cm-line": { padding: "0 8px", backgroundColor: "transparent" },
-        ".cm-placeholder": { color: "#8b97a3", fontStyle: "italic" },
+        ".cm-placeholder": { color: "var(--placeholder)", fontStyle: "italic" },
       }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged && !state.suppressSave) scheduleSave();

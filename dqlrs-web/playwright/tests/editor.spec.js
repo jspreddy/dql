@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
-import { lineByText, lineOverlaps, mod, node, openApp, pressMod, replaceEditor } from "../support/helpers.js";
+import { lineByText, lineOverlaps, mod, node, openApp, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
 
 function cachedResults(workspace) {
   const root = path.join(workspace, ".cache");
@@ -27,17 +27,43 @@ test.beforeEach(async ({ page, app }) => {
   await openApp(page, app);
 });
 
+test("saves the color theme in the browser and restores it", async ({ page }) => {
+  const toggle = page.locator("#theme-toggle");
+  await expect(toggle).toBeVisible();
+  const before = await page.evaluate(() => document.documentElement.dataset.theme || "light");
+  const paperBefore = await themeColor(page, "--paper");
+  await expect(page.locator("body")).toHaveCSS("background-color", paperBefore);
+  await expect(toggle).toHaveAttribute("aria-pressed", before === "dark" ? "true" : "false");
+
+  await toggle.click();
+  const after = before === "dark" ? "light" : "dark";
+  await expect(toggle).toHaveAttribute("aria-pressed", after === "dark" ? "true" : "false");
+  await expect(toggle).toHaveAttribute("aria-label", after === "dark" ? "Switch to light mode" : "Switch to dark mode");
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("dqlrs-web.theme"))).toBe(after);
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe(after);
+  const paperAfter = await themeColor(page, "--paper");
+  expect(paperAfter).not.toBe(paperBefore);
+  await expect(page.locator("body")).toHaveCSS("background-color", paperAfter);
+
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe(after);
+  await expect(page.locator("body")).toHaveCSS("background-color", paperAfter);
+  await expect(page.locator("#theme-toggle")).toHaveAttribute("aria-pressed", after === "dark" ? "true" : "false");
+});
+
 test("resizes the results pane from the top handle", async ({ page }) => {
   const results = page.locator("#results");
   const handle = page.locator("#results-resize");
   const resultsGrip = page.locator(".results-grip");
   const sideGrip = page.locator(".side-grip");
   await expect(handle).toBeVisible();
-  await expect(resultsGrip).toHaveCSS("background-color", "rgb(148, 163, 184)");
+  const gripColor = await themeColor(page, "--grip");
+  await expect(resultsGrip).toHaveCSS("background-color", gripColor);
   await expect(resultsGrip).toHaveCSS("opacity", "0.45");
   await expect(resultsGrip).toHaveCSS("height", "4px");
   await expect(resultsGrip).toHaveCSS("width", "42px");
-  await expect(sideGrip).toHaveCSS("background-color", "rgb(148, 163, 184)");
+  await expect(sideGrip).toHaveCSS("background-color", gripColor);
   await expect(sideGrip).toHaveCSS("opacity", "0.45");
   await expect(sideGrip).toHaveCSS("width", "4px");
   await expect(sideGrip).toHaveCSS("height", "42px");
@@ -177,7 +203,7 @@ test("colors SELECT and outlines the current query without covering the next one
     const span = [...document.querySelectorAll(".cm-content span")].find((el) => el.textContent === "SELECT");
     return span ? getComputedStyle(span).color : "";
   });
-  expect(color).toBe("rgb(15, 118, 110)");
+  expect(color).toBe(await themeColor(page, "--tok-keyword"));
 
   await page.locator(".cm-line", { hasText: "WHERE id = 'a'" }).click();
   await expect(page.locator(".cm-run-fill")).toBeVisible();
@@ -249,7 +275,7 @@ test("frames a partial line selection as a whole line and highlights the text", 
   expect(metrics.fillRight).toBeGreaterThanOrEqual(metrics.textRight - 1);
   expect(metrics.selectWidth).toBeGreaterThan(4);
   expect(metrics.selectWidth).toBeLessThan(metrics.textWidth * 0.75);
-  expect(metrics.keyword).toBe("rgb(15, 118, 110)");
+  expect(metrics.keyword).toBe(await themeColor(page, "--tok-keyword"));
   expect(metrics.highlight).not.toBe("rgba(0, 0, 0, 0)");
   const layerOrder = await page.evaluate(() => {
     const z = (selector) => Number(getComputedStyle(document.querySelector(selector)).zIndex);
@@ -318,7 +344,7 @@ test("runs the whole file from the button beside the filename", async ({ page, a
   app.trackTable(name);
   await expect(page.locator("#run-file")).toBeVisible();
   await expect(page.locator("#run-file .ff-icon")).toBeVisible();
-  await expect(page.locator("#run-file")).toHaveCSS("color", "rgb(185, 28, 28)");
+  await expect(page.locator("#run-file")).toHaveCSS("color", await themeColor(page, "--danger"));
   const nameBox = await page.locator("#file-name").boundingBox();
   const buttonBox = await page.locator("#run-file").boundingBox();
   expect(buttonBox.x).toBeGreaterThan(nameBox.x + nameBox.width - 1);
@@ -527,7 +553,7 @@ test("opens a hovered result row as highlighted JSON", async ({ page, app }) => 
   await expect(json.locator(".tok-string", { hasText: '"alpha"' })).toBeVisible();
   await expect(json.locator(".tok-number", { hasText: "7" })).toBeVisible();
   const keyColor = await json.locator(".tok-key").first().evaluate((el) => getComputedStyle(el).color);
-  expect(keyColor).toBe("rgb(15, 118, 110)");
+  expect(keyColor).toBe(await themeColor(page, "--tok-keyword"));
   await page.locator("#row-pop-close").click();
   await expect(dialog).toBeHidden();
   await peek.click();
@@ -661,6 +687,8 @@ test("expands a result card query from the left dot", async ({ page, app }) => {
   await expect(shells).toHaveCount(4);
   await expect(page.locator(".result-shell [data-testid='result-query-toggle']")).toHaveCount(4);
 
+  const ink = await themeColor(page, "--teal-ink");
+  const dotColor = await themeColor(page, "--dot");
   const drop = shells.nth(0);
   const dropDot = drop.locator("[data-testid='result-query-toggle']");
   const dropQuery = drop.locator("[data-testid='result-card-query']");
@@ -675,7 +703,7 @@ test("expands a result card query from the left dot", async ({ page, app }) => {
   await dropDot.click();
   await expect(dropQuery).toBeVisible();
   await expect(dropQuery).toContainText("DROP TABLE");
-  await expect(dropDot).toHaveCSS("background-color", "rgb(15, 118, 110)");
+  await expect(dropDot).toHaveCSS("background-color", ink);
   await page.mouse.move(0, 0);
   await expect(dropDot).toHaveCSS("opacity", "0.75");
   await expect(dropDot).toHaveCSS("transform", "matrix(1.25, 0, 0, 1.25, -4, 0)");
@@ -684,13 +712,13 @@ test("expands a result card query from the left dot", async ({ page, app }) => {
   await expect(dropQuery).toBeHidden();
   await page.mouse.move(0, 0);
   await expect(dropDot).toHaveCSS("opacity", "0.5");
-  await expect(dropDot).toHaveCSS("background-color", "rgb(154, 163, 173)");
+  await expect(dropDot).toHaveCSS("background-color", dotColor);
 
   const card = page.locator(".result-card");
   const query = card.locator("[data-testid='result-card-query']");
   const dot = card.locator("xpath=ancestor::*[contains(@class,'result-shell')]").locator("[data-testid='result-query-toggle']");
   await expect(query).toBeHidden();
-  await expect(dot).toHaveCSS("background-color", "rgb(154, 163, 173)");
+  await expect(dot).toHaveCSS("background-color", dotColor);
   await expect(dot).toHaveCSS("opacity", "0.5");
   await expect(dot).toHaveCSS("transform", "matrix(1, 0, 0, 1, -4, 0)");
 
@@ -718,7 +746,7 @@ test("expands a result card query from the left dot", async ({ page, app }) => {
   await expect(query).toBeVisible();
   await expect(query).toContainText(`SELECT * FROM ${name}`);
   await expect(dot).toHaveAttribute("aria-expanded", "true");
-  await expect(dot).toHaveCSS("background-color", "rgb(15, 118, 110)");
+  await expect(dot).toHaveCSS("background-color", ink);
   await expect(dot).toHaveCSS("opacity", "0.75");
   const opened = await card.boundingBox();
   const openedPlace = await chevronPlacement(card, dot);
@@ -728,7 +756,7 @@ test("expands a result card query from the left dot", async ({ page, app }) => {
   await page.mouse.move(0, 0);
   await expect(dot).toHaveCSS("transform", "matrix(1.25, 0, 0, 1.25, -4, 0)");
   await expect(dot).toHaveCSS("opacity", "0.75");
-  await expect(dot).toHaveCSS("background-color", "rgb(15, 118, 110)");
+  await expect(dot).toHaveCSS("background-color", ink);
   const openRest = await chevronPlacement(card, dot);
   expect(Math.abs((openRest.iconBox.y - openRest.cardBox.y) - (resting.iconBox.y - resting.cardBox.y))).toBeLessThan(3);
 
@@ -737,7 +765,7 @@ test("expands a result card query from the left dot", async ({ page, app }) => {
   await dot.click();
   await expect(query).toBeHidden();
   await expect(dot).toHaveAttribute("aria-expanded", "false");
-  await expect(dot).toHaveCSS("background-color", "rgb(154, 163, 173)");
+  await expect(dot).toHaveCSS("background-color", dotColor);
   await page.mouse.move(0, 0);
   await expect(dot).toHaveCSS("opacity", "0.5");
   await expect(dot).toHaveCSS("transform", "matrix(1, 0, 0, 1, -4, 0)");
@@ -1077,12 +1105,12 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
     ].join("\n"),
   );
   const described = page.locator(".describe").filter({ hasText: "Hash Key" });
-  await expectDescription(described, name);
+  await expectDescription(page, described, name);
   await expect(described).not.toContainText(other);
 
   await runEditor(`ls ${name}`);
   const listed = page.locator(".query-result").last().locator(".describe").filter({ hasText: "Hash Key" });
-  await expectDescription(listed, name);
+  await expectDescription(page, listed, name);
   await expect(listed).not.toContainText(other);
 
   await runEditor(`ls ${name}*`);
@@ -1184,7 +1212,7 @@ test("ls-related-keys lists tables whose keys match", async ({ page, app }) => {
   await expect(card).not.toContainText("Hash Key");
 });
 
-async function expectDescription(card, tableName) {
+async function expectDescription(page, card, tableName) {
   await expect(card.locator(".describe-name")).toHaveText(tableName);
   await expect(card.locator(".describe-key[data-key='hash']")).toContainText("Hash Key");
   await expect(card.locator(".describe-key[data-key='range'] .describe-key-name")).toHaveText("n");
@@ -1195,7 +1223,7 @@ async function expectDescription(card, tableName) {
   await expect(card.locator(".describe-query .tok-typeName", { hasText: "STRING" }).first()).toBeVisible();
   // A results refresh replaces these nodes. A one-shot getComputedStyle can
   // land on the detached span and read an empty color.
-  await expect(create).toHaveCSS("color", "rgb(15, 118, 110)");
+  await expect(create).toHaveCSS("color", await themeColor(page, "--tok-keyword"));
 }
 
 function uniqueTable() {

@@ -91,6 +91,20 @@ export const test = base.extend({
   // SAVE and LOAD resolve relative paths from the dqlrs process directory.
   // Tests that opt in get a temp directory so those files stay out of the repo.
   isolateCwd: [false, { option: true }],
+  themeInit: [async ({ page }, use, testInfo) => {
+    if (testInfo.project.name === "dark") {
+      await page.addInitScript(() => {
+        try {
+          if (!localStorage.getItem("dqlrs-web.theme")) {
+            localStorage.setItem("dqlrs-web.theme", "dark");
+          }
+        } catch {
+          /* storage is unavailable before a document exists */
+        }
+      });
+    }
+    await use();
+  }, { auto: true }],
   app: async ({ isolateCwd }, use) => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-web-"));
     fs.cpSync(fixtureRoot, workspace, { recursive: true });

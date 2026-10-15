@@ -12,6 +12,21 @@ export function node(page, filePath) {
   return page.locator(`[data-testid="${id}"]`);
 }
 
+export async function themeColor(page, name) {
+  return page.evaluate((variable) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${variable})`;
+    document.body.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  }, name);
+}
+
+export function colorPattern(color) {
+  return new RegExp(color.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+}
+
 export async function openApp(page, app) {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");

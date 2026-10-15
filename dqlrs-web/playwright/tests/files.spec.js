@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
-import { handleDialogs, node, openApp, pressMod } from "../support/helpers.js";
+import { handleDialogs, node, openApp, pressMod, themeColor } from "../support/helpers.js";
 
 test.beforeEach(async ({ page, app }) => {
   await openApp(page, app);
@@ -103,7 +103,7 @@ test("runs an empty folder from the context menu", async ({ page }) => {
   await node(page, "empty").click({ button: "right" });
   await expect(page.locator("#menu-run-folder")).toBeVisible();
   await expect(page.locator("#menu-run-folder .ff-icon")).toBeVisible();
-  await expect(page.locator("#menu-run-folder")).toHaveCSS("color", "rgb(185, 28, 28)");
+  await expect(page.locator("#menu-run-folder")).toHaveCSS("color", await themeColor(page, "--danger"));
   await page.locator("#menu-run-folder").click();
   await expect(page.locator("#file-menu")).toBeHidden();
   await expect(page.locator("#result-meta")).toHaveText("Nothing to run");
