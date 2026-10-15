@@ -183,6 +183,15 @@ impl RuntimeEngine {
         }
     }
 
+    pub fn caller_identity(&self) -> Result<dql_engine::CallerIdentity, EngineError> {
+        match self {
+            Self::Memory(_) => Err(EngineError::Runtime(
+                "memory backend has no caller identity".to_string(),
+            )),
+            Self::Remote(engine) => engine.inner().backend().caller_identity(),
+        }
+    }
+
     pub fn with_memory_mut<R>(
         &mut self,
         f: impl FnOnce(&mut FragmentEngine<dql_engine::MemoryBackend>) -> R,

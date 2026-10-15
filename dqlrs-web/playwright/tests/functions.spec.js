@@ -43,7 +43,7 @@ test("opens the functions sample and runs every condition function", async ({ pa
   await page.locator("#run").click();
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
   await expect(page.locator(".result-card")).toHaveCount(12);
-  await expect(page.locator("#result-meta")).toHaveText("1 step");
+  await expect(page.locator("#result-meta")).toBeEmpty();
   const results = page.locator("#result-body");
   await expect(results).toContainText("Blue mug");
   await expect(results).toContainText("Arc lamp");
@@ -134,7 +134,8 @@ test("returns the expected rows for each DynamoDB function", async ({ page, app 
     if ((await errors.count()) > 0) {
       throw new Error(`unexpected error for ${dql}: ${await errors.first().innerText()}`);
     }
-    await expect(page.locator("#result-meta"), dql).toHaveText(`${rows} ${rows === 1 ? "row" : "rows"}`);
+    await expect(page.locator(".result-card").last().locator(".result-card-meta"), dql).toHaveText(`${rows} ${rows === 1 ? "row" : "rows"}`);
+    await expect(page.locator("#result-meta"), dql).toBeEmpty();
     for (const value of text) {
       await expect(page.locator("#result-table"), dql).toContainText(value);
     }

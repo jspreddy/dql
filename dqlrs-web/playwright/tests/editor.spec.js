@@ -85,11 +85,67 @@ test("resizes the results pane from the top handle", async ({ page }) => {
 test("shows the endpoint and the editor shortcut", async ({ page }) => {
   const mac = mod === "Meta";
   await expect(page.locator("#endpoint")).toHaveText("localhost:8000");
+  await expect(page.locator("#endpoint")).toHaveAttribute("data-kind", "local");
+  await expect(page.locator("#endpoint")).not.toHaveAttribute("aria-haspopup", "dialog");
+  await page.locator("#endpoint").click();
+  await expect(page.locator("#env-pop")).toBeHidden();
   await expect(page.locator("#run-shortcut")).toHaveText(mac ? "⌘ Enter" : "Ctrl+Enter");
   await expect(page.locator("#run")).toHaveAttribute(
     "aria-keyshortcuts",
     mac ? "Meta+Enter" : "Control+Enter",
   );
+});
+
+test("opens aws environment details from the header", async ({ page }) => {
+  await page.route("**/api/config", async (route) => {
+    const response = await route.fetch();
+    const json = await response.json();
+    json.environment = {
+      kind: "aws",
+      label: "jonsmith · us-east-1",
+      profile: "jonsmith",
+      region: "us-east-1",
+      access_key: "AKIA…MPLE",
+      expiration: "2020-04-16T11:16:27Z",
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(json),
+    });
+  });
+  await page.route("**/api/identity", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        ok: true,
+        account: "123456789012",
+        arn: "arn:aws:iam::123456789012:user/jonsmith",
+        user_id: "AIDAEXAMPLEUSER",
+        principal: "jonsmith",
+      }),
+    });
+  });
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  const chip = page.locator("#endpoint");
+  await expect(chip).toHaveText("jonsmith · us-east-1");
+  await expect(chip).toHaveAttribute("data-kind", "aws");
+  await chip.click();
+  const pop = page.locator("#env-pop");
+  await expect(pop).toBeVisible();
+  await expect(pop).toContainText("Environment");
+  await expect(pop).toContainText("jonsmith");
+  await expect(pop).toContainText("us-east-1");
+  await expect(pop).toContainText("AKIA…MPLE");
+  await expect(pop).toContainText("expired");
+  await expect(pop).toContainText("123456789012");
+  await expect(pop).toContainText("arn:aws:iam::123456789012:user/jonsmith");
+  await expect(pop).toContainText("AIDAEXAMPLEUSER");
+  await expect(pop).not.toContainText("AKIAIOSFODNN7EXAMPLE");
+  await chip.click();
+  await expect(pop).toBeHidden();
 });
 
 test("pads one line above the editor and five lines below it", async ({ page }) => {
@@ -281,7 +337,8 @@ test("runs the whole file from the button beside the filename", async ({ page, a
   await page.locator("#run-file").click();
   await expect(page.locator(".query-result")).toHaveCount(5);
   await expect(page.locator(".result-card")).toHaveCount(2);
-  await expect(page.locator("#result-meta")).toHaveText("1 row");
+  await expect(page.locator("#result-meta")).toBeEmpty();
+  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("1 row");
   await expect(page.locator("#result-body")).toContainText("alpha");
   await expect(page.locator("#result-body")).toContainText("beta");
 
@@ -369,18 +426,15 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   const aligned = await page.locator(".results-head").evaluate((node) => {
     const title = node.querySelector(".results-title").getBoundingClientRect();
     const chip = node.querySelector(".results-chip").getBoundingClientRect();
-    const meta = node.querySelector("#result-meta").getBoundingClientRect();
     const bar = node.getBoundingClientRect();
     const mid = (box) => box.top + box.height / 2;
     return {
       titleChip: Math.abs(mid(title) - mid(chip)),
-      titleMeta: Math.abs(mid(title) - mid(meta)),
       chipRight: bar.right - chip.right,
       chipAfterTitle: chip.left > title.right,
     };
   });
   expect(aligned.titleChip).toBeLessThan(2);
-  expect(aligned.titleMeta).toBeLessThan(2);
   expect(aligned.chipRight).toBeLessThan(16);
   expect(aligned.chipAfterTitle).toBe(true);
 
@@ -509,7 +563,20 @@ test("runs a selection and shows the result table", async ({ page, app }) => {
   await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator("#result-table")).toContainText("alpha");
-  await expect(page.locator("#result-meta")).toHaveText("1 row");
+  await expect(page.locator("#result-meta")).toBeEmpty();
+  const card = page.locator(".result-card").last();
+  const meta = card.locator(".result-card-meta");
+  const schema = card.locator(".result-schema");
+  await expect(meta).toHaveText("1 row");
+  const nameBox = await card.locator(".result-card-name").boundingBox();
+  const schemaBox = await schema.boundingBox();
+  const metaBox = await meta.boundingBox();
+  const headBox = await card.locator(".result-card-head").boundingBox();
+  expect(schemaBox.x).toBeGreaterThan(nameBox.x + nameBox.width - 1);
+  expect(metaBox.x).toBeGreaterThan(schemaBox.x + schemaBox.width - 1);
+  expect(metaBox.x - (schemaBox.x + schemaBox.width)).toBeLessThan(16);
+  expect(headBox.x + headBox.width - (metaBox.x + metaBox.width)).toBeGreaterThan(80);
+  expect(Math.abs(metaBox.y + metaBox.height / 2 - (schemaBox.y + schemaBox.height / 2))).toBeLessThan(4);
   await expect(page.locator('[data-testid="run-status-ok"]').first()).toBeVisible();
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
   await expect(page.locator("#run-progress")).toBeHidden();
@@ -736,7 +803,7 @@ test("shows an explain plan as operations and conditions", async ({ page, app })
   await expect(field("key condition")).toContainText("n > ");
   await expect(field("filter")).toContainText("id = ");
   await expect(field("index")).toHaveText("TABLE");
-  await expect(page.locator("#result-meta")).toHaveText("1 step");
+  await expect(page.locator("#result-meta")).toBeEmpty();
   await expect(page.locator(".query-result").last().locator('[data-testid="result-note"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="run-status-error"]')).toHaveCount(0);
 
@@ -913,12 +980,14 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
   await runEditor(`SHOW TABLES LIKE '${name}';`);
   await expect(page.locator("#result-table")).toContainText(name);
   await expect(page.locator("#result-table")).not.toContainText(other);
-  await expect(page.locator("#result-meta")).toHaveText("1 row");
+  await expect(page.locator("#result-meta")).toBeEmpty();
+  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("1 row");
   await expect(page.locator(".query-result").last().locator("[data-testid='intelligent-match']")).toHaveCount(0);
 
   await runEditor(`SHOW TABLES LIKE '${name}%';`);
   await expect(page.locator("#result-table")).toContainText(name);
-  await expect(page.locator("#result-meta")).toHaveText("1 row");
+  await expect(page.locator("#result-meta")).toBeEmpty();
+  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("1 row");
   await expect(page.locator(".query-result").last().locator("[data-testid='intelligent-match']")).toHaveCount(0);
 });
 
@@ -981,7 +1050,8 @@ test("show-tables-like-intelligent-match notes similar names and related keys", 
   // qqqxxyyzz scores as a related key of the zzqq… hash above.
   await runEditor("SHOW TABLES LIKE 'mnvv77kk';");
   await expect(page.locator(".query-result").last().locator("[data-testid='intelligent-match']")).toHaveCount(0);
-  await expect(page.locator("#result-meta")).toHaveText("0 rows");
+  await expect(page.locator("#result-meta")).toBeEmpty();
+  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("0 rows");
   await expect(page.locator("#result-body")).toContainText("No rows");
 });
 
@@ -1036,7 +1106,7 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   await expect(all.locator(".describe-table-name", { hasText: name })).toHaveCount(1);
   await expect(all.locator(".describe-table-name", { hasText: other })).toHaveCount(1);
   await expect(all.locator("[data-testid='intelligent-match']")).toHaveCount(0);
-  await expect(page.locator("#result-meta")).toHaveText(/\d+ tables?/);
+  await expect(page.locator("#result-meta")).toBeEmpty();
 
   await runEditor("SHOW TABLES;");
   const shown = page.locator(".query-result").last().locator(".describe").filter({ hasText: name });
@@ -1046,7 +1116,7 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   await expect(shown.locator(".describe-status.is-active").first()).toBeVisible();
   await expect(shown.locator("[data-testid='intelligent-match']")).toHaveCount(0);
   await expect(shown.locator("#result-table")).toHaveCount(0);
-  await expect(page.locator("#result-meta")).toHaveText(/\d+ tables?/);
+  await expect(page.locator("#result-meta")).toBeEmpty();
 });
 
 test("ls-intelligent-match notes partial names when nothing matches exactly", async ({ page, app }) => {
