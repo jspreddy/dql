@@ -1575,7 +1575,8 @@ function resultCard(snapshot, tableId) {
   meta.className = "result-card-meta";
   const count = (snapshot.rows || []).length;
   meta.textContent = count + (count === 1 ? " row" : " rows");
-  head.append(title, meta);
+  title.append(meta);
+  head.append(title);
   const body = document.createElement("div");
   body.className = "result-card-body";
   body.append(dataTable(snapshot.rows, tableId, snapshot.columns));
