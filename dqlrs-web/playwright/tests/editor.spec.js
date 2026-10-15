@@ -4,7 +4,7 @@ import { test, expect } from "../support/app.js";
 import { lineByText, lineOverlaps, mod, node, openApp, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
 
 function cachedResults(workspace) {
-  const root = path.join(workspace, ".cache");
+  const root = path.join(workspace, ".dqlrs-web-cache");
   if (!fs.existsSync(root)) return [];
   const files = [];
   for (const dir of fs.readdirSync(root)) {
@@ -426,6 +426,52 @@ test("runs every dql file in a folder from the context menu", async ({ page, app
   await node(page, `${folder}/nested/three.dql`).click();
   await expect(page.locator(".query-result").filter({ hasText: "from-c" })).toHaveCount(1);
   await expect(page.locator(".query-result").filter({ hasText: "from-b" })).toHaveCount(0);
+});
+
+test("clears the cache hashes for the files under a right-clicked folder", async ({ page, app }) => {
+  const name = uniqueTable();
+  const kept = `${name}_keep`;
+  const one = `${name}_one`;
+  const two = `${name}_two`;
+  app.trackTable(kept);
+  app.trackTable(one);
+  app.trackTable(two);
+  const folder = `cache${name}`;
+
+  await replaceEditor(page, `CREATE TABLE ${kept} (id STRING HASH KEY);`);
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="run-status-ok"]')).toBeVisible();
+
+  await writeWorkspaceFile(page, `${folder}/one.dql`, `CREATE TABLE ${one} (id STRING HASH KEY);\n`);
+  await writeWorkspaceFile(page, `${folder}/nested/two.dql`, `CREATE TABLE ${two} (id STRING HASH KEY);\n`);
+  await page.reload();
+  await expect(page.locator("#file-name")).toBeVisible();
+  await node(page, folder).click({ button: "right" });
+  await expect(page.locator("#menu-clear-cache")).toBeVisible();
+  await page.locator("#menu-run-folder").click();
+
+  const mentions = (needle) =>
+    cachedResults(app.workspace).some((file) => String(file.body.query).includes(needle));
+  await expect.poll(() => mentions(one)).toBe(true);
+  await expect.poll(() => mentions(two)).toBe(true);
+  expect(mentions(kept)).toBe(true);
+  expect(fs.existsSync(path.join(app.workspace, ".cache"))).toBe(false);
+  expect(fs.existsSync(path.join(app.workspace, ".dqlrs-web-cache"))).toBe(true);
+
+  await node(page, folder).click({ button: "right" });
+  await expect(page.locator("#menu-clear-cache")).toBeVisible();
+  await page.locator("#menu-clear-cache").click();
+  await expect(page.locator("#file-menu")).toBeHidden();
+  await expect.poll(() => mentions(one)).toBe(false);
+  await expect.poll(() => mentions(two)).toBe(false);
+  expect(mentions(kept)).toBe(true);
+
+  await node(page, `${folder}/one.dql`).click();
+  await expect(page.locator("#file-name")).toHaveText("one.dql");
+  await expect(page.locator(".query-result")).toHaveCount(0);
+  await node(page, "queries/edit.dql").click();
+  await expect(page.locator(".query-result")).toHaveCount(1);
 });
 
 test("keeps results with the query file and clears them", async ({ page, app }) => {

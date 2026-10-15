@@ -413,8 +413,8 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
             Err(err) => json_error(400, &err),
         },
         "/api/query-results" => save_query_result(&app.root, &body),
-        "/api/query-results/clear" => match query_cache::clear(&app.root, relative) {
-            Ok(()) => Reply::Json(200, json!({"ok": true})),
+        "/api/query-results/clear" => match query_cache::clear_at(&app.root, relative) {
+            Ok(paths) => Reply::Json(200, json!({"ok": true, "paths": paths})),
             Err(err) => json_error(400, &err),
         },
         _ => Reply::Json(404, json!({"ok": false, "error": "not found"})),
