@@ -5,6 +5,7 @@
 //! without a rebuild. The installed binary falls back to the embedded copy.
 
 mod files;
+mod query_cache;
 mod server;
 mod shape;
 

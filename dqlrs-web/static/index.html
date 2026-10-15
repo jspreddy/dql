@@ -94,7 +94,17 @@
                 Results
                 <progress id="run-progress" hidden aria-label="Query progress"></progress>
               </span>
-              <span id="result-meta" class="meta"></span>
+              <span class="results-actions">
+                <span id="result-meta" class="meta"></span>
+                <span class="results-chip">
+                  <span id="result-count">0 results</span>
+                  <button type="button" id="clear-results" class="hidden" aria-label="Clear results" title="Clear results">
+                    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                      <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M2.8 4.2h10.4M6.1 4.1V2.8h3.8v1.3M4.3 4.2l.7 9h6l.7-9M6.7 6.5v4.2M9.3 6.5v4.2"/>
+                    </svg>
+                  </button>
+                </span>
+              </span>
             </div>
           </div>
           <div id="result-body" class="result-body"></div>

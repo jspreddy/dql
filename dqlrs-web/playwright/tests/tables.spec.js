@@ -425,7 +425,7 @@ test("gives each query result its own named card and structure icon", async ({ p
   await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator(".result-card")).toHaveCount(2);
-  await expect(page.locator("#result-meta")).toHaveText("2 results");
+  await expect(page.locator("#result-meta")).toHaveText("1 row");
 
   const booksCard = page.locator(`.result-card[data-table="${books}"]`);
   const ordersCard = page.locator(`.result-card[data-table="${orders}"]`);

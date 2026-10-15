@@ -17,6 +17,7 @@ use include_dir::{include_dir, Dir};
 use serde_json::{json, Value};
 
 use super::files::{self, PathError};
+use super::query_cache;
 use super::shape::{
     changes_schema, column_order, explain_index, list_tables, parse_table_shape, read_query,
     safe_table_name, split_statements, Column, ExecText, ListedTable, TableShape, PAGE_SIZE,
@@ -281,6 +282,13 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
                 Err(err) => json_error(400, &err),
             }
         }
+        "/api/query-results" => {
+            let relative = query_value(query, "path");
+            match query_cache::list(&app.root, &relative) {
+                Ok(results) => Reply::Json(200, json!({ "results": results })),
+                Err(err) => json_error(400, &err),
+            }
+        }
         "/api/tables" => {
             let pattern = query_value(query, "pattern");
             let refresh = query_flag(query, "refresh");
@@ -354,6 +362,11 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
             Ok(()) => Reply::Json(200, json!({"ok": true})),
             Err(err) => json_error(400, &err),
         },
+        "/api/query-results" => save_query_result(&app.root, &body),
+        "/api/query-results/clear" => match query_cache::clear(&app.root, relative) {
+            Ok(()) => Reply::Json(200, json!({"ok": true})),
+            Err(err) => json_error(400, &err),
+        },
         _ => Reply::Json(404, json!({"ok": false, "error": "not found"})),
     }
 }
@@ -367,6 +380,22 @@ fn dispatch_put(app: &App, path: &str, raw: &[u8]) -> Reply {
     let text = body.get("text").and_then(Value::as_str).unwrap_or("");
     match files::write_text(&app.root, relative, text) {
         Ok(()) => Reply::Json(200, json!({"ok": true})),
+        Err(err) => json_error(400, &err),
+    }
+}
+
+fn save_query_result(root: &Path, body: &Value) -> Reply {
+    let relative = body.get("path").and_then(Value::as_str).unwrap_or("");
+    let query = body.get("query").and_then(Value::as_str).unwrap_or("");
+    let Some(success) = body.get("success").and_then(Value::as_bool) else {
+        return Reply::Json(
+            400,
+            json!({"ok": false, "error": "success must be a boolean"}),
+        );
+    };
+    let result = body.get("result").cloned().unwrap_or(Value::Null);
+    match query_cache::save(root, relative, query, result, success) {
+        Ok(stored) => Reply::Json(200, serde_json::to_value(stored).unwrap_or(Value::Null)),
         Err(err) => json_error(400, &err),
     }
 }

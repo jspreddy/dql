@@ -68,6 +68,7 @@ test("context menu on a file offers the file actions", async ({ page }) => {
   await expect(page.locator("#menu-rename")).toBeVisible();
   await expect(page.locator("#menu-move")).toBeVisible();
   await expect(page.locator("#menu-delete")).toBeVisible();
+  await expect(page.locator("#menu-clear-results")).toBeVisible();
   await expect(page.locator("#menu-run-folder")).toHaveCount(0);
   await page.locator("#file-name").click();
   await expect(page.locator("#file-menu")).toBeHidden();

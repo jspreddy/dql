@@ -43,7 +43,7 @@ test("opens the functions sample and runs every condition function", async ({ pa
   await page.locator("#run").click();
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
   await expect(page.locator(".result-card")).toHaveCount(12);
-  await expect(page.locator("#result-meta")).toHaveText("12 results");
+  await expect(page.locator("#result-meta")).toHaveText("1 step");
   const results = page.locator("#result-body");
   await expect(results).toContainText("Blue mug");
   await expect(results).toContainText("Arc lamp");

@@ -38,6 +38,7 @@ const state = {
   saveTimer: 0,
   searchTimer: 0,
   table: "",
+  entries: [],
   page: 0,
   hasMore: false,
   suppressSave: false,
@@ -150,6 +151,7 @@ const editor = new EditorView({
 const resultBody = document.querySelector("#result-body");
 const runProgress = document.querySelector("#run-progress");
 const resultMeta = document.querySelector("#result-meta");
+const resultCount = document.querySelector("#result-count");
 const resultsEl = document.querySelector("#results");
 const resultsResize = document.querySelector("#results-resize");
 const RESULTS_HEIGHT_KEY = "dqlrs-web.results-height";
@@ -361,6 +363,8 @@ stopButton.setAttribute("aria-keyshortcuts", "Escape");
 runButton.addEventListener("click", runSelection);
 const runFileButton = document.querySelector("#run-file");
 runFileButton.addEventListener("click", runFile);
+const clearResultsButton = document.querySelector("#clear-results");
+clearResultsButton.addEventListener("click", () => clearFileResults(state.path));
 stopButton.addEventListener("click", stopRun);
 window.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || stopButton.classList.contains("hidden")) return;
@@ -376,6 +380,7 @@ function setRunBusy(busy) {
   stopButton.disabled = !busy;
   runShortcut.textContent = busy ? "Esc" : runShortcutLabel;
   runFileButton.disabled = busy || !state.path;
+  syncClearResults();
   const floating = editor.dom.querySelector(".run-float");
   if (floating) floating.disabled = busy;
 }
@@ -399,7 +404,7 @@ function runFromEditor() {
 async function runFile() {
   if (runButton.disabled || !state.path) return;
   await flushSave();
-  await runDocuments([{ text: editorText(), base: 0 }]);
+  await runDocuments([{ text: editorText(), path: state.path, base: 0 }]);
 }
 
 setRunRequest(runFromEditor);
@@ -661,8 +666,10 @@ async function openFile(path) {
   const file = await api("/api/file?path=" + encodeURIComponent(path));
   setEditorText(file.text);
   showOpenFile(file.path);
+  state.entries = [];
+  showResults([]);
   setMode("query");
-  await refreshTree();
+  await Promise.all([refreshTree(), loadFileResults(file.path)]);
 }
 
 async function createFile() {
@@ -836,6 +843,11 @@ function menuItems(target) {
     { label: "Duplicate", run: () => duplicateEntry(target.path) },
     { label: "Rename", run: () => beginRename(target.path) },
     { label: "Move to…", run: () => moveEntry(target.path) },
+  );
+  if (target.type === "file") {
+    items.push({ label: "Clear results", run: () => clearFileResults(target.path) });
+  }
+  items.push(
     "-",
     { label: "Delete", danger: true, run: () => deleteEntry(target.path, target.type) },
   );
@@ -849,6 +861,7 @@ const menuIds = {
   Duplicate: "menu-duplicate",
   Rename: "menu-rename",
   "Move to…": "menu-move",
+  "Clear results": "menu-clear-results",
   Delete: "menu-delete",
 };
 
@@ -950,6 +963,169 @@ function showOpenFile(path) {
   document.querySelector("#file-name").textContent = state.path ? state.path.split("/").pop() : "No file open";
   runFileButton.classList.toggle("hidden", !state.path);
   runFileButton.disabled = !state.path || runButton.disabled;
+  if (!state.path) {
+    state.entries = [];
+    showResults([]);
+  }
+  syncClearResults();
+}
+
+function syncClearResults() {
+  const open = Boolean(state.path);
+  clearResultsButton.classList.toggle("hidden", !open);
+  clearResultsButton.disabled = !open || runButton.disabled;
+}
+
+let resultsRequest = 0;
+
+async function loadFileResults(path) {
+  const request = ++resultsRequest;
+  if (!path) {
+    state.entries = [];
+    showResults([]);
+    return;
+  }
+  const payload = await api("/api/query-results?path=" + encodeURIComponent(path));
+  if (request !== resultsRequest || path !== state.path) return;
+  state.entries = payload.results || [];
+  showResults(state.entries);
+}
+
+async function clearFileResults(path) {
+  if (!path || runButton.disabled) return;
+  await api("/api/query-results/clear", { method: "POST", body: { path } });
+  if (path === state.path) {
+    state.entries = [];
+    showResults([]);
+  }
+}
+
+async function storeQueryResult(path, query, result, success) {
+  if (!path) {
+    showResults([{ query, result, success }]);
+    return;
+  }
+  await api("/api/query-results", {
+    method: "POST",
+    body: { path, query, result, success: Boolean(success) },
+  });
+  if (path === state.path) await loadFileResults(path);
+}
+
+function resultList(result) {
+  if (Array.isArray(result)) return result;
+  if (result && typeof result === "object") return [result];
+  return [];
+}
+
+async function storeStatementResults(path, text, results) {
+  const spans = statementSpans(text || "");
+  const entries = results.map((result, index) => {
+    const span = spans[index];
+    const sliced = span ? String(text || "").slice(span.from, span.to).trim() : "";
+    return {
+      query: String(result.statement || sliced || "").trim(),
+      result,
+      success: Boolean(result.ok),
+    };
+  });
+  if (!path) {
+    showResults(entries);
+    return;
+  }
+  for (const entry of entries) {
+    await api("/api/query-results", {
+      method: "POST",
+      body: { path, query: entry.query, result: entry.result, success: entry.success },
+    });
+  }
+  if (path === state.path) await loadFileResults(path);
+}
+
+let resultPin = null;
+
+function releaseResultPin() {
+  if (!resultPin) return;
+  resultPin.abort();
+  resultPin = null;
+}
+
+// History is oldest-first, so the latest result is last. A trailing spacer
+// makes a short last result able to sit at the top of the pane; scrolling
+// up uncovers the older results above it.
+function pinLatestResult() {
+  releaseResultPin();
+  const latest = resultBody.querySelector(".query-result:last-of-type");
+  if (!latest) return;
+  const shell = latest.querySelector(".result-shell") || latest;
+  const spacer = document.createElement("div");
+  spacer.className = "result-scroll-spacer";
+  spacer.setAttribute("aria-hidden", "true");
+  resultBody.append(spacer);
+  const controller = new AbortController();
+  resultPin = controller;
+  let stick = true;
+  let fitting = false;
+  const metrics = () => {
+    const style = getComputedStyle(shell);
+    const marginTop = parseFloat(style.marginTop) || 0;
+    const marginBottom = parseFloat(style.marginBottom) || 0;
+    return {
+      marginTop,
+      block: marginTop + shell.offsetHeight + marginBottom,
+      top: Math.max(0, shell.offsetTop - marginTop),
+    };
+  };
+  const fit = () => {
+    fitting = true;
+    const { block, top } = metrics();
+    spacer.style.height = Math.max(0, resultBody.clientHeight - block) + "px";
+    if (stick && Math.abs(resultBody.scrollTop - top) > 1) resultBody.scrollTop = top;
+    fitting = false;
+  };
+  resultBody.addEventListener("scroll", () => {
+    if (fitting) return;
+    stick = Math.abs(resultBody.scrollTop - metrics().top) <= 2;
+  }, { signal: controller.signal, passive: true });
+  const observer = new ResizeObserver(() => fit());
+  controller.signal.addEventListener("abort", () => observer.disconnect());
+  observer.observe(resultBody);
+  observer.observe(shell);
+  fit();
+}
+
+function setResultCount(count) {
+  const total = Math.max(0, Number(count) || 0);
+  resultCount.textContent = total === 1 ? "1 result" : total + " results";
+}
+
+function showResults(entries) {
+  releaseResultPin();
+  setResultCount(entries.length);
+  resultBody.replaceChildren();
+  closeSchemaIfResult();
+  closeRowPop();
+  if (!entries.length) {
+    resultMeta.textContent = "";
+    return;
+  }
+  let summary = "";
+  const latestItems = entries.reduce((found, item, itemIndex) => (
+    resultList(item.result).some((part) => part && part.ok && part.kind === "items" && !listedItemTables(part))
+      ? itemIndex
+      : found
+  ), -1);
+  entries.forEach((entry, index) => {
+    const block = document.createElement("section");
+    block.className = "query-result" + (entry.success ? "" : " is-error");
+    block.dataset.testid = "query-result";
+    const body = document.createElement("div");
+    summary = renderResults(resultList(entry.result), body, index === latestItems);
+    block.append(queryShell(entry.query, body));
+    resultBody.append(block);
+  });
+  resultMeta.textContent = summary;
+  pinLatestResult();
 }
 
 function setEditorText(text) {
@@ -1026,7 +1202,7 @@ async function runSelection() {
   await flushSave();
   const range = currentRunRange();
   const dql = range ? editor.state.sliceDoc(range.from, range.to) : "";
-  await runDocuments([{ text: dql, base: range ? range.from : 0 }]);
+  await runDocuments([{ text: dql, path: state.path, base: range ? range.from : 0 }]);
 }
 
 async function runFolder(path) {
@@ -1080,23 +1256,25 @@ function dqlFilesUnder(node) {
 async function runDocuments(documents) {
   const runnable = documents.filter((doc) => statementSpans(doc.text || "").length);
   if (!runnable.length) {
-    resultMeta.textContent = "Nothing to run";
-    resultBody.replaceChildren();
-    closeSchemaIfResult();
-    closeRowPop();
     hideProgress();
     runMarks = [];
     paintRunMarks();
+    if (!state.entries.length) {
+      resultMeta.textContent = "Nothing to run";
+      releaseResultPin();
+      resultBody.replaceChildren();
+      closeSchemaIfResult();
+      closeRowPop();
+    }
     return;
   }
   setRunBusy(true);
   resultMeta.textContent = "Running…";
-  resultBody.replaceChildren();
   closeSchemaIfResult();
   closeRowPop();
   showProgress(null, null);
-  const groups = [];
-  let failed = false;
+  let touchedShown = false;
+  let active = null;
   try {
     for (const doc of runnable) {
       const marked = typeof doc.base === "number";
@@ -1106,6 +1284,7 @@ async function runDocuments(documents) {
         paintRunMarks();
       }
       const results = [];
+      active = { doc, results };
       const response = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1126,49 +1305,56 @@ async function runDocuments(documents) {
           const result = event.result || {};
           results.push(result);
           markStatement(origins[event.index], result.ok ? "ok" : "error");
-          if (!result.ok) failed = true;
         }
       });
-      groups.push({ path: doc.path || "", results });
-      if (failed) break;
+      await storeStatementResults(doc.path || "", doc.text, results);
+      if ((doc.path || "") === state.path) touchedShown = true;
+      if (!results.length || results.some((item) => !item.ok)) break;
     }
-    renderRunGroups(groups);
   } catch (error) {
-    resultMeta.textContent = "";
-    if (groups.length) renderRunGroups(groups);
-    resultBody.append(note(error.message, true));
     const running = runMarks.find((mark) => mark.status === "running");
     if (running) {
       running.status = "error";
       paintRunMarks();
     }
+    const doc = active ? active.doc : runnable[0];
+    const done = active ? active.results : [];
+    if (doc) {
+      try {
+        if (done.length) await storeStatementResults(doc.path || "", doc.text, done);
+        const spans = statementSpans(doc.text || "");
+        const span = spans[done.length];
+        const query = span ? doc.text.slice(span.from, span.to).trim() : "";
+        await storeQueryResult(doc.path || "", query, {
+          statement: query,
+          ok: false,
+          kind: "text",
+          message: error.message,
+          error: error.message,
+        }, false);
+        if ((doc.path || "") === state.path) touchedShown = true;
+      } catch (storeError) {
+        resultMeta.textContent = "";
+        resultBody.append(note(storeError.message || error.message, true));
+      }
+    } else {
+      resultMeta.textContent = "";
+      resultBody.append(note(error.message, true));
+    }
   } finally {
     hideProgress();
     setRunBusy(false);
+    if (state.path && !touchedShown) {
+      try {
+        await loadFileResults(state.path);
+      } catch {
+        /* the finished runs are already on disk */
+      }
+    }
   }
 }
 
-function renderRunGroups(groups) {
-  if (groups.length < 2) {
-    renderResults(groups.length ? groups[0].results : []);
-    return;
-  }
-  resultBody.replaceChildren();
-  closeSchemaIfResult();
-  closeRowPop();
-  for (const group of groups) {
-    const label = document.createElement("div");
-    label.className = "run-file-label";
-    label.dataset.testid = "run-file-label";
-    label.textContent = group.path;
-    const block = document.createElement("div");
-    resultBody.append(label, block);
-    renderResults(group.results, block);
-  }
-  resultMeta.textContent = groups.length + " files";
-}
-
-function renderResults(results, host) {
+function renderResults(results, host, markTable = !host) {
   const target = host || resultBody;
   target.replaceChildren();
   if (!host) {
@@ -1192,7 +1378,7 @@ function renderResults(results, host) {
       }
       const rows = item.items || [];
       const tableName = tableNameFromStatement(item.statement);
-      const last = !host && item === dataItems[dataItems.length - 1];
+      const last = markTable && item === dataItems[dataItems.length - 1];
       target.append(resultCard({
         source: "result",
         title: tableName || "Result",
@@ -1230,18 +1416,13 @@ function renderResults(results, host) {
     if (item.ok && item.kind === "affected") row.classList.add("ok");
     target.append(row);
   }
-  if (host) return;
-  if (itemCards > 1) {
-    resultMeta.textContent = itemCards + " results";
-  } else if (itemCards === 1) {
-    resultMeta.textContent = itemRows + (itemRows === 1 ? " row" : " rows");
-  } else if (listedTables > 0) {
-    resultMeta.textContent = listedTables + (listedTables === 1 ? " table" : " tables");
-  } else if (explainSteps > 0 && otherNotes === 0) {
-    resultMeta.textContent = explainSteps + (explainSteps === 1 ? " step" : " steps");
-  } else {
-    resultMeta.textContent = results.length ? "" : "Nothing to run";
-  }
+  if (itemCards > 1) return itemCards + " results";
+  if (itemCards === 1) return itemRows + (itemRows === 1 ? " row" : " rows");
+  if (listedTables > 0) return listedTables + (listedTables === 1 ? " table" : " tables");
+  if (explainSteps > 0 && otherNotes === 0) return explainSteps + (explainSteps === 1 ? " step" : " steps");
+  const summary = results.length ? "" : "Nothing to run";
+  if (!host) resultMeta.textContent = summary;
+  return summary;
 }
 
 function listedItemTables(item) {
@@ -1282,8 +1463,62 @@ function resultCard(snapshot, tableId) {
   const body = document.createElement("div");
   body.className = "result-card-body";
   body.append(dataTable(snapshot.rows, tableId, snapshot.columns));
-  card.append(head, body);
+  const face = document.createElement("div");
+  face.className = "result-card-face";
+  face.append(head, body);
+  card.append(face);
   return card;
+}
+
+function queryShell(queryText, content) {
+  const shell = document.createElement("div");
+  shell.className = "result-shell";
+  const visuals = [...content.children];
+  const text = String(queryText || "").trim();
+  if (!text || !visuals.length) {
+    shell.append(visuals.length === 1 ? visuals[0] : content);
+    return shell;
+  }
+  const visual = visuals.length === 1 ? visuals[0] : content;
+  if (visuals.length !== 1) visual.classList.add("result-query-host");
+  const host = visual.classList.contains("result-card")
+    ? visual.querySelector(".result-card-face") || visual
+    : visual;
+  if (host.classList.contains("note")) {
+    const inner = document.createElement("div");
+    inner.className = "note-text";
+    while (host.firstChild) inner.append(host.firstChild);
+    host.append(inner);
+    host.classList.add("result-query-host");
+  }
+  const query = highlightedQuery(text, "result-card-query");
+  query.dataset.testid = "result-card-query";
+  query.hidden = true;
+  shell.append(queryToggle(query, host), visual);
+  return shell;
+}
+
+function queryToggle(query, host) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "result-query-toggle";
+  button.dataset.testid = "result-query-toggle";
+  button.title = "Show query";
+  button.setAttribute("aria-label", "Show query");
+  button.setAttribute("aria-expanded", "false");
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const open = query.hidden;
+    if (open) host.prepend(query);
+    else query.remove();
+    query.hidden = !open;
+    button.closest(".result-shell").classList.toggle("is-query-open", open);
+    button.setAttribute("aria-expanded", open ? "true" : "false");
+    const label = open ? "Hide query" : "Show query";
+    button.title = label;
+    button.setAttribute("aria-label", label);
+  });
+  return button;
 }
 
 function schemaIconButton(label) {
