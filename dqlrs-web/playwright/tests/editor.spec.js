@@ -1022,8 +1022,9 @@ async function expectDescription(card, tableName) {
   await expect(create).toBeVisible();
   await expect(card.locator(".describe-query")).toContainText(`CREATE TABLE ${tableName}`);
   await expect(card.locator(".describe-query .tok-typeName", { hasText: "STRING" }).first()).toBeVisible();
-  const color = await create.evaluate((el) => getComputedStyle(el).color);
-  expect(color).toBe("rgb(15, 118, 110)");
+  // A results refresh replaces these nodes. A one-shot getComputedStyle can
+  // land on the detached span and read an empty color.
+  await expect(create).toHaveCSS("color", "rgb(15, 118, 110)");
 }
 
 function uniqueTable() {
