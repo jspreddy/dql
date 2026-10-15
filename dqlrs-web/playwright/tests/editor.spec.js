@@ -337,7 +337,8 @@ test("runs the whole file from the button beside the filename", async ({ page, a
   await page.locator("#run-file").click();
   await expect(page.locator(".query-result")).toHaveCount(5);
   await expect(page.locator(".result-card")).toHaveCount(2);
-  await expect(page.locator("#result-meta")).toHaveText("1 row");
+  await expect(page.locator("#result-meta")).toBeEmpty();
+  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("1 row");
   await expect(page.locator("#result-body")).toContainText("alpha");
   await expect(page.locator("#result-body")).toContainText("beta");
 
@@ -425,18 +426,15 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   const aligned = await page.locator(".results-head").evaluate((node) => {
     const title = node.querySelector(".results-title").getBoundingClientRect();
     const chip = node.querySelector(".results-chip").getBoundingClientRect();
-    const meta = node.querySelector("#result-meta").getBoundingClientRect();
     const bar = node.getBoundingClientRect();
     const mid = (box) => box.top + box.height / 2;
     return {
       titleChip: Math.abs(mid(title) - mid(chip)),
-      titleMeta: Math.abs(mid(title) - mid(meta)),
       chipRight: bar.right - chip.right,
       chipAfterTitle: chip.left > title.right,
     };
   });
   expect(aligned.titleChip).toBeLessThan(2);
-  expect(aligned.titleMeta).toBeLessThan(2);
   expect(aligned.chipRight).toBeLessThan(16);
   expect(aligned.chipAfterTitle).toBe(true);
 
@@ -565,7 +563,8 @@ test("runs a selection and shows the result table", async ({ page, app }) => {
   await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator("#result-table")).toContainText("alpha");
-  await expect(page.locator("#result-meta")).toHaveText("1 row");
+  await expect(page.locator("#result-meta")).toBeEmpty();
+  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("1 row");
   await expect(page.locator('[data-testid="run-status-ok"]').first()).toBeVisible();
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
   await expect(page.locator("#run-progress")).toBeHidden();
@@ -792,7 +791,7 @@ test("shows an explain plan as operations and conditions", async ({ page, app })
   await expect(field("key condition")).toContainText("n > ");
   await expect(field("filter")).toContainText("id = ");
   await expect(field("index")).toHaveText("TABLE");
-  await expect(page.locator("#result-meta")).toHaveText("1 step");
+  await expect(page.locator("#result-meta")).toBeEmpty();
   await expect(page.locator(".query-result").last().locator('[data-testid="result-note"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="run-status-error"]')).toHaveCount(0);
 
@@ -969,12 +968,14 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
   await runEditor(`SHOW TABLES LIKE '${name}';`);
   await expect(page.locator("#result-table")).toContainText(name);
   await expect(page.locator("#result-table")).not.toContainText(other);
-  await expect(page.locator("#result-meta")).toHaveText("1 row");
+  await expect(page.locator("#result-meta")).toBeEmpty();
+  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("1 row");
   await expect(page.locator(".query-result").last().locator("[data-testid='intelligent-match']")).toHaveCount(0);
 
   await runEditor(`SHOW TABLES LIKE '${name}%';`);
   await expect(page.locator("#result-table")).toContainText(name);
-  await expect(page.locator("#result-meta")).toHaveText("1 row");
+  await expect(page.locator("#result-meta")).toBeEmpty();
+  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("1 row");
   await expect(page.locator(".query-result").last().locator("[data-testid='intelligent-match']")).toHaveCount(0);
 });
 
@@ -1037,7 +1038,8 @@ test("show-tables-like-intelligent-match notes similar names and related keys", 
   // qqqxxyyzz scores as a related key of the zzqq… hash above.
   await runEditor("SHOW TABLES LIKE 'mnvv77kk';");
   await expect(page.locator(".query-result").last().locator("[data-testid='intelligent-match']")).toHaveCount(0);
-  await expect(page.locator("#result-meta")).toHaveText("0 rows");
+  await expect(page.locator("#result-meta")).toBeEmpty();
+  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("0 rows");
   await expect(page.locator("#result-body")).toContainText("No rows");
 });
 
@@ -1092,7 +1094,7 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   await expect(all.locator(".describe-table-name", { hasText: name })).toHaveCount(1);
   await expect(all.locator(".describe-table-name", { hasText: other })).toHaveCount(1);
   await expect(all.locator("[data-testid='intelligent-match']")).toHaveCount(0);
-  await expect(page.locator("#result-meta")).toHaveText(/\d+ tables?/);
+  await expect(page.locator("#result-meta")).toBeEmpty();
 
   await runEditor("SHOW TABLES;");
   const shown = page.locator(".query-result").last().locator(".describe").filter({ hasText: name });
@@ -1102,7 +1104,7 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   await expect(shown.locator(".describe-status.is-active").first()).toBeVisible();
   await expect(shown.locator("[data-testid='intelligent-match']")).toHaveCount(0);
   await expect(shown.locator("#result-table")).toHaveCount(0);
-  await expect(page.locator("#result-meta")).toHaveText(/\d+ tables?/);
+  await expect(page.locator("#result-meta")).toBeEmpty();
 });
 
 test("ls-intelligent-match notes partial names when nothing matches exactly", async ({ page, app }) => {

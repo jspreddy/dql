@@ -1226,7 +1226,6 @@ function showResults(entries) {
     resultMeta.textContent = "";
     return;
   }
-  let summary = "";
   const latestItems = entries.reduce((found, item, itemIndex) => (
     resultList(item.result).some((part) => part && part.ok && part.kind === "items" && !listedItemTables(part))
       ? itemIndex
@@ -1237,11 +1236,11 @@ function showResults(entries) {
     block.className = "query-result" + (entry.success ? "" : " is-error");
     block.dataset.testid = "query-result";
     const body = document.createElement("div");
-    summary = renderResults(resultList(entry.result), body, index === latestItems);
+    renderResults(resultList(entry.result), body, index === latestItems);
     block.append(queryShell(entry.query, body));
     resultBody.append(block);
   });
-  resultMeta.textContent = summary;
+  resultMeta.textContent = "";
   pinLatestResult();
 }
 
