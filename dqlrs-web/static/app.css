@@ -879,7 +879,8 @@ body.results-resizing * {
   letter-spacing: -0.01em;
 }
 
-#result-body .result-card-meta {
+#result-body .result-card-meta,
+#result-body .result-card-stat {
   display: inline-flex;
   align-items: center;
   flex: none;

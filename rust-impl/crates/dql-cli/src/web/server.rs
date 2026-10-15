@@ -473,7 +473,7 @@ fn run_script(app: Arc<App>, statements: Vec<String>, writer: impl Write + Send 
         }
         if app.cancel.is_requested() {
             let envelope = envelope_from_error(dql_engine::EngineError::Cancelled);
-            let result = public_result(statement, &envelope, None);
+            let result = public_result(statement, &envelope, None, 0, 0.0, 0.0);
             let _ = write_json(
                 &mut *lock_writer(&writer),
                 &json!({"event": "result", "index": index, "result": result}),
@@ -494,7 +494,10 @@ fn run_script(app: Arc<App>, statements: Vec<String>, writer: impl Write + Send 
                 }),
             );
         })));
+        let started = std::time::Instant::now();
         let envelope = state.session.execute_for_serve(statement);
+        let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let (read_units, write_units) = state.session.engine.statement_capacity();
         state.session.progress().clear();
         let columns = if envelope.ok && envelope.kind == "items" {
             Some(columns_for(
@@ -509,7 +512,14 @@ fn run_script(app: Arc<App>, statements: Vec<String>, writer: impl Write + Send 
             state.shapes.clear();
             state.table_catalog = None;
         }
-        let result = public_result(statement, &envelope, columns);
+        let result = public_result(
+            statement,
+            &envelope,
+            columns,
+            elapsed_ms,
+            read_units,
+            write_units,
+        );
         let ok = envelope.ok;
         if write_json(
             &mut *lock_writer(&writer),
@@ -823,7 +833,14 @@ fn is_disconnect(err: &io::Error) -> bool {
     )
 }
 
-fn public_result(statement: &str, envelope: &ServeEnvelope, columns: Option<Vec<Column>>) -> Value {
+fn public_result(
+    statement: &str,
+    envelope: &ServeEnvelope,
+    columns: Option<Vec<Column>>,
+    elapsed_ms: u64,
+    read_units: f64,
+    write_units: f64,
+) -> Value {
     let error = envelope
         .error
         .as_ref()
@@ -841,6 +858,9 @@ fn public_result(statement: &str, envelope: &ServeEnvelope, columns: Option<Vec<
         "affected": envelope.affected,
         "items": envelope.items,
         "error": error,
+        "elapsed_ms": elapsed_ms,
+        "read_units": read_units,
+        "write_units": write_units,
     });
     if envelope.ok && envelope.kind == "items" {
         if let Some(columns) = columns {
@@ -884,6 +904,9 @@ mod tests {
         assert!(ran.contains("\"event\":\"result\""), "{ran}");
         assert!(ran.contains("\"apple\":\"p\""), "{ran}");
         assert!(ran.contains("\"id\":\"a\""), "{ran}");
+        assert!(ran.contains("\"elapsed_ms\":"), "{ran}");
+        assert!(ran.contains("\"read_units\":"), "{ran}");
+        assert!(ran.contains("\"write_units\":"), "{ran}");
         drop(guard);
     }
 

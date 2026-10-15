@@ -23,6 +23,7 @@ pub struct Engine<B: DynamoBackend> {
     explain_log: Vec<String>,
     analyzing: bool,
     consumed_capacities: Vec<CapacityRecord>,
+    statement_capacity: Vec<CapacityRecord>,
     allow_select_scan: bool,
     rate_limit: Option<RateLimit>,
     pub cached_descriptions: HashMap<String, TableMeta>,
@@ -43,6 +44,7 @@ impl<B: DynamoBackend> Engine<B> {
             explain_log: Vec::new(),
             analyzing: false,
             consumed_capacities: Vec::new(),
+            statement_capacity: Vec::new(),
             allow_select_scan: false,
             rate_limit: None,
             cached_descriptions: HashMap::new(),
@@ -267,6 +269,7 @@ impl<B: DynamoBackend> Engine<B> {
     }
 
     pub fn run(&mut self, statement: &Statement) -> Result<StatementResult, EngineError> {
+        self.statement_capacity.clear();
         self.cancel.check()?;
         match statement {
             Statement::CreateTable { if_not_exists, .. } => {
@@ -342,6 +345,11 @@ impl<B: DynamoBackend> Engine<B> {
 
     pub fn consumed_capacities(&self) -> &[CapacityRecord] {
         &self.consumed_capacities
+    }
+
+    /// Capacity captured for the statement that just ran.
+    pub fn statement_capacity(&self) -> &[CapacityRecord] {
+        &self.statement_capacity
     }
 
     fn create_table(
@@ -858,16 +866,16 @@ impl<B: DynamoBackend> Engine<B> {
     }
 
     fn capture_capacity(&mut self, capacity: Option<CapacityRecord>) -> Result<(), EngineError> {
+        let Some(capacity) = capacity else {
+            return Ok(());
+        };
+        self.statement_capacity.push(capacity.clone());
         if self.analyzing {
-            if let Some(capacity) = capacity.clone() {
-                self.consumed_capacities.push(capacity);
-            }
+            self.consumed_capacities.push(capacity.clone());
         }
         if let Some(rate_limit) = self.rate_limit.as_mut() {
-            if let Some(capacity) = capacity {
-                let wait = rate_limit.on_capacity(capacity.read_units, capacity.write_units);
-                self.cancel.sleep(wait)?;
-            }
+            let wait = rate_limit.on_capacity(capacity.read_units, capacity.write_units);
+            self.cancel.sleep(wait)?;
         }
         Ok(())
     }
@@ -1472,6 +1480,30 @@ mod tests {
             "batch_write_item"
         );
         assert!(engine.consumed_capacities()[0].write_units >= 0.0);
+        assert_eq!(engine.statement_capacity().len(), 1);
+        assert_eq!(engine.statement_capacity()[0].operation, "batch_write_item");
+    }
+
+    #[test]
+    fn statement_capacity_follows_the_latest_statement() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE t (id STRING HASH KEY)")
+            .unwrap();
+        assert!(!engine.statement_capacity().is_empty());
+        engine.execute("INSERT INTO t (id) VALUES ('a')").unwrap();
+        let write_units: f64 = engine
+            .statement_capacity()
+            .iter()
+            .map(|record| record.write_units)
+            .sum();
+        assert!(write_units >= 1.0);
+        engine.execute("SELECT * FROM t WHERE id = 'a'").unwrap();
+        assert!(engine
+            .statement_capacity()
+            .iter()
+            .any(|record| record.operation == "query"));
+        assert_eq!(engine.consumed_capacities().len(), 0);
     }
 
     #[test]

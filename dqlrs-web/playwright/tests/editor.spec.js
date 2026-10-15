@@ -603,6 +603,18 @@ test("runs a selection and shows the result table", async ({ page, app }) => {
   expect(metaBox.x - (schemaBox.x + schemaBox.width)).toBeLessThan(16);
   expect(headBox.x + headBox.width - (metaBox.x + metaBox.width)).toBeGreaterThan(80);
   expect(Math.abs(metaBox.y + metaBox.height / 2 - (schemaBox.y + schemaBox.height / 2))).toBeLessThan(4);
+  const capacity = card.locator("[data-testid='result-card-capacity']");
+  const elapsed = card.locator("[data-testid='result-card-time']");
+  await expect(capacity).toHaveText(/^\d+(\.\d+)? RCU$/);
+  await expect(elapsed).toHaveText(/^\d+ ms$|^\d+(\.\d)? s$/);
+  const capacityBox = await capacity.boundingBox();
+  const timeBox = await elapsed.boundingBox();
+  expect(capacityBox.x).toBeGreaterThan(metaBox.x + metaBox.width - 1);
+  expect(capacityBox.x - (metaBox.x + metaBox.width)).toBeLessThan(16);
+  expect(timeBox.x).toBeGreaterThan(capacityBox.x + capacityBox.width - 1);
+  expect(timeBox.x - (capacityBox.x + capacityBox.width)).toBeLessThan(16);
+  expect(headBox.x + headBox.width - (timeBox.x + timeBox.width)).toBeGreaterThan(40);
+  expect(Math.abs(capacityBox.y + capacityBox.height / 2 - (metaBox.y + metaBox.height / 2))).toBeLessThan(4);
   await expect(page.locator('[data-testid="run-status-ok"]').first()).toBeVisible();
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
   await expect(page.locator("#run-progress")).toBeHidden();

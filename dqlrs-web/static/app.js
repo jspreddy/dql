@@ -1523,6 +1523,9 @@ function renderResults(results, host, markTable = !host) {
         rows,
         columns: item.columns || [],
         keys: [],
+        elapsedMs: item.elapsed_ms,
+        readUnits: item.read_units,
+        writeUnits: item.write_units,
       }, last ? "result-table" : ""));
       itemCards += 1;
       itemRows += rows.length;
@@ -1597,6 +1600,10 @@ function resultCard(snapshot, tableId) {
   const count = (snapshot.rows || []).length;
   meta.textContent = count + (count === 1 ? " row" : " rows");
   title.append(meta);
+  const capacity = formatCapacity(snapshot.readUnits, snapshot.writeUnits);
+  if (capacity) title.append(statChip(capacity, "result-card-capacity", "Consumed capacity"));
+  const elapsed = formatElapsed(snapshot.elapsedMs);
+  if (elapsed) title.append(statChip(elapsed, "result-card-time", "Elapsed time"));
   head.append(title);
   const body = document.createElement("div");
   body.className = "result-card-body";
@@ -1606,6 +1613,40 @@ function resultCard(snapshot, tableId) {
   face.append(head, body);
   card.append(face);
   return card;
+}
+
+function statChip(text, testId, label) {
+  const chip = document.createElement("span");
+  chip.className = "result-card-stat";
+  chip.dataset.testid = testId;
+  chip.title = label;
+  chip.textContent = text;
+  return chip;
+}
+
+function formatElapsed(value) {
+  if (!Number.isFinite(value)) return "";
+  const ms = Math.max(0, Math.round(value));
+  if (ms < 1000) return ms + " ms";
+  const seconds = ms / 1000;
+  const digits = seconds < 10 ? 1 : 0;
+  return seconds.toFixed(digits).replace(/\.0$/, "") + " s";
+}
+
+function formatUnits(value) {
+  const number = Number(value) || 0;
+  const rounded = Math.round(number * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+function formatCapacity(readUnits, writeUnits) {
+  if (!Number.isFinite(readUnits) && !Number.isFinite(writeUnits)) return "";
+  const read = Number.isFinite(readUnits) ? readUnits : 0;
+  const write = Number.isFinite(writeUnits) ? writeUnits : 0;
+  const parts = [];
+  if (read > 0 || write === 0) parts.push(formatUnits(read) + " RCU");
+  if (write > 0) parts.push(formatUnits(write) + " WCU");
+  return parts.join(" · ");
 }
 
 function queryShell(queryText, content) {

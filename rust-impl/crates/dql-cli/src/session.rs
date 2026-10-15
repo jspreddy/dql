@@ -122,6 +122,17 @@ impl RuntimeEngine {
         }
     }
 
+    /// Read and write units captured for the statement that just finished.
+    pub fn statement_capacity(&self) -> (f64, f64) {
+        let records = match self {
+            Self::Memory(engine) => engine.inner().statement_capacity(),
+            Self::Remote(engine) => engine.inner().statement_capacity(),
+        };
+        records.iter().fold((0.0, 0.0), |(read, write), record| {
+            (read + record.read_units, write + record.write_units)
+        })
+    }
+
     pub fn last_query_context(&self) -> Option<&LastQueryContext> {
         match self {
             Self::Memory(engine) => engine.inner().last_query_context(),
