@@ -3,12 +3,10 @@
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 BASE = "v-rust"
@@ -39,6 +37,26 @@ def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
     return git(repo, "merge-base", "--is-ancestor", ancestor, descendant, check=False).returncode == 0
 
 
+def merge_base(repo: Path, left: str, right: str) -> str:
+    return git(repo, "merge-base", left, right).stdout.strip()
+
+
+def commits_above(repo: Path, base: str, tip: str) -> int:
+    proc = git(repo, "rev-list", "--count", f"{base}..{tip}", check=False)
+    if proc.returncode != 0:
+        return 0
+    return int(proc.stdout.strip() or 0)
+
+
+def branch_on_top(repo: Path, name: str) -> bool:
+    if name == BASE:
+        return False
+    merge = merge_base(repo, BASE, name)
+    if not is_ancestor(repo, merge, BASE):
+        return False
+    return is_ancestor(repo, BASE, name) or commits_above(repo, BASE, name) > 0
+
+
 def branches_on_top(repo: Path) -> list[str]:
     if git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{BASE}", check=False).returncode != 0:
         sys.exit(f"local branch {BASE} does not exist")
@@ -51,24 +69,19 @@ def branches_on_top(repo: Path) -> list[str]:
     ).stdout.splitlines()
     selected = [BASE]
     for name in listed:
-        if name and name != BASE and commits_since_base(repo, name):
+        if name and branch_on_top(repo, name):
             selected.append(name)
     return selected
 
 
-def commits_since_base(repo: Path, branch: str) -> list[str]:
-    """Commits reachable from `branch` and not reachable from v-rust, oldest first."""
-    listed = git(repo, "rev-list", "--reverse", "--topo-order", branch, "--not", BASE).stdout.splitlines()
-    return [line for line in listed if line]
-
-
 def render_svg(repo: Path, refs: list[str]) -> str:
+    tips = [ref for ref in refs if ref != BASE]
     command = ["git-graph", "--svg", "-l", "-m", "none", "-s", "round"]
-    # A lone v-rust has no upstream, so git-graph walks every ancestor.
-    # One commit is the whole "since v-rust" picture when nothing is ahead.
-    if refs == [BASE]:
-        command.extend(["--max-count", "1"])
-    command.extend(refs)
+    if tips:
+        command.extend([BASE, *tips])
+    else:
+        # A lone v-rust ref would otherwise draw the full ancestor history.
+        command.extend(["-n", "1", BASE])
     proc = subprocess.run(command, cwd=repo, text=True, capture_output=True)
     if proc.returncode != 0 and "owned by current user" in proc.stderr:
         command.insert(1, "--skip-repo-owner-validation")
@@ -140,114 +153,6 @@ def output_dir() -> Path:
     return path
 
 
-def graph_repo(repo: Path, refs: list[str]) -> tuple[Path, list[str]]:
-    """Repository whose history below v-rust is not walked.
-
-    git-graph stops at the merge-base of the refs it is given. A branch that
-    forked from an ancestor of v-rust would drag that older history into the
-    picture. Reparent those commits onto v-rust in a temporary clone so the
-    merge-base is v-rust and only the new commits remain.
-    """
-    branches = [ref for ref in refs if ref != BASE]
-    if not branches or all(is_ancestor(repo, BASE, branch) for branch in branches):
-        return repo, refs
-    clone = Path(tempfile.mkdtemp(prefix="dql-git-graph-"))
-    subprocess.run(
-        ["git", "clone", "--shared", "--quiet", str(repo), str(clone)],
-        check=True,
-    )
-    git(clone, "checkout", "--detach")
-    git(clone, "branch", "-f", BASE, git(repo, "rev-parse", BASE).stdout.strip())
-    mapping = reparent_onto_base(repo, clone, branches)
-    point_head(repo, clone, mapping)
-    rewritten = [BASE]
-    for ref in branches:
-        tip = git(repo, "rev-parse", ref).stdout.strip()
-        rewritten.append(ref if git(repo, "show-ref", "--verify", "--quiet", f"refs/heads/{ref}", check=False).returncode == 0 else mapping.get(tip, tip))
-    return clone, rewritten
-
-
-def reparent_onto_base(repo: Path, clone: Path, branches: list[str]) -> dict[str, str]:
-    listed = git(
-        repo,
-        "rev-list",
-        "--reverse",
-        "--topo-order",
-        *branches,
-        "--not",
-        BASE,
-    ).stdout.splitlines()
-    base = git(repo, "rev-parse", BASE).stdout.strip()
-    pending = {oid for oid in listed if oid}
-    mapping: dict[str, str] = {}
-    for oid in listed:
-        if not oid or oid in mapping:
-            continue
-        parents = git(repo, "rev-list", "--parents", "-n", "1", oid).stdout.split()[1:]
-        new_parents: list[str] = []
-        for parent in parents:
-            mapped = mapping.get(parent)
-            if mapped is None and parent in pending:
-                sys.exit(f"commit {oid} lists {parent} before it was copied")
-            if mapped is None:
-                mapped = base
-            if mapped not in new_parents:
-                new_parents.append(mapped)
-        if not new_parents:
-            new_parents = [base]
-        mapping[oid] = commit_copy(repo, clone, oid, new_parents)
-    for branch in branches:
-        if git(repo, "show-ref", "--verify", "--quiet", f"refs/heads/{branch}", check=False).returncode != 0:
-            continue
-        tip = git(repo, "rev-parse", branch).stdout.strip()
-        git(clone, "branch", "-f", branch, mapping.get(tip, tip))
-    return mapping
-
-
-def commit_copy(repo: Path, clone: Path, oid: str, parents: list[str]) -> str:
-    tree = git(repo, "rev-parse", f"{oid}^{{tree}}").stdout.strip()
-    message = git(repo, "log", "-1", "--format=%B", oid).stdout
-    author = git(repo, "log", "-1", "--format=%an%x00%ae%x00%aI%x00%cn%x00%ce%x00%cI", oid).stdout.split(
-        "\0"
-    )
-    env = os.environ.copy()
-    if len(author) == 6:
-        env.update(
-            {
-                "GIT_AUTHOR_NAME": author[0],
-                "GIT_AUTHOR_EMAIL": author[1],
-                "GIT_AUTHOR_DATE": author[2],
-                "GIT_COMMITTER_NAME": author[3],
-                "GIT_COMMITTER_EMAIL": author[4],
-                "GIT_COMMITTER_DATE": author[5],
-            }
-        )
-    command = ["git", "commit-tree", tree]
-    for parent in parents:
-        command.extend(["-p", parent])
-    proc = subprocess.run(
-        command,
-        cwd=clone,
-        input=message,
-        text=True,
-        capture_output=True,
-        check=False,
-        env=env,
-    )
-    if proc.returncode != 0:
-        sys.exit(proc.stderr.strip() or f"git commit-tree failed for {oid}")
-    return proc.stdout.strip()
-
-
-def point_head(repo: Path, clone: Path, mapping: dict[str, str]) -> None:
-    name = git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
-    if name != "HEAD":
-        git(clone, "symbolic-ref", "HEAD", f"refs/heads/{name}")
-        return
-    head = git(repo, "rev-parse", "HEAD").stdout.strip()
-    git(clone, "checkout", "--detach", mapping.get(head, head))
-
-
 def main() -> None:
     if shutil.which("git-graph") is None:
         sys.exit(
@@ -258,19 +163,18 @@ def main() -> None:
         )
     repo = repo_root()
     refs = branches_on_top(repo)
-    head_name = git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
     head = git(repo, "rev-parse", "HEAD").stdout.strip()
     tips = {git(repo, "rev-parse", ref).stdout.strip() for ref in refs}
-    if head not in tips and head_name == "HEAD" and commits_since_base(repo, head):
-        refs.append(head)
-    graph, refs = graph_repo(repo, refs)
-    try:
-        svg = pad_svg(render_svg(graph, refs))
-    finally:
-        if graph != repo:
-            shutil.rmtree(graph, ignore_errors=True)
+    if head not in tips:
+        head_ref = git(repo, "symbolic-ref", "-q", "HEAD", check=False).stdout.strip()
+        if head_ref.startswith("refs/heads/"):
+            head_name = head_ref.removeprefix("refs/heads/")
+            if head_name not in refs and branch_on_top(repo, head_name):
+                refs.append(head_name)
+        elif is_ancestor(repo, BASE, head):
+            refs.append(head)
     svg_path = output_dir() / "v-rust-branches.svg"
-    svg_path.write_text(svg)
+    svg_path.write_text(pad_svg(render_svg(repo, refs)))
     print(f"svg: {svg_path}")
 
 
