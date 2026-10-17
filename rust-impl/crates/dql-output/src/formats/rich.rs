@@ -5,10 +5,23 @@ use std::io::{self, Write};
 
 const MAX_COLUMNS: usize = 15;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RichContext {
     pub important_columns: Vec<String>,
     pub preserve_column_order: bool,
+    pub table_hash: Vec<String>,
+    pub table_range: Vec<String>,
+    pub index_hash: Vec<String>,
+    pub index_range: Vec<String>,
+}
+
+/// Whether a column is a hash key or a range key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ColumnKey {
+    #[default]
+    None,
+    Hash,
+    Range,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +29,8 @@ pub struct RichColumn {
     pub name: String,
     pub important: bool,
     pub ellipsis: bool,
+    pub table_key: ColumnKey,
+    pub index_key: ColumnKey,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +83,19 @@ pub fn build_rich_layout(items: &[Item], context: Option<&RichContext>) -> RichL
     let preserve_order = context
         .map(|ctx| ctx.preserve_column_order)
         .unwrap_or(false);
+    let empty: &[String] = &[];
+    let table_hash = context
+        .map(|ctx| ctx.table_hash.as_slice())
+        .unwrap_or(empty);
+    let table_range = context
+        .map(|ctx| ctx.table_range.as_slice())
+        .unwrap_or(empty);
+    let index_hash = context
+        .map(|ctx| ctx.index_hash.as_slice())
+        .unwrap_or(empty);
+    let index_range = context
+        .map(|ctx| ctx.index_range.as_slice())
+        .unwrap_or(empty);
     let ordered = order_columns(all_columns, &important, preserve_order);
     let (displayed, overflow) = split_columns(ordered, &important);
 
@@ -76,6 +104,8 @@ pub fn build_rich_layout(items: &[Item], context: Option<&RichContext>) -> RichL
         .map(|name| RichColumn {
             important: important.iter().any(|col| col == name),
             ellipsis: name == "...",
+            table_key: column_key(table_hash, table_range, name),
+            index_key: column_key(index_hash, index_range, name),
             name: name.clone(),
         })
         .collect();
@@ -235,6 +265,16 @@ fn split_columns(columns: Vec<String>, important: &[String]) -> (Vec<String>, Ve
     (displayed, overflow)
 }
 
+fn column_key(hash_names: &[String], range_names: &[String], name: &str) -> ColumnKey {
+    if hash_names.iter().any(|item| item == name) {
+        ColumnKey::Hash
+    } else if range_names.iter().any(|item| item == name) {
+        ColumnKey::Range
+    } else {
+        ColumnKey::None
+    }
+}
+
 fn truncate(string: &str, length: usize) -> String {
     if string.chars().count() <= length {
         return string.to_string();
@@ -266,6 +306,7 @@ mod tests {
         let context = RichContext {
             important_columns: vec!["id".to_string()],
             preserve_column_order: false,
+            ..RichContext::default()
         };
         let layout = build_rich_layout(&items, Some(&context));
         assert_eq!(
@@ -280,11 +321,39 @@ mod tests {
     }
 
     #[test]
+    fn rich_layout_marks_table_and_index_keys() {
+        let items = vec![item(&[("id", "1"), ("sk", "a"), ("name", "n")])];
+        let context = RichContext {
+            important_columns: vec!["id".to_string(), "sk".to_string(), "name".to_string()],
+            table_hash: vec!["id".to_string()],
+            table_range: vec!["sk".to_string()],
+            index_hash: vec!["name".to_string()],
+            index_range: vec!["sk".to_string()],
+            ..RichContext::default()
+        };
+        let layout = build_rich_layout(&items, Some(&context));
+        let column = |name: &str| {
+            layout
+                .columns
+                .iter()
+                .find(|column| column.name == name)
+                .unwrap()
+        };
+        assert_eq!(column("id").table_key, ColumnKey::Hash);
+        assert_eq!(column("id").index_key, ColumnKey::None);
+        assert_eq!(column("sk").table_key, ColumnKey::Range);
+        assert_eq!(column("sk").index_key, ColumnKey::Range);
+        assert_eq!(column("name").table_key, ColumnKey::None);
+        assert_eq!(column("name").index_key, ColumnKey::Hash);
+    }
+
+    #[test]
     fn rich_layout_preserves_column_order_when_requested() {
         let items = vec![item(&[("zebra", "z"), ("id", "1"), ("name", "n")])];
         let context = RichContext {
             important_columns: vec!["id".to_string()],
             preserve_column_order: true,
+            ..RichContext::default()
         };
         let layout = build_rich_layout(&items, Some(&context));
         assert_eq!(
