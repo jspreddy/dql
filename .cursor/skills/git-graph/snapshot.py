@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write one SVG of the local branches on top of v-rust."""
+"""Write one SVG of origin branches on top of origin/v-rust."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-BASE = "v-rust"
+BASE = "origin/v-rust"
 
 
 def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -33,6 +33,12 @@ def repo_root() -> Path:
     return Path(proc.stdout.strip())
 
 
+def fetch_origin(repo: Path) -> None:
+    proc = git(repo, "fetch", "origin", "--prune", check=False)
+    if proc.returncode != 0:
+        sys.exit(proc.stderr.strip() or proc.stdout.strip() or "git fetch origin failed")
+
+
 def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
     return git(repo, "merge-base", "--is-ancestor", ancestor, descendant, check=False).returncode == 0
 
@@ -49,7 +55,7 @@ def commits_above(repo: Path, base: str, tip: str) -> int:
 
 
 def branch_on_top(repo: Path, name: str) -> bool:
-    if name == BASE:
+    if name in {BASE, "origin/HEAD"}:
         return False
     merge = merge_base(repo, BASE, name)
     if not is_ancestor(repo, merge, BASE):
@@ -58,14 +64,14 @@ def branch_on_top(repo: Path, name: str) -> bool:
 
 
 def branches_on_top(repo: Path) -> list[str]:
-    if git(repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{BASE}", check=False).returncode != 0:
-        sys.exit(f"local branch {BASE} does not exist")
+    if git(repo, "rev-parse", "--verify", "--quiet", BASE, check=False).returncode != 0:
+        sys.exit(f"{BASE} does not exist after fetch")
     listed = git(
         repo,
         "for-each-ref",
         "--sort=-committerdate",
         "--format=%(refname:short)",
-        "refs/heads",
+        "refs/remotes/origin",
     ).stdout.splitlines()
     selected = [BASE]
     for name in listed:
@@ -76,11 +82,11 @@ def branches_on_top(repo: Path) -> list[str]:
 
 def render_svg(repo: Path, refs: list[str]) -> str:
     tips = [ref for ref in refs if ref != BASE]
-    command = ["git-graph", "--svg", "-l", "-m", "none", "-s", "round"]
+    command = ["git-graph", "--svg", "-m", "none", "-s", "round"]
     if tips:
         command.extend([BASE, *tips])
     else:
-        # A lone v-rust ref would otherwise draw the full ancestor history.
+        # A lone base ref would otherwise draw the full ancestor history.
         command.extend(["-n", "1", BASE])
     proc = subprocess.run(command, cwd=repo, text=True, capture_output=True)
     if proc.returncode != 0 and "owned by current user" in proc.stderr:
@@ -162,17 +168,8 @@ def main() -> None:
             "Do not add git-graph to this repository."
         )
     repo = repo_root()
+    fetch_origin(repo)
     refs = branches_on_top(repo)
-    head = git(repo, "rev-parse", "HEAD").stdout.strip()
-    tips = {git(repo, "rev-parse", ref).stdout.strip() for ref in refs}
-    if head not in tips:
-        head_ref = git(repo, "symbolic-ref", "-q", "HEAD", check=False).stdout.strip()
-        if head_ref.startswith("refs/heads/"):
-            head_name = head_ref.removeprefix("refs/heads/")
-            if head_name not in refs and branch_on_top(repo, head_name):
-                refs.append(head_name)
-        elif is_ancestor(repo, BASE, head):
-            refs.append(head)
     svg_path = output_dir() / "v-rust-branches.svg"
     svg_path.write_text(pad_svg(render_svg(repo, refs)))
     print(f"svg: {svg_path}")

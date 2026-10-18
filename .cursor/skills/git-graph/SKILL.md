@@ -1,55 +1,8 @@
 ---
 name: git-graph
-description: Render one SVG of every local branch and commit on top of v-rust with the global git-graph tool. Use when the user asks for a git graph, a branch picture, or the changes above v-rust. Run only when asked. Do not run it after a commit, a new branch, or a push.
+description: Render one SVG of remote branches on top of origin/v-rust. Use when the user asks for a git graph, a branch picture, or changes above v-rust. Run only when asked.
 ---
 
 # Git graph
 
-Render one SVG of the commits and local branches on top of `v-rust`. Do this only when the user asks for the graph. Do not render it after a commit, a branch creation, or a push, and do not install a git hook.
-
-## Install
-
-`git-graph` is a global Cargo binary. Do not add it to a `Cargo.toml` or `Cargo.lock` in this repository.
-
-If `git-graph` is not on `PATH`, install it from outside the repo:
-
-```bash
-cd /tmp
-cargo install git-graph
-```
-
-If Cargo reports that the `edition2024` feature is required, install a newer stable toolchain and repeat the install from `/tmp`:
-
-```bash
-rustup toolchain install stable
-cd /tmp
-cargo +stable install git-graph
-```
-
-## Render
-
-From the repository, run:
-
-```bash
-python3 .cursor/skills/git-graph/snapshot.py
-```
-
-The script writes one SVG and prints:
-
-```text
-svg: /opt/cursor/artifacts/v-rust-branches.svg
-```
-
-When `/opt/cursor/artifacts` is missing, the file goes to `/tmp/dql-git-graph/`.
-
-Show that SVG. Do not write a PNG, and do not make a picture per commit or per branch.
-
-## What the picture includes
-
-- The `v-rust` commit, as the base.
-- Every local branch whose merge-base with `v-rust` lies on `v-rust`'s history and that either descends from `v-rust` or has commits in `v-rust..tip` (stacked branches that forked before the current `v-rust` merge commit still count).
-- The commits between that merge-base and those tips, not the ancestors of `v-rust`.
-- When no such branch exists, only the `v-rust` tip is drawn (not its history).
-- A detached `HEAD`, when it is a descendant of `v-rust` and is not already a branch tip.
-
-Remote-tracking branches are left out, so each branch name appears once. Uncommitted files are not part of the graph.
+Show the generated SVG in Cursor chat.
