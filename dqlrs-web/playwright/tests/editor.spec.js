@@ -582,6 +582,21 @@ test("opens a hovered result row as highlighted JSON", async ({ page, app }) => 
   await peek.click();
   const dialog = page.locator("#row-pop");
   await expect(dialog).toBeVisible();
+  const rowBox = await dialog.evaluate((node) => {
+    const box = node.getBoundingClientRect();
+    return {
+      left: box.left,
+      top: box.top,
+      width: box.width,
+      height: box.height,
+      viewWidth: window.innerWidth,
+      viewHeight: window.innerHeight,
+    };
+  });
+  expect(rowBox.left).toBeLessThanOrEqual(1);
+  expect(rowBox.top).toBeLessThanOrEqual(1);
+  expect(rowBox.width).toBeGreaterThanOrEqual(rowBox.viewWidth - 1);
+  expect(rowBox.height).toBeGreaterThanOrEqual(rowBox.viewHeight - 1);
   await expect(dialog.locator("#row-pop-title")).toHaveText("id = a");
   const chips = dialog.locator("[data-testid='row-key-chip']");
   await expect(chips).toHaveCount(2);
@@ -604,7 +619,7 @@ test("opens a hovered result row as highlighted JSON", async ({ page, app }) => 
   await expect(dialog).toBeHidden();
   await peek.click();
   await expect(dialog).toBeVisible();
-  await page.mouse.click(8, 8);
+  await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
 
   await page.locator("#mode-tables").click();

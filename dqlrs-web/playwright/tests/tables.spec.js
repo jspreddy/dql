@@ -343,8 +343,7 @@ test("opens result and table-browser structure from data already in hand", async
   const pop = page.locator("#schema-pop");
   await expect(pop).toBeVisible();
   const resultBox = await dialogBox(pop);
-  expect(resultBox.width).toBeLessThan(resultBox.viewWidth - 40);
-  expect(resultBox.height).toBeLessThan(resultBox.viewHeight - 40);
+  expectFullScreen(resultBox);
   await expect(page.locator("#schema-pop-kicker")).toHaveText("Result structure");
   await expect(page.locator("#schema-pop-info")).toBeVisible();
   await expect(page.locator(".schema-pop-kicker-row #schema-pop-info")).toBeVisible();
@@ -375,7 +374,7 @@ test("opens result and table-browser structure from data already in hand", async
   await expect(resultExtra).toContainText("hello");
   await expect(page.locator("#schema-pop-foot")).toContainText("No extra query was run.");
   expect(afterResult).toEqual([]);
-  await page.locator("#schema-pop-close").click();
+  await page.keyboard.press("Escape");
   await expect(pop).toBeHidden();
   page.off("request", watch);
 
@@ -396,10 +395,7 @@ test("opens result and table-browser structure from data already in hand", async
   await page.locator("#rows-schema").click();
   await expect(pop).toBeVisible();
   const tableBox = await dialogBox(pop);
-  expect(tableBox.left).toBeLessThanOrEqual(1);
-  expect(tableBox.top).toBeLessThanOrEqual(1);
-  expect(tableBox.width).toBeGreaterThanOrEqual(tableBox.viewWidth - 1);
-  expect(tableBox.height).toBeGreaterThanOrEqual(tableBox.viewHeight - 1);
+  expectFullScreen(tableBox);
   await expect(page.locator("#schema-pop-kicker")).toHaveText("Table structure");
   await expect(page.locator("#schema-pop-info")).toBeHidden();
   await expect(page.locator("#schema-pop-title")).toHaveText(name);
@@ -497,4 +493,11 @@ async function dialogBox(pop) {
       viewHeight: window.innerHeight,
     };
   });
+}
+
+function expectFullScreen(box) {
+  expect(box.left).toBeLessThanOrEqual(1);
+  expect(box.top).toBeLessThanOrEqual(1);
+  expect(box.width).toBeGreaterThanOrEqual(box.viewWidth - 1);
+  expect(box.height).toBeGreaterThanOrEqual(box.viewHeight - 1);
 }

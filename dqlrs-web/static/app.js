@@ -494,6 +494,14 @@ const rowPopBody = document.querySelector("#row-pop-body");
 rowsSchemaBtn.addEventListener("click", () => openSchema(state.browserSchema, rowsSchemaBtn));
 document.querySelector("#schema-pop-close").addEventListener("click", () => schemaPop.close());
 document.querySelector("#row-pop-close").addEventListener("click", () => rowPop.close());
+for (const dialog of [schemaPop, rowPop]) {
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !dialog.open) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dialog.close();
+  });
+}
 rowPop.addEventListener("click", (event) => {
   const box = rowPop.getBoundingClientRect();
   if (
@@ -518,7 +526,6 @@ schemaPop.addEventListener("click", (event) => {
 });
 schemaPop.addEventListener("close", () => {
   state.schemaKind = "";
-  schemaPop.classList.remove("schema-pop-screen");
   for (const button of document.querySelectorAll(".schema-btn")) {
     button.setAttribute("aria-expanded", "false");
   }
@@ -2654,7 +2661,6 @@ function openSchema(snapshot, button) {
   for (const other of document.querySelectorAll(".schema-btn")) {
     other.setAttribute("aria-expanded", other === button ? "true" : "false");
   }
-  schemaPop.classList.toggle("schema-pop-screen", browser);
   schemaPopKicker.textContent = browser ? "Table structure" : "Result structure";
   schemaPopInfo.classList.toggle("hidden", browser);
   schemaPopTitle.textContent = snapshot.title || (browser ? "Table" : "Result");
