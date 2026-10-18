@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -11,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 BASE = "origin/v-rust"
-WEEK_SECONDS = 7 * 24 * 60 * 60
+CUTOFF_SECONDS = 2 * 24 * 60 * 60
 
 _COMMIT_BLOCK = re.compile(
     r"<g>\s*(?:<path[^>]*/>\s*)+<circle[^>]*>\s*<title>(?P<hash>[a-f0-9]{40})</title>\s*</circle>\s*</g>\s*<text[\s\S]*?</text>\s*",
@@ -63,7 +64,7 @@ def commits_above(repo: Path, base: str, tip: str) -> int:
 
 def base_cutoff(repo: Path) -> tuple[int, str]:
     epoch = int(git(repo, "log", "-1", "--format=%ct", BASE).stdout.strip())
-    cutoff = epoch - WEEK_SECONDS
+    cutoff = epoch - CUTOFF_SECONDS
     since = datetime.fromtimestamp(cutoff, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return cutoff, since
 
@@ -82,9 +83,23 @@ def has_recent_commits(repo: Path, name: str, since: str) -> bool:
     return proc.returncode == 0 and bool(proc.stdout.strip())
 
 
+def open_branch_refs(repo: Path) -> set[str]:
+    proc = subprocess.run(
+        ["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "headRefName"],
+        cwd=repo,
+        text=True,
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        sys.exit(proc.stderr.strip() or proc.stdout.strip() or "gh pr list failed")
+    names = {item.get("headRefName", "") for item in json.loads(proc.stdout)}
+    return {f"origin/{name}" for name in names if name}
+
+
 def branches_on_top(repo: Path, since: str) -> list[str]:
     if git(repo, "rev-parse", "--verify", "--quiet", BASE, check=False).returncode != 0:
         sys.exit(f"{BASE} does not exist after fetch")
+    open_refs = open_branch_refs(repo)
     listed = git(
         repo,
         "for-each-ref",
@@ -94,7 +109,12 @@ def branches_on_top(repo: Path, since: str) -> list[str]:
     ).stdout.splitlines()
     selected = [BASE]
     for name in listed:
-        if name and branch_on_top(repo, name) and has_recent_commits(repo, name, since):
+        if (
+            name
+            and name in open_refs
+            and branch_on_top(repo, name)
+            and has_recent_commits(repo, name, since)
+        ):
             selected.append(name)
     return selected
 
