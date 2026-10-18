@@ -357,6 +357,7 @@ test("opens result and table-browser structure from data already in hand", async
   await expect(page.locator("#schema-pop-query")).toBeVisible();
   await expect(page.locator("#schema-pop-query")).toContainText(`SCAN * FROM ${name}`);
   await expect(page.locator("#schema-table thead th")).toHaveText(["Column", "Type", "Role", "Present", "Sample"]);
+  await expectSampleColumnTakesTheRest(page);
   const resultId = page.locator('#schema-table tbody tr[data-column="id"]');
   await expect(resultId).toContainText("id");
   await expect(resultId).toContainText("STRING");
@@ -500,4 +501,13 @@ function expectFullScreen(box) {
   expect(box.top).toBeLessThanOrEqual(1);
   expect(box.width).toBeGreaterThanOrEqual(box.viewWidth - 1);
   expect(box.height).toBeGreaterThanOrEqual(box.viewHeight - 1);
+}
+
+async function expectSampleColumnTakesTheRest(page) {
+  const widths = await page.locator("#schema-table thead th").evaluateAll((cells) =>
+    cells.map((cell) => cell.getBoundingClientRect().width),
+  );
+  expect(widths).toHaveLength(5);
+  const content = widths.slice(0, 4).reduce((sum, width) => sum + width, 0);
+  expect(widths[4]).toBeGreaterThan(content);
 }

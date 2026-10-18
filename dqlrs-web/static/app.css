@@ -2069,6 +2069,16 @@ th { background: var(--gutter); position: sticky; top: 0; }
   white-space: nowrap;
 }
 
+.schema-pop-body th:not(:last-child),
+.schema-pop-body td:not(:last-child) {
+  width: 1%;
+}
+
+.schema-pop-body th:last-child,
+.schema-pop-body td:last-child {
+  width: 99%;
+}
+
 .schema-pop-body thead th {
   position: sticky;
   top: 0;
@@ -2160,7 +2170,6 @@ th { background: var(--gutter); position: sticky; top: 0; }
 .schema-present-bar.is-sparse > span { background: var(--sparse); }
 
 .schema-sample {
-  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text-secondary);
