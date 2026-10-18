@@ -1767,6 +1767,56 @@ th { background: var(--gutter); position: sticky; top: 0; }
   color: var(--teal-ink);
 }
 
+#server-pop {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+#server-pop::backdrop {
+  background: var(--shadow-modal);
+}
+
+.server-pop-card {
+  width: min(420px, calc(100vw - 32px));
+  padding: 22px 22px 18px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px var(--shadow-lg);
+  color: var(--text);
+}
+
+.server-pop-card h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.server-pop-status {
+  min-height: 1.3em;
+  margin: 8px 0 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+#server-retry {
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--teal);
+  color: var(--on-fill);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+#server-retry:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 #schema-pop {
   border: 0;
   padding: 0;

@@ -49,6 +49,7 @@ const state = {
   schemaKind: "",
   environment: null,
   catalog: null,
+  booted: false,
 };
 
 const completeList = document.querySelector("#complete-list");
@@ -539,15 +540,21 @@ envPop.addEventListener("toggle", (event) => {
 boot();
 
 async function boot() {
-  const config = await api("/api/config");
-  applyEnvironment(config);
-  await refreshTree();
-  if (location.hash === "#tables") {
-    setMode("tables");
-    return;
+  try {
+    const config = await api("/api/config");
+    applyEnvironment(config);
+    await refreshTree();
+    if (location.hash === "#tables") {
+      setMode("tables");
+      state.booted = true;
+      return;
+    }
+    const file = treeEl.querySelector('.node[data-kind="file"]');
+    if (file) file.click();
+    state.booted = true;
+  } catch (error) {
+    reportError(error);
   }
-  const file = treeEl.querySelector('.node[data-kind="file"]');
-  if (file) file.click();
 }
 
 function applyEnvironment(config) {
@@ -802,7 +809,7 @@ async function dropOnto(from, destDir) {
   try {
     await relocate(from, to);
   } catch (error) {
-    window.alert(error.message);
+    reportError(error);
   }
 }
 
@@ -822,14 +829,18 @@ function nodeButton(twist, label, selected) {
 }
 
 async function openFile(path) {
-  await flushSave();
-  const file = await api("/api/file?path=" + encodeURIComponent(path));
-  setEditorText(file.text);
-  showOpenFile(file.path);
-  state.entries = [];
-  showResults([]);
-  setMode("query");
-  await Promise.all([refreshTree(), loadFileResults(file.path)]);
+  try {
+    await flushSave();
+    const file = await api("/api/file?path=" + encodeURIComponent(path));
+    setEditorText(file.text);
+    showOpenFile(file.path);
+    state.entries = [];
+    showResults([]);
+    setMode("query");
+    await Promise.all([refreshTree(), loadFileResults(file.path)]);
+  } catch (error) {
+    reportError(error);
+  }
 }
 
 async function createFile() {
@@ -845,7 +856,7 @@ async function createNamedFile(dir) {
     expandParents(parentOf(created.path));
     await openFile(created.path);
   } catch (error) {
-    window.alert(error.message);
+    reportError(error);
   }
 }
 
@@ -859,7 +870,7 @@ async function createNamedFolder(dir) {
     state.expanded.add(created.path);
     await refreshTree();
   } catch (error) {
-    window.alert(error.message);
+    reportError(error);
   }
 }
 
@@ -874,7 +885,7 @@ async function duplicateEntry(path) {
       await refreshTree();
     }
   } catch (error) {
-    window.alert(error.message);
+    reportError(error);
   }
 }
 
@@ -884,7 +895,7 @@ async function moveEntry(path) {
   try {
     await relocate(path, entered.trim());
   } catch (error) {
-    window.alert(error.message);
+    reportError(error);
   }
 }
 
@@ -902,7 +913,7 @@ async function deleteEntry(path, kind) {
     await api("/api/delete", { method: "POST", body: { path } });
     await refreshTree();
   } catch (error) {
-    window.alert(error.message);
+    reportError(error);
     await refreshTree();
   }
 }
@@ -967,7 +978,7 @@ function beginRename(path) {
     try {
       await relocate(path, joinPath(parentOf(path), nextName));
     } catch (error) {
-      window.alert(error.message);
+      reportError(error);
       await refreshTree();
     }
   };
@@ -1171,7 +1182,7 @@ async function clearCache(path) {
       showResults([]);
     }
   } catch (error) {
-    window.alert(error.message);
+    reportError(error);
   }
 }
 
@@ -1646,7 +1657,7 @@ async function runFolder(path) {
   try {
     documents = await folderDocuments(path);
   } catch (error) {
-    window.alert(error.message);
+    reportError(error);
     return;
   }
   await runDocuments(documents);
@@ -1719,7 +1730,7 @@ async function runDocuments(documents) {
       }
       const results = [];
       active = { doc, results };
-      const response = await fetch("/api/run", {
+      const response = await fetchServer("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dql: doc.text }),
@@ -1749,6 +1760,11 @@ async function runDocuments(documents) {
       if (!results.length || results.some((item) => !item.ok)) break;
     }
   } catch (error) {
+    if (error && error.serverAway) return;
+    if (isUnreachable(error)) {
+      showServerAway();
+      return;
+    }
     const running = runMarks.find((mark) => mark.status === "running");
     if (running) {
       running.status = "error";
@@ -3056,8 +3072,73 @@ function changePage(delta) {
   loadRows();
 }
 
+function isUnreachable(error) {
+  if (!error || error.serverAway) return Boolean(error && error.serverAway);
+  const message = String(error.message || "");
+  return error instanceof TypeError
+    || /failed to fetch|networkerror|network request failed|load failed/i.test(message);
+}
+
+function serverAwayError() {
+  const error = new Error("The server went away.");
+  error.serverAway = true;
+  return error;
+}
+
+function reportError(error) {
+  if (error && error.serverAway) return;
+  window.alert(error.message);
+}
+
+const serverPop = document.querySelector("#server-pop");
+const serverStatus = document.querySelector("#server-pop-status");
+const serverRetry = document.querySelector("#server-retry");
+
+function showServerAway() {
+  if (serverPop.open) return;
+  serverStatus.textContent = "";
+  serverPop.showModal();
+}
+
+serverPop.addEventListener("cancel", (event) => {
+  event.preventDefault();
+});
+
+serverRetry.addEventListener("click", () => {
+  void retryServer();
+});
+
+async function retryServer() {
+  serverRetry.disabled = true;
+  serverStatus.textContent = "Checking…";
+  try {
+    const response = await fetch("/api/config", { cache: "no-store" });
+    if (!response.ok) throw new Error(String(response.status));
+    await response.json().catch(() => ({}));
+    serverPop.close();
+    serverStatus.textContent = "";
+    if (!state.booted) await boot();
+  } catch {
+    serverStatus.textContent = "Still unavailable.";
+  } finally {
+    serverRetry.disabled = false;
+  }
+}
+
+async function fetchServer(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (error) {
+    if (isUnreachable(error)) {
+      showServerAway();
+      throw serverAwayError();
+    }
+    throw error;
+  }
+}
+
 async function api(url, options = {}) {
-  const response = await fetch(url, {
+  const response = await fetchServer(url, {
     method: options.method || "GET",
     headers: options.body ? { "Content-Type": "application/json" } : undefined,
     body: options.body ? JSON.stringify(options.body) : undefined,

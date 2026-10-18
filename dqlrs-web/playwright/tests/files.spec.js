@@ -218,3 +218,25 @@ test("writes editor edits back to the temporary file", async ({ page, app }) => 
   const source = fs.readFileSync(new URL("../fixtures/workspace/queries/edit.dql", import.meta.url), "utf8");
   expect(source).toBe("-- editable\nSELECT 1;\n");
 });
+
+test("says the server went away and retries the config call", async ({ page }) => {
+  await page.route("**/api/**", (route) => route.abort());
+  await node(page, "queries/read.dql").click();
+  const pop = page.locator("#server-pop");
+  await expect(pop).toBeVisible();
+  await expect(page.locator("#server-pop-title")).toHaveText("The server went away");
+  await expect(page.locator("#server-retry")).toBeVisible();
+
+  await page.locator("#server-retry").click();
+  await expect(page.locator("#server-pop-status")).toHaveText("Still unavailable.");
+  await expect(pop).toBeVisible();
+
+  const checks = [];
+  await page.unroute("**/api/**");
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/config") checks.push(request.method());
+  });
+  await page.locator("#server-retry").click();
+  await expect(pop).toBeHidden();
+  expect(checks).toEqual(["GET"]);
+});
