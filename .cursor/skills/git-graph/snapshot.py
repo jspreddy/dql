@@ -7,9 +7,16 @@ import re
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE = "origin/v-rust"
+WEEK_SECONDS = 7 * 24 * 60 * 60
+
+_COMMIT_BLOCK = re.compile(
+    r"<g>\s*(?:<path[^>]*/>\s*)+<circle[^>]*>\s*<title>(?P<hash>[a-f0-9]{40})</title>\s*</circle>\s*</g>\s*<text[\s\S]*?</text>\s*",
+    re.MULTILINE,
+)
 
 
 def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -54,6 +61,13 @@ def commits_above(repo: Path, base: str, tip: str) -> int:
     return int(proc.stdout.strip() or 0)
 
 
+def base_cutoff(repo: Path) -> tuple[int, str]:
+    epoch = int(git(repo, "log", "-1", "--format=%ct", BASE).stdout.strip())
+    cutoff = epoch - WEEK_SECONDS
+    since = datetime.fromtimestamp(cutoff, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return cutoff, since
+
+
 def branch_on_top(repo: Path, name: str) -> bool:
     if name in {BASE, "origin/HEAD"}:
         return False
@@ -63,7 +77,12 @@ def branch_on_top(repo: Path, name: str) -> bool:
     return is_ancestor(repo, BASE, name) or commits_above(repo, BASE, name) > 0
 
 
-def branches_on_top(repo: Path) -> list[str]:
+def has_recent_commits(repo: Path, name: str, since: str) -> bool:
+    proc = git(repo, "rev-list", "-1", f"--since={since}", f"{BASE}..{name}", check=False)
+    return proc.returncode == 0 and bool(proc.stdout.strip())
+
+
+def branches_on_top(repo: Path, since: str) -> list[str]:
     if git(repo, "rev-parse", "--verify", "--quiet", BASE, check=False).returncode != 0:
         sys.exit(f"{BASE} does not exist after fetch")
     listed = git(
@@ -75,9 +94,51 @@ def branches_on_top(repo: Path) -> list[str]:
     ).stdout.splitlines()
     selected = [BASE]
     for name in listed:
-        if name and branch_on_top(repo, name):
+        if name and branch_on_top(repo, name) and has_recent_commits(repo, name, since):
             selected.append(name)
     return selected
+
+
+def allowed_commits(repo: Path, tips: list[str], since: str) -> set[str]:
+    allowed = {git(repo, "rev-parse", BASE).stdout.strip()}
+    for tip in tips:
+        proc = git(repo, "rev-list", f"--since={since}", f"{BASE}..{tip}", check=False)
+        if proc.returncode != 0:
+            continue
+        allowed.update(line for line in proc.stdout.splitlines() if line)
+        allowed.add(git(repo, "rev-parse", tip).stdout.strip())
+    return allowed
+
+
+def filter_svg_by_commits(svg: str, allowed: set[str]) -> str:
+    def repl(match: re.Match[str]) -> str:
+        return match.group(0) if match.group("hash") in allowed else ""
+
+    return _COMMIT_BLOCK.sub(repl, svg)
+
+
+def fit_viewbox(svg: str) -> str:
+    ys = [float(value) for value in re.findall(r'\bcy="([0-9.]+)"', svg)]
+    ys.extend(float(value) for value in re.findall(r'<text[^>]*\sy="([0-9.]+)"', svg))
+    xs = [float(value) for value in re.findall(r'\bcx="([0-9.]+)"', svg)]
+    xs.extend(float(value) for value in re.findall(r'<text[^>]*\sx="([0-9.]+)"', svg))
+    if not ys or not xs:
+        return svg
+    min_x = min(xs) - 240.0
+    max_x = max(xs) + 420.0
+    min_y = min(ys) - 20.0
+    max_y = max(ys) + 20.0
+    width = max_x - min_x
+    height = max_y - min_y
+    svg = re.sub(
+        r'viewBox="[^"]+"',
+        f'viewBox="{min_x:.2f} {min_y:.2f} {width:.2f} {height:.2f}"',
+        svg,
+        count=1,
+    )
+    svg = re.sub(r'\bwidth="[^"]+"', f'width="{width:.2f}"', svg, count=1)
+    svg = re.sub(r'\bheight="[^"]+"', f'height="{height:.2f}"', svg, count=1)
+    return svg
 
 
 def render_svg(repo: Path, refs: list[str]) -> str:
@@ -169,9 +230,14 @@ def main() -> None:
         )
     repo = repo_root()
     fetch_origin(repo)
-    refs = branches_on_top(repo)
+    _cutoff, since = base_cutoff(repo)
+    refs = branches_on_top(repo, since)
+    tips = [ref for ref in refs if ref != BASE]
+    allowed = allowed_commits(repo, tips, since)
+    svg = filter_svg_by_commits(render_svg(repo, refs), allowed)
+    svg = fit_viewbox(svg)
     svg_path = output_dir() / "v-rust-branches.svg"
-    svg_path.write_text(pad_svg(render_svg(repo, refs)))
+    svg_path.write_text(pad_svg(svg))
     print(f"svg: {svg_path}")
 
 
