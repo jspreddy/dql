@@ -1334,7 +1334,8 @@ test("scrolls a failing statement into view", async ({ page }) => {
   const pad = Array.from({ length: 80 }, () => "-- keep the failing statement below the fold").join("\n");
   await replaceEditor(page, `${pad}\n${bad}`);
   await pressMod(page, "Home");
-  expect(await statementInView(page, missing)).toBe(false);
+  // Document start scrolls on the next frame, so the old viewport is still current here.
+  await expect.poll(() => statementInView(page, missing)).toBe(false);
   await page.locator("#run-file").click();
   await expect(page.locator('[data-testid="result-note"].error')).toContainText(missing);
   await expect.poll(() => statementInView(page, missing)).toBe(true);
