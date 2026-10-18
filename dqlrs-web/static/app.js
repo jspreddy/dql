@@ -517,6 +517,7 @@ schemaPop.addEventListener("click", (event) => {
 });
 schemaPop.addEventListener("close", () => {
   state.schemaKind = "";
+  schemaPop.classList.remove("schema-pop-screen");
   for (const button of document.querySelectorAll(".schema-btn")) {
     button.setAttribute("aria-expanded", "false");
   }
@@ -2637,6 +2638,7 @@ function openSchema(snapshot, button) {
   for (const other of document.querySelectorAll(".schema-btn")) {
     other.setAttribute("aria-expanded", other === button ? "true" : "false");
   }
+  schemaPop.classList.toggle("schema-pop-screen", browser);
   schemaPopKicker.textContent = browser ? "Table structure" : "Result structure";
   schemaPopInfo.classList.toggle("hidden", browser);
   schemaPopTitle.textContent = snapshot.title || (browser ? "Table" : "Result");

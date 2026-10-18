@@ -342,6 +342,9 @@ test("opens result and table-browser structure from data already in hand", async
   await resultCard.locator(".result-schema").click();
   const pop = page.locator("#schema-pop");
   await expect(pop).toBeVisible();
+  const resultBox = await dialogBox(pop);
+  expect(resultBox.width).toBeLessThan(resultBox.viewWidth - 40);
+  expect(resultBox.height).toBeLessThan(resultBox.viewHeight - 40);
   await expect(page.locator("#schema-pop-kicker")).toHaveText("Result structure");
   await expect(page.locator("#schema-pop-info")).toBeVisible();
   await expect(page.locator(".schema-pop-kicker-row #schema-pop-info")).toBeVisible();
@@ -392,6 +395,11 @@ test("opens result and table-browser structure from data already in hand", async
   page.on("request", watchRows);
   await page.locator("#rows-schema").click();
   await expect(pop).toBeVisible();
+  const tableBox = await dialogBox(pop);
+  expect(tableBox.left).toBeLessThanOrEqual(1);
+  expect(tableBox.top).toBeLessThanOrEqual(1);
+  expect(tableBox.width).toBeGreaterThanOrEqual(tableBox.viewWidth - 1);
+  expect(tableBox.height).toBeGreaterThanOrEqual(tableBox.viewHeight - 1);
   await expect(page.locator("#schema-pop-kicker")).toHaveText("Table structure");
   await expect(page.locator("#schema-pop-info")).toBeHidden();
   await expect(page.locator("#schema-pop-title")).toHaveText(name);
@@ -475,4 +483,18 @@ test("gives each query result its own named card and structure icon", async ({ p
 
 function uniqueTable() {
   return `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function dialogBox(pop) {
+  return pop.evaluate((dialog) => {
+    const box = dialog.getBoundingClientRect();
+    return {
+      left: box.left,
+      top: box.top,
+      width: box.width,
+      height: box.height,
+      viewWidth: window.innerWidth,
+      viewHeight: window.innerHeight,
+    };
+  });
 }
