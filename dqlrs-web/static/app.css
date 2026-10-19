@@ -2055,7 +2055,8 @@ th { background: var(--gutter); position: sticky; top: 0; }
 }
 
 .schema-pop-body table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -2170,8 +2171,6 @@ th { background: var(--gutter); position: sticky; top: 0; }
 .schema-present-bar.is-sparse > span { background: var(--sparse); }
 
 .schema-sample {
-  overflow: hidden;
-  text-overflow: ellipsis;
   color: var(--text-secondary);
   font-family: var(--mono);
   font-size: 12px;

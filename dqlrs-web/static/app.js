@@ -2646,8 +2646,7 @@ function roleLabels(column) {
 
 function formatSample(value) {
   if (value === null || value === undefined) return "";
-  const text = typeof value === "object" ? JSON.stringify(value) : String(value);
-  return text.length > 48 ? text.slice(0, 47) + "…" : text;
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
 function openSchema(snapshot, button) {

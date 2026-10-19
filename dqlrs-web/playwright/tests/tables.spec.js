@@ -314,13 +314,14 @@ test("opens result and table-browser structure from data already in hand", async
   await expect(page.locator("#rows-schema")).toBeHidden();
 
   const name = uniqueTable();
+  const sample = `hello ${"wide-sample ".repeat(40)}end`;
   app.trackTable(name);
   await replaceEditor(
     page,
     [
       `DROP TABLE IF EXISTS ${name};`,
       `CREATE TABLE ${name} (id STRING HASH KEY, sk NUMBER RANGE KEY);`,
-      `INSERT INTO ${name} (id, sk, extra) VALUES ('a', 1, 'hello'), ('b', 2, 'hello');`,
+      `INSERT INTO ${name} (id, sk, extra) VALUES ('a', 1, '${sample}'), ('b', 2, '${sample}');`,
       `INSERT INTO ${name} (id, sk) VALUES ('c', 3);`,
       `SCAN * FROM ${name};`,
     ].join("\n"),
@@ -372,7 +373,28 @@ test("opens result and table-browser structure from data already in hand", async
   await expect(resultExtra).toContainText("STRING");
   await expect(resultExtra.locator(".schema-role-muted")).toHaveText("—");
   await expect(resultExtra).toContainText("2/3");
-  await expect(resultExtra).toContainText("hello");
+  const sampleCell = resultExtra.locator(".schema-sample");
+  await expect(sampleCell).toHaveText(sample);
+  const sampleSpace = await sampleCell.evaluate((cell) => ({
+    client: cell.clientWidth,
+    scroll: cell.scrollWidth,
+  }));
+  expect(sampleSpace.scroll).toBeLessThanOrEqual(sampleSpace.client + 1);
+  const scroller = page.locator(".schema-pop-body");
+  const scroll = await scroller.evaluate((node) => ({
+    client: node.clientWidth,
+    scroll: node.scrollWidth,
+  }));
+  expect(scroll.scroll).toBeGreaterThan(scroll.client + 8);
+  await scroller.evaluate((node) => {
+    node.scrollLeft = node.scrollWidth;
+  });
+  const endVisible = await sampleCell.evaluate((cell) => {
+    const box = cell.getBoundingClientRect();
+    const parent = cell.closest(".schema-pop-body").getBoundingClientRect();
+    return box.right <= parent.right + 2 && box.right >= parent.right - 24;
+  });
+  expect(endVisible).toBe(true);
   await expect(page.locator("#schema-pop-foot")).toContainText("No extra query was run.");
   expect(afterResult).toEqual([]);
   await page.keyboard.press("Escape");
