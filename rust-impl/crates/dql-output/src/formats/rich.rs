@@ -3,8 +3,6 @@ use dql_engine::Item;
 use std::collections::BTreeMap;
 use std::io::{self, Write};
 
-const MAX_COLUMNS: usize = 15;
-
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RichContext {
     pub important_columns: Vec<String>,
@@ -28,7 +26,6 @@ pub enum ColumnKey {
 pub struct RichColumn {
     pub name: String,
     pub important: bool,
-    pub ellipsis: bool,
     pub table_key: ColumnKey,
     pub index_key: ColumnKey,
 }
@@ -37,7 +34,6 @@ pub struct RichColumn {
 pub struct RichLayout {
     pub columns: Vec<RichColumn>,
     pub rows: Vec<Vec<String>>,
-    pub overflow_columns: Vec<String>,
 }
 
 pub struct RichFormat<'a> {
@@ -73,7 +69,6 @@ pub fn build_rich_layout(items: &[Item], context: Option<&RichContext>) -> RichL
         return RichLayout {
             columns: Vec::new(),
             rows: Vec::new(),
-            overflow_columns: Vec::new(),
         };
     }
 
@@ -97,13 +92,11 @@ pub fn build_rich_layout(items: &[Item], context: Option<&RichContext>) -> RichL
         .map(|ctx| ctx.index_range.as_slice())
         .unwrap_or(empty);
     let ordered = order_columns(all_columns, &important, preserve_order);
-    let (displayed, overflow) = split_columns(ordered, &important);
 
-    let columns: Vec<RichColumn> = displayed
+    let columns: Vec<RichColumn> = ordered
         .iter()
         .map(|name| RichColumn {
             important: important.iter().any(|col| col == name),
-            ellipsis: name == "...",
             table_key: column_key(table_hash, table_range, name),
             index_key: column_key(index_hash, index_range, name),
             name: name.clone(),
@@ -113,26 +106,18 @@ pub fn build_rich_layout(items: &[Item], context: Option<&RichContext>) -> RichL
     let rows = items
         .iter()
         .map(|item| {
-            displayed
+            ordered
                 .iter()
                 .map(|col| {
-                    if col == "..." {
-                        String::new()
-                    } else {
-                        item.get(col)
-                            .map(format_field)
-                            .unwrap_or_else(|| "NULL".to_string())
-                    }
+                    item.get(col)
+                        .map(format_field)
+                        .unwrap_or_else(|| "NULL".to_string())
                 })
                 .collect()
         })
         .collect();
 
-    RichLayout {
-        columns,
-        rows,
-        overflow_columns: overflow,
-    }
+    RichLayout { columns, rows }
 }
 
 pub fn rich_layout_to_text(layout: &RichLayout, width: usize) -> String {
@@ -148,16 +133,7 @@ fn write_rich_layout(writer: &mut dyn Write, layout: &RichLayout, width: usize) 
     }
 
     writeln!(writer, "Results")?;
-    write_text_table(writer, &layout.columns, &layout.rows, width)?;
-
-    if !layout.overflow_columns.is_empty() {
-        writeln!(writer)?;
-        writeln!(writer, "More columns available")?;
-        for column in &layout.overflow_columns {
-            writeln!(writer, "  {column}")?;
-        }
-    }
-    Ok(())
+    write_text_table(writer, &layout.columns, &layout.rows, width)
 }
 
 fn write_text_table(
@@ -244,25 +220,6 @@ fn order_columns(
         }
     });
     columns
-}
-
-fn split_columns(columns: Vec<String>, important: &[String]) -> (Vec<String>, Vec<String>) {
-    let mut displayed = Vec::new();
-    let mut overflow = Vec::new();
-    let mut remaining = MAX_COLUMNS;
-    for column in columns {
-        if remaining > 0 {
-            displayed.push(column);
-            remaining -= 1;
-        } else {
-            overflow.push(column);
-        }
-    }
-    if !overflow.is_empty() {
-        let _ = important;
-        displayed.push("...".to_string());
-    }
-    (displayed, overflow)
 }
 
 fn column_key(hash_names: &[String], range_names: &[String], name: &str) -> ColumnKey {
@@ -367,7 +324,7 @@ mod tests {
     }
 
     #[test]
-    fn rich_layout_overflows_beyond_fifteen_columns() {
+    fn rich_layout_keeps_every_column() {
         let mut pairs = Vec::new();
         for index in 0..16 {
             pairs.push((format!("col{index:02}"), "v"));
@@ -377,9 +334,12 @@ mod tests {
             .map(|(key, value)| (key.clone(), Value::String(value.to_string())))
             .collect::<Item>()];
         let layout = build_rich_layout(&items, None);
-        assert_eq!(layout.columns.len(), 16);
-        assert_eq!(layout.columns.last().unwrap().name, "...");
-        assert_eq!(layout.overflow_columns, vec!["col15"]);
+        let names: Vec<_> = layout.columns.iter().map(|col| col.name.clone()).collect();
+        let expected: Vec<_> = (0..16).map(|index| format!("col{index:02}")).collect();
+        assert_eq!(names, expected);
+        let text = rich_layout_to_text(&layout, 400);
+        assert!(text.contains("col15"), "{text}");
+        assert!(!text.contains("More columns available"), "{text}");
     }
 
     #[test]
