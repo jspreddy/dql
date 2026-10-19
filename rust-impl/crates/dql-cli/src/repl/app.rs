@@ -13,7 +13,7 @@ use crossterm::terminal::enable_raw_mode;
 use dql_engine::StatementResult;
 use dql_output::{build_rich_layout, render_result, DisplayBackend, OutputFormat};
 use ratatui::backend::{Backend, ClearType, CrosstermBackend};
-use ratatui::layout::Position;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Widget};
@@ -123,6 +123,82 @@ fn terminal_width() -> usize {
         .max(40)
 }
 
+fn screen_rows() -> u16 {
+    crossterm::terminal::size()
+        .map(|(_, height)| height)
+        .unwrap_or(24)
+        .max(1)
+}
+
+/// A wide result kept in the live viewport so left/right can slide it.
+struct PinnedResult {
+    lines: Vec<Line<'static>>,
+    hscroll: usize,
+}
+
+impl PinnedResult {
+    fn max_width(&self) -> usize {
+        self.lines.iter().map(line_width).max().unwrap_or(0)
+    }
+
+    fn hscroll_clamped(&self, width: usize) -> usize {
+        let max_scroll = self.max_width().saturating_sub(width);
+        self.hscroll.min(max_scroll)
+    }
+
+    /// Wide rows slide by `hscroll`. Rows that already fit stay put, so the
+    /// cutoff card does not scroll off the left edge.
+    fn visible_lines(&self, width: usize) -> Vec<Line<'static>> {
+        let scroll = self.hscroll_clamped(width);
+        self.lines
+            .iter()
+            .map(|line| {
+                if line_width(line) > width {
+                    slice_line(line, scroll, width)
+                } else {
+                    slice_line(line, 0, width)
+                }
+            })
+            .collect()
+    }
+}
+
+fn line_width(line: &Line<'_>) -> usize {
+    line.spans
+        .iter()
+        .map(|span| span.content.chars().count())
+        .sum()
+}
+
+fn slice_line(line: &Line<'_>, start: usize, width: usize) -> Line<'static> {
+    if width == 0 {
+        return Line::from("");
+    }
+    let mut skipped = 0usize;
+    let mut taken = 0usize;
+    let mut spans = Vec::new();
+    for span in &line.spans {
+        let len = span.content.chars().count();
+        if skipped + len <= start {
+            skipped += len;
+            continue;
+        }
+        let local_start = start.saturating_sub(skipped);
+        let available = len - local_start;
+        let take = available.min(width.saturating_sub(taken));
+        let piece: String = span.content.chars().skip(local_start).take(take).collect();
+        if !piece.is_empty() {
+            spans.push(Span::styled(piece, span.style));
+        }
+        skipped += len;
+        taken += take;
+        if taken >= width {
+            break;
+        }
+    }
+    Line::from(spans)
+}
+
 /// SQL submits only when the buffer ends with `;`. Without one, Enter
 /// inserts a newline. Meta-commands (`ls`, `opt`, …) still submit without `;`.
 fn buffer_submits_on_enter(text: &str) -> bool {
@@ -146,11 +222,11 @@ fn panel_height(content_lines: usize) -> u16 {
     lines.saturating_add(PANEL_CHROME)
 }
 
-fn live_panel_bg() -> Color {
+pub(crate) fn live_panel_bg() -> Color {
     Color::Rgb(15, 35, 45)
 }
 
-fn status_panel_bg(ok: bool) -> Color {
+pub(crate) fn status_panel_bg(ok: bool) -> Color {
     if ok {
         Color::Rgb(10, 40, 20)
     } else {
@@ -279,7 +355,7 @@ fn repl_loop(
     let mut needs_redraw = true;
     loop {
         if needs_redraw {
-            let height = panel_height(app.live_content_line_count());
+            let height = app.viewport_height(terminal.size()?.height);
             ensure_inline_height(terminal, inline_height, height)?;
             terminal.draw(|frame| draw(frame, &app))?;
             needs_redraw = false;
@@ -321,11 +397,18 @@ fn repl_loop(
                                 // the top. The mouse wheel still reaches the
                                 // previous output.
                                 scroll_visible_screen_into_scrollback(terminal)?;
-                                let height = panel_height(app.live_content_line_count());
+                                app.pinned = None;
+                                let height = panel_height(1);
                                 *inline_height = height;
                                 *terminal = inline_terminal(height)?;
                             } else {
-                                ensure_inline_height(terminal, inline_height, panel_height(1))?;
+                                app.commit_pinned(terminal)?;
+                                app.pin_if_wide(terminal_width(), screen_rows());
+                                ensure_inline_height(
+                                    terminal,
+                                    inline_height,
+                                    panel_height(app.lines.len().max(1)),
+                                )?;
                                 flush_to_scrollback(terminal, &mut app)?;
                             }
                         }
@@ -380,6 +463,18 @@ fn repl_loop(
                     }
                     KeyCode::Down if alt => {
                         app.move_line_down();
+                        needs_redraw = true;
+                    }
+                    KeyCode::Left if key.modifiers.is_empty() => {
+                        if !app.scroll_result(-1) {
+                            app.move_cursor_left();
+                        }
+                        needs_redraw = true;
+                    }
+                    KeyCode::Right if key.modifiers.is_empty() => {
+                        if !app.scroll_result(1) {
+                            app.move_cursor_right();
+                        }
                         needs_redraw = true;
                     }
                     KeyCode::Left => {
@@ -460,6 +555,8 @@ struct ReplApp<'a> {
     history_index: Option<usize>,
     /// `clear` should scroll the visible screen into the terminal scrollback.
     scroll_to_top: bool,
+    /// Wide result kept on screen so left/right can scroll it.
+    pinned: Option<PinnedResult>,
 }
 
 impl<'a> ReplApp<'a> {
@@ -475,6 +572,7 @@ impl<'a> ReplApp<'a> {
             partial: false,
             history_index: None,
             scroll_to_top: false,
+            pinned: None,
         }
     }
 
@@ -484,8 +582,86 @@ impl<'a> ReplApp<'a> {
         scroll
     }
 
-    fn live_content_line_count(&self) -> usize {
-        self.lines.len().max(1)
+    fn viewport_height(&self, screen_rows: u16) -> u16 {
+        let prompt = panel_height(self.lines.len().max(1));
+        let result = self
+            .pinned
+            .as_ref()
+            .map(|pinned| pinned.lines.len() as u16)
+            .unwrap_or(0);
+        let total = prompt.saturating_add(result);
+        if screen_rows <= prompt {
+            prompt
+        } else {
+            total.min(screen_rows)
+        }
+    }
+
+    fn editor_is_empty(&self) -> bool {
+        self.row == 0 && self.col == 0 && self.lines.len() == 1 && self.lines[0].is_empty()
+    }
+
+    /// Slide a wide pinned result. Returns whether the arrow was used for that.
+    fn scroll_result(&mut self, direction: i32) -> bool {
+        self.scroll_result_by(direction, terminal_width())
+    }
+
+    fn scroll_result_by(&mut self, direction: i32, width: usize) -> bool {
+        if !self.editor_is_empty() {
+            return false;
+        }
+        let Some(pinned) = self.pinned.as_mut() else {
+            return false;
+        };
+        if pinned.max_width() <= width {
+            return false;
+        }
+        let step = (width / 4).max(1);
+        let max_scroll = pinned.max_width() - width;
+        let next = if direction < 0 {
+            pinned.hscroll.saturating_sub(step)
+        } else {
+            pinned.hscroll.saturating_add(step).min(max_scroll)
+        };
+        pinned.hscroll = next;
+        true
+    }
+
+    /// Keep a wide result in the live viewport when it also fits vertically.
+    fn pin_if_wide(&mut self, width: usize, screen_rows: u16) -> bool {
+        let wide = self
+            .output_lines
+            .iter()
+            .any(|line| line_width(line) > width);
+        let prompt = panel_height(self.lines.len().max(1));
+        let room = usize::from(screen_rows.saturating_sub(prompt));
+        if !wide || self.output_lines.len() > room {
+            return false;
+        }
+        self.pinned = Some(PinnedResult {
+            lines: std::mem::take(&mut self.output_lines),
+            hscroll: 0,
+        });
+        true
+    }
+
+    /// Write the current horizontal window into scrollback and drop the pin.
+    fn commit_pinned(&mut self, terminal: &mut ReplTerminal) -> io::Result<()> {
+        let Some(pinned) = self.pinned.take() else {
+            return Ok(());
+        };
+        let lines = pinned.visible_lines(terminal_width());
+        if lines.is_empty() {
+            return Ok(());
+        }
+        let height = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+        terminal.insert_before(height, |buf| {
+            Paragraph::new(lines).render(buf.area, buf);
+        })?;
+        terminal.insert_before(1, |buf| {
+            Paragraph::new(Line::from("")).render(buf.area, buf);
+        })?;
+        Ok(())
     }
 
     fn current_line(&self) -> &str {
@@ -922,19 +1098,53 @@ fn live_panel_lines(app: &ReplApp<'_>, width: usize) -> Vec<Line<'static>> {
 fn draw(frame: &mut Frame, app: &ReplApp<'_>) {
     let area = frame.area();
     let width = area.width.max(1) as usize;
+    let prompt_h = panel_height(app.lines.len().max(1)).min(area.height);
+    let result_h = if app.pinned.is_some() {
+        area.height.saturating_sub(prompt_h)
+    } else {
+        0
+    };
+    if result_h > 0 {
+        if let Some(pinned) = &app.pinned {
+            let lines = pinned
+                .visible_lines(width)
+                .into_iter()
+                .take(result_h as usize)
+                .collect::<Vec<_>>();
+            frame.render_widget(
+                Paragraph::new(lines),
+                Rect {
+                    x: area.x,
+                    y: area.y,
+                    width: area.width,
+                    height: result_h,
+                },
+            );
+        }
+    }
+    let prompt_area = if result_h == 0 {
+        area
+    } else {
+        Rect {
+            x: area.x,
+            y: area.y.saturating_add(result_h),
+            width: area.width,
+            height: prompt_h,
+        }
+    };
     let lines = live_panel_lines(app, width);
     frame.render_widget(
         Paragraph::new(lines).style(Style::default().bg(live_panel_bg())),
-        area,
+        prompt_area,
     );
 
     // Caret on the active edit row (below top border + title).
-    if area.width > 0 && area.height > 2 {
-        let row = (2 + app.row as u16).min(area.height.saturating_sub(1));
-        let col = (app.col as u16).min(area.width.saturating_sub(1));
+    if prompt_area.width > 0 && prompt_area.height > 2 {
+        let row = (2 + app.row as u16).min(prompt_area.height.saturating_sub(1));
+        let col = (app.col as u16).min(prompt_area.width.saturating_sub(1));
         frame.set_cursor_position(Position {
-            x: area.x.saturating_add(col),
-            y: area.y.saturating_add(row),
+            x: prompt_area.x.saturating_add(col),
+            y: prompt_area.y.saturating_add(row),
         });
     }
 }

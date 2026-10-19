@@ -51,7 +51,8 @@ test("saves JSON and CSV in the process directory and loads both back", async ({
     ].join("\n"),
   );
 
-  await expect(page.locator("#result-meta")).toHaveText("2 rows");
+  await expect(page.locator("#result-meta")).toBeEmpty();
+  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("2 rows");
   await expect(page.locator("#result-table")).toContainText("alpha");
   await expect(page.locator("#result-table")).toContainText("beta");
   await expect(page.locator("#result-table")).toContainText("3");
@@ -85,11 +86,12 @@ test("saves JSON and CSV in the process directory and loads both back", async ({
       `SCAN * FROM ${fromCsv};`,
     ].join("\n"),
   );
-  await expect(page.locator("#result-meta")).toHaveText("2 rows");
+  await expect(page.locator("#result-meta")).toBeEmpty();
+  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("2 rows");
   await expect(page.locator("#result-table")).toContainText("alpha");
   await expect(page.locator("#result-table")).toContainText("beta");
-  await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
-  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "2 affected" })).toHaveCount(1);
+  await expect(page.locator(".query-result").last().locator('[data-testid="result-note"].error')).toHaveCount(0);
+  await expect(page.locator(".query-result").nth(-2).locator('[data-testid="result-note"]').filter({ hasText: "2 affected" })).toHaveCount(1);
 });
 
 test("saves and loads an absolute path", async ({ page, app }) => {
@@ -111,7 +113,8 @@ test("saves and loads an absolute path", async ({ page, app }) => {
       ].join("\n"),
     );
 
-    await expect(page.locator("#result-meta")).toHaveText("2 rows");
+    await expect(page.locator("#result-meta")).toBeEmpty();
+  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("2 rows");
     await expect(page.locator("#result-table")).toContainText("alpha");
     await expect(page.locator("#result-table")).toContainText("beta");
     await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
@@ -148,7 +151,8 @@ test("SAVE CREATE PARENTS writes into a new directory", async ({ page, app }) =>
     ].join("\n"),
   );
 
-  await expect(page.locator("#result-meta")).toHaveText("2 rows");
+  await expect(page.locator("#result-meta")).toBeEmpty();
+  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("2 rows");
   await expect(page.locator("#result-table")).toContainText("alpha");
   await expect(page.locator("#result-table")).toContainText("beta");
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);

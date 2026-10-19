@@ -12,3 +12,5 @@ dynamodb-local-metadata.json
 __pycache__/
 /dist/
 /build/
+.cache/
+.dqlrs-web-cache/

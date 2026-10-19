@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
-import { handleDialogs, node, openApp, pressMod } from "../support/helpers.js";
+import { handleDialogs, node, openApp, pressMod, themeColor } from "../support/helpers.js";
 
 test.beforeEach(async ({ page, app }) => {
   await openApp(page, app);
@@ -68,6 +68,9 @@ test("context menu on a file offers the file actions", async ({ page }) => {
   await expect(page.locator("#menu-rename")).toBeVisible();
   await expect(page.locator("#menu-move")).toBeVisible();
   await expect(page.locator("#menu-delete")).toBeVisible();
+  await expect(page.locator("#menu-clear-results")).toBeVisible();
+  await expect(page.locator("#menu-clear-cache")).toBeVisible();
+  await expect(page.locator("#menu-run-folder")).toHaveCount(0);
   await page.locator("#file-name").click();
   await expect(page.locator("#file-menu")).toBeHidden();
 });
@@ -90,10 +93,22 @@ test("sidebar background menu creates a file and a folder at the workspace root"
 
   await page.locator(".side-head").click({ button: "right" });
   await expect(page.locator("#menu-new-folder")).toBeVisible();
+  await expect(page.locator("#menu-clear-cache")).toBeVisible();
+  await expect(page.locator("#menu-run-folder")).toHaveCount(0);
   await expect(page.locator("#menu-duplicate")).toHaveCount(0);
   await page.locator("#menu-new-folder").click();
   await expect(node(page, "extra")).toBeVisible();
   await dialogs.stop();
+});
+
+test("runs an empty folder from the context menu", async ({ page }) => {
+  await node(page, "empty").click({ button: "right" });
+  await expect(page.locator("#menu-run-folder")).toBeVisible();
+  await expect(page.locator("#menu-run-folder .ff-icon")).toBeVisible();
+  await expect(page.locator("#menu-run-folder")).toHaveCSS("color", await themeColor(page, "--danger"));
+  await page.locator("#menu-run-folder").click();
+  await expect(page.locator("#file-menu")).toBeHidden();
+  await expect(page.locator("#result-meta")).toHaveText("Nothing to run");
 });
 
 test("creates a file inside a folder from the context menu", async ({ page }) => {
@@ -202,4 +217,26 @@ test("writes editor edits back to the temporary file", async ({ page, app }) => 
   }).toBe("-- saved from the test\nSELECT 1;\n");
   const source = fs.readFileSync(new URL("../fixtures/workspace/queries/edit.dql", import.meta.url), "utf8");
   expect(source).toBe("-- editable\nSELECT 1;\n");
+});
+
+test("says the server went away and retries the config call", async ({ page }) => {
+  await page.route("**/api/**", (route) => route.abort());
+  await node(page, "queries/read.dql").click();
+  const pop = page.locator("#server-pop");
+  await expect(pop).toBeVisible();
+  await expect(page.locator("#server-pop-title")).toHaveText("The server went away");
+  await expect(page.locator("#server-retry")).toBeVisible();
+
+  await page.locator("#server-retry").click();
+  await expect(page.locator("#server-pop-status")).toHaveText("Still unavailable.");
+  await expect(pop).toBeVisible();
+
+  const checks = [];
+  await page.unroute("**/api/**");
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/config") checks.push(request.method());
+  });
+  await page.locator("#server-retry").click();
+  await expect(pop).toBeHidden();
+  expect(checks).toEqual(["GET"]);
 });

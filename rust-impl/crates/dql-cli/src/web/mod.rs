@@ -4,7 +4,9 @@
 //! A checkout of that directory is preferred at runtime so UI edits show up
 //! without a rebuild. The installed binary falls back to the embedded copy.
 
+mod environment;
 mod files;
+mod query_cache;
 mod server;
 mod shape;
 

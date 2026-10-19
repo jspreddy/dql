@@ -18,7 +18,7 @@ pub use fragment::FragmentEngine;
 
 pub use throttle::RateLimit;
 
-pub use aws::{SdkBackend, SdkConfig};
+pub use aws::{CallerIdentity, SdkBackend, SdkConfig};
 pub use cancel::CancelFlag;
 pub use engine::Engine;
 pub use memory::MemoryBackend;

@@ -16,16 +16,16 @@ import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
 import { parseLsMessage } from "./describe-card.js";
 
 const dqlHighlight = HighlightStyle.define([
-  { tag: tags.keyword, color: "#0f766e", fontWeight: "650" },
-  { tag: tags.deleted, color: "#dc2626", fontWeight: "700" },
-  { tag: tags.typeName, color: "#1d4ed8" },
-  { tag: tags.function(tags.variableName), color: "#6d28d9" },
-  { tag: tags.bool, color: "#0369a1", fontWeight: "650" },
-  { tag: tags.null, color: "#0369a1", fontWeight: "650" },
-  { tag: tags.string, color: "#9f1239" },
-  { tag: tags.number, color: "#b45309" },
-  { tag: tags.comment, color: "#6b7280", fontStyle: "italic" },
-  { tag: tags.operator, color: "#334155" },
+  { tag: tags.keyword, color: "var(--tok-keyword)", fontWeight: "650" },
+  { tag: tags.deleted, color: "var(--tok-deleted)", fontWeight: "700" },
+  { tag: tags.typeName, color: "var(--tok-type)" },
+  { tag: tags.function(tags.variableName), color: "var(--tok-fn)" },
+  { tag: tags.bool, color: "var(--tok-bool)", fontWeight: "650" },
+  { tag: tags.null, color: "var(--tok-bool)", fontWeight: "650" },
+  { tag: tags.string, color: "var(--tok-string)" },
+  { tag: tags.number, color: "var(--tok-number)" },
+  { tag: tags.comment, color: "var(--tok-comment)", fontStyle: "italic" },
+  { tag: tags.operator, color: "var(--tok-operator)" },
 ]);
 
 let runMarks = [];
@@ -38,6 +38,7 @@ const state = {
   saveTimer: 0,
   searchTimer: 0,
   table: "",
+  entries: [],
   page: 0,
   hasMore: false,
   suppressSave: false,
@@ -46,9 +47,43 @@ const state = {
   listedTables: [],
   browserSchema: null,
   schemaKind: "",
+  environment: null,
+  catalog: null,
+  booted: false,
 };
 
+const completeList = document.querySelector("#complete-list");
+let completeItems = [];
+let completeIndex = 0;
+let completeReplace = null;
+let completeSeq = 0;
+let catalogPromise = null;
+let catalogRequest = 0;
+let skipComplete = false;
+let editorReady = false;
+
 const HIGHLIGHT_KEY = "dqlrs-web.highlight";
+const THEME_KEY = "dqlrs-web.theme";
+const themeToggle = document.querySelector("#theme-toggle");
+
+function currentTheme() {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+function applyTheme(theme, persist) {
+  const dark = theme === "dark";
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  if (!themeToggle) return;
+  themeToggle.setAttribute("aria-pressed", dark ? "true" : "false");
+  themeToggle.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
+  themeToggle.title = dark ? "Light mode" : "Dark mode";
+  if (persist) localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
+}
+
+applyTheme(currentTheme(), false);
+themeToggle?.addEventListener("click", () => {
+  applyTheme(currentTheme() === "dark" ? "light" : "dark", true);
+});
 
 function loadHighlightOptions() {
   try {
@@ -81,6 +116,13 @@ const editor = new EditorView({
       highlightActiveLineGutter(),
       history(),
       keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap]),
+      Prec.highest(keymap.of([
+        { key: "ArrowDown", run: () => moveComplete(1) },
+        { key: "ArrowUp", run: () => moveComplete(-1) },
+        { key: "Enter", run: acceptComplete },
+        { key: "Tab", run: acceptComplete },
+        { key: "Escape", run: dismissComplete },
+      ])),
       Prec.high(keymap.of([{ key: "Mod-Enter", run: runFromEditor }])),
       dqlLanguage,
       highlightCompartment.of(queryHighlight(highlightOptions)),
@@ -96,11 +138,11 @@ const editor = new EditorView({
       EditorView.contentAttributes.of({ spellcheck: "false", id: "editor-content" }),
       Prec.highest(EditorView.theme({
         ".cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground": {
-          backgroundColor: "rgba(37, 99, 235, 0.28) !important",
+          backgroundColor: "var(--selection) !important",
         },
         ".cm-run-fill": {
-          backgroundColor: "rgba(16, 42, 96, 0.05)",
-          border: "1px solid #2563eb",
+          backgroundColor: "var(--run-fill)",
+          border: "1px solid var(--blue)",
           borderRadius: "2px",
           boxSizing: "content-box",
         },
@@ -116,40 +158,43 @@ const editor = new EditorView({
           fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
           lineHeight: "1.4",
         },
-        ".cm-gutters": { background: "#fafbfc", color: "#8b97a3", border: "none" },
+        ".cm-gutters": { background: "var(--gutter)", color: "var(--placeholder)", border: "none" },
         ".cm-run-status-gutter": { width: "16px" },
         ".cm-run-status-gutter .cm-gutterElement": { padding: "0 1px" },
-        ".cm-band-alt": { backgroundColor: "#f4f7f8" },
-        ".cm-band-write": { backgroundColor: "#fdecec" },
-        ".cm-band-write-even": { backgroundColor: "#f3c4c4" },
-        ".cm-dql-gutter": { width: "8px", background: "#fafbfc" },
+        ".cm-band-alt": { backgroundColor: "var(--raised)" },
+        ".cm-band-write": { backgroundColor: "var(--write)" },
+        ".cm-band-write-even": { backgroundColor: "var(--write-even)" },
+        ".cm-dql-gutter": { width: "8px", background: "var(--gutter)" },
         ".cm-dql-gutter .cm-gutterElement": { padding: "0 0 0 3px" },
         ".cm-write-bar": {
           display: "block",
           width: "3px",
           height: "100%",
           borderRadius: "1px",
-          backgroundColor: "#fb7185",
+          backgroundColor: "var(--write-bar)",
         },
-        ".cm-write-bar-even": { backgroundColor: "#be123c" },
+        ".cm-write-bar-even": { backgroundColor: "var(--write-bar-even)" },
         ".cm-activeLine": { backgroundColor: "transparent" },
-        ".cm-activeLineGutter": { background: "#f3f5f7" },
-        ".cm-content": { padding: "1lh 0 5lh" },
+        ".cm-activeLineGutter": { background: "var(--side)" },
+        ".cm-content": { padding: "1lh 0 5lh", color: "var(--text)" },
         ".cm-line": { padding: "0 8px", backgroundColor: "transparent" },
-        ".cm-placeholder": { color: "#8b97a3", fontStyle: "italic" },
+        ".cm-placeholder": { color: "var(--placeholder)", fontStyle: "italic" },
       }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged && !state.suppressSave) scheduleSave();
         if (update.docChanged && runMarks.length) {
           runMarks = runMarks.map((mark) => ({ ...mark, from: update.changes.mapPos(mark.from, 1) }));
         }
+        if (editorReady && !skipComplete && (update.docChanged || update.selectionSet)) scheduleComplete();
       }),
     ],
   }),
 });
+editorReady = true;
 const resultBody = document.querySelector("#result-body");
 const runProgress = document.querySelector("#run-progress");
 const resultMeta = document.querySelector("#result-meta");
+const resultCount = document.querySelector("#result-count");
 const resultsEl = document.querySelector("#results");
 const resultsResize = document.querySelector("#results-resize");
 const RESULTS_HEIGHT_KEY = "dqlrs-web.results-height";
@@ -359,6 +404,10 @@ runButton.setAttribute("aria-keyshortcuts", macShortcut ? "Meta+Enter" : "Contro
 stopButton.title = "Stop running query (Esc)";
 stopButton.setAttribute("aria-keyshortcuts", "Escape");
 runButton.addEventListener("click", runSelection);
+const runFileButton = document.querySelector("#run-file");
+runFileButton.addEventListener("click", runFile);
+const clearResultsButton = document.querySelector("#clear-results");
+clearResultsButton.addEventListener("click", () => clearFileResults(state.path));
 stopButton.addEventListener("click", stopRun);
 window.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || stopButton.classList.contains("hidden")) return;
@@ -373,6 +422,8 @@ function setRunBusy(busy) {
   stopButton.classList.toggle("hidden", !busy);
   stopButton.disabled = !busy;
   runShortcut.textContent = busy ? "Esc" : runShortcutLabel;
+  runFileButton.disabled = busy || !state.path;
+  syncClearResults();
   const floating = editor.dom.querySelector(".run-float");
   if (floating) floating.disabled = busy;
 }
@@ -391,6 +442,12 @@ function runFromEditor() {
   if (runButton.disabled) return true;
   runSelection();
   return true;
+}
+
+async function runFile() {
+  if (runButton.disabled || !state.path) return;
+  await flushSave();
+  await runDocuments([{ text: editorText(), path: state.path, base: 0 }]);
 }
 
 setRunRequest(runFromEditor);
@@ -430,8 +487,32 @@ const schemaPopKeys = document.querySelector("#schema-pop-keys");
 const schemaPopQuery = document.querySelector("#schema-pop-query");
 const schemaPopBody = document.querySelector("#schema-pop-body");
 const schemaPopFoot = document.querySelector("#schema-pop-foot");
+const rowPop = document.querySelector("#row-pop");
+const rowPopTitle = document.querySelector("#row-pop-title");
+const rowPopKeys = document.querySelector("#row-pop-keys");
+const rowPopBody = document.querySelector("#row-pop-body");
 rowsSchemaBtn.addEventListener("click", () => openSchema(state.browserSchema, rowsSchemaBtn));
 document.querySelector("#schema-pop-close").addEventListener("click", () => schemaPop.close());
+document.querySelector("#row-pop-close").addEventListener("click", () => rowPop.close());
+for (const dialog of [schemaPop, rowPop]) {
+  dialog.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !dialog.open) return;
+    event.preventDefault();
+    event.stopPropagation();
+    dialog.close();
+  });
+}
+rowPop.addEventListener("click", (event) => {
+  const box = rowPop.getBoundingClientRect();
+  if (
+    event.clientX < box.left
+    || event.clientX > box.right
+    || event.clientY < box.top
+    || event.clientY > box.bottom
+  ) {
+    rowPop.close();
+  }
+});
 schemaPop.addEventListener("click", (event) => {
   const box = schemaPop.getBoundingClientRect();
   if (
@@ -450,18 +531,140 @@ schemaPop.addEventListener("close", () => {
   }
 });
 
+const endpointButton = document.querySelector("#endpoint");
+const envPop = document.querySelector("#env-pop");
+
+envPop.addEventListener("toggle", (event) => {
+  if (endpointButton.dataset.kind !== "aws") {
+    if (envPop.matches(":popover-open")) envPop.hidePopover();
+    return;
+  }
+  endpointButton.setAttribute("aria-expanded", event.newState === "open" ? "true" : "false");
+  if (event.newState !== "open") return;
+  void loadEnvironment();
+});
+
 boot();
 
 async function boot() {
-  const config = await api("/api/config");
-  document.querySelector("#endpoint").textContent = config.endpoint;
-  await refreshTree();
-  if (location.hash === "#tables") {
-    setMode("tables");
-    return;
+  try {
+    const config = await api("/api/config");
+    applyEnvironment(config);
+    await refreshTree();
+    if (location.hash === "#tables") {
+      setMode("tables");
+      state.booted = true;
+      return;
+    }
+    const file = treeEl.querySelector('.node[data-kind="file"]');
+    if (file) file.click();
+    state.booted = true;
+  } catch (error) {
+    reportError(error);
   }
-  const file = treeEl.querySelector('.node[data-kind="file"]');
-  if (file) file.click();
+}
+
+function applyEnvironment(config) {
+  const environment = config.environment || { kind: "local", label: config.endpoint || "" };
+  state.environment = environment;
+  const label = environment.label || config.endpoint || "";
+  endpointButton.textContent = label;
+  endpointButton.title = label;
+  endpointButton.dataset.kind = environment.kind || "local";
+  if (environment.kind === "aws") {
+    endpointButton.setAttribute("popovertarget", "env-pop");
+    endpointButton.setAttribute("aria-haspopup", "dialog");
+    endpointButton.setAttribute("aria-controls", "env-pop");
+    endpointButton.setAttribute("aria-expanded", "false");
+  } else {
+    endpointButton.removeAttribute("popovertarget");
+    endpointButton.removeAttribute("aria-haspopup");
+    endpointButton.removeAttribute("aria-controls");
+    endpointButton.removeAttribute("aria-expanded");
+  }
+}
+
+function formatExpiration(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const formatted = date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return date.getTime() < Date.now() ? formatted + " · expired" : formatted;
+}
+
+function environmentRows(environment, identity) {
+  const rows = [];
+  if (environment.profile) rows.push(["Profile", environment.profile]);
+  if (environment.region) rows.push(["Region", environment.region]);
+  if (environment.access_key) rows.push(["Access key", environment.access_key]);
+  if (environment.expiration) rows.push(["Expires", formatExpiration(environment.expiration)]);
+  if (identity && identity.ok) {
+    if (identity.account) rows.push(["Account", identity.account]);
+    if (identity.principal) rows.push(["Principal", identity.principal]);
+    if (identity.user_id) rows.push(["User ID", identity.user_id]);
+    if (identity.arn) rows.push(["ARN", identity.arn]);
+  }
+  return rows;
+}
+
+function renderEnvironment(environment, identity) {
+  const facts = document.createElement("dl");
+  facts.className = "env-pop-facts";
+  for (const [name, value] of environmentRows(environment, identity)) {
+    const term = document.createElement("dt");
+    term.textContent = name;
+    const detail = document.createElement("dd");
+    detail.textContent = value;
+    facts.append(term, detail);
+  }
+  envPop.replaceChildren();
+  const head = document.createElement("div");
+  head.className = "env-pop-head";
+  const kicker = document.createElement("span");
+  kicker.className = "env-pop-kicker";
+  kicker.textContent = "Environment";
+  const title = document.createElement("strong");
+  title.id = "env-pop-title";
+  title.textContent = environment.label || "AWS";
+  head.append(kicker, title);
+  envPop.append(head, facts);
+  if (!identity) {
+    const status = document.createElement("p");
+    status.className = "env-pop-status";
+    status.textContent = "Looking up caller identity…";
+    envPop.append(status);
+  } else if (!identity.ok) {
+    const status = document.createElement("p");
+    status.className = "env-pop-status is-error";
+    status.textContent = identity.error || "Caller identity is unavailable.";
+    envPop.append(status);
+  }
+}
+
+function placeEnvironment() {
+  const chip = endpointButton.getBoundingClientRect();
+  const pop = envPop.getBoundingClientRect();
+  const width = pop.width || 340;
+  envPop.style.inset = "auto";
+  envPop.style.margin = "0";
+  envPop.style.top = Math.round(chip.bottom + 6) + "px";
+  envPop.style.left = Math.max(8, Math.round(chip.right - width)) + "px";
+}
+
+async function loadEnvironment() {
+  const environment = state.environment;
+  if (!environment || environment.kind !== "aws") return;
+  renderEnvironment(environment, null);
+  placeEnvironment();
+  try {
+    const identity = await api("/api/identity");
+    if (!envPop.matches(":popover-open")) return;
+    renderEnvironment(environment, identity);
+    placeEnvironment();
+  } catch (error) {
+    if (!envPop.matches(":popover-open")) return;
+    renderEnvironment(environment, { ok: false, error: error.message });
+    placeEnvironment();
+  }
 }
 
 function setMode(mode) {
@@ -479,6 +682,7 @@ function setMode(mode) {
   document.querySelector("#new-file").classList.toggle("hidden", tables);
   document.querySelector("#refresh-tables").classList.toggle("hidden", !tables);
   document.querySelector("#side-title").textContent = tables ? "Tables" : "Files";
+  closeComplete();
   if (tables) loadTables();
 }
 
@@ -612,7 +816,7 @@ async function dropOnto(from, destDir) {
   try {
     await relocate(from, to);
   } catch (error) {
-    window.alert(error.message);
+    reportError(error);
   }
 }
 
@@ -632,13 +836,18 @@ function nodeButton(twist, label, selected) {
 }
 
 async function openFile(path) {
-  await flushSave();
-  const file = await api("/api/file?path=" + encodeURIComponent(path));
-  state.path = file.path;
-  setEditorText(file.text);
-  document.querySelector("#file-name").textContent = file.path.split("/").pop();
-  setMode("query");
-  await refreshTree();
+  try {
+    await flushSave();
+    const file = await api("/api/file?path=" + encodeURIComponent(path));
+    setEditorText(file.text);
+    showOpenFile(file.path);
+    state.entries = [];
+    showResults([]);
+    setMode("query");
+    await Promise.all([refreshTree(), loadFileResults(file.path)]);
+  } catch (error) {
+    reportError(error);
+  }
 }
 
 async function createFile() {
@@ -654,7 +863,7 @@ async function createNamedFile(dir) {
     expandParents(parentOf(created.path));
     await openFile(created.path);
   } catch (error) {
-    window.alert(error.message);
+    reportError(error);
   }
 }
 
@@ -668,7 +877,7 @@ async function createNamedFolder(dir) {
     state.expanded.add(created.path);
     await refreshTree();
   } catch (error) {
-    window.alert(error.message);
+    reportError(error);
   }
 }
 
@@ -683,7 +892,7 @@ async function duplicateEntry(path) {
       await refreshTree();
     }
   } catch (error) {
-    window.alert(error.message);
+    reportError(error);
   }
 }
 
@@ -693,7 +902,7 @@ async function moveEntry(path) {
   try {
     await relocate(path, entered.trim());
   } catch (error) {
-    window.alert(error.message);
+    reportError(error);
   }
 }
 
@@ -704,15 +913,14 @@ async function deleteEntry(path, kind) {
   clearTimeout(state.saveTimer);
   const removingOpen = state.path === path || (kind === "dir" && state.path.startsWith(path + "/"));
   if (removingOpen) {
-    state.path = "";
     setEditorText("");
-    document.querySelector("#file-name").textContent = "No file open";
+    showOpenFile("");
   }
   try {
     await api("/api/delete", { method: "POST", body: { path } });
     await refreshTree();
   } catch (error) {
-    window.alert(error.message);
+    reportError(error);
     await refreshTree();
   }
 }
@@ -721,8 +929,7 @@ async function relocate(from, to) {
   await flushSave();
   const moved = await api("/api/move", { method: "POST", body: { from, to } });
   if (state.path === from || state.path.startsWith(from + "/")) {
-    state.path = moved.path + state.path.slice(from.length);
-    document.querySelector("#file-name").textContent = state.path.split("/").pop();
+    showOpenFile(moved.path + state.path.slice(from.length));
   }
   remapExpanded(from, moved.path);
   expandParents(parentOf(moved.path));
@@ -778,7 +985,7 @@ function beginRename(path) {
     try {
       await relocate(path, joinPath(parentOf(path), nextName));
     } catch (error) {
-      window.alert(error.message);
+      reportError(error);
       await refreshTree();
     }
   };
@@ -800,16 +1007,29 @@ function beginRename(path) {
 
 function menuItems(target) {
   const dir = target.type === "dir" ? target.path : parentOf(target.path || ".");
-  const items = [
+  const items = [];
+  if (target.type === "dir") {
+    items.push({ label: "Run folder", icon: "forward", danger: true, run: () => runFolder(target.path) }, "-");
+  }
+  items.push(
     { label: "New file", run: () => createNamedFile(dir) },
     { label: "New folder", run: () => createNamedFolder(dir) },
-  ];
-  if (!target.path || target.type === "root") return items;
+  );
+  if (!target.path || target.type === "root") {
+    items.push("-", { label: "Clear cache", run: () => clearCache(".") });
+    return items;
+  }
   items.push(
     "-",
     { label: "Duplicate", run: () => duplicateEntry(target.path) },
     { label: "Rename", run: () => beginRename(target.path) },
     { label: "Move to…", run: () => moveEntry(target.path) },
+  );
+  if (target.type === "file") {
+    items.push({ label: "Clear results", run: () => clearFileResults(target.path) });
+  }
+  items.push(
+    { label: "Clear cache", run: () => clearCache(target.path) },
     "-",
     { label: "Delete", danger: true, run: () => deleteEntry(target.path, target.type) },
   );
@@ -817,11 +1037,14 @@ function menuItems(target) {
 }
 
 const menuIds = {
+  "Run folder": "menu-run-folder",
   "New file": "menu-new-file",
   "New folder": "menu-new-folder",
   Duplicate: "menu-duplicate",
   Rename: "menu-rename",
   "Move to…": "menu-move",
+  "Clear results": "menu-clear-results",
+  "Clear cache": "menu-clear-cache",
   Delete: "menu-delete",
 };
 
@@ -838,7 +1061,8 @@ function showMenu(x, y, items) {
     button.type = "button";
     button.role = "menuitem";
     button.id = menuIds[item.label];
-    button.textContent = item.label;
+    if (item.icon === "forward") button.append(fastForwardIcon());
+    button.append(item.label);
     if (item.danger) button.className = "danger";
     button.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -903,6 +1127,199 @@ function editorText() {
   return editor.state.doc.toString();
 }
 
+function fastForwardIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "ff-icon");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("fill", "currentColor");
+  path.setAttribute("d", "M1.6 3.1 7.2 8 1.6 12.9Zm6.8 0L14 8 8.4 12.9Z");
+  svg.append(path);
+  return svg;
+}
+
+function showOpenFile(path) {
+  state.path = path || "";
+  document.querySelector("#file-name").textContent = state.path ? state.path.split("/").pop() : "No file open";
+  runFileButton.classList.toggle("hidden", !state.path);
+  runFileButton.disabled = !state.path || runButton.disabled;
+  if (!state.path) {
+    state.entries = [];
+    showResults([]);
+  }
+  syncClearResults();
+}
+
+function syncClearResults() {
+  const open = Boolean(state.path);
+  clearResultsButton.classList.toggle("hidden", !open);
+  clearResultsButton.disabled = !open || runButton.disabled;
+}
+
+let resultsRequest = 0;
+
+async function loadFileResults(path) {
+  const request = ++resultsRequest;
+  if (!path) {
+    state.entries = [];
+    showResults([]);
+    return;
+  }
+  const payload = await api("/api/query-results?path=" + encodeURIComponent(path));
+  if (request !== resultsRequest || path !== state.path) return;
+  state.entries = payload.results || [];
+  showResults(state.entries);
+}
+
+async function clearFileResults(path) {
+  if (!path || runButton.disabled) return;
+  await clearCache(path);
+}
+
+async function clearCache(path) {
+  if (!path || runButton.disabled) return;
+  try {
+    const payload = await api("/api/query-results/clear", { method: "POST", body: { path } });
+    const cleared = payload.paths || [];
+    if (state.path && cleared.includes(state.path)) {
+      state.entries = [];
+      showResults([]);
+    }
+  } catch (error) {
+    reportError(error);
+  }
+}
+
+async function storeQueryResult(path, query, result, success) {
+  if (!path) {
+    showResults([{ query, result, success }]);
+    return;
+  }
+  await api("/api/query-results", {
+    method: "POST",
+    body: { path, query, result, success: Boolean(success) },
+  });
+  if (path === state.path) await loadFileResults(path);
+}
+
+function resultList(result) {
+  if (Array.isArray(result)) return result;
+  if (result && typeof result === "object") return [result];
+  return [];
+}
+
+async function storeStatementResults(path, text, results) {
+  const spans = statementSpans(text || "");
+  const entries = results.map((result, index) => {
+    const span = spans[index];
+    const sliced = span ? String(text || "").slice(span.from, span.to).trim() : "";
+    return {
+      query: String(result.statement || sliced || "").trim(),
+      result,
+      success: Boolean(result.ok),
+    };
+  });
+  if (!path) {
+    showResults(entries);
+    return;
+  }
+  for (const entry of entries) {
+    await api("/api/query-results", {
+      method: "POST",
+      body: { path, query: entry.query, result: entry.result, success: entry.success },
+    });
+  }
+  if (path === state.path) await loadFileResults(path);
+}
+
+let resultPin = null;
+
+function releaseResultPin() {
+  if (!resultPin) return;
+  resultPin.abort();
+  resultPin = null;
+}
+
+// History is oldest-first, so the latest result is last. A trailing spacer
+// makes a short last result able to sit at the top of the pane; scrolling
+// up uncovers the older results above it.
+function pinLatestResult() {
+  releaseResultPin();
+  const latest = resultBody.querySelector(".query-result:last-of-type");
+  if (!latest) return;
+  const shell = latest.querySelector(".result-shell") || latest;
+  const spacer = document.createElement("div");
+  spacer.className = "result-scroll-spacer";
+  spacer.setAttribute("aria-hidden", "true");
+  resultBody.append(spacer);
+  const controller = new AbortController();
+  resultPin = controller;
+  let stick = true;
+  let fitting = false;
+  const metrics = () => {
+    const style = getComputedStyle(shell);
+    const marginTop = parseFloat(style.marginTop) || 0;
+    const marginBottom = parseFloat(style.marginBottom) || 0;
+    return {
+      marginTop,
+      block: marginTop + shell.offsetHeight + marginBottom,
+      top: Math.max(0, shell.offsetTop - marginTop),
+    };
+  };
+  const fit = () => {
+    fitting = true;
+    const { block, top } = metrics();
+    spacer.style.height = Math.max(0, resultBody.clientHeight - block) + "px";
+    if (stick && Math.abs(resultBody.scrollTop - top) > 1) resultBody.scrollTop = top;
+    fitting = false;
+  };
+  resultBody.addEventListener("scroll", () => {
+    if (fitting) return;
+    stick = Math.abs(resultBody.scrollTop - metrics().top) <= 2;
+  }, { signal: controller.signal, passive: true });
+  const observer = new ResizeObserver(() => fit());
+  controller.signal.addEventListener("abort", () => observer.disconnect());
+  observer.observe(resultBody);
+  observer.observe(shell);
+  fit();
+}
+
+function setResultCount(count) {
+  const total = Math.max(0, Number(count) || 0);
+  resultCount.textContent = total === 1 ? "1 result" : total + " results";
+}
+
+function showResults(entries) {
+  releaseResultPin();
+  setResultCount(entries.length);
+  resultBody.replaceChildren();
+  closeSchemaIfResult();
+  closeRowPop();
+  if (!entries.length) {
+    resultMeta.textContent = "";
+    return;
+  }
+  const latestItems = entries.reduce((found, item, itemIndex) => (
+    resultList(item.result).some((part) => part && part.ok && part.kind === "items" && !listedItemTables(part))
+      ? itemIndex
+      : found
+  ), -1);
+  entries.forEach((entry, index) => {
+    const block = document.createElement("section");
+    block.className = "query-result" + (entry.success ? "" : " is-error");
+    block.dataset.testid = "query-result";
+    const body = document.createElement("div");
+    renderResults(resultList(entry.result), body, index === latestItems);
+    block.append(queryShell(entry.query, body));
+    resultBody.append(block);
+  });
+  resultMeta.textContent = "";
+  pinLatestResult();
+}
+
 function setEditorText(text) {
   state.suppressSave = true;
   editor.dispatch({
@@ -929,7 +1346,267 @@ function markStatement(from, status) {
   if (existing) existing.status = status;
   else runMarks.push({ from, status });
   paintRunMarks();
+  if (status === "error") scrollEditorTo(from);
 }
+
+function statementCodePos(pos) {
+  const src = editor.state.doc.toString();
+  const start = Math.max(0, Math.min(pos, src.length));
+  let i = start;
+  while (i < src.length) {
+    const ch = src[i];
+    const nxt = src[i + 1] || "";
+    if (ch === "-" && nxt === "-") {
+      while (i < src.length && src[i] !== "\n") i += 1;
+      if (src[i] === "\n") i += 1;
+      continue;
+    }
+    if (ch === ";") return start;
+    if (!/\s/.test(ch)) return i;
+    i += 1;
+  }
+  return start;
+}
+
+function scrollEditorTo(pos) {
+  if (typeof pos !== "number") return;
+  const clamped = statementCodePos(pos);
+  const place = () => {
+    const block = editor.lineBlockAt(clamped);
+    const scroller = editor.scrollDOM;
+    const line = Math.max(1, block.bottom - block.top);
+    const top = block.top - Math.max(0, (scroller.clientHeight - line) / 2);
+    scroller.scrollTop = Math.max(0, top);
+  };
+  editor.dispatch({
+    selection: { anchor: clamped },
+    scrollIntoView: true,
+    effects: EditorView.scrollIntoView(clamped, { y: "center" }),
+  });
+  place();
+  requestAnimationFrame(place);
+}
+
+function changesSchema(statement) {
+  const stripped = String(statement || "").replace(/--[^\n]*/g, " ").trim();
+  return /^(?:create|drop|alter)\s+table\b/i.test(stripped);
+}
+
+function invalidateCatalog() {
+  state.catalog = null;
+  catalogPromise = null;
+  catalogRequest += 1;
+}
+
+async function ensureCatalog() {
+  if (state.catalog) return state.catalog;
+  if (catalogPromise) return catalogPromise;
+  const request = ++catalogRequest;
+  catalogPromise = api("/api/tables")
+    .then((payload) => {
+      if (request !== catalogRequest) return state.catalog || [];
+      state.catalog = payload.tables || [];
+      return state.catalog;
+    })
+    .finally(() => {
+      if (request === catalogRequest) catalogPromise = null;
+    });
+  return catalogPromise;
+}
+
+function siteAt(pos) {
+  const src = editor.state.doc.toString();
+  const end = Math.max(0, Math.min(pos, src.length));
+  let start = 0;
+  let quote = null;
+  let comment = false;
+  for (let i = 0; i < end; i += 1) {
+    const ch = src[i];
+    const nxt = src[i + 1] || "";
+    if (comment) {
+      if (ch === "\n") comment = false;
+      continue;
+    }
+    if (quote) {
+      if (ch === quote && src[i - 1] !== "\\") quote = null;
+      continue;
+    }
+    if (ch === "-" && nxt === "-") {
+      comment = true;
+      i += 1;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      continue;
+    }
+    if (ch === ";") start = i + 1;
+  }
+  if (quote || comment) return null;
+  const statement = src.slice(start, end);
+  const table = statement.match(/(?:^|[\s(,])(?:from|into)\s+([A-Za-z_][A-Za-z0-9_.-]*)?$/i);
+  if (table) return { kind: "table", prefix: table[1] || "" };
+  const key = statement.match(/(?:^|[\s(,])(?:where|and|or)\s+([A-Za-z_][A-Za-z0-9_.-]*)?$/i);
+  if (!key) return null;
+  const named = statement.match(/\b(?:from|into)\s+([A-Za-z_][A-Za-z0-9_.-]*)/i);
+  if (!named) return null;
+  return { kind: "key", prefix: key[1] || "", table: named[1] };
+}
+
+function suggestionsFor(tables, site) {
+  const needle = site.prefix.toLowerCase();
+  if (site.kind === "table") {
+    return tables
+      .filter((table) => table.name.toLowerCase().startsWith(needle))
+      .slice(0, 50)
+      .map((table) => ({ name: table.name, role: "" }));
+  }
+  const wanted = site.table.toLowerCase();
+  const found = tables.find((table) => table.name === site.table)
+    || tables.find((table) => table.name.toLowerCase() === wanted);
+  return ((found && found.keys) || [])
+    .filter((key) => String(key.name || "").toLowerCase().startsWith(needle))
+    .slice(0, 50)
+    .map((key) => ({ name: key.name, role: key.role || "" }));
+}
+
+function scheduleComplete() {
+  const pos = editor.state.selection.main.head;
+  const site = siteAt(pos);
+  if (!site) {
+    closeComplete();
+    return;
+  }
+  const seq = ++completeSeq;
+  ensureCatalog().then((tables) => {
+    if (seq !== completeSeq) return;
+    const nowPos = editor.state.selection.main.head;
+    const now = siteAt(nowPos);
+    if (!now || now.kind !== site.kind || now.prefix !== site.prefix || now.table !== site.table) return;
+    const items = suggestionsFor(tables, now);
+    if (!items.length) {
+      closeComplete();
+      return;
+    }
+    openComplete(items, now, nowPos);
+  }).catch(() => {
+    if (seq === completeSeq) closeComplete();
+  });
+}
+
+function openComplete(items, site, pos) {
+  completeItems = items;
+  completeIndex = Math.min(completeIndex, items.length - 1);
+  if (!completeReplace || completeReplace.prefix !== site.prefix || completeReplace.kind !== site.kind) {
+    completeIndex = 0;
+  }
+  completeReplace = { from: pos - site.prefix.length, to: pos, prefix: site.prefix, kind: site.kind };
+  completeList.replaceChildren();
+  items.forEach((item, index) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "complete-option";
+    option.dataset.testid = "complete-option";
+    option.setAttribute("role", "option");
+    const name = document.createElement("span");
+    name.className = "complete-name";
+    name.textContent = item.name;
+    option.append(name);
+    if (item.role) {
+      const role = document.createElement("span");
+      role.className = "complete-role";
+      role.textContent = item.role;
+      option.append(role);
+    }
+    option.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      completeIndex = index;
+    });
+    option.addEventListener("click", () => acceptComplete());
+    completeList.append(option);
+  });
+  placeComplete(pos);
+  paintCompleteSelection();
+}
+
+function placeComplete(pos) {
+  const coords = editor.coordsAtPos(pos);
+  if (!coords) {
+    closeComplete();
+    return;
+  }
+  completeList.hidden = false;
+  const width = completeList.offsetWidth;
+  const height = completeList.offsetHeight;
+  let left = coords.left;
+  let top = coords.bottom + 4;
+  if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
+  if (top + height > window.innerHeight - 8) top = Math.max(8, coords.top - height - 4);
+  completeList.style.left = left + "px";
+  completeList.style.top = top + "px";
+}
+
+function paintCompleteSelection() {
+  const options = [...completeList.children];
+  options.forEach((option, index) => {
+    option.setAttribute("aria-selected", index === completeIndex ? "true" : "false");
+  });
+  const selected = options[completeIndex];
+  if (!selected) return;
+  const top = selected.offsetTop;
+  const bottom = top + selected.offsetHeight;
+  if (top < completeList.scrollTop) completeList.scrollTop = top;
+  else if (bottom > completeList.scrollTop + completeList.clientHeight) {
+    completeList.scrollTop = bottom - completeList.clientHeight;
+  }
+}
+
+function moveComplete(delta) {
+  if (completeList.hidden || !completeItems.length) return false;
+  completeIndex = (completeIndex + delta + completeItems.length) % completeItems.length;
+  paintCompleteSelection();
+  return true;
+}
+
+function acceptComplete() {
+  if (completeList.hidden || !completeItems.length || !completeReplace) return false;
+  const name = completeItems[completeIndex].name;
+  const { from, to } = completeReplace;
+  skipComplete = true;
+  editor.dispatch({
+    changes: { from, to, insert: name },
+    selection: { anchor: from + name.length },
+  });
+  skipComplete = false;
+  closeComplete();
+  return true;
+}
+
+function dismissComplete() {
+  if (completeList.hidden) return false;
+  closeComplete();
+  return true;
+}
+
+function closeComplete() {
+  completeSeq += 1;
+  completeItems = [];
+  completeIndex = 0;
+  completeReplace = null;
+  if (!completeList) return;
+  completeList.replaceChildren();
+  completeList.hidden = true;
+}
+
+document.addEventListener("mousedown", (event) => {
+  if (!completeList || completeList.hidden) return;
+  if (completeList.contains(event.target) || editor.dom.contains(event.target)) return;
+  closeComplete();
+});
+editor.scrollDOM.addEventListener("scroll", () => {
+  if (completeList.hidden || !completeReplace) return;
+  placeComplete(completeReplace.to);
+});
 
 function showProgress(done, total) {
   runProgress.hidden = false;
@@ -977,63 +1654,175 @@ async function runSelection() {
   await flushSave();
   const range = currentRunRange();
   const dql = range ? editor.state.sliceDoc(range.from, range.to) : "";
-  if (!dql.trim()) {
-    resultMeta.textContent = "Nothing to run";
-    resultBody.replaceChildren();
-    closeSchemaIfResult();
-    hideProgress();
+  await runDocuments([{ text: dql, path: state.path, base: range ? range.from : 0 }]);
+}
+
+async function runFolder(path) {
+  if (runButton.disabled) return;
+  await flushSave();
+  let documents = [];
+  try {
+    documents = await folderDocuments(path);
+  } catch (error) {
+    reportError(error);
     return;
   }
-  const origins = statementSpans(dql).map((span) => range.from + span.from);
-  runMarks = origins.length ? [{ from: origins[0], status: "running" }] : [];
-  paintRunMarks();
+  await runDocuments(documents);
+}
+
+async function folderDocuments(path) {
+  const root = await api("/api/tree");
+  const folder = findTreeNode(root, path);
+  if (!folder) return [];
+  const documents = [];
+  for (const file of dqlFilesUnder(folder)) {
+    const text = file.path === state.path
+      ? editorText()
+      : (await api("/api/file?path=" + encodeURIComponent(file.path))).text;
+    documents.push({
+      text,
+      path: file.path,
+      base: file.path === state.path ? 0 : null,
+    });
+  }
+  return documents;
+}
+
+function findTreeNode(node, path) {
+  if (!node) return null;
+  if (node.path === path) return node;
+  for (const child of node.children || []) {
+    const found = findTreeNode(child, path);
+    if (found) return found;
+  }
+  return null;
+}
+
+function dqlFilesUnder(node) {
+  const children = node.children || [];
+  const files = children.filter((child) => child.type === "file");
+  const nested = children.filter((child) => child.type === "dir").flatMap(dqlFilesUnder);
+  return files.concat(nested);
+}
+
+async function runDocuments(documents) {
+  const runnable = documents.filter((doc) => statementSpans(doc.text || "").length);
+  if (!runnable.length) {
+    hideProgress();
+    runMarks = [];
+    paintRunMarks();
+    if (!state.entries.length) {
+      resultMeta.textContent = "Nothing to run";
+      releaseResultPin();
+      resultBody.replaceChildren();
+      closeSchemaIfResult();
+      closeRowPop();
+    }
+    return;
+  }
   setRunBusy(true);
   resultMeta.textContent = "Running…";
-  resultBody.replaceChildren();
   closeSchemaIfResult();
+  closeRowPop();
   showProgress(null, null);
-  const results = [];
+  let touchedShown = false;
+  let active = null;
   try {
-    const response = await fetch("/api/run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dql }),
-    });
-    await readNdjson(response, (event) => {
-      if (event.event === "error") throw new Error(event.error || "failed");
-      if (event.event === "statement") {
-        markStatement(origins[event.index], "running");
-        showProgress(null, null);
-        return;
+    for (const doc of runnable) {
+      const marked = typeof doc.base === "number";
+      const origins = marked ? statementSpans(doc.text).map((span) => doc.base + span.from) : [];
+      if (marked) {
+        runMarks = origins.length ? [{ from: origins[0], status: "running" }] : [];
+        paintRunMarks();
       }
-      if (event.event === "progress") {
-        showProgress(event.done, event.total);
-        return;
-      }
-      if (event.event === "result") {
-        const result = event.result || {};
-        results.push(result);
-        markStatement(origins[event.index], result.ok ? "ok" : "error");
-      }
-    });
-    renderResults(results);
+      const results = [];
+      active = { doc, results };
+      const response = await fetchServer("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dql: doc.text }),
+      });
+      await readNdjson(response, (event) => {
+        if (event.event === "error") throw new Error(event.error || "failed");
+        if (event.event === "statement") {
+          markStatement(origins[event.index], "running");
+          showProgress(null, null);
+          return;
+        }
+        if (event.event === "progress") {
+          showProgress(event.done, event.total);
+          return;
+        }
+        if (event.event === "result") {
+          const result = event.result || {};
+          results.push(result);
+          markStatement(origins[event.index], result.ok ? "ok" : "error");
+          if (result.ok && changesSchema(result.statement)) invalidateCatalog();
+        }
+      });
+      await storeStatementResults(doc.path || "", doc.text, results);
+      const failed = results.findIndex((item) => !item.ok);
+      if (marked && failed >= 0) scrollEditorTo(origins[failed]);
+      if ((doc.path || "") === state.path) touchedShown = true;
+      if (!results.length || results.some((item) => !item.ok)) break;
+    }
   } catch (error) {
-    resultMeta.textContent = "";
-    resultBody.append(note(error.message, true));
+    if (error && error.serverAway) return;
+    if (isUnreachable(error)) {
+      showServerAway();
+      return;
+    }
     const running = runMarks.find((mark) => mark.status === "running");
     if (running) {
       running.status = "error";
       paintRunMarks();
+      scrollEditorTo(running.from);
+    }
+    const doc = active ? active.doc : runnable[0];
+    const done = active ? active.results : [];
+    if (doc) {
+      try {
+        if (done.length) await storeStatementResults(doc.path || "", doc.text, done);
+        const spans = statementSpans(doc.text || "");
+        const span = spans[done.length];
+        const query = span ? doc.text.slice(span.from, span.to).trim() : "";
+        await storeQueryResult(doc.path || "", query, {
+          statement: query,
+          ok: false,
+          kind: "text",
+          message: error.message,
+          error: error.message,
+        }, false);
+        if (span && typeof doc.base === "number") scrollEditorTo(doc.base + span.from);
+        if ((doc.path || "") === state.path) touchedShown = true;
+      } catch (storeError) {
+        resultMeta.textContent = "";
+        resultBody.append(note(storeError.message || error.message, true));
+      }
+    } else {
+      resultMeta.textContent = "";
+      resultBody.append(note(error.message, true));
     }
   } finally {
     hideProgress();
     setRunBusy(false);
+    if (state.path && !touchedShown) {
+      try {
+        await loadFileResults(state.path);
+      } catch {
+        /* the finished runs are already on disk */
+      }
+    }
   }
 }
 
-function renderResults(results) {
-  resultBody.replaceChildren();
-  closeSchemaIfResult();
+function renderResults(results, host, markTable = !host) {
+  const target = host || resultBody;
+  target.replaceChildren();
+  if (!host) {
+    closeSchemaIfResult();
+    closeRowPop();
+  }
   const dataItems = results.filter((item) => item.ok && item.kind === "items" && !listedItemTables(item));
   let explainSteps = 0;
   let otherNotes = 0;
@@ -1046,19 +1835,22 @@ function renderResults(results) {
       if (listed) {
         otherNotes += 1;
         listedTables = listed.tables.length;
-        resultBody.append(intelligentSummary(listed.note, listed.summary, listed.tables));
+        target.append(intelligentSummary(listed.note, listed.summary, listed.tables));
         continue;
       }
       const rows = item.items || [];
       const tableName = tableNameFromStatement(item.statement);
-      const last = item === dataItems[dataItems.length - 1];
-      resultBody.append(resultCard({
+      const last = markTable && item === dataItems[dataItems.length - 1];
+      target.append(resultCard({
         source: "result",
         title: tableName || "Result",
         statement: item.statement || "",
         rows,
         columns: item.columns || [],
         keys: [],
+        elapsedMs: item.elapsed_ms,
+        readUnits: item.read_units,
+        writeUnits: item.write_units,
       }, last ? "result-table" : ""));
       itemCards += 1;
       itemRows += rows.length;
@@ -1067,7 +1859,7 @@ function renderResults(results) {
     const plan = item.ok && item.kind === "schema" ? parseExplainPlan(item.message || "") : null;
     if (plan) {
       explainSteps += plan.length;
-      resultBody.append(explainPlan(plan));
+      target.append(explainPlan(plan));
       continue;
     }
     const listed = item.ok && (item.kind === "schema" || item.kind === "text")
@@ -1075,31 +1867,27 @@ function renderResults(results) {
       : null;
     if (listed && listed.description) {
       otherNotes += 1;
-      resultBody.append(describeCard(listed.description, listed.note));
+      target.append(describeCard(listed.description, listed.note));
       continue;
     }
     if (listed && (listed.tables.length || listed.note)) {
       otherNotes += 1;
       listedTables = listed.tables.length;
-      resultBody.append(intelligentSummary(listed.note, listed.summary, listed.tables));
+      target.append(intelligentSummary(listed.note, listed.summary, listed.tables));
       continue;
     }
     otherNotes += 1;
     const row = note(resultLabel(item), !item.ok);
     if (item.ok && item.kind === "affected") row.classList.add("ok");
-    resultBody.append(row);
+    target.append(row);
   }
-  if (itemCards > 1) {
-    resultMeta.textContent = itemCards + " results";
-  } else if (itemCards === 1) {
-    resultMeta.textContent = itemRows + (itemRows === 1 ? " row" : " rows");
-  } else if (listedTables > 0) {
-    resultMeta.textContent = listedTables + (listedTables === 1 ? " table" : " tables");
-  } else if (explainSteps > 0 && otherNotes === 0) {
-    resultMeta.textContent = explainSteps + (explainSteps === 1 ? " step" : " steps");
-  } else {
-    resultMeta.textContent = results.length ? "" : "Nothing to run";
-  }
+  if (itemCards > 1) return itemCards + " results";
+  if (itemCards === 1) return itemRows + (itemRows === 1 ? " row" : " rows");
+  if (listedTables > 0) return listedTables + (listedTables === 1 ? " table" : " tables");
+  if (explainSteps > 0 && otherNotes === 0) return explainSteps + (explainSteps === 1 ? " step" : " steps");
+  const summary = results.length ? "" : "Nothing to run";
+  if (!host) resultMeta.textContent = summary;
+  return summary;
 }
 
 function listedItemTables(item) {
@@ -1136,12 +1924,105 @@ function resultCard(snapshot, tableId) {
   meta.className = "result-card-meta";
   const count = (snapshot.rows || []).length;
   meta.textContent = count + (count === 1 ? " row" : " rows");
-  head.append(title, meta);
+  title.append(meta);
+  const capacity = formatCapacity(snapshot.readUnits, snapshot.writeUnits);
+  if (capacity) title.append(statChip(capacity, "result-card-capacity", "Consumed capacity"));
+  const elapsed = formatElapsed(snapshot.elapsedMs);
+  if (elapsed) title.append(statChip(elapsed, "result-card-time", "Elapsed time"));
+  head.append(title);
   const body = document.createElement("div");
   body.className = "result-card-body";
   body.append(dataTable(snapshot.rows, tableId, snapshot.columns));
-  card.append(head, body);
+  const face = document.createElement("div");
+  face.className = "result-card-face";
+  face.append(head, body);
+  card.append(face);
   return card;
+}
+
+function statChip(text, testId, label) {
+  const chip = document.createElement("span");
+  chip.className = "result-card-stat";
+  chip.dataset.testid = testId;
+  chip.title = label;
+  chip.textContent = text;
+  return chip;
+}
+
+function formatElapsed(value) {
+  if (!Number.isFinite(value)) return "";
+  const ms = Math.max(0, Math.round(value));
+  if (ms < 1000) return ms + " ms";
+  const seconds = ms / 1000;
+  const digits = seconds < 10 ? 1 : 0;
+  return seconds.toFixed(digits).replace(/\.0$/, "") + " s";
+}
+
+function formatUnits(value) {
+  const number = Number(value) || 0;
+  const rounded = Math.round(number * 100) / 100;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+function formatCapacity(readUnits, writeUnits) {
+  if (!Number.isFinite(readUnits) && !Number.isFinite(writeUnits)) return "";
+  const read = Number.isFinite(readUnits) ? readUnits : 0;
+  const write = Number.isFinite(writeUnits) ? writeUnits : 0;
+  const parts = [];
+  if (read > 0 || write === 0) parts.push(formatUnits(read) + " RCU");
+  if (write > 0) parts.push(formatUnits(write) + " WCU");
+  return parts.join(" · ");
+}
+
+function queryShell(queryText, content) {
+  const shell = document.createElement("div");
+  shell.className = "result-shell";
+  const visuals = [...content.children];
+  const text = String(queryText || "").trim();
+  if (!text || !visuals.length) {
+    shell.append(visuals.length === 1 ? visuals[0] : content);
+    return shell;
+  }
+  const visual = visuals.length === 1 ? visuals[0] : content;
+  if (visuals.length !== 1) visual.classList.add("result-query-host");
+  const host = visual.classList.contains("result-card")
+    ? visual.querySelector(".result-card-face") || visual
+    : visual;
+  if (host.classList.contains("note")) {
+    const inner = document.createElement("div");
+    inner.className = "note-text";
+    while (host.firstChild) inner.append(host.firstChild);
+    host.append(inner);
+    host.classList.add("result-query-host");
+  }
+  const query = highlightedQuery(text, "result-card-query");
+  query.dataset.testid = "result-card-query";
+  query.hidden = true;
+  shell.append(queryToggle(query, host), visual);
+  return shell;
+}
+
+function queryToggle(query, host) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "result-query-toggle";
+  button.dataset.testid = "result-query-toggle";
+  button.title = "Show query";
+  button.setAttribute("aria-label", "Show query");
+  button.setAttribute("aria-expanded", "false");
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const open = query.hidden;
+    if (open) host.prepend(query);
+    else query.remove();
+    query.hidden = !open;
+    button.closest(".result-shell").classList.toggle("is-query-open", open);
+    button.setAttribute("aria-expanded", open ? "true" : "false");
+    const label = open ? "Hide query" : "Show query";
+    button.title = label;
+    button.setAttribute("aria-label", label);
+  });
+  return button;
 }
 
 function schemaIconButton(label) {
@@ -1528,8 +2409,13 @@ function dataTable(rows, tableId, columns) {
   const table = document.createElement("table");
   if (tableId) table.id = tableId;
   const head = document.createElement("tr");
+  let headerLead = true;
   for (const column of keys) {
     const cell = document.createElement("th");
+    if (headerLead) {
+      cell.classList.add("row-lead");
+      headerLead = false;
+    }
     paintKeyColumn(cell, column);
     const label = document.createElement("span");
     label.className = "col-label";
@@ -1545,11 +2431,17 @@ function dataTable(rows, tableId, columns) {
   const body = document.createElement("tbody");
   for (const row of rows) {
     const tr = document.createElement("tr");
+    let lead = true;
     for (const column of keys) {
       const cell = document.createElement("td");
+      if (lead) {
+        cell.classList.add("row-lead");
+        cell.append(rowPeekButton(row, keys));
+        lead = false;
+      }
       paintKeyColumn(cell, column);
       const value = row[column.name];
-      cell.textContent = value === null || value === undefined ? "" : typeof value === "object" ? JSON.stringify(value) : String(value);
+      cell.append(document.createTextNode(value === null || value === undefined ? "" : typeof value === "object" ? JSON.stringify(value) : String(value)));
       tr.append(cell);
     }
     body.append(tr);
@@ -1754,8 +2646,7 @@ function roleLabels(column) {
 
 function formatSample(value) {
   if (value === null || value === undefined) return "";
-  const text = typeof value === "object" ? JSON.stringify(value) : String(value);
-  return text.length > 48 ? text.slice(0, 47) + "…" : text;
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
 function openSchema(snapshot, button) {
@@ -1937,6 +2828,8 @@ async function loadTables(options = {}) {
       return;
     }
     state.listedTables = payload.tables;
+    if (!pattern) state.catalog = payload.tables;
+    else if (refresh) state.catalog = null;
     if (!payload.tables.some((table) => table.name === state.table)) {
       state.table = payload.tables[0].name;
       state.page = 0;
@@ -1975,6 +2868,161 @@ function selectTable(name) {
   loadRows();
 }
 
+function rowPeekButton(row, columns) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "row-peek-btn";
+  button.dataset.testid = "row-peek";
+  button.title = "Show row JSON";
+  button.setAttribute("aria-label", "Show row JSON");
+  button.setAttribute("aria-haspopup", "dialog");
+  button.setAttribute("aria-controls", "row-pop");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("width", "14");
+  svg.setAttribute("height", "14");
+  svg.setAttribute("aria-hidden", "true");
+  const outline = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  outline.setAttribute("fill", "none");
+  outline.setAttribute("stroke", "currentColor");
+  outline.setAttribute("stroke-width", "1.4");
+  outline.setAttribute("stroke-linejoin", "round");
+  outline.setAttribute("d", "M1.4 8s2.5-4.2 6.6-4.2S14.6 8 14.6 8s-2.5 4.2-6.6 4.2S1.4 8 1.4 8z");
+  const pupil = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  pupil.setAttribute("cx", "8");
+  pupil.setAttribute("cy", "8");
+  pupil.setAttribute("r", "1.7");
+  pupil.setAttribute("fill", "none");
+  pupil.setAttribute("stroke", "currentColor");
+  pupil.setAttribute("stroke-width", "1.4");
+  svg.append(outline, pupil);
+  button.append(svg);
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openRowJson(row, columns);
+  });
+  return button;
+}
+
+function openRowJson(row, columns) {
+  const ordered = orderedRow(row, columns);
+  const titleColumn = rowPopupTitleColumn(ordered, columns);
+  rowPopTitle.textContent = titleColumn
+    ? titleColumn.name + " = " + ordered[titleColumn.name]
+    : "Row";
+  fillRowKeyChips(ordered, columns, titleColumn);
+  rowPopBody.replaceChildren(highlightedJson(JSON.stringify(ordered, null, 2)));
+  rowPop.showModal();
+}
+
+function closeRowPop() {
+  if (rowPop.open) rowPop.close();
+}
+
+function orderedRow(row, columns) {
+  const out = {};
+  const seen = new Set();
+  for (const column of columns) {
+    if (Object.prototype.hasOwnProperty.call(row, column.name)) {
+      out[column.name] = row[column.name];
+      seen.add(column.name);
+    }
+  }
+  for (const key of Object.keys(row)) {
+    if (!seen.has(key)) out[key] = row[key];
+  }
+  return out;
+}
+
+function rowPopupTitleColumn(row, columns) {
+  const hash = columns.find((column) => column.table === "hash");
+  const preferred = hash ? [hash, ...columns] : columns;
+  for (const column of preferred) {
+    const value = row[column.name];
+    if (typeof value === "string" && value && value.length <= 48) return column;
+  }
+  return null;
+}
+
+function fillRowKeyChips(row, columns, titleColumn) {
+  rowPopKeys.replaceChildren();
+  for (const column of columns) {
+    if (titleColumn && column.name === titleColumn.name) continue;
+    if (!isKeyColumn(column)) continue;
+    if (!Object.prototype.hasOwnProperty.call(row, column.name)) continue;
+    rowPopKeys.append(rowKeyChip(column, row[column.name]));
+  }
+}
+
+function isKeyColumn(column) {
+  return column.table === "hash" || column.table === "range"
+    || column.index === "hash" || column.index === "range";
+}
+
+function rowKeyChip(column, value) {
+  const chip = document.createElement("span");
+  chip.className = "schema-key-chip";
+  chip.dataset.testid = "row-key-chip";
+  const role = rowChipRole(column);
+  if (role) chip.dataset.role = role;
+  for (const icon of keyIcons(column)) chip.append(icon);
+  const label = document.createElement("span");
+  label.textContent = column.name + " = " + chipValue(value);
+  chip.append(label);
+  return chip;
+}
+
+function rowChipRole(column) {
+  if (column.table && column.index) return "both";
+  if (column.table === "hash" || column.table === "range") return column.table;
+  if (column.index === "hash" || column.index === "range") return "index";
+  return "";
+}
+
+function chipValue(value) {
+  if (value === null) return "null";
+  const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+  return text.length > 48 ? text.slice(0, 47) + "…" : text;
+}
+
+function highlightedJson(text) {
+  const pre = document.createElement("pre");
+  pre.className = "row-json";
+  pre.dataset.testid = "row-json";
+  for (const part of jsonParts(text)) {
+    if (!part.style) {
+      pre.append(part.text);
+      continue;
+    }
+    const span = document.createElement("span");
+    span.className = "tok-" + part.style;
+    span.textContent = part.text;
+    pre.append(span);
+  }
+  return pre;
+}
+
+function jsonParts(text) {
+  const parts = [];
+  const pattern = /"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null|[{}\[\],:]|\s+/g;
+  let last = 0;
+  for (const match of text.matchAll(pattern)) {
+    if (match.index > last) parts.push({ text: text.slice(last, match.index) });
+    const token = match[0];
+    let style = "";
+    if (token.startsWith('"')) {
+      style = /^\s*:/.test(text.slice(match.index + token.length)) ? "key" : "string";
+    } else if (token === "true" || token === "false") style = "bool";
+    else if (token === "null") style = "null";
+    else if (/^-?\d/.test(token)) style = "number";
+    else if (!/^\s+$/.test(token)) style = "operator";
+    parts.push(style ? { text: token, style } : { text: token });
+    last = match.index + token.length;
+  }
+  if (last < text.length) parts.push({ text: text.slice(last) });
+  return parts;
+}
+
 function clearRows() {
   document.querySelector("#rows-title").textContent = "";
   document.querySelector("#rows-meta").textContent = "";
@@ -1986,6 +3034,7 @@ function clearRows() {
 }
 
 async function loadRows() {
+  closeRowPop();
   if (!state.table) return;
   const body = document.querySelector("#rows-body");
   document.querySelector("#rows-title").textContent = state.table;
@@ -2028,8 +3077,73 @@ function changePage(delta) {
   loadRows();
 }
 
+function isUnreachable(error) {
+  if (!error || error.serverAway) return Boolean(error && error.serverAway);
+  const message = String(error.message || "");
+  return error instanceof TypeError
+    || /failed to fetch|networkerror|network request failed|load failed/i.test(message);
+}
+
+function serverAwayError() {
+  const error = new Error("The server went away.");
+  error.serverAway = true;
+  return error;
+}
+
+function reportError(error) {
+  if (error && error.serverAway) return;
+  window.alert(error.message);
+}
+
+const serverPop = document.querySelector("#server-pop");
+const serverStatus = document.querySelector("#server-pop-status");
+const serverRetry = document.querySelector("#server-retry");
+
+function showServerAway() {
+  if (serverPop.open) return;
+  serverStatus.textContent = "";
+  serverPop.showModal();
+}
+
+serverPop.addEventListener("cancel", (event) => {
+  event.preventDefault();
+});
+
+serverRetry.addEventListener("click", () => {
+  void retryServer();
+});
+
+async function retryServer() {
+  serverRetry.disabled = true;
+  serverStatus.textContent = "Checking…";
+  try {
+    const response = await fetch("/api/config", { cache: "no-store" });
+    if (!response.ok) throw new Error(String(response.status));
+    await response.json().catch(() => ({}));
+    serverPop.close();
+    serverStatus.textContent = "";
+    if (!state.booted) await boot();
+  } catch {
+    serverStatus.textContent = "Still unavailable.";
+  } finally {
+    serverRetry.disabled = false;
+  }
+}
+
+async function fetchServer(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (error) {
+    if (isUnreachable(error)) {
+      showServerAway();
+      throw serverAwayError();
+    }
+    throw error;
+  }
+}
+
 async function api(url, options = {}) {
-  const response = await fetch(url, {
+  const response = await fetchServer(url, {
     method: options.method || "GET",
     headers: options.body ? { "Content-Type": "application/json" } : undefined,
     body: options.body ? JSON.stringify(options.body) : undefined,

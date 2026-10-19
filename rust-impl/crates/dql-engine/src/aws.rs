@@ -27,6 +27,14 @@ use tokio::runtime::Runtime;
 const BATCH_WRITE_CHUNK: usize = 25;
 const BATCH_GET_CHUNK: usize = 100;
 
+/// Account, ARN, and user id from `sts get-caller-identity`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallerIdentity {
+    pub account: String,
+    pub arn: String,
+    pub user_id: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct SdkConfig {
     pub region: String,
@@ -112,6 +120,26 @@ impl SdkBackend {
         if self.config.host.is_some() {
             return Ok("local".to_string());
         }
+        let identity = self.caller_identity()?;
+        if !identity.arn.is_empty() {
+            return Ok(identity.arn);
+        }
+        if !identity.user_id.is_empty() {
+            return Ok(identity.user_id);
+        }
+        Ok("unknown".to_string())
+    }
+
+    /// `sts get-caller-identity` for a live AWS session.
+    ///
+    /// A local endpoint has no caller. The account, ARN, and user id are the
+    /// fields that call returns.
+    pub fn caller_identity(&self) -> Result<CallerIdentity, EngineError> {
+        if self.config.host.is_some() {
+            return Err(EngineError::Runtime(
+                "local endpoint has no caller identity".to_string(),
+            ));
+        }
         let output = self
             .runtime
             .block_on(async {
@@ -123,11 +151,11 @@ impl SdkBackend {
                 sts.get_caller_identity().send().await
             })
             .map_err(|err| EngineError::Runtime(err.to_string()))?;
-        Ok(output
-            .arn()
-            .or(output.user_id())
-            .unwrap_or("unknown")
-            .to_string())
+        Ok(CallerIdentity {
+            account: output.account().unwrap_or("").to_string(),
+            arn: output.arn().unwrap_or("").to_string(),
+            user_id: output.user_id().unwrap_or("").to_string(),
+        })
     }
 
     pub fn set_rate_limit(&mut self, read_per_second: f64, write_per_second: f64) {

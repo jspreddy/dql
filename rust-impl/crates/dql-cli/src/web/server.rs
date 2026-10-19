@@ -17,6 +17,7 @@ use include_dir::{include_dir, Dir};
 use serde_json::{json, Value};
 
 use super::files::{self, PathError};
+use super::query_cache;
 use super::shape::{
     changes_schema, column_order, explain_index, list_tables, parse_table_shape, read_query,
     safe_table_name, split_statements, Column, ExecText, ListedTable, TableShape, PAGE_SIZE,
@@ -41,6 +42,7 @@ struct App {
     endpoint: String,
     state: Mutex<WebState>,
     cancel: dql_engine::CancelFlag,
+    identity: Mutex<Option<dql_engine::CallerIdentity>>,
 }
 
 struct Incoming {
@@ -115,6 +117,7 @@ impl App {
                 table_catalog: None,
             }),
             cancel,
+            identity: Mutex::new(None),
         }
     }
 }
@@ -249,6 +252,60 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
     }))
 }
 
+fn config_payload(app: &App) -> Value {
+    let (local, region, memory) = {
+        let state = app.state.lock().expect("web session");
+        (
+            state.session.local_endpoint.clone(),
+            state.session.region.clone(),
+            state.session.engine.is_memory(),
+        )
+    };
+    let environment = super::environment::environment_view(
+        local.as_ref().map(|(host, port)| (host.as_str(), *port)),
+        &region,
+        memory,
+        &super::environment::EnvFacts::from_env(),
+    );
+    json!({
+        "endpoint": app.endpoint,
+        "root": app.root.display().to_string(),
+        "page_size": PAGE_SIZE,
+        "environment": environment,
+    })
+}
+
+fn identity_reply(app: &App) -> Value {
+    let (local, memory) = {
+        let state = app.state.lock().expect("web session");
+        (
+            state.session.local_endpoint.is_some(),
+            state.session.engine.is_memory(),
+        )
+    };
+    if local {
+        return json!({"ok": false, "error": "localhost has no caller identity"});
+    }
+    if memory {
+        return json!({"ok": false, "error": "memory backend has no caller identity"});
+    }
+    if let Some(identity) = app.identity.lock().expect("caller identity").clone() {
+        return super::environment::identity_payload(&identity);
+    }
+    let fetched = {
+        let state = app.state.lock().expect("web session");
+        state.session.engine.caller_identity()
+    };
+    match fetched {
+        Ok(identity) => {
+            let payload = super::environment::identity_payload(&identity);
+            *app.identity.lock().expect("caller identity") = Some(identity);
+            payload
+        }
+        Err(err) => json!({"ok": false, "error": err.to_string()}),
+    }
+}
+
 fn dispatch(app: &Arc<App>, request: &Incoming) -> Reply {
     let path = request.path.as_str();
     let query = request.query.as_str();
@@ -262,14 +319,8 @@ fn dispatch(app: &Arc<App>, request: &Incoming) -> Reply {
 
 fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
     match path {
-        "/api/config" => Reply::Json(
-            200,
-            json!({
-                "endpoint": app.endpoint,
-                "root": app.root.display().to_string(),
-                "page_size": PAGE_SIZE,
-            }),
-        ),
+        "/api/config" => Reply::Json(200, config_payload(app)),
+        "/api/identity" => Reply::Json(200, identity_reply(app)),
         "/api/tree" => match files::tree(&app.root) {
             Ok(node) => Reply::Json(200, serde_json::to_value(node).unwrap_or(Value::Null)),
             Err(err) => json_error(400, &err),
@@ -278,6 +329,13 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
             let relative = query_value(query, "path");
             match files::read_text(&app.root, &relative) {
                 Ok(text) => Reply::Json(200, json!({"path": relative, "text": text})),
+                Err(err) => json_error(400, &err),
+            }
+        }
+        "/api/query-results" => {
+            let relative = query_value(query, "path");
+            match query_cache::list(&app.root, &relative) {
+                Ok(results) => Reply::Json(200, json!({ "results": results })),
                 Err(err) => json_error(400, &err),
             }
         }
@@ -354,6 +412,11 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
             Ok(()) => Reply::Json(200, json!({"ok": true})),
             Err(err) => json_error(400, &err),
         },
+        "/api/query-results" => save_query_result(&app.root, &body),
+        "/api/query-results/clear" => match query_cache::clear_at(&app.root, relative) {
+            Ok(paths) => Reply::Json(200, json!({"ok": true, "paths": paths})),
+            Err(err) => json_error(400, &err),
+        },
         _ => Reply::Json(404, json!({"ok": false, "error": "not found"})),
     }
 }
@@ -367,6 +430,22 @@ fn dispatch_put(app: &App, path: &str, raw: &[u8]) -> Reply {
     let text = body.get("text").and_then(Value::as_str).unwrap_or("");
     match files::write_text(&app.root, relative, text) {
         Ok(()) => Reply::Json(200, json!({"ok": true})),
+        Err(err) => json_error(400, &err),
+    }
+}
+
+fn save_query_result(root: &Path, body: &Value) -> Reply {
+    let relative = body.get("path").and_then(Value::as_str).unwrap_or("");
+    let query = body.get("query").and_then(Value::as_str).unwrap_or("");
+    let Some(success) = body.get("success").and_then(Value::as_bool) else {
+        return Reply::Json(
+            400,
+            json!({"ok": false, "error": "success must be a boolean"}),
+        );
+    };
+    let result = body.get("result").cloned().unwrap_or(Value::Null);
+    match query_cache::save(root, relative, query, result, success) {
+        Ok(stored) => Reply::Json(200, serde_json::to_value(stored).unwrap_or(Value::Null)),
         Err(err) => json_error(400, &err),
     }
 }
@@ -394,7 +473,7 @@ fn run_script(app: Arc<App>, statements: Vec<String>, writer: impl Write + Send 
         }
         if app.cancel.is_requested() {
             let envelope = envelope_from_error(dql_engine::EngineError::Cancelled);
-            let result = public_result(statement, &envelope, None);
+            let result = public_result(statement, &envelope, None, 0, 0.0, 0.0);
             let _ = write_json(
                 &mut *lock_writer(&writer),
                 &json!({"event": "result", "index": index, "result": result}),
@@ -415,7 +494,10 @@ fn run_script(app: Arc<App>, statements: Vec<String>, writer: impl Write + Send 
                 }),
             );
         })));
+        let started = std::time::Instant::now();
         let envelope = state.session.execute_for_serve(statement);
+        let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let (read_units, write_units) = state.session.engine.statement_capacity();
         state.session.progress().clear();
         let columns = if envelope.ok && envelope.kind == "items" {
             Some(columns_for(
@@ -430,7 +512,14 @@ fn run_script(app: Arc<App>, statements: Vec<String>, writer: impl Write + Send 
             state.shapes.clear();
             state.table_catalog = None;
         }
-        let result = public_result(statement, &envelope, columns);
+        let result = public_result(
+            statement,
+            &envelope,
+            columns,
+            elapsed_ms,
+            read_units,
+            write_units,
+        );
         let ok = envelope.ok;
         if write_json(
             &mut *lock_writer(&writer),
@@ -744,7 +833,14 @@ fn is_disconnect(err: &io::Error) -> bool {
     )
 }
 
-fn public_result(statement: &str, envelope: &ServeEnvelope, columns: Option<Vec<Column>>) -> Value {
+fn public_result(
+    statement: &str,
+    envelope: &ServeEnvelope,
+    columns: Option<Vec<Column>>,
+    elapsed_ms: u64,
+    read_units: f64,
+    write_units: f64,
+) -> Value {
     let error = envelope
         .error
         .as_ref()
@@ -762,6 +858,9 @@ fn public_result(statement: &str, envelope: &ServeEnvelope, columns: Option<Vec<
         "affected": envelope.affected,
         "items": envelope.items,
         "error": error,
+        "elapsed_ms": elapsed_ms,
+        "read_units": read_units,
+        "write_units": write_units,
     });
     if envelope.ok && envelope.kind == "items" {
         if let Some(columns) = columns {
@@ -786,6 +885,10 @@ mod tests {
         let config = http(addr, "GET", "/api/config", "");
         assert!(config.contains("\"page_size\":50"), "{config}");
         assert!(config.contains("\"endpoint\":\"memory\""));
+        assert!(config.contains("\"kind\":\"memory\""), "{config}");
+        assert!(config.contains("\"label\":\"memory\""), "{config}");
+        let identity = http(addr, "GET", "/api/identity", "");
+        assert!(identity.contains("\"ok\":false"), "{identity}");
 
         let created = http(addr, "POST", "/api/file", r#"{"path":"notes.dql"}"#);
         assert!(created.contains("notes.dql"));
@@ -801,6 +904,9 @@ mod tests {
         assert!(ran.contains("\"event\":\"result\""), "{ran}");
         assert!(ran.contains("\"apple\":\"p\""), "{ran}");
         assert!(ran.contains("\"id\":\"a\""), "{ran}");
+        assert!(ran.contains("\"elapsed_ms\":"), "{ran}");
+        assert!(ran.contains("\"read_units\":"), "{ran}");
+        assert!(ran.contains("\"write_units\":"), "{ran}");
         drop(guard);
     }
 

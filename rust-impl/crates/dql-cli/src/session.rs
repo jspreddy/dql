@@ -122,6 +122,17 @@ impl RuntimeEngine {
         }
     }
 
+    /// Read and write units captured for the statement that just finished.
+    pub fn statement_capacity(&self) -> (f64, f64) {
+        let records = match self {
+            Self::Memory(engine) => engine.inner().statement_capacity(),
+            Self::Remote(engine) => engine.inner().statement_capacity(),
+        };
+        records.iter().fold((0.0, 0.0), |(read, write), record| {
+            (read + record.read_units, write + record.write_units)
+        })
+    }
+
     pub fn last_query_context(&self) -> Option<&LastQueryContext> {
         match self {
             Self::Memory(engine) => engine.inner().last_query_context(),
@@ -180,6 +191,15 @@ impl RuntimeEngine {
                 .backend()
                 .session_identity()
                 .unwrap_or_else(|_| "unknown".to_string()),
+        }
+    }
+
+    pub fn caller_identity(&self) -> Result<dql_engine::CallerIdentity, EngineError> {
+        match self {
+            Self::Memory(_) => Err(EngineError::Runtime(
+                "memory backend has no caller identity".to_string(),
+            )),
+            Self::Remote(engine) => engine.inner().backend().caller_identity(),
         }
     }
 
@@ -307,9 +327,19 @@ impl RuntimeEngine {
 }
 
 pub fn rich_context_from_engine(context: &LastQueryContext) -> RichContext {
+    let index = context.index.as_ref();
     RichContext {
         important_columns: context.important_columns(),
         preserve_column_order: context.preserve_column_order(),
+        table_hash: vec![context.table.hash_key.clone()],
+        table_range: context.table.range_key.clone().into_iter().collect(),
+        index_hash: index
+            .map(|index| vec![index.hash_key.clone()])
+            .unwrap_or_default(),
+        index_range: index
+            .and_then(|index| index.range_key.clone())
+            .into_iter()
+            .collect(),
     }
 }
 
@@ -958,5 +988,38 @@ mod tests {
     fn prompt_shows_region_for_aws() {
         let session = Session::new_memory("eu-west-1");
         assert_eq!(session.prompt_title(), "eu-west-1");
+    }
+
+    #[test]
+    fn rich_context_records_table_and_index_keys() {
+        use dql_models::{ProjectionType, QueryIndex, TableMeta};
+        use dql_parser::parse_statement;
+
+        let statement = parse_statement(
+            "CREATE TABLE planets (id STRING HASH KEY, sk STRING RANGE KEY, name STRING);",
+        )
+        .unwrap();
+        let table = TableMeta::from_create_statement(&statement).unwrap();
+        let context = LastQueryContext {
+            table,
+            index: Some(QueryIndex {
+                name: "by-name".to_string(),
+                is_global: true,
+                hash_key: "name".to_string(),
+                range_key: Some("sk".to_string()),
+                projection: ProjectionType::All,
+                projected_attributes: None,
+            }),
+            explicit_projection: false,
+        };
+        let rich = rich_context_from_engine(&context);
+        assert_eq!(rich.table_hash, vec!["id".to_string()]);
+        assert_eq!(rich.table_range, vec!["sk".to_string()]);
+        assert_eq!(rich.index_hash, vec!["name".to_string()]);
+        assert_eq!(rich.index_range, vec!["sk".to_string()]);
+        assert_eq!(
+            rich.important_columns,
+            vec!["id".to_string(), "sk".to_string(), "name".to_string()]
+        );
     }
 }
