@@ -682,6 +682,7 @@ function setMode(mode) {
   document.querySelector("#tables-nav").classList.toggle("hidden", !tables);
   document.querySelector("#new-file").classList.toggle("hidden", tables);
   document.querySelector("#refresh-tables").classList.toggle("hidden", !tables);
+  if (!tables) document.querySelector("#table-cache").classList.add("hidden");
   document.querySelector("#side-title").textContent = tables ? "Tables" : "Files";
   closeComplete();
   if (tables) loadTables();
@@ -2864,12 +2865,28 @@ async function loadTables(options = {}) {
   }
 }
 
+function cacheAgeLabel(savedAtMs) {
+  if (!savedAtMs) return "";
+  const elapsed = Math.max(0, Math.floor((Date.now() - savedAtMs) / 1000));
+  if (elapsed < 5) return "just now";
+  if (elapsed < 60) return elapsed + "s ago";
+  const minutes = Math.floor(elapsed / 60);
+  if (elapsed < 3600) return minutes + " min ago";
+  const hours = Math.floor(elapsed / 3600);
+  if (elapsed < 86400) return hours + " hr ago";
+  const days = Math.floor(elapsed / 86400);
+  return days + (days === 1 ? " day ago" : " days ago");
+}
+
 function renderCacheHint(cache) {
   const node = document.querySelector("#table-cache");
   if (!node) return;
-  const text = cache && cache.text ? cache.text : "";
-  node.textContent = text;
-  node.classList.toggle("hidden", !text);
+  const detail = cache && cache.text ? cache.text : "";
+  const age = cacheAgeLabel(cache && cache.savedAtMs) || (detail ? "just now" : "");
+  const label = age ? "(" + age + ")" : "";
+  node.querySelector(".table-cache-age").textContent = label;
+  node.querySelector(".table-cache-tip").textContent = detail;
+  node.classList.toggle("hidden", !label || state.mode !== "tables");
   node.classList.toggle("is-refreshing", Boolean(cache && cache.refreshing));
 }
 

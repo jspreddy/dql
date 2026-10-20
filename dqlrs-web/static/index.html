@@ -61,6 +61,10 @@
               <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M13.4 2.2v3.1H10.3"/>
             </svg>
           </button>
+          <span id="table-cache" class="table-cache hidden" tabindex="0">
+            <span class="table-cache-age"></span>
+            <span class="table-cache-tip" role="tooltip"></span>
+          </span>
         </span>
         <button type="button" id="new-file" title="New .dql file">+</button>
       </div>
@@ -69,7 +73,6 @@
         <div class="search-row">
           <input id="table-search" type="search" placeholder="catalog" spellcheck="false" aria-label="Filter tables" title="Same matching as ls. A glob lists those tables. Otherwise similar names and related keys." />
         </div>
-        <p id="table-cache" class="table-cache hidden"></p>
         <div id="table-list" class="table-list"></div>
       </div>
       <div id="side-resize" class="side-resize" role="separator" aria-orientation="vertical" aria-label="Resize navigation" title="Drag to resize the left nav" tabindex="0">

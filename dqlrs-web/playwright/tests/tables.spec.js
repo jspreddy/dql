@@ -13,7 +13,7 @@ test("opens the table browser from the #tables hash", async ({ page, app }) => {
   const heading = await page.locator(".side-heading").evaluate((row) =>
     [...row.children].map((child) => child.id),
   );
-  expect(heading).toEqual(["side-title", "refresh-tables"]);
+  expect(heading).toEqual(["side-title", "refresh-tables", "table-cache"]);
   await expect(page.locator("#tree")).toBeHidden();
   await expect(page.locator("#tables-nav")).toBeVisible();
   await expect(page.locator(".side #table-list")).toBeVisible();
@@ -22,6 +22,7 @@ test("opens the table browser from the #tables hash", async ({ page, app }) => {
   await page.locator("#mode-query").click();
   await expect(page.locator("#side-title")).toHaveText("Files");
   await expect(page.locator("#refresh-tables")).toBeHidden();
+  await expect(page.locator("#table-cache")).toBeHidden();
   await expect(page.locator("#tree")).toBeVisible();
   await expect(page.locator("#tables-nav")).toBeHidden();
   await expect(page.locator("#new-file")).toBeVisible();
@@ -49,8 +50,12 @@ test("refresh button reloads the table list without the description cache", asyn
   expect(params.get("async")).toBe("1");
   await expect(button).toBeEnabled();
   await expect(page.locator("#table-list")).not.toHaveText("Loading…");
-  await expect(page.locator("#table-cache")).toBeVisible();
-  await expect(page.locator("#table-cache")).toContainText("cached");
+  const cache = page.locator("#table-cache");
+  await expect(cache).toBeVisible();
+  await expect(cache.locator(".table-cache-age")).toHaveText(/^\((just now|\d+s ago|\d+ min ago|\d+ hr ago|\d+ day ago|\d+ days ago)\)$/);
+  await cache.hover();
+  await expect(cache.locator(".table-cache-tip")).toBeVisible();
+  await expect(cache.locator(".table-cache-tip")).toContainText("cached");
 });
 
 test("searching tables filters the cached list without refresh", async ({ page, app }) => {
