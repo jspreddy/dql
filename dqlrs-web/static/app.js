@@ -44,6 +44,7 @@ const state = {
   suppressSave: false,
   dragPath: "",
   tablesRequest: 0,
+  cachePoll: 0,
   listedTables: [],
   browserSchema: null,
   schemaKind: "",
@@ -473,7 +474,7 @@ document.querySelector("#table-search").addEventListener("input", () => {
   state.searchTimer = setTimeout(loadTables, 250);
 });
 document.querySelector("#refresh-tables").addEventListener("click", () => {
-  loadTables({ refresh: true });
+  loadTables({ refresh: true, background: true });
 });
 document.querySelector("#page-prev").addEventListener("click", () => changePage(-1));
 document.querySelector("#page-next").addEventListener("click", () => changePage(1));
@@ -2802,11 +2803,13 @@ function schemaPresent(present, total) {
 
 async function loadTables(options = {}) {
   const refresh = Boolean(options.refresh);
+  const background = Boolean(options.background);
+  const poll = Boolean(options.poll);
   const request = ++state.tablesRequest;
   const pattern = document.querySelector("#table-search").value.trim();
   const list = document.querySelector("#table-list");
   const refreshButton = document.querySelector("#refresh-tables");
-  const showBusy = refresh || !list.hasChildNodes();
+  const showBusy = !poll && !background && (refresh || !list.hasChildNodes());
   if (showBusy) {
     refreshButton.disabled = true;
     refreshButton.classList.toggle("is-busy", refresh);
@@ -2816,8 +2819,11 @@ async function loadTables(options = {}) {
   try {
     const query = new URLSearchParams({ pattern });
     if (refresh) query.set("refresh", "1");
+    if (background) query.set("async", "1");
     const payload = await api("/api/tables?" + query.toString());
     if (request !== state.tablesRequest) return;
+    renderCacheHint(payload.cache);
+    watchCacheRefresh(payload.cache);
     list.replaceChildren();
     if (payload.note) list.append(sidebarMatchNote(payload.note));
     if (!payload.tables.length) {
@@ -2856,6 +2862,21 @@ async function loadTables(options = {}) {
       refreshButton.setAttribute("aria-busy", "false");
     }
   }
+}
+
+function renderCacheHint(cache) {
+  const node = document.querySelector("#table-cache");
+  if (!node) return;
+  const text = cache && cache.text ? cache.text : "";
+  node.textContent = text;
+  node.classList.toggle("hidden", !text);
+  node.classList.toggle("is-refreshing", Boolean(cache && cache.refreshing));
+}
+
+function watchCacheRefresh(cache) {
+  clearTimeout(state.cachePoll);
+  if (!cache || !cache.refreshing) return;
+  state.cachePoll = setTimeout(() => loadTables({ poll: true }), 700);
 }
 
 function selectTable(name) {

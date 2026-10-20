@@ -10,6 +10,7 @@ pub mod json_util;
 mod memory;
 mod progress;
 mod query_context;
+mod table_cache;
 mod table_match;
 mod table_text;
 mod throttle;
@@ -24,6 +25,7 @@ pub use engine::Engine;
 pub use memory::MemoryBackend;
 pub use progress::{ProgressEvent, ProgressSink, WRITE_PROGRESS_CHUNK};
 pub use query_context::{query_context_from_read, LastQueryContext};
+pub use table_cache::{CachedDefinition, CachedNameList, SharedTableCache, TableCacheStore};
 pub use table_match::{intelligent_like_matches, intelligent_matches, MatchTable};
 pub use table_text::format_table_description;
 

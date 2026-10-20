@@ -581,6 +581,7 @@ pub const LS: &str = r"
     ls <glob>
     ls <glob> refresh=True
     ls refresh=True
+    ls refresh=True async=True
     ls <glob> metrics=True
 
     <glob> uses * and ? the same way as a filename glob.
@@ -590,7 +591,14 @@ pub const LS: &str = r"
     whose keys, indexes, or attributes are similar to the text.
     A two-letter pattern matches only names that start with it.
     The result says whether it is showing similar names, related keys, or both.
-    refresh=True ignores the cached description and loads it again.
+    The table list is saved to disk the first time it is fetched. A table
+    definition is saved when that table is fetched. Later ls commands reuse
+    those snapshots. A line starting with cache: says where the list came from.
+    refresh=True reloads the cached list and the definitions already saved.
+    It does not describe tables that have never been fetched.
+    async=True with refresh=True returns the snapshot immediately and reloads
+    those cached entries in the background. That reload runs until the process
+    exits, so it finishes in the REPL, the web UI, and `dqlrs --serve`.
     True, true, and yes are accepted.
 
     Examples

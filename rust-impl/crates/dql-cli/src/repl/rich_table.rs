@@ -75,22 +75,28 @@ pub fn table_summary_to_lines(
     let rows = tables
         .iter()
         .map(|(meta, stats)| {
-            let read = meta
-                .total_read_throughput()
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "-".to_string());
-            let write = meta
-                .total_write_throughput()
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "-".to_string());
-            vec![
-                meta.name.clone(),
-                stats.item_count.to_string(),
-                read,
-                write,
-                status_label(meta.status).to_string(),
-                format_size(stats.size_bytes, BINARY),
-            ]
+            let (items, read, write, status, size) = if meta.has_definition() {
+                (
+                    stats.item_count.to_string(),
+                    meta.total_read_throughput()
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "-".to_string()),
+                    meta.total_write_throughput()
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "-".to_string()),
+                    status_label(meta.status).to_string(),
+                    format_size(stats.size_bytes, BINARY),
+                )
+            } else {
+                (
+                    "-".to_string(),
+                    "-".to_string(),
+                    "-".to_string(),
+                    "-".to_string(),
+                    "-".to_string(),
+                )
+            };
+            vec![meta.name.clone(), items, read, write, status, size]
         })
         .collect::<Vec<_>>();
     styled_table_to_lines("Tables", &columns, &rows, width)

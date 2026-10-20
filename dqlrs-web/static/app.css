@@ -308,6 +308,16 @@ body.side-resizing * {
   animation: refresh-spin 0.7s linear infinite;
 }
 
+.table-cache {
+  margin: 0;
+  padding: 0 10px 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.table-cache.is-refreshing { color: var(--label); }
+
 @keyframes refresh-spin {
   to { transform: rotate(360deg); }
 }

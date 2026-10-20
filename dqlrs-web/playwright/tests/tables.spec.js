@@ -44,9 +44,13 @@ test("refresh button reloads the table list without the description cache", asyn
   });
   await button.click();
   const request = await pending;
-  expect(new URL(request.url()).searchParams.get("pattern")).toBe("");
+  const params = new URL(request.url()).searchParams;
+  expect(params.get("pattern")).toBe("");
+  expect(params.get("async")).toBe("1");
   await expect(button).toBeEnabled();
   await expect(page.locator("#table-list")).not.toHaveText("Loading…");
+  await expect(page.locator("#table-cache")).toBeVisible();
+  await expect(page.locator("#table-cache")).toContainText("cached");
 });
 
 test("searching tables filters the cached list without refresh", async ({ page, app }) => {

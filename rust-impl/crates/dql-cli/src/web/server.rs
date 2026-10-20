@@ -19,8 +19,8 @@ use serde_json::{json, Value};
 use super::files::{self, PathError};
 use super::query_cache;
 use super::shape::{
-    changes_schema, column_order, explain_index, list_tables, parse_table_shape, read_query,
-    safe_table_name, split_statements, Column, ExecText, ListedTable, TableShape, PAGE_SIZE,
+    changes_schema, column_order, explain_index, parse_table_shape, read_query, safe_table_name,
+    split_statements, Column, ExecText, ListedTable, TableShape, PAGE_SIZE,
 };
 use crate::serve::protocol::{envelope_from_error, ServeEnvelope};
 use crate::session::Session;
@@ -342,14 +342,10 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
         "/api/tables" => {
             let pattern = query_value(query, "pattern");
             let refresh = query_flag(query, "refresh");
+            let background = query_flag(query, "async");
             let mut state = lock_state(app);
-            let mut shapes = std::mem::take(&mut state.shapes);
-            let mut catalog = state.table_catalog.take();
-            let listed = list_tables(&pattern, refresh, &mut shapes, &mut catalog, |command| {
-                ExecText::from_envelope(&state.session.execute_for_serve(command))
-            });
-            state.shapes = shapes;
-            state.table_catalog = catalog;
+            let listed =
+                crate::meta::ls::web_table_list(&mut state.session, &pattern, refresh, background);
             match listed {
                 Ok(listed) => Reply::Json(200, serde_json::to_value(listed).unwrap_or(Value::Null)),
                 Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),

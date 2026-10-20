@@ -1,6 +1,7 @@
 use crate::config::CliConfig;
 use dql_engine::{
     Engine, EngineError, FragmentEngine, LastQueryContext, SdkBackend, SdkConfig, StatementResult,
+    TableCacheStore,
 };
 use dql_output::{render_result, DisplayMode, OutputConfig, RichContext};
 use std::env;
@@ -240,6 +241,20 @@ impl RuntimeEngine {
         }
     }
 
+    pub fn set_table_cache(&mut self, cache: Option<dql_engine::SharedTableCache>) {
+        match self {
+            Self::Memory(engine) => engine.inner_mut().set_table_cache(cache),
+            Self::Remote(engine) => engine.inner_mut().set_table_cache(cache),
+        }
+    }
+
+    pub fn table_cache(&self) -> Option<dql_engine::SharedTableCache> {
+        match self {
+            Self::Memory(engine) => engine.inner().table_cache().cloned(),
+            Self::Remote(engine) => engine.inner().table_cache().cloned(),
+        }
+    }
+
     pub fn list_tables(&self) -> Result<Vec<String>, EngineError> {
         match self {
             Self::Memory(engine) => engine.inner().list_tables(),
@@ -247,13 +262,10 @@ impl RuntimeEngine {
         }
     }
 
-    pub fn describe_all(
-        &mut self,
-        refresh: bool,
-    ) -> Result<Vec<dql_models::TableMeta>, EngineError> {
+    pub fn cached_table_names(&mut self, refresh: bool) -> Result<Vec<String>, EngineError> {
         match self {
-            Self::Memory(engine) => engine.inner_mut().describe_all(refresh),
-            Self::Remote(engine) => engine.inner_mut().describe_all(refresh),
+            Self::Memory(engine) => engine.inner_mut().cached_table_names(refresh),
+            Self::Remote(engine) => engine.inner_mut().cached_table_names(refresh),
         }
     }
 
@@ -265,6 +277,51 @@ impl RuntimeEngine {
         match self {
             Self::Memory(engine) => engine.inner_mut().describe(table, refresh),
             Self::Remote(engine) => engine.inner_mut().describe(table, refresh),
+        }
+    }
+
+    pub fn cached_definition(&mut self, table: &str) -> Option<dql_models::TableMeta> {
+        match self {
+            Self::Memory(engine) => engine.inner_mut().cached_definition(table),
+            Self::Remote(engine) => engine.inner_mut().cached_definition(table),
+        }
+    }
+
+    pub fn refresh_cached_definitions(&mut self) -> Result<usize, EngineError> {
+        match self {
+            Self::Memory(engine) => engine.inner_mut().refresh_cached_definitions(),
+            Self::Remote(engine) => engine.inner_mut().refresh_cached_definitions(),
+        }
+    }
+
+    pub fn names_from_cache(&self) -> bool {
+        match self {
+            Self::Memory(engine) => engine.inner().names_from_cache(),
+            Self::Remote(engine) => engine.inner().names_from_cache(),
+        }
+    }
+
+    pub fn names_saved_at_ms(&self) -> Option<u64> {
+        match self {
+            Self::Memory(engine) => engine.inner().names_saved_at_ms(),
+            Self::Remote(engine) => engine.inner().names_saved_at_ms(),
+        }
+    }
+
+    pub fn last_read_from_cache(&self) -> bool {
+        match self {
+            Self::Memory(engine) => engine.inner().last_read_from_cache(),
+            Self::Remote(engine) => engine.inner().last_read_from_cache(),
+        }
+    }
+
+    pub fn describe_all(
+        &mut self,
+        refresh: bool,
+    ) -> Result<Vec<dql_models::TableMeta>, EngineError> {
+        match self {
+            Self::Memory(engine) => engine.inner_mut().describe_all(refresh),
+            Self::Remote(engine) => engine.inner_mut().describe_all(refresh),
         }
     }
 
@@ -350,6 +407,7 @@ pub struct Session {
     pub region: String,
     pub history: crate::history::HistoryManager,
     pub throttle: crate::throttle::TableLimits,
+    pub table_disk: Option<std::sync::Arc<crate::table_cache::DiskTableCache>>,
 }
 
 impl Session {
@@ -379,14 +437,74 @@ impl Session {
             args.port,
             config.allow_select_scan,
         )?;
-        Ok(Self {
+        let mut session = Self {
             config,
             engine,
             local_endpoint: args.host.as_ref().map(|host| (host.clone(), args.port)),
             region: args.region.clone(),
             history,
             throttle,
-        })
+            table_disk: None,
+        };
+        session.attach_table_cache();
+        Ok(session)
+    }
+
+    /// Point the engine at the on-disk table cache for this connection.
+    ///
+    /// In-memory sessions skip the disk. `use` and `local` call this again so
+    /// the cache follows the endpoint.
+    pub fn attach_table_cache(&mut self) {
+        if self.engine.is_memory() {
+            self.table_disk = None;
+            self.engine.set_table_cache(None);
+            return;
+        }
+        let identity = self.engine.session_identity();
+        let key = crate::table_cache::endpoint_key(
+            &self.region,
+            self.local_endpoint.as_ref().map(|(host, _)| host.as_str()),
+            self.local_endpoint
+                .as_ref()
+                .map(|(_, port)| *port)
+                .unwrap_or(8000),
+            &identity,
+        );
+        let endpoint = crate::table_cache::CacheEndpoint {
+            region: self.region.clone(),
+            host: self.local_endpoint.as_ref().map(|(host, _)| host.clone()),
+            port: self
+                .local_endpoint
+                .as_ref()
+                .map(|(_, port)| *port)
+                .unwrap_or(8000),
+            allow_select_scan: self.config.allow_select_scan,
+        };
+        let cache = crate::table_cache::DiskTableCache::open(&key, endpoint);
+        self.engine
+            .set_table_cache(Some(cache.clone() as dql_engine::SharedTableCache));
+        self.table_disk = Some(cache);
+    }
+
+    /// Refresh the cached list and cached definitions on a background thread.
+    ///
+    /// Returns false when this session has no disk cache or nothing is cached yet.
+    pub fn start_background_refresh(&self) -> bool {
+        self.table_disk
+            .as_ref()
+            .is_some_and(|cache| cache.start_refresh())
+    }
+
+    pub fn cache_refreshing(&self) -> bool {
+        self.table_disk
+            .as_ref()
+            .is_some_and(|cache| cache.refreshing())
+    }
+
+    pub fn cache_error(&self) -> Option<String> {
+        self.table_disk
+            .as_ref()
+            .and_then(|cache| cache.last_error())
     }
 
     pub fn progress(&self) -> &dql_engine::ProgressSink {
@@ -422,6 +540,7 @@ impl Session {
             region: region.to_string(),
             history,
             throttle,
+            table_disk: None,
         }
     }
 

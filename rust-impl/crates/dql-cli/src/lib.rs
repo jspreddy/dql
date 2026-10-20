@@ -8,6 +8,7 @@ pub mod notebook;
 pub mod repl;
 pub mod serve;
 pub mod session;
+pub mod table_cache;
 pub mod throttle;
 pub mod web;
 

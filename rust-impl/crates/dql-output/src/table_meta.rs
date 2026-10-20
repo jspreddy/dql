@@ -31,24 +31,37 @@ pub fn format_table_summary_table(tables: &[(TableMeta, TableStats)]) -> String 
         name_width = name_width
     );
     for (meta, stats) in tables {
-        let read = meta
-            .total_read_throughput()
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "-".to_string());
-        let write = meta
-            .total_write_throughput()
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "-".to_string());
-        let status = status_label(meta.status);
+        let (items, read, write, status, size) = if meta.has_definition() {
+            (
+                stats.item_count.to_string(),
+                meta.total_read_throughput()
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+                meta.total_write_throughput()
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+                status_label(meta.status).to_string(),
+                format_size(stats.size_bytes, BINARY),
+            )
+        } else {
+            (
+                "-".to_string(),
+                "-".to_string(),
+                "-".to_string(),
+                "-".to_string(),
+                "-".to_string(),
+            )
+        };
         let _ = writeln!(
             output,
             "{:<name_width$} {:>8} {:>8} {:>8} {:>10} {:>8}",
             meta.name,
-            stats.item_count,
+            items,
             read,
             write,
             status,
-            format_size(stats.size_bytes, BINARY)
+            size,
+            name_width = name_width
         );
     }
     output

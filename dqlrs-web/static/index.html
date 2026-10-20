@@ -55,7 +55,7 @@
       <div class="side-head">
         <span class="side-heading">
           <span id="side-title">Files</span>
-          <button type="button" id="refresh-tables" class="hidden" title="Refresh tables" aria-label="Refresh tables">
+          <button type="button" id="refresh-tables" class="hidden" title="Refresh the cached table list in the background" aria-label="Refresh cached tables">
             <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
               <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M13.2 8A5.2 5.2 0 1 1 11.6 4.3"/>
               <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M13.4 2.2v3.1H10.3"/>
@@ -69,6 +69,7 @@
         <div class="search-row">
           <input id="table-search" type="search" placeholder="catalog" spellcheck="false" aria-label="Filter tables" title="Same matching as ls. A glob lists those tables. Otherwise similar names and related keys." />
         </div>
+        <p id="table-cache" class="table-cache hidden"></p>
         <div id="table-list" class="table-list"></div>
       </div>
       <div id="side-resize" class="side-resize" role="separator" aria-orientation="vertical" aria-label="Resize navigation" title="Drag to resize the left nav" tabindex="0">

@@ -1,4 +1,5 @@
 use crate::session::Session;
+use crate::table_cache::age_phrase;
 use dql_engine::StatementResult;
 use dql_models::TableMeta;
 use dql_output::{format_table_detail, format_table_summary_table, TableStats};
@@ -80,47 +81,152 @@ pub fn collect_view(
     kwargs: &HashMap<String, String>,
 ) -> Result<LsView, String> {
     let refresh = parse_bool(kwargs.get("refresh"), false);
+    let background = parse_bool(kwargs.get("async"), false);
     let metrics = parse_bool(kwargs.get("metrics"), false);
+    let refresh_hint = prepare_cache(session, refresh, background)?;
     if args.is_empty() {
-        let tables = session
+        let names = session
             .engine
-            .describe_all(refresh)
+            .cached_table_names(false)
             .map_err(|err| err.to_string())?;
-        let rows = tables
-            .into_iter()
-            .map(|meta| table_row(session, meta))
-            .collect();
-        return Ok(LsView::Summary { rows, note: None });
+        let rows = rows_for_names(session, &names);
+        let hint = refresh_hint.or_else(|| cache_hint(session));
+        return Ok(with_hint(LsView::Summary { rows, note: None }, hint));
     }
     let pattern = args[0].trim_end_matches(';');
-    let (filtered, note) = resolve_names(session, pattern, refresh)?;
+    let (filtered, note) = resolve_names(session, pattern)?;
+    let hint = refresh_hint.or_else(|| cache_hint(session));
     match filtered.len() {
         0 => Err(format!("Table {pattern:?} not found")),
         1 => {
             let name = &filtered[0];
-            let meta = session
-                .engine
-                .describe_with_metrics(name, refresh, metrics)
-                .map_err(|err| err.to_string())?
-                .ok_or_else(|| format!("Table {name:?} not found"))?;
-            Ok(LsView::Detail {
-                meta: Box::new(meta),
-                stats: table_stats(session, name),
-                note,
-            })
+            let fetch = refresh && !background;
+            let meta = if fetch {
+                session
+                    .engine
+                    .describe_with_metrics(name, true, metrics)
+                    .map_err(|err| err.to_string())?
+            } else {
+                match session.engine.cached_definition(name) {
+                    Some(meta) if !metrics => Some(meta),
+                    _ => session
+                        .engine
+                        .describe_with_metrics(name, false, metrics)
+                        .map_err(|err| err.to_string())?,
+                }
+            }
+            .ok_or_else(|| format!("Table {name:?} not found"))?;
+            Ok(with_hint(
+                LsView::Detail {
+                    meta: Box::new(meta),
+                    stats: table_stats(session, name),
+                    note,
+                },
+                hint,
+            ))
         }
         _ => {
-            let mut rows = Vec::new();
-            for name in filtered {
-                let meta = session
-                    .engine
-                    .describe_with_metrics(&name, refresh, metrics)
-                    .map_err(|err| err.to_string())?
-                    .ok_or_else(|| format!("Table {name:?} not found"))?;
-                rows.push((meta, table_stats(session, &name)));
-            }
-            Ok(LsView::Summary { rows, note })
+            let rows = rows_for_names(session, &filtered);
+            Ok(with_hint(LsView::Summary { rows, note }, hint))
         }
+    }
+}
+
+fn rows_for_names(session: &mut Session, names: &[String]) -> Vec<(TableMeta, TableStats)> {
+    names
+        .iter()
+        .map(|name| {
+            let meta = session
+                .engine
+                .cached_definition(name)
+                .unwrap_or_else(|| TableMeta::name_only(name));
+            let stats = if meta.has_definition() {
+                table_stats(session, name)
+            } else {
+                TableStats::default()
+            };
+            (meta, stats)
+        })
+        .collect()
+}
+
+fn prepare_cache(
+    session: &mut Session,
+    refresh: bool,
+    background: bool,
+) -> Result<Option<String>, String> {
+    if background {
+        session.start_background_refresh();
+        return Ok(None);
+    }
+    if !refresh {
+        return Ok(None);
+    }
+    let definitions = session
+        .engine
+        .refresh_cached_definitions()
+        .map_err(|err| err.to_string())?;
+    session
+        .engine
+        .cached_table_names(true)
+        .map_err(|err| err.to_string())?;
+    let text = if definitions == 0 {
+        "Refreshed the cached table list.".to_string()
+    } else if definitions == 1 {
+        "Refreshed the cached table list and 1 cached definition.".to_string()
+    } else {
+        format!("Refreshed the cached table list and {definitions} cached definitions.")
+    };
+    Ok(Some(text))
+}
+
+fn cache_hint(session: &Session) -> Option<String> {
+    session.table_disk.as_ref()?;
+    if let Some(error) = session.cache_error() {
+        if !session.cache_refreshing() {
+            return Some(format!("Cache refresh failed: {error}"));
+        }
+    }
+    let age = session
+        .engine
+        .names_saved_at_ms()
+        .map(age_phrase)
+        .unwrap_or_else(|| "just now".to_string());
+    if session.cache_refreshing() {
+        if session.engine.names_from_cache() {
+            return Some(format!(
+                "Showing cached table list from {age}. Refreshing cached tables in the background."
+            ));
+        }
+        return Some("Refreshing cached tables in the background.".to_string());
+    }
+    if session.engine.names_from_cache() {
+        return Some(format!("Showing cached table list from {age}."));
+    }
+    Some("Fetched the table list.".to_string())
+}
+
+fn with_hint(view: LsView, hint: Option<String>) -> LsView {
+    let hint = hint.filter(|text| !text.is_empty());
+    match view {
+        LsView::Summary { rows, note } => LsView::Summary {
+            rows,
+            note: merge_note(note, hint),
+        },
+        LsView::Detail { meta, stats, note } => LsView::Detail {
+            meta,
+            stats,
+            note: merge_note(note, hint),
+        },
+    }
+}
+
+fn merge_note(note: Option<String>, hint: Option<String>) -> Option<String> {
+    match (note.filter(|text| !text.is_empty()), hint) {
+        (Some(note), Some(hint)) => Some(format!("{note}\ncache: {hint}")),
+        (Some(note), None) => Some(note),
+        (None, Some(hint)) => Some(format!("cache: {hint}")),
+        (None, None) => None,
     }
 }
 
@@ -133,29 +239,121 @@ fn glob_matches(pattern: &str, name: &str) -> bool {
 fn resolve_names(
     session: &mut Session,
     pattern: &str,
-    refresh: bool,
 ) -> Result<(Vec<String>, Option<String>), String> {
     let names = session
         .engine
-        .list_tables()
+        .cached_table_names(false)
         .map_err(|err| err.to_string())?;
     let exact: Vec<String> = names
-        .into_iter()
+        .iter()
         .filter(|name| glob_matches(pattern, name))
+        .cloned()
         .collect();
     if !exact.is_empty() {
         return Ok((exact, None));
     }
-    let metas = session
-        .engine
-        .describe_all(refresh)
-        .map_err(|err| err.to_string())?;
-    let tables: Vec<_> = metas
+    let tables: Vec<_> = names
         .iter()
-        .map(dql_engine::MatchTable::from_meta)
+        .filter_map(|name| session.engine.cached_definition(name))
+        .map(|meta| dql_engine::MatchTable::from_meta(&meta))
         .collect();
     let hit = dql_engine::intelligent_matches(&tables, pattern)?;
     Ok((hit.names, Some(hit.note)))
+}
+
+pub fn web_table_list(
+    session: &mut Session,
+    pattern: &str,
+    refresh: bool,
+    background: bool,
+) -> Result<crate::web::shape::TableList, String> {
+    let mut kwargs = HashMap::new();
+    if refresh {
+        kwargs.insert("refresh".to_string(), "true".to_string());
+    }
+    if background {
+        kwargs.insert("async".to_string(), "true".to_string());
+    }
+    let args = if pattern.trim().is_empty() {
+        Vec::new()
+    } else {
+        vec![pattern.to_string()]
+    };
+    let view = match collect_view(session, &args, &kwargs) {
+        Ok(view) => view,
+        Err(message) if missing_table(&message) => {
+            return Ok(listed_tables(
+                Vec::new(),
+                String::new(),
+                session,
+                cache_hint(session).unwrap_or_default(),
+            ));
+        }
+        Err(message) => return Err(message),
+    };
+    let (rows, note) = match view {
+        LsView::Summary { rows, note } => (rows, note.unwrap_or_default()),
+        LsView::Detail { meta, note, .. } => (
+            vec![(*meta, TableStats::default())],
+            note.unwrap_or_default(),
+        ),
+    };
+    let cache_text = note
+        .lines()
+        .find(|line| line.starts_with("cache:"))
+        .map(|line| line.trim_start_matches("cache:").trim().to_string())
+        .unwrap_or_default();
+    let note = note
+        .lines()
+        .filter(|line| !line.starts_with("cache:"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string();
+    let tables = rows
+        .into_iter()
+        .map(|(meta, _)| crate::web::shape::ListedTable {
+            keys: if meta.has_definition() {
+                let mut keys = vec![crate::web::shape::KeyRole {
+                    name: meta.hash_key.clone(),
+                    role: "hash".to_string(),
+                }];
+                if let Some(range_key) = meta.range_key.clone() {
+                    keys.push(crate::web::shape::KeyRole {
+                        name: range_key,
+                        role: "range".to_string(),
+                    });
+                }
+                keys
+            } else {
+                Vec::new()
+            },
+            name: meta.name,
+        })
+        .collect();
+    Ok(listed_tables(tables, note, session, cache_text))
+}
+
+fn missing_table(message: &str) -> bool {
+    message.starts_with("Table ") && message.ends_with(" not found")
+}
+
+fn listed_tables(
+    tables: Vec<crate::web::shape::ListedTable>,
+    note: String,
+    session: &Session,
+    cache_text: String,
+) -> crate::web::shape::TableList {
+    crate::web::shape::TableList {
+        tables,
+        note,
+        cache: crate::web::shape::TableCacheHint {
+            from_cache: cache_text.starts_with("Showing cached"),
+            refreshing: session.cache_refreshing() || cache_text.contains("background"),
+            saved_at_ms: session.engine.names_saved_at_ms(),
+            text: cache_text,
+        },
+    }
 }
 
 fn write_note(out: &mut dyn Write, note: Option<&str>) -> Result<(), String> {
@@ -182,7 +380,8 @@ pub fn annotate_table_list(session: &mut Session, result: StatementResult) -> St
         let Some(Value::String(name)) = item.get("name") else {
             continue;
         };
-        let Ok(Some(meta)) = session.engine.describe(name, false) else {
+        let Some(meta) = session.engine.cached_definition(name) else {
+            rows.push((TableMeta::name_only(name), table_stats_with_count(0)));
             continue;
         };
         rows.push(table_row(session, meta));

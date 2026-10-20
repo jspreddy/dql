@@ -3,6 +3,7 @@ use crate::convert::keys_in_to_items;
 use crate::file_io::{load_items as load_items_from_file, save_items, validate_save_path};
 use crate::progress::ProgressSink;
 use crate::query_context::{query_context_from_read, LastQueryContext};
+use crate::table_cache::SharedTableCache;
 use crate::throttle::RateLimit;
 use crate::{
     BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
@@ -16,6 +17,7 @@ use dql_parser::{
 };
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct Engine<B: DynamoBackend> {
     backend: B,
@@ -27,6 +29,12 @@ pub struct Engine<B: DynamoBackend> {
     allow_select_scan: bool,
     rate_limit: Option<RateLimit>,
     pub cached_descriptions: HashMap<String, TableMeta>,
+    disk: Option<SharedTableCache>,
+    cached_names: Option<Vec<String>>,
+    names_saved_at_ms: Option<u64>,
+    seen_generation: u64,
+    names_were_cached: bool,
+    last_read_from_cache: bool,
     last_query_context: Option<LastQueryContext>,
     progress: ProgressSink,
     cancel: CancelFlag,
@@ -48,6 +56,12 @@ impl<B: DynamoBackend> Engine<B> {
             allow_select_scan: false,
             rate_limit: None,
             cached_descriptions: HashMap::new(),
+            disk: None,
+            cached_names: None,
+            names_saved_at_ms: None,
+            seen_generation: 0,
+            names_were_cached: false,
+            last_read_from_cache: false,
             last_query_context: None,
             progress,
             cancel,
@@ -66,8 +80,92 @@ impl<B: DynamoBackend> Engine<B> {
         self.rate_limit = limit;
     }
 
+    pub fn set_table_cache(&mut self, cache: Option<SharedTableCache>) {
+        self.disk = cache;
+        self.cached_names = None;
+        self.names_saved_at_ms = None;
+        self.seen_generation = 0;
+        self.cached_descriptions.clear();
+    }
+
+    pub fn table_cache(&self) -> Option<&SharedTableCache> {
+        self.disk.as_ref()
+    }
+
     pub fn list_tables(&self) -> Result<Vec<String>, EngineError> {
         self.backend.list_tables()
+    }
+
+    /// Names from memory, then disk, then the backend.
+    ///
+    /// `refresh` skips memory and disk and stores the backend list.
+    pub fn cached_table_names(&mut self, refresh: bool) -> Result<Vec<String>, EngineError> {
+        self.note_disk_generation();
+        if !refresh {
+            if let Some(names) = &self.cached_names {
+                self.names_were_cached = true;
+                return Ok(names.clone());
+            }
+            if let Some(disk) = &self.disk {
+                if let Some(cached) = disk.get_names() {
+                    self.cached_names = Some(cached.names.clone());
+                    self.names_saved_at_ms = Some(cached.saved_at_ms);
+                    self.names_were_cached = true;
+                    return Ok(cached.names);
+                }
+            }
+        }
+        let names = self.backend.list_tables()?;
+        self.remember_names(&names);
+        self.names_were_cached = false;
+        Ok(names)
+    }
+
+    pub fn names_from_cache(&self) -> bool {
+        self.names_were_cached
+    }
+
+    pub fn names_saved_at_ms(&self) -> Option<u64> {
+        self.names_saved_at_ms
+    }
+
+    /// Definition already in memory or on disk. Does not call the backend.
+    pub fn cached_definition(&mut self, table: &str) -> Option<TableMeta> {
+        self.note_disk_generation();
+        if let Some(meta) = self.cached_descriptions.get(table) {
+            return Some(meta.clone());
+        }
+        let disk = self.disk.clone();
+        if let Some(disk) = disk {
+            if let Some(cached) = disk.get_definition(table) {
+                self.cached_descriptions
+                    .insert(table.to_string(), cached.meta.clone());
+                return Some(cached.meta);
+            }
+        }
+        None
+    }
+
+    /// Re-fetch definitions that are already cached. Does not describe anything else.
+    pub fn refresh_cached_definitions(&mut self) -> Result<usize, EngineError> {
+        self.note_disk_generation();
+        let mut names: Vec<String> = self.cached_descriptions.keys().cloned().collect();
+        if let Some(disk) = &self.disk {
+            for name in disk.definition_names() {
+                if !names.iter().any(|existing| existing == &name) {
+                    names.push(name);
+                }
+            }
+        }
+        names.sort();
+        let count = names.len();
+        for name in names {
+            match self.describe(&name, true)? {
+                Some(_) => {}
+                None => self.forget_definition(&name),
+            }
+        }
+        Ok(count)
     }
 
     pub fn describe(
@@ -76,17 +174,105 @@ impl<B: DynamoBackend> Engine<B> {
         refresh: bool,
     ) -> Result<Option<TableMeta>, EngineError> {
         if !refresh {
-            if let Some(meta) = self.cached_descriptions.get(table) {
-                return Ok(Some(meta.clone()));
+            if let Some(meta) = self.cached_definition(table) {
+                self.last_read_from_cache = true;
+                return Ok(Some(meta));
             }
         }
         let desc = self.backend.describe_table(table)?;
         if let Some(meta) = desc {
-            self.cached_descriptions
-                .insert(table.to_string(), meta.clone());
+            self.store_definition(&meta);
+            self.last_read_from_cache = false;
             Ok(Some(meta))
         } else {
+            self.last_read_from_cache = false;
             Ok(None)
+        }
+    }
+
+    pub fn last_read_from_cache(&self) -> bool {
+        self.last_read_from_cache
+    }
+
+    fn note_disk_generation(&mut self) {
+        let Some(disk) = self.disk.clone() else {
+            return;
+        };
+        let generation = disk.generation();
+        if generation != self.seen_generation {
+            self.cached_descriptions.clear();
+            self.cached_names = None;
+            self.names_saved_at_ms = None;
+            self.seen_generation = generation;
+        }
+    }
+
+    fn remember_names(&mut self, names: &[String]) {
+        self.cached_names = Some(names.to_vec());
+        if let Some(disk) = &self.disk {
+            self.names_saved_at_ms = Some(disk.put_names(names));
+            self.seen_generation = disk.generation();
+        } else {
+            self.names_saved_at_ms = Some(now_ms());
+        }
+    }
+
+    fn remember_created_name(&mut self, name: &str) {
+        self.note_disk_generation();
+        if self.cached_names.is_none() {
+            if let Some(disk) = &self.disk {
+                if let Some(cached) = disk.get_names() {
+                    self.cached_names = Some(cached.names);
+                    self.names_saved_at_ms = Some(cached.saved_at_ms);
+                }
+            }
+        }
+        let Some(names) = self.cached_names.clone() else {
+            return;
+        };
+        if names.iter().any(|existing| existing == name) {
+            return;
+        }
+        let mut names = names;
+        names.push(name.to_string());
+        names.sort();
+        self.remember_names(&names);
+    }
+
+    fn forget_name(&mut self, name: &str) {
+        self.note_disk_generation();
+        if self.cached_names.is_none() {
+            if let Some(disk) = &self.disk {
+                if let Some(cached) = disk.get_names() {
+                    self.cached_names = Some(cached.names);
+                    self.names_saved_at_ms = Some(cached.saved_at_ms);
+                }
+            }
+        }
+        let Some(names) = self.cached_names.clone() else {
+            return;
+        };
+        let names: Vec<String> = names
+            .into_iter()
+            .filter(|existing| existing != name)
+            .collect();
+        self.remember_names(&names);
+    }
+
+    fn store_definition(&mut self, meta: &TableMeta) {
+        self.cached_descriptions
+            .insert(meta.name.clone(), meta.clone());
+        if let Some(disk) = &self.disk {
+            disk.put_definition(meta);
+            self.seen_generation = disk.generation();
+        }
+    }
+
+    fn forget_definition(&mut self, name: &str) {
+        self.cached_descriptions.remove(name);
+        if let Some(disk) = &self.disk {
+            disk.remove_definition(name);
+            self.seen_generation = disk.generation();
         }
     }
 
@@ -360,8 +546,10 @@ impl<B: DynamoBackend> Engine<B> {
         let meta = TableMeta::from_create_statement(statement)
             .map_err(|err| EngineError::Runtime(err.to_string()))?;
         self.record("create_table", &meta.name);
-        let response = self.backend.create_table(meta, if_not_exists)?;
+        let response = self.backend.create_table(meta.clone(), if_not_exists)?;
         self.capture_capacity(response.capacity)?;
+        self.store_definition(&meta);
+        self.remember_created_name(&meta.name);
         Ok(StatementResult::Status(response.output))
     }
 
@@ -369,6 +557,8 @@ impl<B: DynamoBackend> Engine<B> {
         self.record("delete_table", name);
         let response = self.backend.delete_table(name, if_exists)?;
         self.capture_capacity(response.capacity)?;
+        self.forget_definition(name);
+        self.forget_name(name);
         Ok(StatementResult::Status(response.output))
     }
 
@@ -702,7 +892,7 @@ impl<B: DynamoBackend> Engine<B> {
 
     fn show_tables(&mut self, like: Option<&str>) -> Result<StatementResult, EngineError> {
         self.record("list_tables", like.unwrap_or("*"));
-        let mut names = self.table_names()?;
+        let mut names = self.cached_table_names(false)?;
         let Some(pattern) = like else {
             names.sort();
             // An empty note marks the full list. The CLI turns it into the same
@@ -722,7 +912,10 @@ impl<B: DynamoBackend> Engine<B> {
             exact.sort();
             return Ok(StatementResult::Items(name_items(&exact)));
         }
-        let metas = self.describe_all(false)?;
+        let metas: Vec<TableMeta> = names
+            .iter()
+            .filter_map(|name| self.cached_definition(name))
+            .collect();
         let tables: Vec<_> = metas.iter().map(crate::MatchTable::from_meta).collect();
         match crate::intelligent_like_matches(&tables, pattern) {
             Ok(hit) => Ok(StatementResult::ItemsWithNote {
@@ -879,6 +1072,13 @@ impl<B: DynamoBackend> Engine<B> {
         }
         Ok(())
     }
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 fn save_filename(filename: &str) -> &Path {
@@ -1900,5 +2100,113 @@ mod tests {
         let events = seen.lock().unwrap().clone();
         assert!(events.contains(&25), "{events:?}");
         assert!(!events.contains(&60), "{events:?}");
+    }
+
+    #[test]
+    fn refresh_reloads_only_cached_definitions() {
+        use crate::table_cache::{CachedDefinition, CachedNameList, TableCacheStore};
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Default)]
+        struct MemStore {
+            generation: std::sync::atomic::AtomicU64,
+            names: Mutex<Option<CachedNameList>>,
+            defs: Mutex<std::collections::BTreeMap<String, CachedDefinition>>,
+        }
+
+        impl TableCacheStore for MemStore {
+            fn generation(&self) -> u64 {
+                self.generation.load(std::sync::atomic::Ordering::Acquire)
+            }
+
+            fn refreshing(&self) -> bool {
+                false
+            }
+
+            fn get_names(&self) -> Option<CachedNameList> {
+                self.names.lock().expect("names").clone()
+            }
+
+            fn put_names(&self, names: &[String]) -> u64 {
+                *self.names.lock().expect("names") = Some(CachedNameList {
+                    saved_at_ms: 1,
+                    names: names.to_vec(),
+                });
+                self.generation
+                    .fetch_add(1, std::sync::atomic::Ordering::Release)
+            }
+
+            fn forget_names(&self) {
+                *self.names.lock().expect("names") = None;
+                self.generation
+                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+            }
+
+            fn get_definition(&self, name: &str) -> Option<CachedDefinition> {
+                self.defs.lock().expect("defs").get(name).cloned()
+            }
+
+            fn put_definition(&self, meta: &TableMeta) -> u64 {
+                self.defs.lock().expect("defs").insert(
+                    meta.name.clone(),
+                    CachedDefinition {
+                        saved_at_ms: 1,
+                        meta: meta.clone(),
+                    },
+                );
+                self.generation
+                    .fetch_add(1, std::sync::atomic::Ordering::Release)
+            }
+
+            fn remove_definition(&self, name: &str) {
+                self.defs.lock().expect("defs").remove(name);
+                self.generation
+                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+            }
+
+            fn definition_names(&self) -> Vec<String> {
+                let mut names: Vec<_> = self.defs.lock().expect("defs").keys().cloned().collect();
+                names.sort();
+                names
+            }
+        }
+
+        let store = Arc::new(MemStore::default());
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine.set_table_cache(Some(store.clone()));
+        engine
+            .execute(
+                "CREATE TABLE kept (id STRING HASH KEY);
+                 CREATE TABLE other (n NUMBER HASH KEY)",
+            )
+            .unwrap();
+        assert!(
+            store.get_names().is_none(),
+            "create does not invent a name list"
+        );
+        assert_eq!(
+            store.definition_names(),
+            vec!["kept".to_string(), "other".to_string()]
+        );
+
+        store.remove_definition("other");
+        engine.set_table_cache(Some(store.clone()));
+        let names = engine.cached_table_names(false).unwrap();
+        assert_eq!(names, vec!["kept".to_string(), "other".to_string()]);
+        assert!(engine.cached_definition("kept").is_some());
+        assert!(engine.cached_definition("other").is_none());
+
+        engine
+            .execute("ALTER TABLE kept CREATE GLOBAL INDEX ('by-n', n NUMBER)")
+            .unwrap();
+        assert_eq!(engine.refresh_cached_definitions().unwrap(), 1);
+        let kept = engine.cached_definition("kept").unwrap();
+        assert!(kept.global_indexes.contains_key("by-n"));
+        assert!(
+            engine.cached_definition("other").is_none(),
+            "refresh must not describe tables that were never cached"
+        );
+        engine.cached_table_names(true).unwrap();
+        assert!(engine.cached_definition("other").is_none());
     }
 }

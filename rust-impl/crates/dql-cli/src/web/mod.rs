@@ -8,7 +8,7 @@ mod environment;
 mod files;
 mod query_cache;
 mod server;
-mod shape;
+pub(crate) mod shape;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
