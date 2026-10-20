@@ -156,6 +156,25 @@ input, textarea { background: var(--paper); }
   margin: 8px 4px;
 }
 
+.settings-cache-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.settings-cache-head .settings-label { margin-right: 0; }
+
+.settings-cache-age {
+  margin: 2px 4px 6px 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 450;
+  white-space: nowrap;
+}
+
+.settings-cache-age.is-refreshing { color: var(--label); }
+
 #clear-table-cache {
   width: 100%;
   height: 26px;

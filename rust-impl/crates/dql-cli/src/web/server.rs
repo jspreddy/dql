@@ -339,6 +339,11 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
                 Err(err) => json_error(400, &err),
             }
         }
+        "/api/table-cache" => {
+            let state = lock_state(app);
+            let hint = crate::meta::ls::web_table_cache_status(&state.session);
+            Reply::Json(200, serde_json::to_value(hint).unwrap_or(Value::Null))
+        }
         "/api/tables" => {
             let pattern = query_value(query, "pattern");
             let refresh = query_flag(query, "refresh");

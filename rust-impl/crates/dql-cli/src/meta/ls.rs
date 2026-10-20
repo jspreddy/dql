@@ -1,6 +1,6 @@
 use crate::session::Session;
 use crate::table_cache::age_phrase;
-use dql_engine::StatementResult;
+use dql_engine::{StatementResult, TableCacheStore};
 use dql_models::TableMeta;
 use dql_output::{format_table_detail, format_table_summary_table, TableStats};
 use dql_parser::Value;
@@ -178,6 +178,52 @@ fn prepare_cache(
         format!("Refreshed the cached table list and {definitions} cached definitions.")
     };
     Ok(Some(text))
+}
+
+/// Saved table-list age for the settings menu. Does not list or describe tables.
+pub fn web_table_cache_status(session: &Session) -> crate::web::shape::TableCacheHint {
+    let Some(disk) = session.table_disk.as_ref() else {
+        return crate::web::shape::TableCacheHint {
+            text: "No table list cached.".to_string(),
+            ..crate::web::shape::TableCacheHint::default()
+        };
+    };
+    let saved_at_ms = disk.get_names().map(|cached| cached.saved_at_ms);
+    let refreshing = session.cache_refreshing();
+    if let Some(error) = session.cache_error() {
+        if !refreshing {
+            return crate::web::shape::TableCacheHint {
+                text: format!("Cache refresh failed: {error}"),
+                from_cache: saved_at_ms.is_some(),
+                saved_at_ms,
+                refreshing: false,
+            };
+        }
+    }
+    let Some(saved_at_ms) = saved_at_ms else {
+        return crate::web::shape::TableCacheHint {
+            text: if refreshing {
+                "Refreshing cached tables in the background.".to_string()
+            } else {
+                "No table list cached.".to_string()
+            },
+            from_cache: false,
+            saved_at_ms: None,
+            refreshing,
+        };
+    };
+    let age = age_phrase(saved_at_ms);
+    let text = if refreshing {
+        format!("Showing cached table list from {age}. Refreshing cached tables in the background.")
+    } else {
+        format!("Showing cached table list from {age}.")
+    };
+    crate::web::shape::TableCacheHint {
+        text,
+        from_cache: true,
+        saved_at_ms: Some(saved_at_ms),
+        refreshing,
+    }
 }
 
 fn cache_hint(session: &Session) -> Option<String> {

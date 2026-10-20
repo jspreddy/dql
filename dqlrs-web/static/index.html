@@ -62,7 +62,10 @@
       <label><input type="checkbox" id="opt-minimal-write" /> Minimal write highlight</label>
       <label><input type="checkbox" id="opt-even-odd" checked /> Even/odd highlight</label>
       <hr class="settings-rule" />
-      <span class="settings-label">Table cache</span>
+      <div class="settings-cache-head">
+        <span class="settings-label">Table cache</span>
+        <span id="settings-cache-age" class="settings-cache-age">not cached</span>
+      </div>
       <button type="button" id="clear-table-cache">Clear table cache</button>
       <p id="cache-clear-note" class="settings-note" hidden></p>
     </div>

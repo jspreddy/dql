@@ -76,6 +76,9 @@ test("settings menu clears the table cache", async ({ page, app }) => {
   await expect(page.locator("#settings-pop")).toBeVisible();
   await expect(page.locator("#opt-minimal-write")).toBeVisible();
   await expect(page.locator("#opt-even-odd")).toBeVisible();
+  const sidebarAge = await page.locator(".table-cache-age").innerText();
+  await expect(page.locator("#settings-cache-age")).toHaveText(sidebarAge);
+  await expect(page.locator("#settings-cache-age")).toHaveAttribute("title", /.+/);
 
   const cleared = page.waitForResponse((response) => {
     const url = new URL(response.url());
@@ -92,6 +95,15 @@ test("settings menu clears the table cache", async ({ page, app }) => {
   await expect(page.locator("#clear-table-cache")).toBeEnabled();
   await expect(page.locator(".table-cache-tip")).toHaveText("Fetched the table list.");
   await expect(page.locator(".table-cache-age")).toHaveText("(just now)");
+  await expect(page.locator("#settings-cache-age")).toHaveText("(just now)");
+});
+
+test("settings menu shows the cache age before the table list is open", async ({ page, app }) => {
+  await page.goto(app.baseURL);
+  await page.locator("#settings-toggle").click();
+  await expect(page.locator("#settings-pop")).toBeVisible();
+  await expect(page.locator("#settings-cache-age")).toHaveText("not cached");
+  await expect(page.locator("#settings-cache-age")).toHaveAttribute("title", "No table list cached.");
 });
 
 test("searching tables filters the cached list without refresh", async ({ page, app }) => {

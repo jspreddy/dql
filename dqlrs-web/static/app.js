@@ -45,6 +45,7 @@ const state = {
   dragPath: "",
   tablesRequest: 0,
   cachePoll: 0,
+  cacheStatusRequest: 0,
   listedTables: [],
   browserSchema: null,
   schemaKind: "",
@@ -476,6 +477,7 @@ settingsPop.addEventListener("toggle", (event) => {
   settingsButton.setAttribute("aria-expanded", open ? "true" : "false");
   if (!open) return;
   document.querySelector("#cache-clear-note").hidden = true;
+  refreshSettingsCacheAge();
   const chip = settingsButton.getBoundingClientRect();
   const width = settingsPop.getBoundingClientRect().width || 232;
   settingsPop.style.inset = "auto";
@@ -491,6 +493,8 @@ document.querySelector("#clear-table-cache").addEventListener("click", async () 
     await api("/api/table-cache/clear", { method: "POST", body: {} });
     note.hidden = false;
     note.textContent = "Table cache cleared.";
+    state.cacheStatusRequest += 1;
+    renderSettingsCacheAge(null);
     if (state.mode !== "tables") document.querySelector("#table-cache").classList.add("hidden");
   } catch (error) {
     note.hidden = false;
@@ -2911,6 +2915,7 @@ function cacheAgeLabel(savedAtMs) {
 }
 
 function renderCacheHint(cache) {
+  state.cacheStatusRequest += 1;
   const node = document.querySelector("#table-cache");
   if (!node) return;
   const detail = cache && cache.text ? cache.text : "";
@@ -2920,6 +2925,32 @@ function renderCacheHint(cache) {
   node.querySelector(".table-cache-tip").textContent = detail;
   node.classList.toggle("hidden", !label || state.mode !== "tables");
   node.classList.toggle("is-refreshing", Boolean(cache && cache.refreshing));
+  renderSettingsCacheAge(cache);
+}
+
+function renderSettingsCacheAge(cache) {
+  const node = document.querySelector("#settings-cache-age");
+  if (!node) return;
+  const age = cacheAgeLabel(cache && cache.savedAtMs);
+  const detail = cache && cache.text ? cache.text : "";
+  node.textContent = age ? "(" + age + ")" : "not cached";
+  node.title = detail || "No table list cached.";
+  node.classList.toggle("is-refreshing", Boolean(cache && cache.refreshing));
+}
+
+async function refreshSettingsCacheAge() {
+  const request = ++state.cacheStatusRequest;
+  try {
+    const cache = await api("/api/table-cache");
+    if (request !== state.cacheStatusRequest) return;
+    renderSettingsCacheAge(cache);
+  } catch (error) {
+    if (request !== state.cacheStatusRequest) return;
+    const node = document.querySelector("#settings-cache-age");
+    node.textContent = "unavailable";
+    node.title = error.message;
+    node.classList.remove("is-refreshing");
+  }
 }
 
 function watchCacheRefresh(cache) {
