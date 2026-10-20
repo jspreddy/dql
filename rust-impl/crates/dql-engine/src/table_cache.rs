@@ -29,6 +29,7 @@ pub trait TableCacheStore: Send + Sync {
     fn put_definition(&self, meta: &TableMeta) -> u64;
     fn remove_definition(&self, name: &str);
     fn definition_names(&self) -> Vec<String>;
+    fn clear(&self);
 }
 
 pub type SharedTableCache = Arc<dyn TableCacheStore>;

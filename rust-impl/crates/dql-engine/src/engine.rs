@@ -92,6 +92,19 @@ impl<B: DynamoBackend> Engine<B> {
         self.disk.as_ref()
     }
 
+    /// Drop the saved table list and every saved definition.
+    pub fn clear_table_cache(&mut self) {
+        if let Some(disk) = &self.disk {
+            disk.clear();
+            self.seen_generation = disk.generation();
+        }
+        self.cached_names = None;
+        self.names_saved_at_ms = None;
+        self.names_were_cached = false;
+        self.last_read_from_cache = false;
+        self.cached_descriptions.clear();
+    }
+
     pub fn list_tables(&self) -> Result<Vec<String>, EngineError> {
         self.backend.list_tables()
     }
@@ -2169,6 +2182,13 @@ mod tests {
                 names.sort();
                 names
             }
+
+            fn clear(&self) {
+                *self.names.lock().expect("names") = None;
+                self.defs.lock().expect("defs").clear();
+                self.generation
+                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+            }
         }
 
         let store = Arc::new(MemStore::default());
@@ -2208,5 +2228,10 @@ mod tests {
         );
         engine.cached_table_names(true).unwrap();
         assert!(engine.cached_definition("other").is_none());
+
+        engine.clear_table_cache();
+        assert!(store.get_names().is_none());
+        assert!(store.definition_names().is_empty());
+        assert!(engine.cached_definition("kept").is_none());
     }
 }

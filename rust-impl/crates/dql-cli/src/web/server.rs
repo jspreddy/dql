@@ -413,6 +413,13 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
             Ok(paths) => Reply::Json(200, json!({"ok": true, "paths": paths})),
             Err(err) => json_error(400, &err),
         },
+        "/api/table-cache/clear" => {
+            let mut state = lock_state(app);
+            state.shapes.clear();
+            state.table_catalog = None;
+            state.session.clear_table_cache();
+            Reply::Json(200, json!({"ok": true}))
+        }
         _ => Reply::Json(404, json!({"ok": false, "error": "not found"})),
     }
 }

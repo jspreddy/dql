@@ -297,6 +297,8 @@ test("saves highlight toggles and switches write bands to a gutter bar", async (
   await expect(page.locator(".cm-band-alt").first()).toBeVisible();
   await expect(page.locator(".cm-band-write-even").first()).toBeVisible();
 
+  await page.locator("#settings-toggle").click();
+  await expect(page.locator("#settings-pop")).toBeVisible();
   await page.locator("#opt-even-odd").uncheck();
   await expect(page.locator(".cm-band-alt")).toHaveCount(0);
   await expect(page.locator(".cm-band-write-even")).toHaveCount(0);
@@ -310,6 +312,8 @@ test("saves highlight toggles and switches write bands to a gutter bar", async (
   expect(stored).toEqual({ minimalWrite: true, evenOdd: false });
 
   await page.reload();
+  await page.locator("#settings-toggle").click();
+  await expect(page.locator("#settings-pop")).toBeVisible();
   await expect(page.locator("#opt-minimal-write")).toBeChecked();
   await expect(page.locator("#opt-even-odd")).not.toBeChecked();
   await node(page, "queries/read.dql").click();

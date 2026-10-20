@@ -315,6 +315,13 @@ impl RuntimeEngine {
         }
     }
 
+    pub fn clear_table_cache(&mut self) {
+        match self {
+            Self::Memory(engine) => engine.inner_mut().clear_table_cache(),
+            Self::Remote(engine) => engine.inner_mut().clear_table_cache(),
+        }
+    }
+
     pub fn describe_all(
         &mut self,
         refresh: bool,
@@ -505,6 +512,11 @@ impl Session {
         self.table_disk
             .as_ref()
             .and_then(|cache| cache.last_error())
+    }
+
+    /// Remove the saved table list and every saved definition for this connection.
+    pub fn clear_table_cache(&mut self) {
+        self.engine.clear_table_cache();
     }
 
     pub fn progress(&self) -> &dql_engine::ProgressSink {

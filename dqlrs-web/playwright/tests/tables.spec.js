@@ -58,6 +58,42 @@ test("refresh button reloads the table list without the description cache", asyn
   await expect(cache.locator(".table-cache-tip")).toContainText("cached");
 });
 
+test("settings menu clears the table cache", async ({ page, app }) => {
+  const first = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.ok() && url.pathname === "/api/tables" && url.searchParams.get("refresh") !== "1";
+  });
+  await page.goto(`${app.baseURL}/#tables`);
+  await first;
+  await expect(page.locator("#table-cache")).toBeVisible();
+
+  const settings = await page.locator("#settings-toggle").boundingBox();
+  const theme = await page.locator("#theme-toggle").boundingBox();
+  expect(settings.x + settings.width).toBeLessThanOrEqual(theme.x + 1);
+  expect(Math.abs(settings.y - theme.y)).toBeLessThan(4);
+
+  await page.locator("#settings-toggle").click();
+  await expect(page.locator("#settings-pop")).toBeVisible();
+  await expect(page.locator("#opt-minimal-write")).toBeVisible();
+  await expect(page.locator("#opt-even-odd")).toBeVisible();
+
+  const cleared = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "POST" && url.pathname === "/api/table-cache/clear" && response.ok();
+  });
+  const listed = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.ok() && url.pathname === "/api/tables";
+  });
+  await page.locator("#clear-table-cache").click();
+  await cleared;
+  await listed;
+  await expect(page.locator("#cache-clear-note")).toHaveText("Table cache cleared.");
+  await expect(page.locator("#clear-table-cache")).toBeEnabled();
+  await expect(page.locator(".table-cache-tip")).toHaveText("Fetched the table list.");
+  await expect(page.locator(".table-cache-age")).toHaveText("(just now)");
+});
+
 test("searching tables filters the cached list without refresh", async ({ page, app }) => {
   const first = page.waitForResponse((response) => {
     const url = new URL(response.url());

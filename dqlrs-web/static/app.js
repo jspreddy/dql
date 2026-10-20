@@ -469,6 +469,38 @@ function applyHighlightToggles() {
     effects: highlightCompartment.reconfigure(queryHighlight(options)),
   });
 }
+const settingsPop = document.querySelector("#settings-pop");
+const settingsButton = document.querySelector("#settings-toggle");
+settingsPop.addEventListener("toggle", (event) => {
+  const open = event.newState === "open";
+  settingsButton.setAttribute("aria-expanded", open ? "true" : "false");
+  if (!open) return;
+  document.querySelector("#cache-clear-note").hidden = true;
+  const chip = settingsButton.getBoundingClientRect();
+  const width = settingsPop.getBoundingClientRect().width || 232;
+  settingsPop.style.inset = "auto";
+  settingsPop.style.margin = "0";
+  settingsPop.style.top = Math.round(chip.bottom + 6) + "px";
+  settingsPop.style.left = Math.max(8, Math.round(chip.right - width)) + "px";
+});
+document.querySelector("#clear-table-cache").addEventListener("click", async () => {
+  const button = document.querySelector("#clear-table-cache");
+  const note = document.querySelector("#cache-clear-note");
+  button.disabled = true;
+  try {
+    await api("/api/table-cache/clear", { method: "POST", body: {} });
+    note.hidden = false;
+    note.textContent = "Table cache cleared.";
+    if (state.mode !== "tables") document.querySelector("#table-cache").classList.add("hidden");
+  } catch (error) {
+    note.hidden = false;
+    note.textContent = error.message;
+    return;
+  } finally {
+    button.disabled = false;
+  }
+  if (state.mode === "tables") await loadTables();
+});
 document.querySelector("#table-search").addEventListener("input", () => {
   clearTimeout(state.searchTimer);
   state.searchTimer = setTimeout(loadTables, 250);

@@ -3,6 +3,7 @@
 //! A refresh reloads those entries. It does not describe tables that have never
 //! been fetched.
 
+use std::cell::Cell;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -29,6 +30,7 @@ pub struct DiskTableCache {
     dir: PathBuf,
     endpoint: CacheEndpoint,
     generation: AtomicU64,
+    job_id: AtomicU64,
     refreshing: AtomicBool,
     last_error: Mutex<Option<String>>,
     lock: Mutex<()>,
@@ -57,6 +59,7 @@ impl DiskTableCache {
             dir,
             endpoint,
             generation: AtomicU64::new(1),
+            job_id: AtomicU64::new(1),
             refreshing: AtomicBool::new(false),
             last_error: Mutex::new(None),
             lock: Mutex::new(()),
@@ -83,7 +86,8 @@ impl DiskTableCache {
             return true;
         }
         let cache = Arc::clone(self);
-        std::thread::spawn(move || cache.refresh_job());
+        let job = self.job_id.load(Ordering::Acquire);
+        std::thread::spawn(move || cache.refresh_job(job));
         true
     }
 
@@ -91,8 +95,13 @@ impl DiskTableCache {
         self.get_names().is_some() || !self.definition_names().is_empty()
     }
 
-    fn refresh_job(self: Arc<Self>) {
+    fn refresh_job(self: Arc<Self>, job: u64) {
+        REFRESH_JOB.with(|slot| slot.set(job));
         let result = self.refresh_from_endpoint();
+        REFRESH_JOB.with(|slot| slot.set(0));
+        if self.job_id.load(Ordering::Acquire) != job {
+            return;
+        }
         if let Ok(mut error) = self.last_error.lock() {
             *error = result.err();
         }
@@ -151,6 +160,9 @@ impl TableCacheStore for DiskTableCache {
     fn put_names(&self, names: &[String]) -> u64 {
         let saved_at_ms = now_ms();
         let _guard = self.lock.lock().expect("table cache");
+        if !self.writes_allowed() {
+            return saved_at_ms;
+        }
         if fs::create_dir_all(&self.dir).is_ok() {
             let file = NameFile {
                 saved_at_ms,
@@ -185,6 +197,9 @@ impl TableCacheStore for DiskTableCache {
     fn put_definition(&self, meta: &TableMeta) -> u64 {
         let saved_at_ms = now_ms();
         let _guard = self.lock.lock().expect("table cache");
+        if !self.writes_allowed() {
+            return saved_at_ms;
+        }
         let dir = self.dir.join("definitions");
         if fs::create_dir_all(&dir).is_ok() {
             let file = DefinitionFile {
@@ -202,8 +217,24 @@ impl TableCacheStore for DiskTableCache {
 
     fn remove_definition(&self, name: &str) {
         let _guard = self.lock.lock().expect("table cache");
+        if !self.writes_allowed() {
+            return;
+        }
         let _ = fs::remove_file(self.definition_path(name));
         self.bump();
+    }
+
+    fn clear(&self) {
+        self.job_id.fetch_add(1, Ordering::AcqRel);
+        let _guard = self.lock.lock().expect("table cache");
+        let _ = fs::remove_file(self.dir.join("list.json"));
+        if let Ok(entries) = fs::read_dir(self.dir.join("definitions")) {
+            for entry in entries.flatten() {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+        self.bump();
+        self.refreshing.store(false, Ordering::Release);
     }
 
     fn definition_names(&self) -> Vec<String> {
@@ -235,7 +266,16 @@ impl TableCacheStore for DiskTableCache {
     }
 }
 
+thread_local! {
+    static REFRESH_JOB: Cell<u64> = const { Cell::new(0) };
+}
+
 impl DiskTableCache {
+    fn writes_allowed(&self) -> bool {
+        let job = REFRESH_JOB.with(|slot| slot.get());
+        job == 0 || job == self.job_id.load(Ordering::Acquire)
+    }
+
     fn bump(&self) {
         self.generation.fetch_add(1, Ordering::Release);
     }
@@ -376,6 +416,14 @@ mod tests {
         assert!(cache.definition_names().is_empty());
         cache.forget_names();
         assert!(cache.get_names().is_none());
+        assert!(!cache.start_refresh());
+
+        cache.put_names(&["posts".to_string()]);
+        cache.put_definition(&posts());
+        cache.clear();
+        assert!(cache.get_names().is_none());
+        assert!(cache.get_definition("posts").is_none());
+        assert!(cache.definition_names().is_empty());
         assert!(!cache.start_refresh());
     }
 }
