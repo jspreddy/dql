@@ -241,7 +241,82 @@ fn update_query_file(root: &Path, arguments: &Value) -> Result<Value, ToolError>
     Ok(json!({ "path": path, "text": text }))
 }
 
+/// One line for `dqlrs --web` when `/mcp` is not enabled.
+pub fn web_mcp_hint(listen: &str) -> String {
+    format!("MCP        off. Pass --mcp to serve http://{listen}/mcp")
+}
+
+/// Cursor and Claude snippets for the HTTP MCP endpoint.
+pub fn http_client_config(url: &str) -> String {
+    let cursor = pretty_servers(json!({ "url": url }));
+    let claude = pretty_servers(json!({ "type": "http", "url": url }));
+    format!("Cursor (.cursor/mcp.json):\n{cursor}\n\nClaude (.mcp.json):\n{claude}")
+}
+
+/// Cursor and Claude snippet for a stdio `dqlrs --mcp` process.
+pub fn stdio_client_config(
+    command: &str,
+    dir: &Path,
+    region: &str,
+    endpoint: Option<(&str, u16)>,
+    memory: bool,
+) -> String {
+    let mut args = vec![
+        "--mcp".to_string(),
+        "--dir".to_string(),
+        absolute_dir(dir).display().to_string(),
+        "-r".to_string(),
+        region.to_string(),
+    ];
+    if let Some((host, port)) = endpoint {
+        args.extend([
+            "-H".to_string(),
+            host.to_string(),
+            "-p".to_string(),
+            port.to_string(),
+        ]);
+    }
+    let mut entry = json!({
+        "command": command,
+        "args": args,
+    });
+    if memory && endpoint.is_none() {
+        entry["env"] = json!({ "DQL_BACKEND": "memory" });
+    }
+    format!(
+        "Cursor (.cursor/mcp.json) and Claude (.mcp.json or claude_desktop_config.json):\n{}",
+        pretty_servers(entry)
+    )
+}
+
+fn pretty_servers(entry: Value) -> String {
+    serde_json::to_string_pretty(&json!({ "mcpServers": { "dqlrs": entry } }))
+        .unwrap_or_else(|_| "{}".to_string())
+}
+
+fn absolute_dir(dir: &Path) -> PathBuf {
+    if dir.is_absolute() {
+        return dir.to_path_buf();
+    }
+    std::env::current_dir()
+        .map(|cwd| cwd.join(dir))
+        .unwrap_or_else(|_| dir.to_path_buf())
+}
+
 pub fn run(session: Session, root: PathBuf) -> std::io::Result<()> {
+    let command = std::env::current_exe()
+        .ok()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "dqlrs".to_string());
+    let endpoint = session.local_endpoint.clone();
+    let config = stdio_client_config(
+        &command,
+        &root,
+        &session.region,
+        endpoint.as_ref().map(|(host, port)| (host.as_str(), *port)),
+        session.engine.is_memory(),
+    );
+    eprintln!("{config}");
     let mut server = McpServer::new(session, root);
     let stdin = io::stdin();
     let mut stdout = io::stdout();
@@ -690,5 +765,51 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(titles.contains(&("index", "by_shelf")));
         assert!(titles.contains(&("column", "shelf")));
+    }
+
+    #[test]
+    fn web_hint_names_the_mcp_flag_and_url() {
+        let hint = web_mcp_hint("127.0.0.1:8765");
+        assert!(hint.contains("--mcp"));
+        assert!(hint.contains("http://127.0.0.1:8765/mcp"));
+    }
+
+    #[test]
+    fn http_config_is_ready_for_cursor_and_claude() {
+        let text = http_client_config("http://127.0.0.1:9000/mcp");
+        assert!(text.contains("Cursor (.cursor/mcp.json)"));
+        assert!(text.contains("Claude (.mcp.json)"));
+        assert!(text.contains("\"url\": \"http://127.0.0.1:9000/mcp\""));
+        assert!(text.contains("\"type\": \"http\""));
+        let cursor = text.split("Claude").next().unwrap();
+        assert!(!cursor.contains("\"type\""));
+    }
+
+    #[test]
+    fn stdio_config_records_the_workspace_and_local_endpoint() {
+        let text = stdio_client_config(
+            "/usr/local/bin/dqlrs",
+            Path::new("/work/queries"),
+            "us-west-1",
+            Some(("localhost", 8000)),
+            false,
+        );
+        assert!(text.contains("Cursor (.cursor/mcp.json)"));
+        assert!(text.contains("Claude"));
+        assert!(text.contains("\"command\": \"/usr/local/bin/dqlrs\""));
+        assert!(text.contains("\"--dir\""));
+        assert!(text.contains("\"/work/queries\""));
+        assert!(text.contains("\"localhost\""));
+        assert!(text.contains("\"8000\""));
+        assert!(text.contains("\"us-west-1\""));
+        assert!(!text.contains("DQL_BACKEND"));
+    }
+
+    #[test]
+    fn stdio_config_keeps_a_memory_backend_in_env() {
+        let text = stdio_client_config("dqlrs", Path::new("queries"), "us-west-1", None, true);
+        assert!(text.contains("\"DQL_BACKEND\": \"memory\""));
+        assert!(text.contains("queries"));
+        assert!(!text.contains("\"-H\""));
     }
 }

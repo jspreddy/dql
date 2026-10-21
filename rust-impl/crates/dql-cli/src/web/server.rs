@@ -76,10 +76,17 @@ pub fn serve(
     let bound = listener.local_addr().unwrap_or(listen);
     println!("DQLRS Web  http://{bound}");
     if mcp {
-        println!("MCP        http://{bound}/mcp");
+        let url = format!("http://{bound}/mcp");
+        println!("MCP        {url}");
+        println!("workspace  {}", app.root.display());
+        println!("endpoint   {}", app.endpoint);
+        println!();
+        println!("{}", crate::mcp::http_client_config(&url));
+    } else {
+        println!("{}", crate::mcp::web_mcp_hint(&bound.to_string()));
+        println!("workspace  {}", app.root.display());
+        println!("endpoint   {}", app.endpoint);
     }
-    println!("workspace  {}", app.root.display());
-    println!("endpoint   {}", app.endpoint);
     let _ = io::stdout().flush();
     accept(app, listener, Arc::new(AtomicBool::new(false)));
     Ok(())
