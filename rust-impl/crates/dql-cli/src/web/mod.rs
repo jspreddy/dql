@@ -5,9 +5,9 @@
 //! without a rebuild. The installed binary falls back to the embedded copy.
 
 mod environment;
-mod files;
+pub(crate) mod files;
 mod query_cache;
-mod search;
+pub(crate) mod search;
 mod server;
 pub(crate) mod shape;
 
