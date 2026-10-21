@@ -1,11 +1,11 @@
-//! MCP server on stdio for Cursor and Claude.
+//! MCP tools for Cursor and Claude.
 //!
-//! The process speaks newline-delimited JSON-RPC. Logs stay off stdout.
-//! Tools use the same workspace directory as `dqlrs --web --dir` and the same
-//! table cache for that connection.
+//! `dqlrs --mcp` speaks newline-delimited JSON-RPC on stdio. `dqlrs --web --mcp`
+//! serves the same tools at `/mcp` on the web host, using that process's session
+//! and workspace. Logs stay off stdout.
 
 use std::io::{self, BufRead, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
@@ -46,177 +46,199 @@ impl McpServer {
 
     /// Handle one JSON-RPC message. Notifications return `None`.
     pub fn handle_line(&mut self, line: &str) -> Option<String> {
-        let message: Value = match serde_json::from_str(line) {
-            Ok(value) => value,
-            Err(_) => {
-                return Some(rpc_error(Value::Null, -32700, "parse error"));
-            }
-        };
-        let id = message.get("id").cloned()?;
-        let method = message.get("method").and_then(Value::as_str).unwrap_or("");
-        let params = message.get("params").cloned().unwrap_or_else(|| json!({}));
-        let result = self.dispatch(method, &params);
-        Some(match result {
-            Ok(value) => json!({"jsonrpc": "2.0", "id": id, "result": value}).to_string(),
-            Err((code, message)) => rpc_error(id, code, &message),
-        })
+        exchange(&mut self.initialized, &mut self.session, &self.root, line)
     }
+}
 
-    fn dispatch(&mut self, method: &str, params: &Value) -> Result<Value, (i32, String)> {
-        if method != "initialize" && method != "ping" && !self.initialized {
-            return Err((-32002, "server not initialized".to_string()));
+/// Handle one JSON-RPC message against a shared session and workspace.
+///
+/// Notifications return `None`. The web server uses this so `/mcp` and `/api`
+/// share one connection.
+pub fn exchange(
+    initialized: &mut bool,
+    session: &mut Session,
+    root: &Path,
+    line: &str,
+) -> Option<String> {
+    let message: Value = match serde_json::from_str(line) {
+        Ok(value) => value,
+        Err(_) => {
+            return Some(rpc_error(Value::Null, -32700, "parse error"));
         }
-        match method {
-            "initialize" => Ok(self.initialize(params)),
-            "ping" => Ok(json!({})),
-            "logging/setLevel" => Ok(json!({})),
-            "resources/list" => Ok(json!({"resources": []})),
-            "prompts/list" => Ok(json!({"prompts": []})),
-            "tools/list" => Ok(json!({"tools": tool_definitions()})),
-            "tools/call" => self.call_tool(params),
-            _ => Err((-32601, format!("unknown method {method}"))),
-        }
-    }
+    };
+    let id = message.get("id").cloned()?;
+    let method = message.get("method").and_then(Value::as_str).unwrap_or("");
+    let params = message.get("params").cloned().unwrap_or_else(|| json!({}));
+    let result = dispatch(initialized, session, root, method, &params);
+    Some(match result {
+        Ok(value) => json!({"jsonrpc": "2.0", "id": id, "result": value}).to_string(),
+        Err((code, message)) => rpc_error(id, code, &message),
+    })
+}
 
-    fn initialize(&mut self, params: &Value) -> Value {
-        self.initialized = true;
-        let version = params
-            .get("protocolVersion")
-            .and_then(Value::as_str)
-            .filter(|version| !version.is_empty())
-            .unwrap_or(PROTOCOL_VERSION);
-        json!({
-            "protocolVersion": version,
-            "capabilities": { "tools": { "listChanged": false } },
-            "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") },
-            "instructions": "Tools read and write the .dql workspace passed to dqlrs --mcp --dir, the same folder dqlrs --web uses. global_search finds table names, cached columns and indexes, and queries in files. list_tables and describe_tables use the shared table cache for this connection. create_query_file, read_query_file, and update_query_file change query files on disk."
-        })
+fn dispatch(
+    initialized: &mut bool,
+    session: &mut Session,
+    root: &Path,
+    method: &str,
+    params: &Value,
+) -> Result<Value, (i32, String)> {
+    if method != "initialize" && method != "ping" && !*initialized {
+        return Err((-32002, "server not initialized".to_string()));
     }
-
-    fn call_tool(&mut self, params: &Value) -> Result<Value, (i32, String)> {
-        let name = params
-            .get("name")
-            .and_then(Value::as_str)
-            .ok_or_else(|| (-32602, "tools/call requires a name".to_string()))?;
-        let arguments = params
-            .get("arguments")
-            .cloned()
-            .unwrap_or_else(|| json!({}));
-        match name {
-            "global_search" => tool_value(self.global_search(&arguments)),
-            "list_tables" => tool_value(self.list_tables(&arguments)),
-            "describe_tables" => tool_value(self.describe_tables(&arguments)),
-            "list_query_files" => tool_value(self.list_query_files()),
-            "create_query_file" => tool_value(self.create_query_file(&arguments)),
-            "read_query_file" => tool_value(self.read_query_file(&arguments)),
-            "update_query_file" => tool_value(self.update_query_file(&arguments)),
-            _ => Err((-32602, format!("unknown tool {name}"))),
-        }
+    match method {
+        "initialize" => Ok(initialize(initialized, params)),
+        "ping" => Ok(json!({})),
+        "logging/setLevel" => Ok(json!({})),
+        "resources/list" => Ok(json!({"resources": []})),
+        "prompts/list" => Ok(json!({"prompts": []})),
+        "tools/list" => Ok(json!({"tools": tool_definitions()})),
+        "tools/call" => call_tool(session, root, params),
+        _ => Err((-32601, format!("unknown method {method}"))),
     }
+}
 
-    fn global_search(&mut self, arguments: &Value) -> Result<Value, ToolError> {
-        let query = required_str(arguments, "query")?;
-        let results = search(&mut self.session, &self.root, query);
-        serde_json::to_value(results).map_err(|err| ToolError::new(err.to_string()))
+fn initialize(initialized: &mut bool, params: &Value) -> Value {
+    *initialized = true;
+    let version = params
+        .get("protocolVersion")
+        .and_then(Value::as_str)
+        .filter(|version| !version.is_empty())
+        .unwrap_or(PROTOCOL_VERSION);
+    json!({
+        "protocolVersion": version,
+        "capabilities": { "tools": { "listChanged": false } },
+        "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") },
+        "instructions": "Tools read and write the .dql workspace passed to dqlrs --mcp --dir, the same folder dqlrs --web uses. global_search finds table names, cached columns and indexes, and queries in files. list_tables and describe_tables use the shared table cache for this connection. create_query_file, read_query_file, and update_query_file change query files on disk."
+    })
+}
+
+fn call_tool(session: &mut Session, root: &Path, params: &Value) -> Result<Value, (i32, String)> {
+    let name = params
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| (-32602, "tools/call requires a name".to_string()))?;
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    match name {
+        "global_search" => tool_value(global_search(session, root, &arguments)),
+        "list_tables" => tool_value(list_tables(session, &arguments)),
+        "describe_tables" => tool_value(describe_tables(session, &arguments)),
+        "list_query_files" => tool_value(list_query_files(root)),
+        "create_query_file" => tool_value(create_query_file(root, &arguments)),
+        "read_query_file" => tool_value(read_query_file(root, &arguments)),
+        "update_query_file" => tool_value(update_query_file(root, &arguments)),
+        _ => Err((-32602, format!("unknown tool {name}"))),
     }
+}
 
-    fn list_tables(&mut self, arguments: &Value) -> Result<Value, ToolError> {
-        let pattern = optional_str(arguments, "pattern").unwrap_or("");
-        let refresh = optional_bool(arguments, "refresh");
-        let listed =
-            web_table_list(&mut self.session, pattern, refresh, false).map_err(ToolError::new)?;
-        serde_json::to_value(listed).map_err(|err| ToolError::new(err.to_string()))
+fn global_search(
+    session: &mut Session,
+    root: &Path,
+    arguments: &Value,
+) -> Result<Value, ToolError> {
+    let query = required_str(arguments, "query")?;
+    let results = search(session, root, query);
+    serde_json::to_value(results).map_err(|err| ToolError::new(err.to_string()))
+}
+
+fn list_tables(session: &mut Session, arguments: &Value) -> Result<Value, ToolError> {
+    let pattern = optional_str(arguments, "pattern").unwrap_or("");
+    let refresh = optional_bool(arguments, "refresh");
+    let listed = web_table_list(session, pattern, refresh, false).map_err(ToolError::new)?;
+    serde_json::to_value(listed).map_err(|err| ToolError::new(err.to_string()))
+}
+
+fn describe_tables(session: &mut Session, arguments: &Value) -> Result<Value, ToolError> {
+    let tables = table_names(arguments)?;
+    if tables.is_empty() {
+        return Err(ToolError::new("name at least one table"));
     }
-
-    fn describe_tables(&mut self, arguments: &Value) -> Result<Value, ToolError> {
-        let tables = table_names(arguments)?;
-        if tables.is_empty() {
-            return Err(ToolError::new("name at least one table"));
-        }
-        let refresh = optional_bool(arguments, "refresh");
-        let mut described = Vec::new();
-        for name in tables {
-            described.push(self.describe_one(&name, refresh));
-        }
-        Ok(json!({ "tables": described }))
+    let refresh = optional_bool(arguments, "refresh");
+    let mut described = Vec::new();
+    for name in tables {
+        described.push(describe_one(session, &name, refresh));
     }
+    Ok(json!({ "tables": described }))
+}
 
-    fn describe_one(&mut self, name: &str, refresh: bool) -> Value {
-        match self.session.engine.describe(name, refresh) {
-            Ok(Some(meta)) => {
-                let from_cache = self.session.engine.last_read_from_cache();
-                let indexes = meta
-                    .local_indexes
-                    .values()
-                    .map(|index| {
-                        json!({
-                            "name": index.name,
-                            "kind": "local",
-                            "hashKey": index.hash_key,
-                            "rangeKey": index.range_key,
-                        })
+fn describe_one(session: &mut Session, name: &str, refresh: bool) -> Value {
+    match session.engine.describe(name, refresh) {
+        Ok(Some(meta)) => {
+            let from_cache = session.engine.last_read_from_cache();
+            let indexes = meta
+                .local_indexes
+                .values()
+                .map(|index| {
+                    json!({
+                        "name": index.name,
+                        "kind": "local",
+                        "hashKey": index.hash_key,
+                        "rangeKey": index.range_key,
                     })
-                    .chain(meta.global_indexes.values().map(|index| {
-                        json!({
-                            "name": index.name,
-                            "kind": "global",
-                            "hashKey": index.hash_key.name,
-                            "rangeKey": index.range_key.as_ref().map(|field| field.name.clone()),
-                        })
-                    }))
-                    .collect::<Vec<_>>();
-                json!({
-                    "name": meta.name,
-                    "schema": meta.schema_dql(),
-                    "hashKey": meta.hash_key,
-                    "rangeKey": meta.range_key,
-                    "attributes": meta.attrs.keys().cloned().collect::<Vec<_>>(),
-                    "indexes": indexes,
-                    "status": status_name(meta.status),
-                    "fromCache": from_cache,
                 })
-            }
-            Ok(None) => json!({ "name": name, "error": format!("table {name} not found") }),
-            Err(err) => json!({ "name": name, "error": err.to_string() }),
+                .chain(meta.global_indexes.values().map(|index| {
+                    json!({
+                        "name": index.name,
+                        "kind": "global",
+                        "hashKey": index.hash_key.name,
+                        "rangeKey": index.range_key.as_ref().map(|field| field.name.clone()),
+                    })
+                }))
+                .collect::<Vec<_>>();
+            json!({
+                "name": meta.name,
+                "schema": meta.schema_dql(),
+                "hashKey": meta.hash_key,
+                "rangeKey": meta.range_key,
+                "attributes": meta.attrs.keys().cloned().collect::<Vec<_>>(),
+                "indexes": indexes,
+                "status": status_name(meta.status),
+                "fromCache": from_cache,
+            })
         }
+        Ok(None) => json!({ "name": name, "error": format!("table {name} not found") }),
+        Err(err) => json!({ "name": name, "error": err.to_string() }),
     }
+}
 
-    fn list_query_files(&self) -> Result<Value, ToolError> {
-        let files = files::list_dql_files(&self.root).map_err(path_error)?;
-        let files = files
-            .into_iter()
-            .map(|(path, name)| json!({"path": path, "name": name}))
-            .collect::<Vec<_>>();
-        Ok(json!({ "files": files }))
-    }
+fn list_query_files(root: &Path) -> Result<Value, ToolError> {
+    let files = files::list_dql_files(root).map_err(path_error)?;
+    let files = files
+        .into_iter()
+        .map(|(path, name)| json!({"path": path, "name": name}))
+        .collect::<Vec<_>>();
+    Ok(json!({ "files": files }))
+}
 
-    fn create_query_file(&self, arguments: &Value) -> Result<Value, ToolError> {
-        let path = required_str(arguments, "path")?;
-        let text = optional_str(arguments, "text").unwrap_or("");
-        let created = files::create_file(&self.root, path).map_err(path_error)?;
-        if !text.is_empty() {
-            files::write_text(&self.root, &created, text).map_err(path_error)?;
-        }
-        Ok(json!({ "path": created, "text": text }))
+fn create_query_file(root: &Path, arguments: &Value) -> Result<Value, ToolError> {
+    let path = required_str(arguments, "path")?;
+    let text = optional_str(arguments, "text").unwrap_or("");
+    let created = files::create_file(root, path).map_err(path_error)?;
+    if !text.is_empty() {
+        files::write_text(root, &created, text).map_err(path_error)?;
     }
+    Ok(json!({ "path": created, "text": text }))
+}
 
-    fn read_query_file(&self, arguments: &Value) -> Result<Value, ToolError> {
-        let path = required_str(arguments, "path")?;
-        let path = files::normalized_dql(&self.root, path).map_err(path_error)?;
-        let text = files::read_text(&self.root, &path).map_err(path_error)?;
-        Ok(json!({ "path": path, "text": text }))
-    }
+fn read_query_file(root: &Path, arguments: &Value) -> Result<Value, ToolError> {
+    let path = required_str(arguments, "path")?;
+    let path = files::normalized_dql(root, path).map_err(path_error)?;
+    let text = files::read_text(root, &path).map_err(path_error)?;
+    Ok(json!({ "path": path, "text": text }))
+}
 
-    fn update_query_file(&self, arguments: &Value) -> Result<Value, ToolError> {
-        let path = required_str(arguments, "path")?;
-        let text = required_str(arguments, "text")?;
-        let path = files::normalized_dql(&self.root, path).map_err(path_error)?;
-        if files::read_text(&self.root, &path).is_err() {
-            return Err(ToolError::new(format!("{path} does not exist")));
-        }
-        files::write_text(&self.root, &path, text).map_err(path_error)?;
-        Ok(json!({ "path": path, "text": text }))
+fn update_query_file(root: &Path, arguments: &Value) -> Result<Value, ToolError> {
+    let path = required_str(arguments, "path")?;
+    let text = required_str(arguments, "text")?;
+    let path = files::normalized_dql(root, path).map_err(path_error)?;
+    if files::read_text(root, &path).is_err() {
+        return Err(ToolError::new(format!("{path} does not exist")));
     }
+    files::write_text(root, &path, text).map_err(path_error)?;
+    Ok(json!({ "path": path, "text": text }))
 }
 
 pub fn run(session: Session, root: PathBuf) -> std::io::Result<()> {

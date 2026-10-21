@@ -242,7 +242,7 @@ mcp-test: (_title "mcp-test")
     (cd rust-impl && cargo build -p dql-cli)
     python3 scripts/mcp-smoke.py rust-impl/target/debug/dqlrs
 
-# Start DQLRS Web against dqlrs-web/examples. Extra args go to dqlrs-web/run.sh: just web -- --port 9000
+# Start the web UI, API, and /mcp on one host. Extra args go to dqlrs-web/run.sh: just web -- --port 9000
 [group('web')]
 web *args: (_title "web")
     #!/usr/bin/env bash
@@ -265,10 +265,18 @@ web *args: (_title "web")
     if [[ "$use_local" -eq 1 ]]; then
         just dynamo
     fi
-    if [[ ${#args[@]} -eq 0 ]]; then
-        exec ./dqlrs-web/run.sh --dir "{{justfile_directory()}}/dqlrs-web/examples"
+    mcp=(--mcp)
+    if [[ ${#args[@]} -gt 0 ]]; then
+        for arg in "${args[@]}"; do
+            if [[ "$arg" == "--mcp" ]]; then
+                mcp=()
+            fi
+        done
     fi
-    exec ./dqlrs-web/run.sh "${args[@]}"
+    if [[ ${#args[@]} -eq 0 ]]; then
+        exec ./dqlrs-web/run.sh --mcp --dir "{{justfile_directory()}}/dqlrs-web/examples"
+    fi
+    exec ./dqlrs-web/run.sh "${mcp[@]}" "${args[@]}"
 
 # Node tests for the DQLRS Web editor
 [group('web')]

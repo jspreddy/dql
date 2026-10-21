@@ -59,7 +59,7 @@ pub struct CliArgs {
 
     #[arg(
         long = "mcp",
-        help = "MCP server on stdio for Cursor and Claude. Uses --dir as the query workspace."
+        help = "MCP tools. Alone, stdio. With --web, HTTP at /mcp on the web host."
     )]
     pub mcp: bool,
 
@@ -99,7 +99,7 @@ pub fn help_text() -> String {
            --serve              Headless JSON-lines worker (stdio, or --bind on loopback). Not a TTY REPL.\n\
            --bind <ADDR>        With --serve, listen on loopback HOST:PORT (or PORT as 127.0.0.1:PORT)\n\
            --web                Serve the query editor and table browser\n\
-           --mcp                MCP server on stdio for Cursor and Claude\n\
+           --mcp                MCP tools. Alone, stdio. With --web, HTTP at /mcp\n\
            --listen <ADDR>      With --web, listen on loopback HOST:PORT (default 127.0.0.1:8765)\n\
            --dir <DIR>          With --web or --mcp, folder of .dql files (default: current directory)\n\
            notebook, --notebook Start JupyterLab with a DQL (Rust) kernel (this binary)\n\
@@ -192,5 +192,23 @@ mod tests {
         assert_eq!(args.dir.as_deref(), Some("/tmp/queries"));
         assert!(!args.web);
         assert!(!args.serve);
+    }
+
+    #[test]
+    fn parses_web_and_mcp_together() {
+        let args = CliArgs::try_parse_from([
+            "dqlrs",
+            "--web",
+            "--mcp",
+            "--listen",
+            "127.0.0.1:8765",
+            "--dir",
+            "/tmp/queries",
+        ])
+        .unwrap();
+        assert!(args.web);
+        assert!(args.mcp);
+        assert_eq!(args.listen.as_deref(), Some("127.0.0.1:8765"));
+        assert_eq!(args.dir.as_deref(), Some("/tmp/queries"));
     }
 }

@@ -1,24 +1,7 @@
 {
   "mcpServers": {
     "dqlrs": {
-      "command": "dqlrs",
-      "args": [
-        "--mcp",
-        "--dir",
-        "/absolute/path/to/dqlrs-web/examples",
-        "-H",
-        "localhost",
-        "-p",
-        "8000",
-        "-r",
-        "us-west-1"
-      ],
-      "env": {
-        "AWS_ACCESS_KEY_ID": "fakeid",
-        "AWS_SECRET_ACCESS_KEY": "fakekey",
-        "AWS_REGION": "us-west-1",
-        "AWS_EC2_METADATA_DISABLED": "true"
-      }
+      "url": "http://127.0.0.1:8765/mcp"
     }
   }
 }
