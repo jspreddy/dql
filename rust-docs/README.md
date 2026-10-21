@@ -8,6 +8,7 @@ notes are in [`rust-impl/README.md`](../rust-impl/README.md). Differences from
 the Python client: [migration-from-python.md](migration-from-python.md).
 Architecture, package, and runtime diagrams: [architecture.html](architecture.html).
 How long the rewrite took, and what it cost in commits, pull requests, and tokens: [rewrite-metrics.html](rewrite-metrics.html).
+The same counts, binned by hour: [rewrite-metrics-hours.html](rewrite-metrics-hours.html).
 
 This repository ([jspreddy/dql](https://github.com/jspreddy/dql)) is a fork of
 [stevearc/dql](https://github.com/stevearc/dql).
