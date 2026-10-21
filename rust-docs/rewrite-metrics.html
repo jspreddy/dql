@@ -92,6 +92,7 @@
       gap: 0.7rem;
       margin: 1rem 0 0.4rem;
     }
+    .stats-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .stat {
       background: var(--paper);
       border: 1px solid var(--line);
@@ -196,6 +197,7 @@
       <p>On this page</p>
       <ol>
         <li><a href="#summary">Summary</a></li>
+        <li><a href="#days-by-feature">Days by feature</a></li>
         <li><a href="#main-graph">Main graph</a></li>
         <li><a href="#details">Details</a>
           <ol>
@@ -214,7 +216,7 @@
       </header>
 
       <h2 id="summary">Summary</h2>
-      <p class="lead">381 commits landed on <code>v-rust</code> on 27 days, inside a 105-day span. 54 pull requests were merged. Usage alongside that work was 984 million tokens and $12.56 on demand.</p>
+      <p class="lead">381 commits landed on <code>v-rust</code> on 27 days, inside a 105-day span. 54 pull requests were merged. Of those days, 8 were the Rust implementation, 3 were acceptance tests, 4 were the notebook, and 9 were the web UI. Usage alongside that work was 984 million tokens and $12.56 on demand.</p>
       <div class="stats">
         <div class="stat"><b>27</b><span>Days worked</span></div>
         <div class="stat"><b>105</b><span>Days since start</span></div>
@@ -224,6 +226,43 @@
       </div>
       <p class="caption">5 Jul 2026 18:28 UTC through 19 Oct 2026 02:57 UTC. Days worked are dates with a commit on <code>v-rust</code>. Days since start is that whole span. Commits are <code>origin/v-next..origin/v-rust</code>.</p>
       <p class="note">$12.56 is six on-demand events on 14 Oct, model <code>grok-4.7</code>. Included events have no dollar amount in the export. Of the 984 million tokens, 936 million are cache reads and 5.7 million are output.</p>
+
+      <h2 id="days-by-feature">Days worked by feature</h2>
+      <p>Each of the 27 commit days is counted once, under the group its commit subjects are about.</p>
+      <div class="stats stats-4">
+        <div class="stat"><b>8</b><span>Rust impl</span></div>
+        <div class="stat"><b>3</b><span>Acceptance tests</span></div>
+        <div class="stat"><b>4</b><span>Notebook</span></div>
+        <div class="stat"><b>9</b><span>Web</span></div>
+      </div>
+      <svg viewBox="0 0 640 160" role="img" aria-labelledby="featureDaysTitle">
+<title id="featureDaysTitle">Days worked by feature group</title>
+<text x="200" y="30" text-anchor="end" fill="#1c1915" font-size="13">Rust impl</text>
+<rect x="212" y="16" width="320" height="18" fill="#9a3412"><title>Rust impl: 8 days</title></rect>
+<text x="540" y="30" fill="#5e564c" font-size="13">8</text>
+<text x="200" y="66" text-anchor="end" fill="#1c1915" font-size="13">Acceptance tests</text>
+<rect x="212" y="52" width="120" height="18" fill="#1e3a5f"><title>Acceptance tests: 3 days</title></rect>
+<text x="340" y="66" fill="#5e564c" font-size="13">3</text>
+<text x="200" y="102" text-anchor="end" fill="#1c1915" font-size="13">Notebook</text>
+<rect x="212" y="88" width="160" height="18" fill="#1f5c45"><title>Notebook: 4 days</title></rect>
+<text x="380" y="102" fill="#5e564c" font-size="13">4</text>
+<text x="200" y="138" text-anchor="end" fill="#1c1915" font-size="13">Web</text>
+<rect x="212" y="124" width="360" height="18" fill="#7c4a12"><title>Web: 9 days</title></rect>
+<text x="580" y="138" fill="#5e564c" font-size="13">9</text>
+</svg>
+      <p class="caption">Days with a commit on <code>v-rust</code>. Bar length is days worked. 8 + 3 + 4 + 9 = 24. The other three days stay in the 27 and outside these groups.</p>
+      <table>
+        <thead>
+          <tr><th>Feature group</th><th class="num">Days worked</th><th>Dates</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Rust impl</td><td class="num">8</td><td>5, 6, 8, 10, 17, 22 Jul; 19–20 Aug</td></tr>
+          <tr><td>Acceptance tests</td><td class="num">3</td><td>21, 23 Aug; 3 Oct</td></tr>
+          <tr><td>Notebook</td><td class="num">4</td><td>18–19 Sep; 4–5 Oct</td></tr>
+          <tr><td>Web</td><td class="num">9</td><td>7–8, 10–12, 14–15, 18–19 Oct</td></tr>
+        </tbody>
+      </table>
+      <p class="caption">22 Aug is a CI workflow commit. 13 Oct is the README, CLI screenshots, and the git graph. 17 Oct is the git graph. Author dates are UTC.</p>
 
       <h2 id="main-graph">Main graph</h2>
       <p>Each day from 2 Jul through 21 Oct. Bars are commits on <code>v-rust</code>. The line is tokens, in millions. Dashed lines mark when a major slice merged.</p>
