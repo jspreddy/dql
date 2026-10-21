@@ -33,16 +33,110 @@ input, textarea { background: var(--paper); }
   padding: 0 10px;
   background: var(--bar);
   color: var(--header-fg);
+  position: relative;
+  z-index: 30;
 }
 
 .brand { font-weight: 650; letter-spacing: 0.01em; }
 
 .modes {
-  margin: 0 auto;
   display: flex;
+  flex: none;
   border: 1px solid var(--header-line);
   border-radius: 6px;
   overflow: hidden;
+}
+
+.title-search {
+  position: relative;
+  flex: 1 1 280px;
+  min-width: 140px;
+  max-width: 520px;
+}
+
+#title-search {
+  width: 100%;
+  height: 24px;
+  border: 1px solid var(--header-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--header-fg);
+  padding: 0 10px;
+}
+
+#title-search::placeholder { color: var(--header-text); opacity: 0.75; }
+
+#title-search:focus,
+#title-search:focus-visible {
+  outline: none;
+  border-color: var(--header-line-hover);
+}
+
+.title-search-list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  max-height: min(420px, 70vh);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--text);
+  box-shadow: 0 12px 32px var(--shadow-pop);
+}
+
+.title-search-list[hidden] { display: none; }
+
+.title-search-group {
+  margin: 6px 4px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.title-search-item {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  column-gap: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  padding: 5px 6px;
+  cursor: pointer;
+}
+
+.title-search-item[aria-selected="true"],
+.title-search-item:hover { background: var(--hover); }
+
+.title-search-kind {
+  color: var(--muted);
+  font-size: 11px;
+  align-self: center;
+}
+
+.title-search-title,
+.title-search-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title-search-detail {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.title-search-empty {
+  padding: 8px 6px;
+  color: var(--muted);
 }
 
 .modes button {

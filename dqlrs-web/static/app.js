@@ -505,6 +505,167 @@ document.querySelector("#clear-table-cache").addEventListener("click", async () 
   }
   if (state.mode === "tables") await loadTables();
 });
+const titleSearch = document.querySelector("#title-search");
+const titleSearchList = document.querySelector("#title-search-list");
+let titleSearchItems = [];
+let titleSearchTimer = 0;
+let titleSearchRequest = 0;
+let titleSearchActive = -1;
+
+titleSearch.addEventListener("input", () => {
+  clearTimeout(titleSearchTimer);
+  const query = titleSearch.value.trim();
+  if (!query) {
+    hideTitleSearch();
+    return;
+  }
+  titleSearchTimer = setTimeout(() => runTitleSearch(query), 150);
+});
+titleSearch.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    hideTitleSearch();
+    return;
+  }
+  if (titleSearchList.hidden || !titleSearchItems.length) return;
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const delta = event.key === "ArrowDown" ? 1 : -1;
+    const next = titleSearchActive < 0
+      ? (delta > 0 ? 0 : titleSearchItems.length - 1)
+      : (titleSearchActive + delta + titleSearchItems.length) % titleSearchItems.length;
+    setTitleSearchActive(next);
+    return;
+  }
+  if (event.key === "Enter" && titleSearchActive >= 0) {
+    event.preventDefault();
+    openSearchHit(titleSearchItems[titleSearchActive]);
+  }
+});
+titleSearch.addEventListener("focus", () => {
+  const query = titleSearch.value.trim();
+  if (query) runTitleSearch(query);
+});
+titleSearchList.addEventListener("pointerdown", (event) => {
+  if (event.target.closest(".title-search-item")) event.preventDefault();
+});
+document.addEventListener("pointerdown", (event) => {
+  if (event.target.closest(".title-search")) return;
+  hideTitleSearch();
+});
+
+async function runTitleSearch(query) {
+  const request = ++titleSearchRequest;
+  try {
+    const payload = await api("/api/search?q=" + encodeURIComponent(query));
+    if (request !== titleSearchRequest || titleSearch.value.trim() !== query) return;
+    renderTitleSearch(payload.items || []);
+  } catch (error) {
+    if (request !== titleSearchRequest) return;
+    titleSearchItems = [];
+    titleSearchList.replaceChildren();
+    const empty = document.createElement("div");
+    empty.className = "title-search-empty";
+    empty.textContent = error.message;
+    titleSearchList.append(empty);
+    titleSearchList.hidden = false;
+    titleSearch.setAttribute("aria-expanded", "true");
+  }
+}
+
+function renderTitleSearch(items) {
+  const groups = [
+    { kinds: ["table"], label: "Tables" },
+    { kinds: ["column", "index"], label: "Columns" },
+    { kinds: ["query"], label: "Queries" },
+  ];
+  const ordered = [];
+  titleSearchList.replaceChildren();
+  for (const group of groups) {
+    const rows = items.filter((item) => group.kinds.includes(item.kind));
+    if (!rows.length) continue;
+    const label = document.createElement("div");
+    label.className = "title-search-group";
+    label.textContent = group.label;
+    titleSearchList.append(label);
+    for (const item of rows) {
+      const index = ordered.length;
+      ordered.push(item);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "title-search-item";
+      button.setAttribute("role", "option");
+      button.dataset.index = String(index);
+      const kind = document.createElement("span");
+      kind.className = "title-search-kind";
+      kind.textContent = searchKindLabel(item.kind);
+      const title = document.createElement("span");
+      title.className = "title-search-title";
+      title.textContent = item.title || "";
+      button.append(kind, title);
+      if (item.detail) {
+        const detail = document.createElement("span");
+        detail.className = "title-search-detail";
+        detail.textContent = item.detail;
+        button.append(detail);
+      }
+      button.addEventListener("click", () => openSearchHit(item));
+      titleSearchList.append(button);
+    }
+  }
+  titleSearchItems = ordered;
+  titleSearchActive = -1;
+  if (!ordered.length) {
+    const empty = document.createElement("div");
+    empty.className = "title-search-empty";
+    empty.textContent = "No matches";
+    titleSearchList.append(empty);
+  }
+  titleSearchList.hidden = false;
+  titleSearch.setAttribute("aria-expanded", "true");
+}
+
+function searchKindLabel(kind) {
+  if (kind === "table") return "Table";
+  if (kind === "column") return "Column";
+  if (kind === "index") return "Index";
+  return "Query";
+}
+
+function setTitleSearchActive(index) {
+  titleSearchActive = index;
+  const buttons = titleSearchList.querySelectorAll(".title-search-item");
+  buttons.forEach((button, buttonIndex) => {
+    const selected = buttonIndex === index;
+    button.setAttribute("aria-selected", selected ? "true" : "false");
+    if (selected) button.scrollIntoView({ block: "nearest" });
+  });
+}
+
+function hideTitleSearch() {
+  titleSearchRequest += 1;
+  titleSearchList.hidden = true;
+  titleSearchList.replaceChildren();
+  titleSearchItems = [];
+  titleSearchActive = -1;
+  titleSearch.setAttribute("aria-expanded", "false");
+}
+
+async function openSearchHit(hit) {
+  hideTitleSearch();
+  if (!hit) return;
+  if (hit.kind === "query" && hit.path) {
+    await openFile(hit.path);
+    if (typeof hit.offset === "number") scrollEditorTo(hit.offset);
+    return;
+  }
+  if (!hit.table) return;
+  document.querySelector("#table-search").value = "";
+  state.table = hit.table;
+  state.page = 0;
+  if (state.mode !== "tables") setMode("tables");
+  else await loadTables();
+}
+
 document.querySelector("#table-search").addEventListener("input", () => {
   clearTimeout(state.searchTimer);
   state.searchTimer = setTimeout(loadTables, 250);

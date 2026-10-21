@@ -7,6 +7,7 @@
 mod environment;
 mod files;
 mod query_cache;
+mod search;
 mod server;
 pub(crate) mod shape;
 

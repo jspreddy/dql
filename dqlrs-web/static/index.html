@@ -38,6 +38,10 @@
       <button type="button" id="mode-query" class="active" role="tab" aria-selected="true">Query</button>
       <button type="button" id="mode-tables" role="tab" aria-selected="false">Tables</button>
     </div>
+    <div class="title-search">
+      <input id="title-search" type="search" placeholder="Search tables, columns, queries" spellcheck="false" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="title-search-list" aria-label="Search tables, columns, and queries" />
+      <div id="title-search-list" class="title-search-list" role="listbox" hidden></div>
+    </div>
     <div class="header-tools">
     <button type="button" id="settings-toggle" class="theme-toggle" popovertarget="settings-pop" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-pop" aria-label="Settings" title="Settings">
       <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">

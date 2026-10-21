@@ -339,6 +339,12 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
                 Err(err) => json_error(400, &err),
             }
         }
+        "/api/search" => {
+            let q = query_value(query, "q");
+            let mut state = lock_state(app);
+            let results = super::search::search(&mut state.session, &app.root, &q);
+            Reply::Json(200, serde_json::to_value(results).unwrap_or(Value::Null))
+        }
         "/api/table-cache" => {
             let state = lock_state(app);
             let hint = crate::meta::ls::web_table_cache_status(&state.session);
