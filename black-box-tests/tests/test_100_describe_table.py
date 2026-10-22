@@ -1,6 +1,22 @@
 from cli import Cli
 
 
+def _without_cache_note(text: str) -> str:
+    """Drop the `cache:` hint `ls` prints ahead of a table description."""
+    lines = []
+    skip_blank = False
+    for line in text.splitlines():
+        if line.startswith("cache:"):
+            skip_blank = True
+            continue
+        if skip_blank and not line.strip():
+            skip_blank = False
+            continue
+        skip_blank = False
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
 def _family(name: str, wildcard: str) -> str:
     """at_<slug>_<bin>_<index>_<pid> -> at_<slug>_<bin>_<wildcard>_<pid>."""
     prefix, _, pid = name.rpartition("_")
@@ -22,7 +38,7 @@ def test_100_describe_table(cli: Cli) -> None:
     assert "Range Key" in described.stdout
     assert other not in described.stdout
     listed = cli.assert_stdout(f"ls {table}", "Hash Key")
-    assert described.stdout.strip() == listed.stdout.strip()
+    assert _without_cache_note(described.stdout) == _without_cache_note(listed.stdout)
 
 
 def test_100_cli_ls_intelligent_match(cli: Cli) -> None:
