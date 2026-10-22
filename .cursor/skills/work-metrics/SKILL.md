@@ -46,7 +46,7 @@ In the temp folder:
 - `tokens-by-agent.json` and `agents.html` — tokens by cloud agent.
 - `tokens-by-model.json` and `models.html` — tokens by model. The page keeps the first seven models and rolls the rest into Other.
 - `hours-worked.json` and `hours.html` — hours worked, defined below.
-- `hours-by-category.json` and the category pie — hours worked split by area, including other commits in this repo.
+- `hours-by-category.json` and the category pie — hours worked split by area, including other commits in this repo. Category descriptions are a bullet list under Areas of work.
 - `summary.json` and `work-metrics.html` — the combined page.
 
 Gather commits, usage, and pull requests at UTC hour grain. An hour is worked when that hour has a commit on any ref in this repo. The report then sums those hours, the commits, the tokens, and the merged pull requests into the bin. On the timeline, hours worked are blue bars, tokens are green dots, and commits are red circles. The circles sit on one horizontal line, 4 hours above the highest hours-worked bar. Their size shows the commit count.

@@ -651,18 +651,24 @@ def build(args: argparse.Namespace) -> None:
     total_tokens = int(usage["Total Tokens"].sum())
     dollars = round(float(usage["dollars"].sum()), 2)
     stack_order = [area["id"] for area in phases["areas"]] + ["outside", "repo"]
-    stack_meta = {area["id"]: (area["label"], area["color"]) for area in phases["areas"]}
-    stack_meta["outside"] = (outside["label"], outside["color"])
-    stack_meta["repo"] = (phases["repo_commits"]["label"], phases["repo_commits"]["color"])
+    stack_meta = {area["id"]: (area["label"], area["color"], area["summary"]) for area in phases["areas"]}
+    stack_meta["outside"] = (outside["label"], outside["color"], outside["summary"])
+    stack_meta["repo"] = (
+        phases["repo_commits"]["label"],
+        phases["repo_commits"]["color"],
+        phases["repo_commits"]["summary"],
+    )
     stack_series = []
     category_rows = []
     for phase_id in stack_order:
-        label, color = stack_meta[phase_id]
+        label, color, blurb = stack_meta[phase_id]
         values = [int(hours_by_bin[key].get(phase_id, 0)) for key in bins]
         stack_series.append((label, color, values))
         hours = sum(1 for key in worked if phase_name(key) == phase_id)
         if hours:
-            category_rows.append({"id": phase_id, "label": label, "color": color, "hours": hours})
+            category_rows.append(
+                {"id": phase_id, "label": label, "color": color, "hours": hours, "summary": blurb}
+            )
 
     summary = {
         "bin": args.bin,
@@ -725,7 +731,7 @@ def build(args: argparse.Namespace) -> None:
     for name, fig in figures.items():
         (out / f"{name}.html").write_text(fig_div(fig, name), encoding="utf-8")
 
-    page = render_html(summary, area_rows, figures, args)
+    page = render_html(summary, area_rows, category_rows, figures, args)
     html_path = args.html or (out / "work-metrics.html")
     html_path.parent.mkdir(parents=True, exist_ok=True)
     html_path.write_text(page, encoding="utf-8")
@@ -747,7 +753,13 @@ def build(args: argparse.Namespace) -> None:
     print("areas:", [(row["label"], row["hours"], row["commits"]) for row in area_rows])
 
 
-def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure], args: argparse.Namespace) -> str:
+def render_html(
+    summary: dict,
+    areas: list[dict],
+    categories: list[dict],
+    figures: dict[str, go.Figure],
+    args: argparse.Namespace,
+) -> str:
     bin_label = {"day": "day", "month": "month"}[summary["bin"]]
     first = pretty_stamp(summary["first_commit"])
     last = pretty_stamp(summary["last_commit"])
@@ -975,10 +987,18 @@ def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure],
       <p class="caption">Commits are <code>{html.escape(args.base)}..{html.escape(args.head)}</code>, dated from the author timestamp in UTC. Hours since start is that span, floored. An hour is worked when it has a commit on any ref in this repo. {comma(summary["rewrite_hours"])} of those hours are rewrite commits. {comma(summary["repo_only_hours"])} more have some other commit in this repo. The page sums those hours into each {html.escape(bin_label)}.</p>
       <p class="note">A usage row stays when its cloud agent is on this repo, even if that hour has no commit. A row with no agent id stays only when that UTC hour has a commit here. <code>bc-ca207e1b</code> is another repo, so its {headline_millions(summary["dropped_other_repo_tokens"])} tokens are left out. {headline_millions(summary["dropped_no_commit_tokens"])} more tokens had no agent id and no commit in this repo that hour. {dollars} is the numeric Cost on the rows that stay. Included and Free rows have no dollar amount. Token counts are not turned into prices. The timeline draws every {html.escape(bin_label)} from {html.escape(pretty_bin(summary["timeline_start"], summary["bin"]))} through {html.escape(pretty_bin(summary["timeline_end"], summary["bin"]))}.</p>
 
-      <h2 id="areas">Areas of work</h2>
+      <section id="areas">
+      <h2>Areas of work</h2>
       <p>Each rewrite commit hour is counted once, in the area canonized for that hour. A calendar day can hold more than one area. Rust impl stops on 20 Aug. October query, <code>ls</code>, SAVE, and REPL hours are Rust improvements.</p>
       {"".join(area_table)}
-      <p class="caption">The number after each date is commit hours that day. {html.escape(areas[-1]["summary"])}</p>
+      <p class="caption">The number after each date is commit hours that day.</p>
+      <ul>
+        {"".join(
+            f"<li><b>{html.escape(row['label'])}.</b> {html.escape(row['summary'])}</li>"
+            for row in categories
+        )}
+      </ul>
+      </section>
 
       <h2 id="timeline">Timeline</h2>
       <p>{grain_note} Blue bars are hours worked. Green dots are tokens, in millions. Red circles are commits, and a larger circle is more commits.</p>
