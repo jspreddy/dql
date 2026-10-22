@@ -62,8 +62,6 @@ def hour_key(value: datetime) -> str:
 
 def bin_key(value: datetime, grain: str) -> str:
     value = value.astimezone(timezone.utc)
-    if grain == "hour":
-        return value.strftime("%Y-%m-%dT%H")
     if grain == "day":
         return value.strftime("%Y-%m-%d")
     if grain == "month":
@@ -72,8 +70,6 @@ def bin_key(value: datetime, grain: str) -> str:
 
 
 def bin_stamp(key: str, grain: str) -> str:
-    if grain == "hour":
-        return f"{key}:00:00Z"
     if grain == "day":
         return f"{key}T00:00:00Z"
     if grain == "month":
@@ -90,8 +86,6 @@ def pretty_bin(key: str, grain: str) -> str:
     if grain == "month":
         year, month = key.split("-")
         return f"{MONTHS[int(month) - 1]} {year}"
-    if grain == "hour":
-        return f"{pretty_day(key)} {key[11:13]}:00 UTC"
     return pretty_day(key)
 
 
@@ -261,6 +255,28 @@ def calendar_days(start: datetime, end: datetime) -> list[str]:
     return days
 
 
+def calendar_bins(start: datetime, end: datetime, grain: str) -> list[str]:
+    if grain == "day":
+        return calendar_days(start, end)
+    bins = []
+    cursor = start.astimezone(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    last = end.astimezone(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    while cursor <= last:
+        bins.append(cursor.strftime("%Y-%m"))
+        year = cursor.year + (1 if cursor.month == 12 else 0)
+        month = 1 if cursor.month == 12 else cursor.month + 1
+        cursor = cursor.replace(year=year, month=month)
+    return bins
+
+
+def hour_to_bin(hour: str, grain: str) -> str:
+    return hour[:10] if grain == "day" else hour[:7]
+
+
+BAR_WIDTH = {"day": 16 * 3600 * 1000, "month": 20 * 24 * 3600 * 1000}
+HOVER_TIME = {"day": "%d %b", "month": "%b %Y"}
+
+
 def apply_layout(fig: go.Figure, height: int) -> go.Figure:
     fig.update_layout(height=height, **LAYOUT)
     fig.update_xaxes(**AXIS)
@@ -277,7 +293,8 @@ def fig_div(fig: go.Figure, div_id: str) -> str:
     )
 
 
-def timeline_figure(days: list[str], hours: list[int], commits: list[int], token_m: list[float]) -> go.Figure:
+def timeline_figure(days: list[str], hours: list[int], commits: list[int], token_m: list[float], grain: str) -> go.Figure:
+    hover = HOVER_TIME[grain]
     fig = go.Figure()
     fig.add_bar(
         x=days,
@@ -285,8 +302,8 @@ def timeline_figure(days: list[str], hours: list[int], commits: list[int], token
         name="Hours worked",
         marker_color=HOUR_COLOR,
         yaxis="y",
-        width=16 * 3600 * 1000,
-        hovertemplate="%{x|%d %b}: %{y} hours worked<extra></extra>",
+        width=BAR_WIDTH[grain],
+        hovertemplate="%{x|" + hover + "}: %{y} hours worked<extra></extra>",
     )
     fig.add_scatter(
         x=days,
@@ -295,7 +312,7 @@ def timeline_figure(days: list[str], hours: list[int], commits: list[int], token
         mode="lines",
         line=dict(color=TOKEN_COLOR, width=2),
         yaxis="y2",
-        hovertemplate="%{x|%d %b}: %{y:.1f} million tokens<extra></extra>",
+        hovertemplate="%{x|" + hover + "}: %{y:.1f} million tokens<extra></extra>",
     )
     marked = [(day, count) for day, count in zip(days, commits) if count]
     if marked:
@@ -317,19 +334,20 @@ def timeline_figure(days: list[str], hours: list[int], commits: list[int], token
                 opacity=0.92,
                 line=dict(color="#fffdf8", width=1.4),
             ),
-            hovertemplate="%{x|%d %b}: %{customdata} commits<extra></extra>",
+            hovertemplate="%{x|" + hover + "}: %{customdata} commits<extra></extra>",
         )
     apply_layout(fig, 480)
     fig.update_layout(
         barmode="overlay",
         yaxis=dict(title="Hours worked", rangemode="tozero", **AXIS),
         yaxis2=dict(title="Tokens (millions)", overlaying="y", side="right", rangemode="tozero", **AXIS),
-        xaxis=dict(title="", type="date", tickformat="%b", dtick="M1", **AXIS),
+        xaxis=dict(title="", type="date", tickformat="%b" if grain == "day" else "%b %Y", dtick="M1", **AXIS),
     )
     return fig
 
 
-def hours_figure(days: list[str], series: list[tuple[str, str, list[int]]]) -> go.Figure:
+def hours_figure(days: list[str], series: list[tuple[str, str, list[int]]], grain: str) -> go.Figure:
+    hover = HOVER_TIME[grain]
     fig = go.Figure()
     for label, color, values in series:
         fig.add_bar(
@@ -337,62 +355,36 @@ def hours_figure(days: list[str], series: list[tuple[str, str, list[int]]]) -> g
             y=values,
             name=label,
             marker_color=color,
-            width=16 * 3600 * 1000,
-            hovertemplate="%{x|%d %b}: %{y} " + label + "<extra></extra>",
+            width=BAR_WIDTH[grain],
+            hovertemplate="%{x|" + hover + "}: %{y} " + label + "<extra></extra>",
         )
     apply_layout(fig, 440)
     fig.update_layout(
         barmode="stack",
         yaxis=dict(title="Hours worked", rangemode="tozero", **AXIS),
-        xaxis=dict(type="date", tickformat="%b", dtick="M1", **AXIS),
+        xaxis=dict(type="date", tickformat="%b" if grain == "day" else "%b %Y", dtick="M1", **AXIS),
     )
     return fig
 
 
 def token_bin_figure(rows: list[dict], grain: str, start: datetime, end: datetime) -> go.Figure:
     fig = go.Figure()
-    if grain == "hour":
-        # A one-hour bar is thinner than a pixel across a span of months.
-        stem_x: list[str | None] = []
-        stem_y: list[float | None] = []
-        for row in rows:
-            stem_x.extend([row["at"], row["at"], None])
-            stem_y.extend([0, row["tokens_millions"], None])
-        fig.add_scatter(
-            x=stem_x,
-            y=stem_y,
-            mode="lines",
-            line=dict(color=TOKEN_BAR_COLOR, width=1.6),
-            hoverinfo="skip",
-            showlegend=False,
-        )
-        fig.add_scatter(
-            x=[row["at"] for row in rows],
-            y=[row["tokens_millions"] for row in rows],
-            mode="markers",
-            marker=dict(color=TOKEN_BAR_COLOR, size=7, line=dict(color="#fffdf8", width=1)),
-            hovertemplate="%{customdata}: %{y:.1f} million tokens<extra></extra>",
-            customdata=[row["label"] for row in rows],
-            showlegend=False,
-        )
-    else:
-        fig.add_bar(
-            x=[row["at"] for row in rows],
-            y=[row["tokens_millions"] for row in rows],
-            name="Tokens (millions)",
-            marker_color=TOKEN_BAR_COLOR,
-            hovertemplate="%{customdata}: %{y:.1f} million tokens<extra></extra>",
-            customdata=[row["label"] for row in rows],
-        )
-        width = {"day": 16 * 3600 * 1000, "month": 20 * 24 * 3600 * 1000}[grain]
-        fig.update_traces(width=width)
+    fig.add_bar(
+        x=[row["at"] for row in rows],
+        y=[row["tokens_millions"] for row in rows],
+        name="Tokens (millions)",
+        marker_color=TOKEN_BAR_COLOR,
+        hovertemplate="%{customdata}: %{y:.1f} million tokens<extra></extra>",
+        customdata=[row["label"] for row in rows],
+    )
+    fig.update_traces(width=BAR_WIDTH[grain])
     apply_layout(fig, 420)
     fig.update_layout(
         yaxis=dict(title="Tokens (millions)", rangemode="tozero", **AXIS),
         xaxis=dict(
             type="date",
-            tickformat="%b" if grain == "month" else ("%d %b" if grain == "hour" else "%b"),
-            dtick=None if grain == "hour" else "M1",
+            tickformat="%b %Y" if grain == "month" else "%b",
+            dtick="M1",
             range=[start.date().isoformat(), (end.date() + timedelta(days=1)).isoformat()],
             **AXIS,
         ),
@@ -550,70 +542,57 @@ def build(args: argparse.Namespace) -> None:
     else:
         timeline_start = min(first, usage["when"].min())
         timeline_end = max(last, usage["when"].max())
-    days = calendar_days(timeline_start, timeline_end)
-    agent_hours = set(usage.loc[usage["this_repo_agent"] & (usage["Total Tokens"] > 0), "hour"])
-    worked = {
-        key for key in repo_hours | agent_hours
-        if days[0] <= key[:10] <= days[-1]
-    }
-    commits_by_day = Counter(row["day"] for row in commits)
-    hours_by_day: dict[str, Counter] = defaultdict(Counter)
-    for key in sorted(worked):
-        day = key[:10]
+    bins = calendar_bins(timeline_start, timeline_end, args.bin)
+    window_start = timeline_start.astimezone(timezone.utc).strftime("%Y-%m-%d")
+    window_end = timeline_end.astimezone(timezone.utc).strftime("%Y-%m-%d")
+    worked = {key for key in repo_hours if window_start <= key[:10] <= window_end}
+
+    def phase_name(key: str) -> str:
         if key in rewrite_hours and key in phase_of:
-            name = phase_of[key]
-        elif key in rewrite_hours:
-            name = "outside"
-        elif key in repo_hours:
-            name = "repo"
-        else:
-            name = "agent"
-        hours_by_day[day][name] += 1
-    tokens_by_day = usage.groupby("day")["Total Tokens"].sum()
+            return phase_of[key]
+        if key in rewrite_hours:
+            return "outside"
+        return "repo"
+
+    commits_by_bin = Counter(bin_key(row["_dt"], args.bin) for row in commits)
+    hours_by_bin: dict[str, Counter] = defaultdict(Counter)
+    for key in sorted(worked):
+        hours_by_bin[hour_to_bin(key, args.bin)][phase_name(key)] += 1
+    tokens_by_bin = usage.groupby("bin")["Total Tokens"].sum() if not usage.empty else {}
     timeline_rows = []
-    for day in days:
+    axis = []
+    for key in bins:
+        axis.append(bin_stamp(key, args.bin))
         timeline_rows.append(
             {
-                "day": day,
-                "label": pretty_day(day),
-                "commits": int(commits_by_day.get(day, 0)),
-                "hours_worked": int(sum(hours_by_day[day].values())),
-                "tokens": int(tokens_by_day.get(day, 0)),
-                "tokens_millions": millions(tokens_by_day.get(day, 0)),
+                "bin": key,
+                "label": pretty_bin(key, args.bin),
+                "commits": int(commits_by_bin.get(key, 0)),
+                "hours_worked": int(sum(hours_by_bin[key].values())),
+                "tokens": int(tokens_by_bin.get(key, 0)),
+                "tokens_millions": millions(tokens_by_bin.get(key, 0)),
             }
         )
 
     hour_records = []
     for key in sorted(worked):
-        if key in rewrite_hours and key in phase_of:
-            phase_id = phase_of[key]
-        elif key in rewrite_hours:
-            phase_id = "outside"
-        elif key in repo_hours:
-            phase_id = "repo"
-        else:
-            phase_id = "agent"
-        reasons = []
-        if key in repo_hours:
-            reasons.append("commit")
-        if key in agent_hours and key not in repo_hours:
-            reasons.append("this-repo-agent")
         hour_records.append(
             {
                 "hour": key,
-                "day": key[:10],
+                "bin": hour_to_bin(key, args.bin),
                 "commits": sum(1 for row in commits if row["hour"] == key),
                 "tokens": int(usage.loc[usage["hour"] == key, "Total Tokens"].sum()),
-                "phase": phase_id,
-                "reasons": reasons,
+                "phase": phase_name(key),
             }
         )
 
-    pull_counts = Counter(row["day"] for row in pulls)
+    for row in pulls:
+        row["bin"] = hour_to_bin(row["day"] + "T00", args.bin)
+    pull_counts = Counter(row["bin"] for row in pulls)
     pull_rows = [
-        {"day": day, "label": pretty_day(day), "count": pull_counts[day],
-         "pulls": [row for row in pulls if row["day"] == day]}
-        for day in sorted(pull_counts)
+        {"bin": key, "label": pretty_bin(key, args.bin), "count": pull_counts[key],
+         "pulls": [row for row in pulls if row["bin"] == key]}
+        for key in sorted(pull_counts)
     ]
 
     model_totals = usage.groupby("model")["Total Tokens"].sum().sort_values(ascending=False)
@@ -646,15 +625,14 @@ def build(args: argparse.Namespace) -> None:
 
     total_tokens = int(usage["Total Tokens"].sum())
     dollars = round(float(usage["dollars"].sum()), 2)
-    stack_order = [area["id"] for area in phases["areas"]] + ["outside", "repo", "agent"]
+    stack_order = [area["id"] for area in phases["areas"]] + ["outside", "repo"]
     stack_meta = {area["id"]: (area["label"], area["color"]) for area in phases["areas"]}
     stack_meta["outside"] = (outside["label"], outside["color"])
     stack_meta["repo"] = (phases["repo_commits"]["label"], phases["repo_commits"]["color"])
-    stack_meta["agent"] = (phases["repo_agents"]["label"], phases["repo_agents"]["color"])
     stack_series = []
     for phase_id in stack_order:
         label, color = stack_meta[phase_id]
-        stack_series.append((label, color, [int(hours_by_day[day].get(phase_id, 0)) for day in days]))
+        stack_series.append((label, color, [int(hours_by_bin[key].get(phase_id, 0)) for key in bins]))
 
     summary = {
         "bin": args.bin,
@@ -666,23 +644,22 @@ def build(args: argparse.Namespace) -> None:
         "span_days": span_days,
         "span_hours": span_hours,
         "hours_worked": len(worked),
-        "rewrite_hours": len(rewrite_hours),
-        "repo_only_hours": sum(1 for key in worked if key in repo_hours and key not in rewrite_hours),
-        "agent_only_hours": sum(1 for key in worked if key not in repo_hours),
+        "rewrite_hours": sum(1 for key in worked if key in rewrite_hours),
+        "repo_only_hours": sum(1 for key in worked if key not in rewrite_hours),
         "pull_requests": len(pulls),
         "tokens": total_tokens,
         "dollars": dollars,
         "dropped_other_repo_tokens": dropped_other_tokens,
         "dropped_no_commit_tokens": dropped_no_commit_tokens,
-        "timeline_start": days[0],
-        "timeline_end": days[-1],
+        "timeline_start": bins[0],
+        "timeline_end": bins[-1],
         "areas": area_rows,
     }
 
     public_commits = [{key: value for key, value in row.items() if key != "_dt"} for row in commits]
     write_json(out / "commits-by-bin.json", {"bin": args.bin, "commits": len(commits), "bins": commit_bins})
     write_json(out / "commits.json", public_commits)
-    write_json(out / "timeline.json", {"start": days[0], "end": days[-1], "days": timeline_rows})
+    write_json(out / "timeline.json", {"bin": args.bin, "start": bins[0], "end": bins[-1], "bins": timeline_rows})
     write_json(out / "tokens-by-bin.json", {"bin": args.bin, "tokens": total_tokens, "dollars": dollars, "bins": token_rows})
     write_json(out / "pulls-by-day.json", {"pull_requests": len(pulls), "days": pull_rows})
     write_json(out / "tokens-by-agent.json", {"agents": agent_rows})
@@ -690,10 +667,10 @@ def build(args: argparse.Namespace) -> None:
     write_json(
         out / "hours-worked.json",
         {
-            "definition": "A UTC hour is worked when it has a commit on any ref in this repo, or token usage from a cloud agent on this repo.",
+            "definition": "A UTC hour is worked when it has a commit on any ref in this repo. The report sums those hours into the chosen bin.",
             "hours_worked": len(worked),
-            "rewrite_hours": len(rewrite_hours),
-            "agent_only_hours": sum(1 for key in worked if key not in repo_hours),
+            "rewrite_hours": sum(1 for key in worked if key in rewrite_hours),
+            "repo_only_hours": sum(1 for key in worked if key not in rewrite_hours),
             "hours": hour_records,
         },
     )
@@ -701,12 +678,13 @@ def build(args: argparse.Namespace) -> None:
 
     figures = {
         "timeline": timeline_figure(
-            days,
+            axis,
             [row["hours_worked"] for row in timeline_rows],
             [row["commits"] for row in timeline_rows],
             [row["tokens_millions"] for row in timeline_rows],
+            args.bin,
         ),
-        "hours": hours_figure(days, stack_series),
+        "hours": hours_figure(axis, stack_series, args.bin),
         "tokens": token_bin_figure(token_rows, args.bin, timeline_start, timeline_end),
         "pulls": pulls_figure(pull_rows),
         "models": horizontal_figure(model_rows, "tokens_millions", " million tokens"),
@@ -729,7 +707,7 @@ def build(args: argparse.Namespace) -> None:
         json.dumps(
             {key: summary[key] for key in (
                 "bin", "commits", "span_days", "span_hours", "hours_worked",
-                "rewrite_hours", "repo_only_hours", "agent_only_hours", "pull_requests",
+                "rewrite_hours", "repo_only_hours", "pull_requests",
                 "tokens", "dollars", "dropped_other_repo_tokens", "dropped_no_commit_tokens",
             )}
         ),
@@ -738,7 +716,7 @@ def build(args: argparse.Namespace) -> None:
 
 
 def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure], args: argparse.Namespace) -> str:
-    bin_label = {"hour": "hour", "day": "day", "month": "month"}[summary["bin"]]
+    bin_label = {"day": "day", "month": "month"}[summary["bin"]]
     first = pretty_stamp(summary["first_commit"])
     last = pretty_stamp(summary["last_commit"])
     dollars = f"${summary['dollars']:.2f}"
@@ -770,8 +748,9 @@ def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure],
     )
     plotly_js = plotly.offline.get_plotlyjs().replace("</", "<\\/")
     grain_note = (
-        f"Token spend below is grouped by {bin_label}. "
-        "The timeline and the hours-worked chart stay on calendar days, and pull requests stay on the merge day."
+        f"Each point is one {bin_label}. "
+        "Hours worked are UTC hours that contain a commit, summed into that "
+        f"{bin_label}."
     )
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -960,8 +939,8 @@ def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure],
       <h2 id="summary">Summary</h2>
       <p class="lead">{comma(summary["commits"])} commits landed between {first} and {last}, a span of {comma(summary["span_days"])} days ({comma(summary["span_hours"])} hours). {comma(summary["hours_worked"])} hours were worked. {comma(summary["pull_requests"])} pull requests were merged. Token spend kept for this repo is {headline_millions(summary["tokens"])} tokens and {dollars}.</p>
       <div class="stats">{stat_html}</div>
-      <p class="caption">Commits are <code>{html.escape(args.base)}..{html.escape(args.head)}</code>, dated from the author timestamp in UTC. Hours since start is that span, floored. An hour is worked when it has a commit on any ref in this repo, or token usage from a cloud agent on this repo. {comma(summary["rewrite_hours"])} hours are rewrite commits. {comma(summary["repo_only_hours"])} more have some other commit in this repo. {comma(summary["agent_only_hours"])} have a this-repo agent and no commit that hour.</p>
-      <p class="note">A usage row stays when its cloud agent is on this repo, even if that hour has no commit. A row with no agent id stays only when that UTC hour has a commit here. <code>bc-ca207e1b</code> is another repo, so its {headline_millions(summary["dropped_other_repo_tokens"])} tokens are left out. {headline_millions(summary["dropped_no_commit_tokens"])} more tokens had no agent id and no commit in this repo that hour. {dollars} is the numeric Cost on the rows that stay. Included and Free rows have no dollar amount. Token counts are not turned into prices. The timeline draws every calendar day from {pretty_day(summary["timeline_start"])} through {pretty_day(summary["timeline_end"])}.</p>
+      <p class="caption">Commits are <code>{html.escape(args.base)}..{html.escape(args.head)}</code>, dated from the author timestamp in UTC. Hours since start is that span, floored. An hour is worked when it has a commit on any ref in this repo. {comma(summary["rewrite_hours"])} of those hours are rewrite commits. {comma(summary["repo_only_hours"])} more have some other commit in this repo. The page sums those hours into each {html.escape(bin_label)}.</p>
+      <p class="note">A usage row stays when its cloud agent is on this repo, even if that hour has no commit. A row with no agent id stays only when that UTC hour has a commit here. <code>bc-ca207e1b</code> is another repo, so its {headline_millions(summary["dropped_other_repo_tokens"])} tokens are left out. {headline_millions(summary["dropped_no_commit_tokens"])} more tokens had no agent id and no commit in this repo that hour. {dollars} is the numeric Cost on the rows that stay. Included and Free rows have no dollar amount. Token counts are not turned into prices. The timeline draws every {html.escape(bin_label)} from {html.escape(pretty_bin(summary["timeline_start"], summary["bin"]))} through {html.escape(pretty_bin(summary["timeline_end"], summary["bin"]))}.</p>
 
       <h2 id="areas">Areas of work</h2>
       <p>Each rewrite commit hour is counted once, in the area canonized for that hour. A calendar day can hold more than one area. Rust impl stops on 20 Aug. October query, <code>ls</code>, SAVE, and REPL hours are Rust improvements.</p>
@@ -971,16 +950,16 @@ def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure],
       <h2 id="timeline">Timeline</h2>
       <p>{grain_note} Bars are hours worked. The line is tokens, in millions. Each circle is one day's commits, and a larger circle is more commits.</p>
       <div class="figure">{fig_div(figures["timeline"], "timeline")}</div>
-      <p class="caption">Every day from {pretty_day(summary["timeline_start"])} through {pretty_day(summary["timeline_end"])} stays on the axis, including the empty stretches. Commit circles sit on the token axis at 4 million tokens per commit, so 10 commits are level with 40 million. Hover a bar, a point, or a circle for that day.</p>
+      <p class="caption">Every {html.escape(bin_label)} from {html.escape(pretty_bin(summary["timeline_start"], summary["bin"]))} through {html.escape(pretty_bin(summary["timeline_end"], summary["bin"]))} stays on the axis, including the empty stretches. Commit circles sit on the token axis at 4 million tokens per commit, so 10 commits are level with 40 million. Hover a bar, a point, or a circle for that {html.escape(bin_label)}.</p>
 
       <h2 id="hours-worked">Hours worked</h2>
-      <p>An hour counts when it has a commit in this repo, or usage from a cloud agent on this repo. The stack is the canonized area of a rewrite commit hour.</p>
+      <p>An hour counts when it has a commit in this repo. The stack is the canonized area of a rewrite commit hour, summed into each {html.escape(bin_label)}.</p>
       <div class="figure">{fig_div(figures["hours"], "hours")}</div>
-      <p class="caption">This repo agent marks an hour with usage from a cloud agent on this repo and no commit here. Empty days stay on the axis.</p>
+      <p class="caption">Other commits in this repo are hours with a commit on some ref here, outside the rewrite range. Empty {html.escape(bin_label)}s stay on the axis.</p>
 
       <h2 id="token-spend">Token spend by {html.escape(bin_label)}</h2>
       <div class="figure">{fig_div(figures["tokens"], "tokens")}</div>
-      <p class="caption">Millions of tokens kept for this repo, one {html.escape("stem" if summary["bin"] == "hour" else "bar")} per {html.escape(bin_label)}. The axis keeps the full span.</p>
+      <p class="caption">Millions of tokens kept for this repo, one bar per {html.escape(bin_label)}. The axis keeps the full span.</p>
 
       <h2 id="pull-requests">Pull requests merged, by day</h2>
       <div class="figure">{fig_div(figures["pulls"], "pulls")}</div>
@@ -1011,7 +990,7 @@ def pretty_stamp(iso: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build work metrics from git history and a Cursor usage CSV.")
-    parser.add_argument("--bin", required=True, choices=["hour", "day", "month"])
+    parser.add_argument("--bin", default="day", choices=["day", "month"])
     parser.add_argument("--csv", required=True, type=Path, help="Cursor token-spend usage export")
     parser.add_argument("--out", type=Path, help="Temp directory for JSON and graph fragments")
     parser.add_argument("--html", type=Path, help="Combined HTML page. Defaults to OUT/work-metrics.html")

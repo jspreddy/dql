@@ -1,6 +1,6 @@
 ---
 name: work-metrics
-description: Measure rewrite work from commit subjects, pull request merges, and a Cursor token-spend CSV. Use when the user asks for work metrics, hours worked, token spend, commits against usage, or a timeline of the rewrite. Ask for the CSV and the Hour, Day, or Month bin before running.
+description: Measure rewrite work from commit subjects, pull request merges, and a Cursor token-spend CSV. Use when the user asks for work metrics, hours worked, token spend, commits against usage, or a timeline of the rewrite. Ask for the CSV before running. The report bin defaults to day.
 ---
 
 # Work metrics
@@ -12,7 +12,8 @@ Do not read diffs, commit bodies, or file contents. `git log` subjects, authors,
 ## Before running
 
 1. If the user has not attached a Cursor token-spend CSV for the timeframe, ask them to attach that export and stop. Do not estimate tokens, do not invent a Cost, and do not download the Cursor dashboard export.
-2. If they have not chosen a bin, ask whether the bin is Hour, Day, or Month, and stop.
+
+The report bin defaults to day. Pass `--bin month` when the user asks for a month rollup. There is no hour bin.
 
 The attached file is the timeframe. A row counts toward token spend only under the rule below. A numeric Cost is the only dollar figure. `Included` and `Free` are not prices, and tokens are not converted into dollars.
 
@@ -28,7 +29,7 @@ python3 .cursor/skills/work-metrics/work_metrics.py \
   --html rust-docs/work-metrics.html
 ```
 
-`--bin` is `hour`, `day`, or `month`. Install pandas and Plotly with pip if they are missing. Do not add them to the project's Python package.
+`--bin` defaults to `day`. The other value is `month`. Install pandas and Plotly with pip if they are missing. Do not add them to the project's Python package.
 
 The script prints `out:` and `html:`. `out` holds the JSON and the graph fragments. `html` is the page to show. In this repository that page is `rust-docs/work-metrics.html`. Add a link from `rust-docs/README.md` if it is missing.
 
@@ -39,15 +40,15 @@ Defaults are `--base origin/v-next` and `--head origin/v-rust`. Author dates are
 In the temp folder:
 
 - `commits-by-bin.json` — rewrite commits grouped by the chosen bin, each bin ordered by author time. This is the commit timeline.
-- `timeline.json` and `timeline.html` — one calendar day per point, from the first commit or token day through the last, empty days included. Daily commit count (circle sized by the count), hours worked (bars), tokens spent (line, in millions).
+- `timeline.json` and `timeline.html` — one point per bin, from the first commit or token day through the last, empty bins included. Commit count (circle sized by the count), hours worked (bars), tokens spent (line, in millions).
 - `tokens-by-bin.json` and `tokens.html` — token spend for the chosen bin.
-- `pulls-by-day.json` and `pulls.html` — pull requests merged, by UTC merge day. A pull request counts when its merge commit is in `base..head`.
+- `pulls-by-day.json` and `pulls.html` — pull requests merged, grouped by the report bin. A pull request counts when its merge commit is in `base..head`.
 - `tokens-by-agent.json` and `agents.html` — tokens by cloud agent.
 - `tokens-by-model.json` and `models.html` — tokens by model. The page keeps the first seven models and rolls the rest into Other.
 - `hours-worked.json` and `hours.html` — hours worked, defined below.
 - `summary.json` and `work-metrics.html` — the combined page.
 
-The timeline and the hours-worked chart stay on calendar days. Token spend uses the chosen bin. An hour bin is a stem with a marker, because a bar one hour wide disappears on a span of months. Day and month bins stay bars. Pull requests stay on the merge day. Commit circles sit on the token axis at 4 million tokens per commit, so 10 commits are level with 40 million, and a larger circle is more commits.
+Gather commits, usage, and pull requests at UTC hour grain. An hour is worked when that hour has a commit on any ref in this repo. The report then sums those hours, the commits, the tokens, and the merged pull requests into the bin. Commit circles sit on the token axis at 4 million tokens per commit, so 10 commits are level with 40 million, and a larger circle is more commits.
 
 Series colors live in `phases.json` and in `PALETTE` in the script. Neighboring series stay far apart in hue. Do not put two browns, two blues, or two greens next to each other.
 
@@ -66,9 +67,9 @@ An id that is on neither list is not clearly another repo. Treat it like a blank
 
 ## Hours worked
 
-A UTC hour is worked when it has a commit on any ref in this repo, or token usage from a this-repo agent. A zero-token row does not by itself make an hour worked.
+A UTC hour is worked when it has a commit on any ref in this repo. Token usage does not make an hour worked. The page sums those hours into the report bin.
 
-Say the three counts when they differ: rewrite commit hours, other commit hours in this repo, and hours that have a this-repo agent and no commit. Do not narrate the empty stretches beyond that.
+Say both counts when they differ: rewrite commit hours, and other commit hours in this repo. Do not narrate the empty stretches beyond that.
 
 ## Areas of work
 
