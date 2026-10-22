@@ -1,6 +1,6 @@
 ---
 name: work-metrics
-description: Measure rewrite work from commit subjects, pull request merges, and a Cursor token-spend CSV. Use when the user asks for work metrics, hours worked, token spend, commits against usage, or a timeline of the rewrite. Ask for the CSV before running. The report bin defaults to day.
+description: Measure rewrite work from commit subjects, pull request merges, and a Cursor token-spend CSV. Use when the user asks for work metrics, hours worked, token spend, commits against usage, or a timeline of the rewrite. The script picks the latest usage CSV itself. The report bin defaults to day.
 ---
 
 # Work metrics
@@ -11,25 +11,35 @@ Do not read diffs, commit bodies, or file contents. `git log` subjects, authors,
 
 ## Before running
 
-1. If the user has not attached a Cursor token-spend CSV for the timeframe, ask them to attach that export and stop. Do not estimate tokens, do not invent a Cost, and do not download the Cursor dashboard export.
+Do not ask for a usage CSV before running. Omit `--csv`. The script reads the newest file under `.data/usage-metrics/` matching `usage-metrics-*.csv` or `usage-events-*.csv` (newest `YYYY-MM-DD` in the name, then mtime). It prints `csv:` with the path it used.
+
+Ask for a file only when the script exits because that folder has no match. Then rerun with `--csv`. Do not estimate tokens, do not invent a Cost, and do not download the Cursor dashboard export.
 
 The report bin defaults to day. Pass `--bin month` when the user asks for a month rollup. There is no hour bin.
 
-The attached file is the timeframe. A row counts toward token spend only under the rule below. A numeric Cost is the only dollar figure. `Included` and `Free` are not prices, and tokens are not converted into dollars.
+The selected file is the timeframe. A row counts toward token spend only under the rule below. A numeric Cost is the only dollar figure. `Included` and `Free` are not prices, and tokens are not converted into dollars.
 
 ## Run
 
-From the repository root:
+Use the virtualenv in this skill directory, `.cursor/skills/work-metrics/.venv`. From the repository root, sync it from this skill's `pyproject.toml`:
 
 ```bash
-python3 .cursor/skills/work-metrics/work_metrics.py \
+uv sync --project .cursor/skills/work-metrics
+```
+
+`uv sync` creates that `.venv` when it is missing and installs pandas and Plotly there. Do not install these packages into the repository `.venv`, and do not add them to the project's Python package.
+
+Then run the report with that interpreter:
+
+```bash
+.cursor/skills/work-metrics/.venv/bin/python \
+  .cursor/skills/work-metrics/work_metrics.py \
   --bin day \
-  --csv /path/to/usage.csv \
   --out "$(mktemp -d)" \
   --html rust-docs/work-metrics.html
 ```
 
-`--bin` defaults to `day`. The other value is `month`. Install pandas and Plotly with pip if they are missing. Do not add them to the project's Python package.
+`--bin` defaults to `day`. The other value is `month`. Pass `--csv` only when the user names a file, or after the script reports that `.data/usage-metrics/` has no `usage-metrics-*.csv` or `usage-events-*.csv`.
 
 The script prints `out:` and `html:`. `out` holds the JSON and the graph fragments. `html` is the page to show. In this repository that page is `rust-docs/work-metrics.html`. Add a link from `rust-docs/README.md` if it is missing.
 

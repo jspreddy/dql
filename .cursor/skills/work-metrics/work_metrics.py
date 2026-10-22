@@ -12,6 +12,7 @@ import html
 import json
 import math
 import os
+import re
 import subprocess
 import tempfile
 from collections import Counter, defaultdict
@@ -34,6 +35,9 @@ HOUR_COLOR = "#0067A5"
 TOKEN_BAR_COLOR = "#F38400"
 PULL_COLOR = "#6A3D9A"
 PHASES_PATH = Path(__file__).with_name("phases.json")
+USAGE_DIR = Path(".data") / "usage-metrics"
+USAGE_GLOBS = ("usage-metrics-*.csv", "usage-events-*.csv")
+USAGE_DATE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 
 LAYOUT = dict(
     paper_bgcolor="#fffdf8",
@@ -190,6 +194,28 @@ def load_prs(repo: Path, base: str, head: str) -> list[dict]:
         )
     kept.sort(key=lambda row: (row["merged_at"], row["number"]))
     return kept
+
+
+def latest_usage_csv(repo: Path) -> Path:
+    """Newest usage export under repo/.data/usage-metrics/.
+
+    Prefers the YYYY-MM-DD in the file name, then mtime. Cursor dashboard
+    exports are usage-events-*.csv; usage-metrics-*.csv is the same folder.
+    """
+    directory = repo / USAGE_DIR
+    found = [path for pattern in USAGE_GLOBS for path in directory.glob(pattern) if path.is_file()]
+    if not found:
+        raise SystemExit(
+            f"No usage CSV in {directory}/ matching {' or '.join(USAGE_GLOBS)}. "
+            "Put the export there, or pass --csv."
+        )
+
+    def sort_key(path: Path) -> tuple[str, float, str]:
+        match = USAGE_DATE.search(path.name)
+        stamp = match.group(1) if match else ""
+        return (stamp, path.stat().st_mtime, path.name)
+
+    return max(found, key=sort_key)
 
 
 def load_usage(csv_path: Path) -> pd.DataFrame:
@@ -466,7 +492,10 @@ def build(args: argparse.Namespace) -> None:
     commits = load_commits(args.repo, args.base, args.head)
     if not commits:
         raise SystemExit(f"No commits in {args.base}..{args.head}")
-    usage = load_usage(args.csv)
+    csv_path = args.csv if args.csv is not None else latest_usage_csv(args.repo)
+    if not csv_path.is_file():
+        raise SystemExit(f"Usage CSV not found: {csv_path}. Pass --csv or add a file under {USAGE_DIR}/.")
+    usage = load_usage(csv_path)
     pulls = load_prs(args.repo, args.base, args.head)
     first = commits[0]["_dt"]
     last = commits[-1]["_dt"]
@@ -738,6 +767,7 @@ def build(args: argparse.Namespace) -> None:
     if html_path.resolve() != (out / "work-metrics.html").resolve():
         (out / "work-metrics.html").write_text(page, encoding="utf-8")
 
+    print(f"csv: {csv_path}")
     print(f"out: {out}")
     print(f"html: {html_path}")
     print(
@@ -1049,7 +1079,11 @@ def pretty_stamp(iso: str) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build work metrics from git history and a Cursor usage CSV.")
     parser.add_argument("--bin", default="day", choices=["day", "month"])
-    parser.add_argument("--csv", required=True, type=Path, help="Cursor token-spend usage export")
+    parser.add_argument(
+        "--csv",
+        type=Path,
+        help="Cursor token-spend usage export. Default: newest .data/usage-metrics/usage-metrics-*.csv or usage-events-*.csv",
+    )
     parser.add_argument("--out", type=Path, help="Temp directory for JSON and graph fragments")
     parser.add_argument("--html", type=Path, help="Combined HTML page. Defaults to OUT/work-metrics.html")
     parser.add_argument("--repo", type=Path, default=Path("."))
