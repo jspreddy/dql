@@ -138,6 +138,7 @@ pub const SELECT: &str = r"
     Nested maps use dot paths such as a.b.c.d.
     a[0].b reads one list element, and a[].b returns the list of each b.
     AS label names the result column.
+    WHERE can compare a.b.c and a[0].b on SELECT and SCAN.
 
     Examples
     --------
@@ -147,6 +148,8 @@ pub const SELECT: &str = r"
     CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE out.json.gz;
     CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE 'exports/out.json' CREATE PARENTS;
     CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id, author, tags) VALUES ('a', {'name': 'Ada', 'city': {'name': 'London'}}, [{'name': 'rust'}, {'name': 'db'}]); SELECT author.city.name AS city, tags[0].name, tags[].name AS names FROM foobars WHERE id = 'a';
+    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id, author, tags) VALUES ('a', {'name': 'Ada', 'city': {'name': 'London'}}, [{'name': 'rust'}, {'name': 'db'}]); SELECT id, author.city.name AS city FROM foobars WHERE id = 'a' AND tags[0].name = 'rust' AND author.city.name = 'London';
+    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id, author, tags) VALUES ('a', {'name': 'Ada', 'city': {'name': 'London'}}, [{'name': 'rust'}, {'name': 'db'}]), ('b', {'name': 'Grace', 'city': {'name': 'New York'}}, [{'name': 'cobol'}]); SCAN id, author.city.name AS city FROM foobars WHERE tags[0].name = 'rust' AND author.city.name = 'London';
 ";
 
 pub const UPDATE: &str = r"

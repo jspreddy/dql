@@ -1,0 +1,8 @@
+-- documents whose attributes are maps and lists, several levels down
+-- tenant is the hash key, doc_id is the range key
+DROP TABLE IF EXISTS sample_nested;
+
+CREATE TABLE sample_nested (
+  tenant STRING HASH KEY,
+  doc_id STRING RANGE KEY
+) GLOBAL INDEX ('by-kind', kind STRING, doc_id STRING);
