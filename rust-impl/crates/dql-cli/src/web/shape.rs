@@ -663,7 +663,7 @@ static GSI_LINE: LazyLock<Regex> = LazyLock::new(|| {
 });
 static READ_QUERY: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?is)^\s*(?:select|scan)\s+(?P<select>.*?)\s+from\s+(?P<table>[A-Za-z_][A-Za-z0-9_.-]*)\b",
+        r"(?is)^\s*(?:analyze\s+)?(?:select|scan)\s+(?P<select>.*?)\s+from\s+(?P<table>[A-Za-z_][A-Za-z0-9_.-]*)\b",
     )
     .expect("read query")
 });
@@ -874,6 +874,17 @@ Local Indexes:
             (
                 Some("posts".to_string()),
                 Some(vec!["name".to_string(), "ts(updated)".to_string()])
+            )
+        );
+        assert_eq!(
+            read_query("ANALYZE SCAN * FROM sample_cosmos;"),
+            (Some("sample_cosmos".to_string()), None)
+        );
+        assert_eq!(
+            read_query("analyze select pk, sk AS child FROM sample_cosmos WHERE pk = 'sun';"),
+            (
+                Some("sample_cosmos".to_string()),
+                Some(vec!["pk".to_string(), "child".to_string()])
             )
         );
         assert_eq!(

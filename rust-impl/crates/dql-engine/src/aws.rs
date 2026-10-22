@@ -482,7 +482,7 @@ impl DynamoBackend for SdkBackend {
             .map(render_condition)
             .transpose()
             .map_err(|err| EngineError::Runtime(err.to_string()))?;
-        let mut items = match request.operation {
+        let mut fetched = match request.operation {
             ReadOperation::Query => self.query_items(
                 table,
                 request.index_name,
@@ -505,17 +505,26 @@ impl DynamoBackend for SdkBackend {
             }
         };
         if request.follow_up_batch_get {
-            items =
-                self.batch_get_items(table, &items, request.consistent, Some(request.selection))?;
+            let follow_up = self.batch_get_items(
+                table,
+                &fetched.items,
+                request.consistent,
+                Some(request.selection),
+            )?;
+            fetched.read_units += follow_up.read_units;
+            fetched.items = follow_up.items;
         }
-        let count = matches!(request.selection, Selection::CountAll).then_some(items.len());
+        let count = matches!(request.selection, Selection::CountAll).then_some(fetched.items.len());
         let op_name = match request.operation {
             ReadOperation::Query => "query",
             ReadOperation::Scan => "scan",
             ReadOperation::BatchGetKeys => "batch_get_item",
         };
-        let mut response = BackendResponse::new(op_name, table, items);
+        let mut response = BackendResponse::new(op_name, table, fetched.items);
         response.count = count;
+        if let Some(capacity) = response.capacity.as_mut() {
+            capacity.read_units = fetched.read_units;
+        }
         Ok(response)
     }
 
@@ -619,8 +628,12 @@ impl DynamoBackend for SdkBackend {
         keys: &[Item],
         consistent: bool,
     ) -> Result<BackendResponse<Vec<Item>>, EngineError> {
-        let items = self.batch_get_items(table, keys, consistent, None)?;
-        Ok(BackendResponse::new("batch_get_item", table, items))
+        let fetched = self.batch_get_items(table, keys, consistent, None)?;
+        let mut response = BackendResponse::new("batch_get_item", table, fetched.items);
+        if let Some(capacity) = response.capacity.as_mut() {
+            capacity.read_units = fetched.read_units;
+        }
+        Ok(response)
     }
 
     fn delete_by_keys(
@@ -915,6 +928,17 @@ impl DynamoBackend for SdkBackend {
     }
 }
 
+struct ReadFetch {
+    items: Vec<Item>,
+    read_units: f64,
+}
+
+fn consumed_units(capacity: Option<&aws_sdk_dynamodb::types::ConsumedCapacity>) -> f64 {
+    capacity
+        .and_then(|capacity| capacity.capacity_units())
+        .unwrap_or(0.0)
+}
+
 impl SdkBackend {
     fn send_update_item(
         &self,
@@ -993,10 +1017,11 @@ impl SdkBackend {
         key_condition: Option<&RenderedExpression>,
         filter_condition: Option<&RenderedExpression>,
         request: &ReadRequest<'_>,
-    ) -> Result<Vec<Item>, EngineError> {
+    ) -> Result<ReadFetch, EngineError> {
         let options = request.options;
         let is_count = matches!(request.selection, Selection::CountAll);
         let mut items = Vec::new();
+        let mut read_units = 0.0;
         let mut last_key: Option<HashMap<String, aws_sdk_dynamodb::types::AttributeValue>> = None;
         let item_limit = options.limit.unwrap_or(usize::MAX);
         let scan_limit = options.scan_limit.unwrap_or(usize::MAX);
@@ -1071,6 +1096,7 @@ impl SdkBackend {
             let response = self
                 .block_on(async { query.send().await })
                 .map_err(Self::aws_error)?;
+            read_units += consumed_units(response.consumed_capacity());
             scanned += response.scanned_count() as usize;
             if is_count {
                 total_count += response.count() as usize;
@@ -1094,7 +1120,7 @@ impl SdkBackend {
         if is_count {
             items = (0..total_count).map(|_| Item::new()).collect();
         }
-        Ok(items)
+        Ok(ReadFetch { items, read_units })
     }
 
     fn scan_items(
@@ -1103,10 +1129,11 @@ impl SdkBackend {
         index_name: Option<&str>,
         filter_condition: Option<&RenderedExpression>,
         request: &ReadRequest<'_>,
-    ) -> Result<Vec<Item>, EngineError> {
+    ) -> Result<ReadFetch, EngineError> {
         let options = request.options;
         let is_count = matches!(request.selection, Selection::CountAll);
         let mut items = Vec::new();
+        let mut read_units = 0.0;
         let mut last_key: Option<HashMap<String, aws_sdk_dynamodb::types::AttributeValue>> = None;
         let item_limit = options.limit.unwrap_or(usize::MAX);
         let scan_limit = options.scan_limit.unwrap_or(usize::MAX);
@@ -1159,6 +1186,7 @@ impl SdkBackend {
             let response = self
                 .block_on(async { scan.send().await })
                 .map_err(Self::aws_error)?;
+            read_units += consumed_units(response.consumed_capacity());
             scanned += response.scanned_count() as usize;
             if is_count {
                 total_count += response.count() as usize;
@@ -1182,7 +1210,7 @@ impl SdkBackend {
         if is_count {
             items = (0..total_count).map(|_| Item::new()).collect();
         }
-        Ok(items)
+        Ok(ReadFetch { items, read_units })
     }
 
     fn read_projection(
@@ -1216,7 +1244,7 @@ impl SdkBackend {
         partial_items: &[Item],
         consistent: bool,
         selection: Option<&Selection>,
-    ) -> Result<Vec<Item>, EngineError> {
+    ) -> Result<ReadFetch, EngineError> {
         let meta = self
             .describe_table(table)?
             .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
@@ -1225,6 +1253,7 @@ impl SdkBackend {
             (!rendered.expression.is_empty()).then_some(rendered)
         });
         let mut results = Vec::new();
+        let mut read_units = 0.0;
         for chunk in partial_items.chunks(BATCH_GET_CHUNK) {
             let keys = chunk
                 .iter()
@@ -1253,6 +1282,11 @@ impl SdkBackend {
                         .await
                 })
                 .map_err(Self::aws_error)?;
+            read_units += response
+                .consumed_capacity()
+                .iter()
+                .filter_map(|capacity| capacity.capacity_units())
+                .sum::<f64>();
             if let Some(items) = response
                 .responses()
                 .and_then(|responses| responses.get(table))
@@ -1262,7 +1296,10 @@ impl SdkBackend {
                 }
             }
         }
-        Ok(results)
+        Ok(ReadFetch {
+            items: results,
+            read_units,
+        })
     }
 }
 

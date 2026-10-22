@@ -729,6 +729,127 @@ test("runs a selection and shows the result table", async ({ page, app }) => {
   await expect(page.locator("#run-progress")).toBeHidden();
 });
 
+test("analyze scan matches the scan card and shows consumed RCU", async ({ page, app }, testInfo) => {
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (pk STRING HASH KEY, sk STRING RANGE KEY);`,
+      `INSERT INTO ${name} (pk, sk, kind, name) VALUES ('sun', 'self', 'star', 'Sol');`,
+      `SCAN * FROM ${name};`,
+      `ANALYZE SCAN * FROM ${name};`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await openResultPane(page, "history");
+
+  const cards = page.locator(`.result-card[data-table="${name}"]`);
+  await expect(cards).toHaveCount(2);
+  const scan = cards.nth(0);
+  const analyzed = cards.nth(1);
+  await expect(scan.locator(".result-card-name")).toHaveText(name);
+  await expect(analyzed.locator(".result-card-name")).toHaveText(name);
+  await expect(scan.locator("thead th")).toHaveText(["pk", "sk", "kind", "name"]);
+  await expect(analyzed.locator("thead th")).toHaveText(["pk", "sk", "kind", "name"]);
+  await expect(analyzed.locator("thead th").nth(0)).toHaveClass(/col-table/);
+  await expect(analyzed.locator("thead th").nth(1)).toHaveClass(/col-table/);
+  await expect(scan.locator("tbody td")).toHaveText(["sun", "self", "star", "Sol"]);
+  await expect(analyzed.locator("tbody td")).toHaveText(["sun", "self", "star", "Sol"]);
+  const labels = await page.locator("[data-testid='result-card-capacity']").allInnerTexts();
+  expect(labels.length).toBeGreaterThan(0);
+  for (const label of labels) expect(label).not.toMatch(/^0(?:\.0+)? RCU$/);
+
+  const capacity = analyzed.locator("[data-testid='result-card-capacity']");
+  await expect(capacity).toBeVisible();
+  await expect(capacity).toHaveText(/^(?:[1-9]\d*|0\.\d*[1-9]\d*)(?:\.\d+)? RCU$/);
+  await expect(scan.locator("[data-testid='result-card-capacity']")).toHaveText(await capacity.innerText());
+
+  await scan.evaluate((card) => {
+    const pane = card.closest("#result-body");
+    const top = card.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+    pane.scrollTop = Math.max(0, top - 8);
+  });
+  await page.locator("#result-body").screenshot({
+    path: playwrightArtifact(`analyze-scan-rcu-${testInfo.project.name}.png`),
+  });
+});
+
+test("hides a zero RCU chip and keeps a positive write cost", async ({ page, app }, testInfo) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await page.route("**/api/run", async (route) => {
+    const lines = [
+      { event: "statement", index: 0 },
+      {
+        event: "result",
+        index: 0,
+        result: {
+          statement: "SCAN * FROM quiet;",
+          ok: true,
+          kind: "items",
+          message: "",
+          items: [{ id: "a", label: "alpha" }],
+          columns: [
+            { name: "id", table: "hash" },
+            { name: "label" },
+          ],
+          elapsed_ms: 4,
+          read_units: 0,
+          write_units: 0,
+          error: "",
+        },
+      },
+      { event: "statement", index: 1 },
+      {
+        event: "result",
+        index: 1,
+        result: {
+          statement: "SCAN * FROM billed;",
+          ok: true,
+          kind: "items",
+          message: "",
+          items: [{ id: "b" }],
+          columns: [{ name: "id", table: "hash" }],
+          elapsed_ms: 6,
+          read_units: 0,
+          write_units: 1.5,
+          error: "",
+        },
+      },
+    ];
+    await route.fulfill({
+      status: 200,
+      headers: { "Content-Type": "application/x-ndjson" },
+      body: lines.map((line) => JSON.stringify(line)).join("\n") + "\n",
+    });
+  });
+  await replaceEditor(page, "SCAN * FROM quiet;\nSCAN * FROM billed;");
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await openResultPane(page, "history");
+
+  const quiet = page.locator(".result-card[data-table='quiet']");
+  const billed = page.locator(".result-card[data-table='billed']");
+  await expect(quiet).toBeVisible();
+  await expect(quiet.locator("[data-testid='result-card-capacity']")).toHaveCount(0);
+  await expect(quiet.locator("[data-testid='result-card-time']")).toHaveText("4 ms");
+  await expect(quiet).toContainText("alpha");
+  await expect(billed.locator("[data-testid='result-card-capacity']")).toHaveText("1.5 WCU");
+  await expect(billed.locator("[data-testid='result-card-capacity']")).not.toContainText("RCU");
+
+  await quiet.evaluate((card) => {
+    const pane = card.closest("#result-body");
+    const top = card.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+    pane.scrollTop = Math.max(0, top - 8);
+  });
+  await page.locator("#result-body").screenshot({
+    path: playwrightArtifact(`result-card-zero-rcu-${testInfo.project.name}.png`),
+  });
+});
+
 test("pins the latest result at the top of the results pane", async ({ page, app }) => {
   const name = uniqueTable();
   app.trackTable(name);

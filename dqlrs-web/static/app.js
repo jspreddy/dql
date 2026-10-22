@@ -2324,7 +2324,7 @@ function listedItemTables(item) {
 
 function tableNameFromStatement(statement) {
   const stripped = String(statement || "").replace(/--[^\n]*/g, " ");
-  const match = stripped.match(/^\s*(?:select|scan)\s+[\s\S]*?\s+from\s+([A-Za-z_][A-Za-z0-9_.-]*)\b/i);
+  const match = stripped.match(/^\s*(?:analyze\s+)?(?:select|scan)\s+[\s\S]*?\s+from\s+([A-Za-z_][A-Za-z0-9_.-]*)\b/i);
   return match ? match[1] : "";
 }
 
@@ -2392,13 +2392,18 @@ function formatUnits(value) {
 }
 
 function formatCapacity(readUnits, writeUnits) {
-  if (!Number.isFinite(readUnits) && !Number.isFinite(writeUnits)) return "";
-  const read = Number.isFinite(readUnits) ? readUnits : 0;
-  const write = Number.isFinite(writeUnits) ? writeUnits : 0;
   const parts = [];
-  if (read > 0 || write === 0) parts.push(formatUnits(read) + " RCU");
-  if (write > 0) parts.push(formatUnits(write) + " WCU");
+  const read = capacityText(readUnits);
+  const write = capacityText(writeUnits);
+  if (read) parts.push(read + " RCU");
+  if (write) parts.push(write + " WCU");
   return parts.join(" · ");
+}
+
+function capacityText(value) {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  const text = formatUnits(value);
+  return text === "0" ? "" : text;
 }
 
 function queryShell(queryText, content) {
