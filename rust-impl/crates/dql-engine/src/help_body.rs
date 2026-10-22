@@ -277,6 +277,9 @@ pub const DESCRIBE: &str = r"
     The text matches `ls <table>` when that name matches one table.
     A glob that matches one table prints this description too.
     Several matches print the list instead.
+    DESCRIBE always loads that table from the database and saves the description.
+    A later cached read uses that saved description.
+    Cached reads do not load the table again unless they ask to refresh.
 
     Examples
     --------
@@ -298,6 +301,10 @@ pub const SHOW: &str = r"
     A two-letter pattern matches only names that start with it.
     The result says whether it is showing similar names, related keys, or both.
     A pattern that is still not similar stays an empty list.
+    SHOW TABLES always reloads the table list and the descriptions already saved.
+    It does not describe tables that have never been fetched.
+    A later cached read uses those saved snapshots.
+    Cached reads do not load them again unless they ask to refresh.
 
     Examples
     --------

@@ -1063,7 +1063,7 @@ test("places a play button on the left of the run box and runs that range", asyn
   await expect(page.locator("#run")).toBeEnabled();
 });
 
-test("show-tables-like and ls glob refresh=True reload a changed table", async ({ page, app }) => {
+test("show-tables-like and ls glob refresh=True reload a changed table", async ({ page, app }, testInfo) => {
   const name = uniqueTable();
   const other = uniqueTable();
   app.trackTable(name);
@@ -1094,6 +1094,22 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
 
   await runEditor(`ls ${name}`);
   await expect(page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" })).not.toContainText("THROUGHPUT (2, 3)");
+
+  await runEditor("SHOW TABLES;");
+  const shownRow = page.locator(".query-result").last().locator(".describe-tables tr", { hasText: name });
+  await expect(shownRow.locator("td").nth(2)).toHaveText("2");
+  await expect(shownRow.locator("td").nth(3)).toHaveText("3");
+  // The create snapshot has no throughput, which the card prints as an em dash.
+  // SHOW reloads that saved description, so the live read capacity is shown.
+  await expect(page.locator(".query-result").last().locator(".describe-tables tr", { hasText: other }).locator("td").nth(2)).toHaveText("0");
+  await shownRow.screenshot({ path: `/opt/cursor/artifacts/show-refresh-${testInfo.project.name}.png` });
+
+  await runEditor(`DESCRIBE ${name};`);
+  const describedFresh = page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
+  await expect(describedFresh).toContainText("THROUGHPUT (2, 3)");
+  await expect(describedFresh.locator(".describe-stats")).toContainText("2");
+  await expect(describedFresh.locator(".describe-stats")).toContainText("3");
+  await describedFresh.screenshot({ path: `/opt/cursor/artifacts/describe-refresh-${testInfo.project.name}.png` });
 
   await runEditor(`ls ${name}* refresh=True`);
   const fresh = page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });

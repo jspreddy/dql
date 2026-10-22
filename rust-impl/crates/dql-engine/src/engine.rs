@@ -931,7 +931,11 @@ impl<B: DynamoBackend> Engine<B> {
 
     fn show_tables(&mut self, like: Option<&str>) -> Result<StatementResult, EngineError> {
         self.record("list_tables", like.unwrap_or("*"));
-        let mut names = self.cached_table_names(false)?;
+        // Running the statement reloads the list and definitions already saved.
+        // Tables that have never been fetched stay name-only. The table browser,
+        // search, and lint still read the saved snapshots and do not reload on their own.
+        self.refresh_cached_definitions()?;
+        let mut names = self.cached_table_names(true)?;
         let Some(pattern) = like else {
             names.sort();
             // An empty note marks the full list. The CLI turns it into the same
@@ -968,7 +972,7 @@ impl<B: DynamoBackend> Engine<B> {
     fn describe_statement(&mut self, table: &str) -> Result<StatementResult, EngineError> {
         self.record("describe_table", table);
         let meta = self
-            .describe(table, false)?
+            .describe(table, true)?
             .ok_or_else(|| EngineError::Runtime(format!("Table {table:?} not found")))?;
         let text = crate::format_table_description(&meta, self.table_item_count(table), 0);
         Ok(StatementResult::Schema(text))
@@ -1618,6 +1622,55 @@ mod tests {
         assert_eq!(context.table.name, "t");
         assert_eq!(context.important_columns(), vec!["id"]);
         assert!(context.preserve_column_order());
+    }
+
+    #[test]
+    fn describe_reloads_one_table_and_leaves_other_snapshots() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute(
+                "CREATE TABLE kept (id STRING HASH KEY);
+                 CREATE TABLE other (id STRING HASH KEY)",
+            )
+            .unwrap();
+        engine
+            .execute("ALTER TABLE kept SET THROUGHPUT (2, 3)")
+            .unwrap();
+        engine
+            .execute("ALTER TABLE other SET THROUGHPUT (4, 5)")
+            .unwrap();
+        assert!(engine
+            .cached_definition("kept")
+            .unwrap()
+            .throughput
+            .is_none());
+        let cached = engine.describe("kept", false).unwrap().unwrap();
+        assert!(
+            cached.throughput.is_none(),
+            "a cached describe stays on the snapshot"
+        );
+
+        match engine.execute("DESCRIBE kept").unwrap() {
+            StatementResult::Schema(text) => {
+                assert!(text.contains("THROUGHPUT (2, 3)"), "{text}");
+                assert!(text.contains("Read: 2"), "{text}");
+                assert!(text.contains("Write: 3"), "{text}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        assert!(engine
+            .cached_definition("kept")
+            .unwrap()
+            .throughput
+            .is_some());
+        assert!(
+            engine
+                .cached_definition("other")
+                .unwrap()
+                .throughput
+                .is_none(),
+            "DESCRIBE reloads only the named table"
+        );
     }
 
     #[test]
@@ -2444,6 +2497,35 @@ mod tests {
         );
         engine.cached_table_names(true).unwrap();
         assert!(engine.cached_definition("other").is_none());
+
+        engine
+            .execute("ALTER TABLE kept SET THROUGHPUT (8, 9)")
+            .unwrap();
+        assert!(
+            engine
+                .cached_definition("kept")
+                .unwrap()
+                .throughput
+                .is_none(),
+            "an alter leaves the saved definition in place"
+        );
+        engine.execute("SHOW TABLES").unwrap();
+        assert!(
+            engine
+                .cached_definition("kept")
+                .unwrap()
+                .throughput
+                .is_some(),
+            "SHOW reloads definitions that are already saved"
+        );
+        assert!(
+            engine.cached_definition("other").is_none(),
+            "SHOW must not describe tables that were never cached"
+        );
+        assert!(
+            !engine.names_from_cache(),
+            "SHOW reloads the table list instead of reusing it"
+        );
 
         engine.clear_table_cache();
         assert!(store.get_names().is_none());

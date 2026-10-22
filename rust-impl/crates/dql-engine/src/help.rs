@@ -702,6 +702,28 @@ mod tests {
     }
 
     #[test]
+    fn describe_and_show_refresh_notes_stay_prose() {
+        let describe = help_page(Some("describe")).unwrap();
+        let describe_prose = joined(&describe, false);
+        let describe_code = joined(&describe, true);
+        assert!(
+            describe_prose.contains("DESCRIBE always loads that table"),
+            "{describe_prose}"
+        );
+        assert!(!describe_code.contains("always loads"), "{describe_code}");
+
+        let show = help_page(Some("show")).unwrap();
+        let show_prose = joined(&show, false);
+        let show_code = joined(&show, true);
+        assert!(
+            show_prose.contains("always reloads the table list"),
+            "{show_prose}"
+        );
+        assert!(show_prose.contains("never been fetched"), "{show_prose}");
+        assert!(!show_code.contains("always reloads"), "{show_code}");
+    }
+
+    #[test]
     fn ls_examples_stay_code_and_notes_stay_prose() {
         let page = help_page(Some("ls")).unwrap();
         let code = joined(&page, true);

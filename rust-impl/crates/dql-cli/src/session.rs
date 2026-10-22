@@ -985,6 +985,81 @@ mod tests {
     }
 
     #[test]
+    fn describe_and_show_reload_while_plain_ls_stays_cached() {
+        let mut session = Session::new_memory_headless("us-west-1");
+        let created = session.execute_for_serve("CREATE TABLE alpha_fresh (id STRING HASH KEY);");
+        assert!(created.ok, "{created:?}");
+
+        let cached = session.execute_for_serve("ls alpha_fresh;");
+        assert!(cached.ok, "{cached:?}");
+        let cached_text = cached.message.unwrap();
+        assert!(cached_text.contains("Read: N/A"), "{cached_text}");
+        assert!(!cached_text.contains("THROUGHPUT"));
+
+        let altered = session.execute_for_serve("ALTER TABLE alpha_fresh SET THROUGHPUT (2, 3);");
+        assert!(altered.ok, "{altered:?}");
+
+        let stale = session.execute_for_serve("ls alpha_fresh");
+        assert!(stale.ok, "{stale:?}");
+        let stale_text = stale.message.unwrap();
+        assert!(stale_text.contains("Read: N/A"), "{stale_text}");
+        assert!(!stale_text.contains("THROUGHPUT (2, 3)"), "{stale_text}");
+
+        let described = session.execute_for_serve("DESCRIBE alpha_fresh;");
+        assert!(described.ok, "{described:?}");
+        assert_eq!(described.kind, "schema");
+        let described_text = described.message.clone().unwrap();
+        assert!(
+            described_text.contains("THROUGHPUT (2, 3)"),
+            "{described_text}"
+        );
+        assert!(described_text.contains("Read: 2"), "{described_text}");
+        assert!(described_text.contains("Write: 3"), "{described_text}");
+
+        let after_describe = session.execute_for_serve("ls alpha_fresh;");
+        assert_eq!(
+            after_describe.message.as_deref(),
+            Some(described_text.as_str()),
+            "DESCRIBE saves the description, so the next cached ls reads it"
+        );
+
+        let other = session.execute_for_serve("CREATE TABLE beta_fresh (id STRING HASH KEY);");
+        assert!(other.ok, "{other:?}");
+        let primed = session.execute_for_serve("ls beta_fresh;");
+        assert!(primed.message.unwrap().contains("Read: N/A"));
+        let altered_beta =
+            session.execute_for_serve("ALTER TABLE beta_fresh SET THROUGHPUT (4, 5);");
+        assert!(altered_beta.ok, "{altered_beta:?}");
+        let beta_stale = session.execute_for_serve("ls beta_fresh");
+        assert!(
+            !beta_stale.message.unwrap().contains("THROUGHPUT (4, 5)"),
+            "plain ls keeps the snapshot from before the alter"
+        );
+
+        let shown = session.execute_for_serve("SHOW TABLES;");
+        assert!(shown.ok, "{shown:?}");
+        let shown_text = shown.message.unwrap();
+        assert!(
+            shown_text.lines().any(|line| {
+                line.contains("beta_fresh") && line.contains("4") && line.contains("5")
+            }),
+            "{shown_text}"
+        );
+        assert!(
+            shown_text.lines().any(|line| {
+                line.contains("alpha_fresh") && line.contains("2") && line.contains("3")
+            }),
+            "{shown_text}"
+        );
+
+        let beta_after = session.execute_for_serve("ls beta_fresh;");
+        assert!(
+            beta_after.message.unwrap().contains("THROUGHPUT (4, 5)"),
+            "SHOW saves the reloaded descriptions for later cached reads"
+        );
+    }
+
+    #[test]
     fn describe_matches_ls_when_one_table_matches() {
         let mut session = Session::new_memory_headless("us-west-1");
         for statement in [
