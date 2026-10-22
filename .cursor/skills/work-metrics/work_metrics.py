@@ -218,6 +218,24 @@ def load_usage(csv_path: Path) -> pd.DataFrame:
     return frame
 
 
+def load_repo_hours(repo: Path) -> set[str]:
+    raw = subprocess.check_output(
+        ["git", "log", "--all", "--date=iso-strict", "--format=%ad"],
+        cwd=repo,
+        env=git_env(),
+        text=True,
+    )
+    hours = set()
+    for line in raw.splitlines():
+        if line.strip():
+            hours.add(hour_key(parse_dt(line)))
+    return hours
+
+
+def starts_with_any(agent_id: str, prefixes: list[str]) -> bool:
+    return any(str(agent_id).startswith(prefix) for prefix in prefixes)
+
+
 def agent_label(agent_id: str, agents: list[list[str]]) -> str:
     if agent_id in ("", "nan"):
         return "No cloud agent id"
@@ -407,16 +425,27 @@ def build(args: argparse.Namespace) -> None:
     span_hours = math.floor((last - first).total_seconds() / 3600)
     span_days = math.floor((last - first).total_seconds() / 86400)
 
-    commit_hours = {row["hour"] for row in commits}
-    token_hours = set(usage.loc[usage["Total Tokens"] > 0, "hour"])
-    worked = commit_hours | token_hours
+    rewrite_hours = {row["hour"] for row in commits}
+    repo_hours = load_repo_hours(args.repo)
+    this_repo_prefixes = [prefix for prefix, _label in phases["agents"]]
+    other_prefixes = [row["prefix"] for row in phases.get("other_repo_agents", [])]
+    usage = usage.copy()
+    usage["this_repo_agent"] = usage["agent_id"].map(lambda value: starts_with_any(value, this_repo_prefixes))
+    usage["other_repo_agent"] = usage["agent_id"].map(lambda value: starts_with_any(value, other_prefixes))
+    usage["repo_commit_hour"] = usage["hour"].isin(repo_hours)
+    dropped_other = usage.loc[usage["other_repo_agent"]]
+    dropped_no_commit = usage.loc[~usage["other_repo_agent"] & ~usage["this_repo_agent"] & ~usage["repo_commit_hour"]]
+    dropped_other_tokens = int(dropped_other["Total Tokens"].sum())
+    dropped_no_commit_tokens = int(dropped_no_commit["Total Tokens"].sum())
+    usage = usage.loc[
+        usage["this_repo_agent"] | (usage["repo_commit_hour"] & ~usage["other_repo_agent"])
+    ].copy()
     phase_of = phases["by_hour"]
-    outside_hours = sorted(hour for hour in commit_hours if hour not in phase_of)
-    token_only = sorted(token_hours - commit_hours)
+    outside_hours = sorted(hour for hour in rewrite_hours if hour not in phase_of)
 
     area_rows = []
     for area in phases["areas"]:
-        keys = [key for key in area["hours"] if key in commit_hours]
+        keys = [key for key in area["hours"] if key in rewrite_hours]
         area_rows.append(
             {
                 "id": area["id"],
@@ -443,7 +472,6 @@ def build(args: argparse.Namespace) -> None:
         }
     )
 
-    usage = usage.copy()
     usage["bin"] = usage["when"].map(lambda value: bin_key(value, args.bin))
     for row in commits:
         row["bin"] = bin_key(row["_dt"], args.bin)
@@ -486,19 +514,29 @@ def build(args: argparse.Namespace) -> None:
             }
         )
 
-    timeline_start = min(first, usage["when"].min())
-    timeline_end = max(last, usage["when"].max())
+    if usage.empty:
+        timeline_start, timeline_end = first, last
+    else:
+        timeline_start = min(first, usage["when"].min())
+        timeline_end = max(last, usage["when"].max())
     days = calendar_days(timeline_start, timeline_end)
+    agent_hours = set(usage.loc[usage["this_repo_agent"] & (usage["Total Tokens"] > 0), "hour"])
+    worked = {
+        key for key in repo_hours | agent_hours
+        if days[0] <= key[:10] <= days[-1]
+    }
     commits_by_day = Counter(row["day"] for row in commits)
     hours_by_day: dict[str, Counter] = defaultdict(Counter)
     for key in sorted(worked):
         day = key[:10]
-        if key in phase_of:
+        if key in rewrite_hours and key in phase_of:
             name = phase_of[key]
-        elif key in commit_hours:
+        elif key in rewrite_hours:
             name = "outside"
+        elif key in repo_hours:
+            name = "repo"
         else:
-            name = "tokens"
+            name = "agent"
         hours_by_day[day][name] += 1
     tokens_by_day = usage.groupby("day")["Total Tokens"].sum()
     timeline_rows = []
@@ -516,17 +554,19 @@ def build(args: argparse.Namespace) -> None:
 
     hour_records = []
     for key in sorted(worked):
-        if key in phase_of:
+        if key in rewrite_hours and key in phase_of:
             phase_id = phase_of[key]
-        elif key in commit_hours:
+        elif key in rewrite_hours:
             phase_id = "outside"
+        elif key in repo_hours:
+            phase_id = "repo"
         else:
-            phase_id = "tokens"
+            phase_id = "agent"
         reasons = []
-        if key in commit_hours:
+        if key in repo_hours:
             reasons.append("commit")
-        if key in token_hours:
-            reasons.append("tokens")
+        if key in agent_hours and key not in repo_hours:
+            reasons.append("this-repo-agent")
         hour_records.append(
             {
                 "hour": key,
@@ -575,10 +615,11 @@ def build(args: argparse.Namespace) -> None:
 
     total_tokens = int(usage["Total Tokens"].sum())
     dollars = round(float(usage["dollars"].sum()), 2)
-    stack_order = [area["id"] for area in phases["areas"]] + ["outside", "tokens"]
+    stack_order = [area["id"] for area in phases["areas"]] + ["outside", "repo", "agent"]
     stack_meta = {area["id"]: (area["label"], area["color"]) for area in phases["areas"]}
     stack_meta["outside"] = (outside["label"], outside["color"])
-    stack_meta["tokens"] = (phases["tokens_only"]["label"], phases["tokens_only"]["color"])
+    stack_meta["repo"] = (phases["repo_commits"]["label"], phases["repo_commits"]["color"])
+    stack_meta["agent"] = (phases["repo_agents"]["label"], phases["repo_agents"]["color"])
     stack_series = []
     for phase_id in stack_order:
         label, color = stack_meta[phase_id]
@@ -594,11 +635,14 @@ def build(args: argparse.Namespace) -> None:
         "span_days": span_days,
         "span_hours": span_hours,
         "hours_worked": len(worked),
-        "commit_hours": len(commit_hours),
-        "token_only_hours": len(token_only),
+        "rewrite_hours": len(rewrite_hours),
+        "repo_only_hours": sum(1 for key in worked if key in repo_hours and key not in rewrite_hours),
+        "agent_only_hours": sum(1 for key in worked if key not in repo_hours),
         "pull_requests": len(pulls),
         "tokens": total_tokens,
         "dollars": dollars,
+        "dropped_other_repo_tokens": dropped_other_tokens,
+        "dropped_no_commit_tokens": dropped_no_commit_tokens,
         "timeline_start": days[0],
         "timeline_end": days[-1],
         "areas": area_rows,
@@ -615,10 +659,10 @@ def build(args: argparse.Namespace) -> None:
     write_json(
         out / "hours-worked.json",
         {
-            "definition": "A UTC hour is worked when it contains a rewrite commit or a usage row with tokens.",
+            "definition": "A UTC hour is worked when it has a commit on any ref in this repo, or token usage from a cloud agent on this repo.",
             "hours_worked": len(worked),
-            "commit_hours": len(commit_hours),
-            "token_only_hours": len(token_only),
+            "rewrite_hours": len(rewrite_hours),
+            "agent_only_hours": sum(1 for key in worked if key not in repo_hours),
             "hours": hour_records,
         },
     )
@@ -654,7 +698,8 @@ def build(args: argparse.Namespace) -> None:
         json.dumps(
             {key: summary[key] for key in (
                 "bin", "commits", "span_days", "span_hours", "hours_worked",
-                "commit_hours", "token_only_hours", "pull_requests", "tokens", "dollars",
+                "rewrite_hours", "repo_only_hours", "agent_only_hours", "pull_requests",
+                "tokens", "dollars", "dropped_other_repo_tokens", "dropped_no_commit_tokens",
             )}
         ),
     )
@@ -882,10 +927,10 @@ def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure],
         <h1>Work metrics</h1>
       </header>
       <h2 id="summary">Summary</h2>
-      <p class="lead">{comma(summary["commits"])} commits landed between {first} and {last}, a span of {comma(summary["span_days"])} days ({comma(summary["span_hours"])} hours). {comma(summary["hours_worked"])} hours were worked. {comma(summary["pull_requests"])} pull requests were merged. The usage export totals {headline_millions(summary["tokens"])} tokens and {dollars}.</p>
+      <p class="lead">{comma(summary["commits"])} commits landed between {first} and {last}, a span of {comma(summary["span_days"])} days ({comma(summary["span_hours"])} hours). {comma(summary["hours_worked"])} hours were worked. {comma(summary["pull_requests"])} pull requests were merged. Token spend kept for this repo is {headline_millions(summary["tokens"])} tokens and {dollars}.</p>
       <div class="stats">{stat_html}</div>
-      <p class="caption">Commits are <code>{html.escape(args.base)}..{html.escape(args.head)}</code>, dated from the author timestamp in UTC. Hours since start is that span, floored. An hour is worked when it contains one of those commits or a usage row with tokens. {comma(summary["commit_hours"])} hours contain a rewrite commit. {comma(summary["token_only_hours"])} further hours contain token usage and no rewrite commit.</p>
-      <p class="note">{dollars} is the numeric Cost column. Included and Free rows have no dollar amount. Token counts are not turned into prices. Of the {comma(summary["tokens"])} tokens, the timeline draws every calendar day from {pretty_day(summary["timeline_start"])} through {pretty_day(summary["timeline_end"])}.</p>
+      <p class="caption">Commits are <code>{html.escape(args.base)}..{html.escape(args.head)}</code>, dated from the author timestamp in UTC. Hours since start is that span, floored. An hour is worked when it has a commit on any ref in this repo, or token usage from a cloud agent on this repo. {comma(summary["rewrite_hours"])} hours are rewrite commits. {comma(summary["repo_only_hours"])} more have some other commit in this repo. {comma(summary["agent_only_hours"])} have a this-repo agent and no commit that hour.</p>
+      <p class="note">A usage row stays when its cloud agent is on this repo, even if that hour has no commit. A row with no agent id stays only when that UTC hour has a commit here. <code>bc-ca207e1b</code> is another repo, so its {headline_millions(summary["dropped_other_repo_tokens"])} tokens are left out. {headline_millions(summary["dropped_no_commit_tokens"])} more tokens had no agent id and no commit in this repo that hour. {dollars} is the numeric Cost on the rows that stay. Included and Free rows have no dollar amount. Token counts are not turned into prices. The timeline draws every calendar day from {pretty_day(summary["timeline_start"])} through {pretty_day(summary["timeline_end"])}.</p>
 
       <h2 id="areas">Areas of work</h2>
       <p>Each rewrite commit hour is counted once, in the area canonized for that hour. A calendar day can hold more than one area. Rust impl stops on 20 Aug. October query, <code>ls</code>, SAVE, and REPL hours are Rust improvements.</p>
@@ -898,13 +943,13 @@ def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure],
       <p class="caption">Every day from {pretty_day(summary["timeline_start"])} through {pretty_day(summary["timeline_end"])} stays on the axis, including the empty stretches. Commit circles sit on the token axis at 4 million tokens per commit, so 10 commits are level with 40 million. Hover a bar, a point, or a circle for that day.</p>
 
       <h2 id="hours-worked">Hours worked</h2>
-      <p>An hour counts when it has a rewrite commit or token usage. The stack is the canonized area of that commit hour.</p>
+      <p>An hour counts when it has a commit in this repo, or usage from a cloud agent on this repo. The stack is the canonized area of a rewrite commit hour.</p>
       <div class="figure">{fig_div(figures["hours"], "hours")}</div>
-      <p class="caption">Token-usage-only hours are the hours with spend and no rewrite commit. Empty days stay on the axis.</p>
+      <p class="caption">This repo agent marks an hour with usage from a cloud agent on this repo and no commit here. Empty days stay on the axis.</p>
 
       <h2 id="token-spend">Token spend by {html.escape(bin_label)}</h2>
       <div class="figure">{fig_div(figures["tokens"], "tokens")}</div>
-      <p class="caption">Millions of tokens in the attached export, one bar per {html.escape(bin_label)}. The axis keeps the full span.</p>
+      <p class="caption">Millions of tokens kept for this repo, one bar per {html.escape(bin_label)}. The axis keeps the full span.</p>
 
       <h2 id="pull-requests">Pull requests merged, by day</h2>
       <div class="figure">{fig_div(figures["pulls"], "pulls")}</div>
@@ -916,7 +961,7 @@ def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure],
 
       <h2 id="agents">Tokens by cloud agent</h2>
       <div class="figure">{fig_div(figures["agents"], "agents")}</div>
-      <p class="caption">Named agents are the canonized cloud agent ids. Rows with no id stay together.</p>
+      <p class="caption">Named agents are the cloud agents on this repo. Their usage stays even in an hour with no commit. Rows with no id stay together, and only in hours that have a commit here.</p>
       <footer>
         <p>Day and hour pages from the earlier pass: <a href="rewrite-metrics.html">rewrite-metrics.html</a>, <a href="rewrite-metrics-hours.html">rewrite-metrics-hours.html</a>. Back to the <a href="README.md">Rust user guide</a>.</p>
       </footer>

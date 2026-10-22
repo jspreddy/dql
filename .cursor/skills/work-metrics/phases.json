@@ -83,11 +83,17 @@
     "color": "#6b3fa0",
     "summary": "Git graph, CI, README and screenshots, justfiles, explainers, version bumps, flake fixes, and the 12 Oct 15:00 UTC hour split between a SAVE change and a black-box flake."
   },
-  "tokens_only": {
-    "id": "tokens",
-    "label": "Token usage only",
+  "repo_commits": {
+    "id": "repo",
+    "label": "Other commits in this repo",
+    "color": "#3f6212",
+    "summary": "A commit on some ref in this repo, outside the rewrite range."
+  },
+  "repo_agents": {
+    "id": "agent",
+    "label": "This repo agent",
     "color": "#a15c07",
-    "summary": "A UTC hour with token usage and no rewrite commit."
+    "summary": "Usage from a cloud agent on this repo, in an hour with no commit here."
   },
   "agents": [
     ["bc-a467b549", "Notebook plan"],
@@ -95,6 +101,15 @@
     ["bc-79cf3007", "Rust IMPL"],
     ["bc-7c9a145b", "DQLRS"],
     ["bc-8f9acc09", "Acceptance tests"],
-    ["bc-15659210", "Rust review"]
+    ["bc-15659210", "Rust review"],
+    ["bc-7e6778af", "Agent configuration"],
+    ["bc-c2ae0364", "Pending plans"],
+    ["bc-fed04fbe", "Rewrite metrics"]
+  ],
+  "other_repo_agents": [
+    {
+      "prefix": "bc-ca207e1b",
+      "reason": "Not a cloud agent on github.com/jspreddy/dql. Usage on 13 and 14 Sep."
+    }
   ]
 }

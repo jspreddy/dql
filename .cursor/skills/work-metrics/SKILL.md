@@ -14,7 +14,7 @@ Do not read diffs, commit bodies, or file contents. `git log` subjects, authors,
 1. If the user has not attached a Cursor token-spend CSV for the timeframe, ask them to attach that export and stop. Do not estimate tokens, do not invent a Cost, and do not download the Cursor dashboard export.
 2. If they have not chosen a bin, ask whether the bin is Hour, Day, or Month, and stop.
 
-The attached file is the timeframe. Every row in it counts toward token spend. A numeric Cost is the only dollar figure. `Included` and `Free` are not prices, and tokens are not converted into dollars.
+The attached file is the timeframe. A row counts toward token spend only under the rule below. A numeric Cost is the only dollar figure. `Included` and `Free` are not prices, and tokens are not converted into dollars.
 
 ## Run
 
@@ -49,11 +49,24 @@ In the temp folder:
 
 The timeline and the hours-worked chart stay on calendar days. Token spend uses the chosen bin. Pull requests stay on the merge day. Commit circles sit on the token axis at 4 million tokens per commit, so 10 commits are level with 40 million, and a larger circle is more commits.
 
+## Which usage counts
+
+Keep a usage row when either of these is true:
+
+- Its cloud agent id starts with a prefix in `agents` in `phases.json`. Those agents are this repo, so the row stays even when that UTC hour has no commit.
+- Its UTC hour has a commit on any ref in this repo, and the id is not in `other_repo_agents`. A blank cloud agent id uses this rule.
+
+Leave a row out when its id is in `other_repo_agents`, or when the hour has no commit here and the id is not a this-repo agent.
+
+An id that is on neither list is not clearly another repo. Treat it like a blank id: it counts only in an hour with a commit here. When you can tell where an id belongs, add it to `agents` or to `other_repo_agents`. Do not guess.
+
+`bc-ca207e1b` is the other-repo id in the current export. It is not a cloud agent on `github.com/jspreddy/dql`.
+
 ## Hours worked
 
-A UTC hour is worked when it contains a rewrite commit, or a usage row whose Total Tokens are greater than zero. A zero-token row does not by itself make an hour worked.
+A UTC hour is worked when it has a commit on any ref in this repo, or token usage from a this-repo agent. A zero-token row does not by itself make an hour worked.
 
-Say both counts when they differ: hours that contain a rewrite commit, and further hours that contain token usage and no rewrite commit. Do not narrate the empty stretches beyond that.
+Say the three counts when they differ: rewrite commit hours, other commit hours in this repo, and hours that have a this-repo agent and no commit. Do not narrate the empty stretches beyond that.
 
 ## Areas of work
 
@@ -105,5 +118,10 @@ Any other rewrite commit hour is outside these groups: git graph, CI, README and
 | `bc-7c9a145b` | DQLRS |
 | `bc-8f9acc09` | Acceptance tests |
 | `bc-15659210` | Rust review |
+| `bc-7e6778af` | Agent configuration |
+| `bc-c2ae0364` | Pending plans |
+| `bc-fed04fbe` | Rewrite metrics |
 
-An empty cloud agent id is "No cloud agent id". Any other id is "Other agents".
+An empty cloud agent id is "No cloud agent id". An id on neither list is "Other agents" and counts only in an hour with a commit in this repo.
+
+`bc-ca207e1b` is listed under `other_repo_agents` and does not count.
