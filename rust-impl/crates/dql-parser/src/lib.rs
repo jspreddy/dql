@@ -1360,11 +1360,10 @@ impl Parser {
     }
 
     fn peek_ls_glob_atom(&self) -> bool {
-        match self.peek() {
-            Some(Token::Ident(_) | Token::Star) => true,
-            Some(Token::Symbol('-' | '?')) => true,
-            _ => false,
-        }
+        matches!(
+            self.peek(),
+            Some(Token::Ident(_) | Token::Star) | Some(Token::Symbol('-' | '?'))
+        )
     }
 
     fn take_ls_glob_atom(&mut self) -> Result<String, ParseError> {

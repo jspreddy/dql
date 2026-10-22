@@ -1065,7 +1065,8 @@ fn parse_attr_path(field: &str) -> Option<Vec<PathSeg>> {
             let (name, next) = take_path_name(tail)?;
             steps.push(PathSeg::Field(name));
             rest = next;
-        } else if let Some(tail) = rest.strip_prefix('[') {
+        } else {
+            let tail = rest.strip_prefix('[')?;
             if let Some(next) = tail.strip_prefix(']') {
                 steps.push(PathSeg::Each);
                 rest = next;
@@ -1078,8 +1079,6 @@ fn parse_attr_path(field: &str) -> Option<Vec<PathSeg>> {
                 steps.push(PathSeg::Index(raw.parse().ok()?));
                 rest = &tail[end + 1..];
             }
-        } else {
-            return None;
         }
     }
     Some(steps)
