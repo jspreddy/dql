@@ -1116,6 +1116,45 @@ mod tests {
     }
 
     #[test]
+    fn lint_endpoint_does_not_run_the_script() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let setup = "CREATE TABLE shelf (id STRING HASH KEY); INSERT INTO shelf (id, title) VALUES ('a', 'kept');";
+        let setup_body = format!("{{\"dql\":{}}}", serde_json::to_string(setup).unwrap());
+        let created = http_body(addr, "POST", "/api/run", &setup_body);
+        assert!(created.contains("\"event\":\"result\""), "{created}");
+
+        let script = "\
+CREATE TABLE other (id STRING HASH KEY);
+INSERT INTO shelf (id, title) VALUES ('b', 'new');
+UPDATE shelf SET title = 'changed' WHERE id = 'a';
+DELETE FROM shelf WHERE id = 'a';
+SELECT title FROM shelf WHERE id = 'a';
+SELECT * FROM shelf;
+SCAN * FROM shelf;
+DROP TABLE shelf;
+DROP TABLE other;
+";
+        let lint_body = format!("{{\"text\":{}}}", serde_json::to_string(script).unwrap());
+        let linted = http(addr, "POST", "/api/lint", &lint_body);
+        assert!(linted.contains("\"ok\":false"), "{linted}");
+        assert!(linted.contains("indexed WHERE"), "{linted}");
+
+        let check = "SELECT * FROM shelf WHERE id = 'a';";
+        let check_body = format!("{{\"dql\":{}}}", serde_json::to_string(check).unwrap());
+        let kept = http_body(addr, "POST", "/api/run", &check_body);
+        assert!(kept.contains("\"title\":\"kept\""), "{kept}");
+        assert!(!kept.contains("changed"), "{kept}");
+        assert!(!kept.contains("\"id\":\"b\""), "{kept}");
+
+        let missing = "SELECT * FROM other WHERE id = 'a';";
+        let missing_body = format!("{{\"dql\":{}}}", serde_json::to_string(missing).unwrap());
+        let absent = http_body(addr, "POST", "/api/run", &missing_body);
+        assert!(absent.contains("not found"), "{absent}");
+        drop(guard);
+    }
+
+    #[test]
     fn mcp_path_stays_closed_without_the_flag() {
         let root = tempfile::tempdir().unwrap();
         let (addr, guard) = spawn_server(root.path().to_path_buf());

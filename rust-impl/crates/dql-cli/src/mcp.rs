@@ -758,6 +758,85 @@ mod tests {
     }
 
     #[test]
+    fn lint_tools_do_not_run_queries() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut server = server(dir.path());
+        server.session.config.allow_select_scan = false;
+        init(&mut server);
+        server
+            .session
+            .engine
+            .execute_script(
+                "CREATE TABLE shelf (id STRING HASH KEY);\nINSERT INTO shelf (id, title) VALUES ('a', 'kept');\n",
+            )
+            .unwrap();
+        let before = server
+            .session
+            .engine
+            .execute_script("SELECT * FROM shelf WHERE id = 'a';")
+            .unwrap();
+        let tables = server.session.engine.list_tables().unwrap();
+        let count = server.session.engine.table_item_count("shelf");
+        let capacity = server.session.engine.statement_capacity();
+
+        let script = "\
+CREATE TABLE other (id STRING HASH KEY);
+INSERT INTO shelf (id, title) VALUES ('b', 'new');
+UPDATE shelf SET title = 'changed' WHERE id = 'a';
+DELETE FROM shelf WHERE id = 'a';
+SELECT title FROM shelf WHERE id = 'a';
+SELECT * FROM shelf;
+SCAN * FROM shelf;
+DROP TABLE shelf;
+DROP TABLE other;
+";
+        let inline = tool_body(&rpc(
+            &mut server,
+            2,
+            "tools/call",
+            json!({
+                "name": "lint_query",
+                "arguments": { "text": script }
+            }),
+        ));
+        assert_eq!(inline["ok"], false);
+        assert_eq!(server.session.engine.list_tables().unwrap(), tables);
+        assert_eq!(server.session.engine.table_item_count("shelf"), count);
+        assert_eq!(server.session.engine.table_item_count("other"), 0);
+        assert_eq!(server.session.engine.statement_capacity(), capacity);
+
+        tool_body(&rpc(
+            &mut server,
+            3,
+            "tools/call",
+            json!({
+                "name": "create_query_file",
+                "arguments": { "path": "queries/live.dql", "text": script }
+            }),
+        ));
+        let from_file = tool_body(&rpc(
+            &mut server,
+            4,
+            "tools/call",
+            json!({
+                "name": "lint_query_file",
+                "arguments": { "path": "queries/live.dql" }
+            }),
+        ));
+        assert_eq!(from_file["ok"], false);
+        assert_eq!(server.session.engine.list_tables().unwrap(), tables);
+        assert_eq!(server.session.engine.table_item_count("shelf"), count);
+        assert_eq!(server.session.engine.table_item_count("other"), 0);
+        assert_eq!(server.session.engine.statement_capacity(), capacity);
+        let after = server
+            .session
+            .engine
+            .execute_script("SELECT * FROM shelf WHERE id = 'a';")
+            .unwrap();
+        assert_eq!(after, before);
+    }
+
+    #[test]
     fn query_files_round_trip_and_show_up_in_search() {
         let dir = tempfile::tempdir().unwrap();
         let mut server = server(dir.path());

@@ -628,6 +628,64 @@ SELECT * FROM shelf KEYS IN 'b' WHERE id = 'a';
     }
 
     #[test]
+    fn lint_does_not_run_the_script() {
+        let mut session = session(false);
+        session
+            .engine
+            .execute_script(
+                "CREATE TABLE shelf (id STRING HASH KEY);\nINSERT INTO shelf (id, title) VALUES ('a', 'kept');\n",
+            )
+            .unwrap();
+        let before = session
+            .engine
+            .execute_script("SELECT * FROM shelf WHERE id = 'a';")
+            .unwrap();
+        let tables = session.engine.list_tables().unwrap();
+        let count = session.engine.table_item_count("shelf");
+        let capacity = session.engine.statement_capacity();
+        let context = session
+            .engine
+            .last_query_context()
+            .map(|ctx| (ctx.table.name.clone(), ctx.explicit_projection));
+
+        let script = "\
+CREATE TABLE other (id STRING HASH KEY);
+INSERT INTO shelf (id, title) VALUES ('b', 'new');
+UPDATE shelf SET title = 'changed' WHERE id = 'a';
+DELETE FROM shelf WHERE id = 'a';
+SELECT title FROM shelf WHERE id = 'a';
+SELECT * FROM shelf;
+SCAN * FROM shelf;
+DROP TABLE shelf;
+DROP TABLE other;
+";
+        let report = lint_script(&mut session, script);
+        assert!(!report.ok, "{:?}", report.issues);
+        assert!(
+            messages(&report).join("\n").contains("indexed WHERE"),
+            "{:?}",
+            report.issues
+        );
+
+        assert_eq!(session.engine.list_tables().unwrap(), tables);
+        assert_eq!(session.engine.table_item_count("shelf"), count);
+        assert_eq!(session.engine.table_item_count("other"), 0);
+        assert_eq!(session.engine.statement_capacity(), capacity);
+        assert_eq!(
+            session
+                .engine
+                .last_query_context()
+                .map(|ctx| (ctx.table.name.clone(), ctx.explicit_projection)),
+            context
+        );
+        let after = session
+            .engine
+            .execute_script("SELECT * FROM shelf WHERE id = 'a';")
+            .unwrap();
+        assert_eq!(after, before);
+    }
+
+    #[test]
     fn comment_before_a_statement_does_not_move_the_error_onto_the_comment() {
         let mut session = session(false);
         let report = lint_script(&mut session, "-- header\nSELEKT * FROM shelf;\n");
