@@ -541,21 +541,18 @@ fn attribute_type_code(value: &Value) -> &'static str {
 }
 
 fn resolve_field_value(item: &Item, path: &str) -> Option<Value> {
-    if let Some(index) = path.find('[') {
-        let head = &path[..index];
-        let rest = &path[index..];
-        let end = rest.find(']')?;
-        let list = resolve_field_value(item, head)?;
-        let Value::List(values) = list else {
-            return None;
-        };
-        let idx = parse_list_index(&rest[1..end], values.len())?;
-        return values.get(idx).cloned();
+    if path.is_empty() {
+        return None;
+    }
+    if let Some(bracket) = path.find('[') {
+        let head = &path[..bracket];
+        let base = resolve_field_value(item, head)?;
+        return continue_after_bracket(base, &path[bracket..]);
     }
     if let Some(index) = path.find('.') {
         let head = &path[..index];
         let tail = &path[index + 1..];
-        let map = resolve_field_value(item, head)?;
+        let map = item.get(head).cloned()?;
         let Value::Map(values) = map else {
             return None;
         };
@@ -565,26 +562,46 @@ fn resolve_field_value(item: &Item, path: &str) -> Option<Value> {
 }
 
 fn resolve_field_value_map(values: &BTreeMap<String, Value>, path: &str) -> Option<Value> {
-    if let Some(index) = path.find('[') {
-        let head = &path[..index];
-        let rest = &path[index..];
-        let end = rest.find(']')?;
-        let list = values.get(head)?.clone();
-        let Value::List(values) = list else {
-            return None;
-        };
-        let idx = parse_list_index(&rest[1..end], values.len())?;
-        return values.get(idx).cloned();
+    if path.is_empty() {
+        return None;
+    }
+    if let Some(bracket) = path.find('[') {
+        let head = &path[..bracket];
+        let base = resolve_field_value_map(values, head)?;
+        return continue_after_bracket(base, &path[bracket..]);
     }
     if let Some(index) = path.find('.') {
         let head = &path[..index];
         let tail = &path[index + 1..];
-        let Value::Map(values) = values.get(head)? else {
+        let Value::Map(nested) = values.get(head)? else {
             return None;
         };
-        return resolve_field_value_map(values, tail);
+        return resolve_field_value_map(nested, tail);
     }
     values.get(path).cloned()
+}
+
+fn continue_after_bracket(value: Value, path: &str) -> Option<Value> {
+    let end = path.find(']')?;
+    let Value::List(values) = value else {
+        return None;
+    };
+    let idx = parse_list_index(&path[1..end], values.len())?;
+    let next = values.get(idx).cloned()?;
+    let suffix = &path[end + 1..];
+    if suffix.is_empty() {
+        return Some(next);
+    }
+    if let Some(tail) = suffix.strip_prefix('.') {
+        let Value::Map(map) = next else {
+            return None;
+        };
+        return resolve_field_value_map(&map, tail);
+    }
+    if suffix.starts_with('[') {
+        return continue_after_bracket(next, suffix);
+    }
+    None
 }
 
 fn parse_list_index(index: &str, len: usize) -> Option<usize> {
@@ -970,5 +987,27 @@ mod tests {
             resolve_field_value(&item, "nested.b-c"),
             Some(Value::Number("1".to_string()))
         );
+    }
+
+    #[test]
+    fn resolve_field_value_reads_indexed_map_fields() {
+        let mut first = BTreeMap::new();
+        first.insert("name".to_string(), Value::String("rust".to_string()));
+        let mut second = BTreeMap::new();
+        second.insert("name".to_string(), Value::String("db".to_string()));
+        let mut item = Item::new();
+        item.insert(
+            "tags".to_string(),
+            Value::List(vec![Value::Map(first), Value::Map(second)]),
+        );
+        assert_eq!(
+            resolve_field_value(&item, "tags[0].name"),
+            Some(Value::String("rust".to_string()))
+        );
+        assert_eq!(
+            resolve_field_value(&item, "tags[1].name"),
+            Some(Value::String("db".to_string()))
+        );
+        assert_eq!(resolve_field_value(&item, "tags[2].name"), None);
     }
 }

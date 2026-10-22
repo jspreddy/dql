@@ -1079,6 +1079,56 @@ mod test_select_scan {
     }
 
     #[test]
+    fn test_select_nested_paths_and_alias() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute(
+                "INSERT INTO foobar (id, author, tags) VALUES ('a', {'name': 'Ada', 'city': {'name': 'London'}}, [{'name': 'rust'}, {'name': 'db'}, {'other': 1}])",
+            )
+            .unwrap();
+        let result = engine
+            .execute(
+                "SCAN author.city.name AS city, tags[0].name, tags[].name AS names, missing.path FROM foobar",
+            )
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(
+                    items[0].get("city"),
+                    Some(&Value::String("London".to_string()))
+                );
+                assert_eq!(
+                    items[0].get("tags[0].name"),
+                    Some(&Value::String("rust".to_string()))
+                );
+                assert_eq!(
+                    items[0].get("names"),
+                    Some(&Value::List(vec![
+                        Value::String("rust".to_string()),
+                        Value::String("db".to_string()),
+                        Value::Null,
+                    ]))
+                );
+                assert_eq!(items[0].get("missing.path"), Some(&Value::Null));
+                assert!(!items[0].contains_key("author"));
+                assert!(!items[0].contains_key("id"));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+
+        let matched = engine
+            .execute(
+                "SCAN id FROM foobar WHERE tags[0].name = 'rust' AND author.city.name = 'London'",
+            )
+            .unwrap();
+        assert_items_len(matched, 1);
+        let missed = engine
+            .execute("SCAN id FROM foobar WHERE tags[1].name = 'rust'")
+            .unwrap();
+        assert_items_len(missed, 0);
+    }
+
+    #[test]
     fn test_select_operation() {
         let mut engine = seeded_scan_table_no_range();
         engine

@@ -135,6 +135,10 @@ pub const SELECT: &str = r"
         [ ASC | DESC ]
         [ SAVE file.json [ CREATE PARENTS ] ]
 
+    Nested maps use dot paths such as a.b.c.d.
+    a[0].b reads one list element, and a[].b returns the list of each b.
+    AS label names the result column.
+
     Examples
     --------
     CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars WHERE id = 'a';
@@ -142,6 +146,7 @@ pub const SELECT: &str = r"
     CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE out.msgpack;
     CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE out.json.gz;
     CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE 'exports/out.json' CREATE PARENTS;
+    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id, author, tags) VALUES ('a', {'name': 'Ada', 'city': {'name': 'London'}}, [{'name': 'rust'}, {'name': 'db'}]); SELECT author.city.name AS city, tags[0].name, tags[].name AS names FROM foobars WHERE id = 'a';
 ";
 
 pub const UPDATE: &str = r"

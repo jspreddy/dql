@@ -236,11 +236,12 @@ pub fn read_query(statement: &str) -> (Option<String>, Option<Vec<String>>) {
             if piece.is_empty() {
                 return None;
             }
-            let name = AS_ALIAS
-                .captures(piece)
-                .map(|caps| caps[1].to_string())
-                .unwrap_or_else(|| piece.to_string());
-            Some(norm_ws(&name))
+            let name = if let Some(caps) = AS_ALIAS.captures(piece) {
+                norm_ws(&caps[1])
+            } else {
+                dql_parser::compact_path_punctuation(&norm_ws(piece))
+            };
+            Some(name)
         })
         .collect();
     (Some(table), Some(names))
@@ -873,6 +874,19 @@ Local Indexes:
             (
                 Some("posts".to_string()),
                 Some(vec!["name".to_string(), "ts(updated)".to_string()])
+            )
+        );
+        assert_eq!(
+            read_query(
+                "SELECT author.city.name AS city, tags [ 0 ] . name, tags [ ] . name AS names FROM posts;"
+            ),
+            (
+                Some("posts".to_string()),
+                Some(vec![
+                    "city".to_string(),
+                    "tags[0].name".to_string(),
+                    "names".to_string()
+                ])
             )
         );
         assert!(safe_table_name("nb_posts"));

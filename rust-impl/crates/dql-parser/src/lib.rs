@@ -481,8 +481,10 @@ fn tokenize(input: &str) -> Result<(Vec<Token>, Vec<usize>), ParseError> {
                 offsets.push(start);
                 tokens.push(Token::Star);
             }
+            // `.` is also an identifier character, so `a.b.c` stays one ident.
+            // A dot after `]` (`a[0].b`, `a[].b`) is a separate symbol.
             '(' | ')' | '[' | ']' | '{' | '}' | ',' | ':' | ';' | '=' | '<' | '>' | '!' | '+'
-            | '/' | '?' => {
+            | '/' | '?' | '.' => {
                 chars.next();
                 offsets.push(start);
                 tokens.push(Token::Symbol(ch));
@@ -1415,12 +1417,12 @@ impl Parser {
                 let upper = item.to_ascii_uppercase();
                 if let Some(index) = upper.rfind(" AS ") {
                     SelectionItem {
-                        expression: normalize_ws(&item[..index]),
+                        expression: compact_path_punctuation(&item[..index]),
                         alias: Some(item[index + 4..].trim().to_string()),
                     }
                 } else {
                     SelectionItem {
-                        expression: normalize_ws(item),
+                        expression: compact_path_punctuation(item),
                         alias: None,
                     }
                 }
@@ -2066,6 +2068,40 @@ fn normalize_ws(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Drop whitespace that only separates `.`, `[`, and `]` in a selection path.
+///
+/// `a [ 0 ] . b` and `a [ ] . b` become `a[0].b` and `a[].b`. Spaces around
+/// `+` and `AS` stay, so `bar + baz AS ret` is unchanged.
+pub fn compact_path_punctuation(value: &str) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    let mut out = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index].is_whitespace() {
+            let mut next = index;
+            while next < chars.len() && chars[next].is_whitespace() {
+                next += 1;
+            }
+            let prev_glue = out
+                .chars()
+                .last()
+                .is_some_and(|ch| matches!(ch, '.' | '[' | ']'));
+            let next_glue = chars
+                .get(next)
+                .copied()
+                .is_some_and(|ch| matches!(ch, '.' | '[' | ']'));
+            if !prev_glue && !next_glue && !out.is_empty() && next < chars.len() {
+                out.push(' ');
+            }
+            index = next;
+        } else {
+            out.push(chars[index]);
+            index += 1;
+        }
+    }
+    out
+}
+
 fn token_width(token: &Token) -> usize {
     match token {
         Token::Ident(value) | Token::Number(value) => value.len(),
@@ -2467,6 +2503,50 @@ mod tests {
         );
         assert!(parse_statement("DESCRIBE").is_err());
         assert!(parse_statement("DESCRIBE 'posts'").is_err());
+    }
+
+    #[test]
+    fn parses_nested_selection_paths_and_aliases() {
+        let selection =
+            parse_selection("a.b.c.d, a[0].b, a [ ] . c AS names, foo + bar AS baz").unwrap();
+        match selection {
+            Selection::Items(items) => {
+                assert_eq!(items.len(), 4);
+                assert_eq!(items[0].expression, "a.b.c.d");
+                assert_eq!(items[0].alias, None);
+                assert_eq!(items[1].expression, "a[0].b");
+                assert_eq!(items[1].alias, None);
+                assert_eq!(items[2].expression, "a[].c");
+                assert_eq!(items[2].alias.as_deref(), Some("names"));
+                assert_eq!(items[3].expression, "foo + bar");
+                assert_eq!(items[3].alias.as_deref(), Some("baz"));
+            }
+            other => panic!("unexpected selection: {other:?}"),
+        }
+
+        let statement = parse_statement(
+            "SELECT author . city . name AS city FROM posts WHERE tags[0].name = 'rust'",
+        )
+        .unwrap();
+        match statement {
+            Statement::Select {
+                selection: Selection::Items(items),
+                condition: Some(Condition::Compare { field, .. }),
+                ..
+            } => {
+                assert_eq!(items[0].expression, "author.city.name");
+                assert_eq!(items[0].alias.as_deref(), Some("city"));
+                assert_eq!(field, "tags[0].name");
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+
+        let err = parse_statement("SELECT * FROM posts WHERE tags[].name = 'rust'").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("unexpected token in query options"),
+            "{err}"
+        );
     }
 
     #[test]
