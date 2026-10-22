@@ -116,11 +116,22 @@ test("shows the endpoint and the editor shortcut", async ({ page }) => {
   await expect(page.locator("#endpoint")).not.toHaveAttribute("aria-haspopup", "dialog");
   await page.locator("#endpoint").click();
   await expect(page.locator("#env-pop")).toBeHidden();
-  await expect(page.locator("#run-shortcut")).toHaveText(mac ? "⌘ Enter" : "Ctrl+Enter");
+  await expect(page.locator("#run-shortcut")).toHaveText(mac ? "⌘ + Enter" : "Ctrl + Enter");
+  await expect(page.locator("#run .run-play")).toBeVisible();
+  await expect(page.locator("#run")).toHaveCSS("height", "22px");
+  await expect(page.locator("#run")).toHaveAttribute("aria-label", "Run selection");
+  await expect(page.locator("#run")).not.toHaveAttribute("title");
   await expect(page.locator("#run")).toHaveAttribute(
     "aria-keyshortcuts",
     mac ? "Meta+Enter" : "Control+Enter",
   );
+  const tip = page.locator("#run-tip");
+  await page.locator("#run").hover();
+  await page.waitForTimeout(400);
+  await expect(tip).toBeHidden();
+  await page.waitForTimeout(700);
+  await expect(tip).toBeVisible();
+  await expect(tip).toHaveText("Run selection");
 });
 
 test("opens aws environment details from the header", async ({ page }) => {

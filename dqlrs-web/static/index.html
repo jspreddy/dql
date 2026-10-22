@@ -122,9 +122,11 @@
             </button>
           </span>
           <div class="run-box">
-            <button type="button" id="run" class="primary">
-              Run selection
-              <span id="run-shortcut" class="run-shortcut">Ctrl+Enter</span>
+            <button type="button" id="run" class="primary" aria-label="Run selection">
+              <svg class="run-play" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                <path fill="currentColor" d="M5.2 3.1 12.4 8 5.2 12.9Z"/>
+              </svg>
+              <span id="run-shortcut" class="run-shortcut"><span class="run-mod">Ctrl</span> + Enter</span>
             </button>
             <button type="button" id="stop" class="stop hidden">Stop</button>
           </div>
@@ -243,6 +245,7 @@
     </div>
   </dialog>
   <div id="lint-tip" class="lint-tip" role="tooltip" hidden></div>
+  <div id="run-tip" class="run-tip" role="tooltip" hidden>Run selection</div>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

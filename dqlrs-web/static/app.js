@@ -465,11 +465,33 @@ document.querySelector("#new-file").addEventListener("click", createFile);
 const runButton = document.querySelector("#run");
 const stopButton = document.querySelector("#stop");
 const runShortcut = document.querySelector("#run-shortcut");
+const runMod = runShortcut.querySelector(".run-mod");
+const runTip = document.querySelector("#run-tip");
 const macShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
-const runShortcutLabel = macShortcut ? "⌘ Enter" : "Ctrl+Enter";
-runShortcut.textContent = runShortcutLabel;
-runButton.title = "Run selection (" + runShortcutLabel + ")";
+runMod.textContent = macShortcut ? "⌘" : "Ctrl";
 runButton.setAttribute("aria-keyshortcuts", macShortcut ? "Meta+Enter" : "Control+Enter");
+let runTipTimer = 0;
+function hideRunTip() {
+  clearTimeout(runTipTimer);
+  runTipTimer = 0;
+  runTip.hidden = true;
+}
+function showRunTip() {
+  runTip.hidden = false;
+  const box = runButton.getBoundingClientRect();
+  const tip = runTip.getBoundingClientRect();
+  const left = Math.max(8, Math.min(box.left + (box.width - tip.width) / 2, window.innerWidth - tip.width - 8));
+  const top = Math.min(window.innerHeight - tip.height - 8, box.bottom + 6);
+  runTip.style.left = `${Math.round(left)}px`;
+  runTip.style.top = `${Math.round(top)}px`;
+}
+runButton.addEventListener("pointerenter", () => {
+  hideRunTip();
+  runTipTimer = setTimeout(showRunTip, 1000);
+});
+runButton.addEventListener("pointerleave", hideRunTip);
+runButton.addEventListener("pointerdown", hideRunTip);
+runButton.addEventListener("blur", hideRunTip);
 stopButton.title = "Stop running query (Esc)";
 stopButton.setAttribute("aria-keyshortcuts", "Escape");
 runButton.addEventListener("click", () => {
@@ -492,11 +514,11 @@ window.addEventListener("keydown", (event) => {
 });
 
 function setRunBusy(busy) {
+  hideRunTip();
   runButton.disabled = busy;
   runButton.classList.toggle("hidden", busy);
   stopButton.classList.toggle("hidden", !busy);
   stopButton.disabled = !busy;
-  runShortcut.textContent = busy ? "Esc" : runShortcutLabel;
   runFileButton.disabled = busy || !state.path;
   syncClearResults();
   const floating = editor.dom.querySelector(".run-float");
