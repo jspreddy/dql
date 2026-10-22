@@ -395,6 +395,29 @@ def token_bin_figure(rows: list[dict], grain: str, start: datetime, end: datetim
     return fig
 
 
+def category_pie(rows: list[dict]) -> go.Figure:
+    fig = go.Figure(
+        go.Pie(
+            labels=[row["label"] for row in rows],
+            values=[row["hours"] for row in rows],
+            marker=dict(colors=[row["color"] for row in rows], line=dict(color="#fffdf8", width=2)),
+            sort=False,
+            direction="clockwise",
+            textinfo="value",
+            textposition="inside",
+            insidetextfont=dict(color="#fffdf8", size=13),
+            hovertemplate="%{label}: %{value} hours (%{percent})<extra></extra>",
+        )
+    )
+    apply_layout(fig, 440)
+    fig.update_layout(
+        showlegend=True,
+        legend=dict(orientation="v", yanchor="middle", y=0.5, x=0.78, font=dict(size=13)),
+        margin=dict(l=24, r=180, t=24, b=24),
+    )
+    return fig
+
+
 def pulls_figure(rows: list[dict]) -> go.Figure:
     fig = go.Figure()
     fig.add_bar(
@@ -632,9 +655,14 @@ def build(args: argparse.Namespace) -> None:
     stack_meta["outside"] = (outside["label"], outside["color"])
     stack_meta["repo"] = (phases["repo_commits"]["label"], phases["repo_commits"]["color"])
     stack_series = []
+    category_rows = []
     for phase_id in stack_order:
         label, color = stack_meta[phase_id]
-        stack_series.append((label, color, [int(hours_by_bin[key].get(phase_id, 0)) for key in bins]))
+        values = [int(hours_by_bin[key].get(phase_id, 0)) for key in bins]
+        stack_series.append((label, color, values))
+        hours = sum(1 for key in worked if phase_name(key) == phase_id)
+        if hours:
+            category_rows.append({"id": phase_id, "label": label, "color": color, "hours": hours})
 
     summary = {
         "bin": args.bin,
@@ -676,6 +704,7 @@ def build(args: argparse.Namespace) -> None:
             "hours": hour_records,
         },
     )
+    write_json(out / "hours-by-category.json", {"hours_worked": len(worked), "categories": category_rows})
     write_json(out / "summary.json", summary)
 
     figures = {
@@ -687,6 +716,7 @@ def build(args: argparse.Namespace) -> None:
             args.bin,
         ),
         "hours": hours_figure(axis, stack_series, args.bin),
+        "categories": category_pie(category_rows),
         "tokens": token_bin_figure(token_rows, args.bin, timeline_start, timeline_end),
         "pulls": pulls_figure(pull_rows),
         "models": horizontal_figure(model_rows, "tokens_millions", " million tokens"),
@@ -927,6 +957,7 @@ def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure],
         <li><a href="#areas">Areas of work</a></li>
         <li><a href="#timeline">Timeline</a></li>
         <li><a href="#hours-worked">Hours worked</a></li>
+        <li><a href="#hours-by-category">Hours by category</a></li>
         <li><a href="#token-spend">Token spend</a></li>
         <li><a href="#pull-requests">Pull requests</a></li>
         <li><a href="#models">Tokens by model</a></li>
@@ -958,6 +989,11 @@ def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure],
       <p>An hour counts when it has a commit in this repo. The stack is the canonized area of a rewrite commit hour, summed into each {html.escape(bin_label)}.</p>
       <div class="figure">{fig_div(figures["hours"], "hours")}</div>
       <p class="caption">Other commits in this repo are hours with a commit on some ref here, outside the rewrite range. Empty {html.escape(bin_label)}s stay on the axis.</p>
+
+      <h2 id="hours-by-category">Hours by category</h2>
+      <p>Each slice is one category of hours worked. The number on a slice is the hour count.</p>
+      <div class="figure">{fig_div(figures["categories"], "categories")}</div>
+      <p class="caption">{comma(summary["hours_worked"])} hours worked. The slices use the same colors as the stacked chart.</p>
 
       <h2 id="token-spend">Token spend by {html.escape(bin_label)}</h2>
       <div class="figure">{fig_div(figures["tokens"], "tokens")}</div>
