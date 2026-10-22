@@ -1,0 +1,100 @@
+{
+  "areas": [
+    {
+      "id": "rust",
+      "label": "Rust impl",
+      "color": "#9a3412",
+      "summary": "Rust implementation through 20 Aug, ending as the acceptance tests began.",
+      "hours": [
+        "2026-07-05T18", "2026-07-05T19", "2026-07-05T20", "2026-07-05T21", "2026-07-05T22",
+        "2026-07-06T21", "2026-07-06T22",
+        "2026-07-08T02", "2026-07-08T03",
+        "2026-07-10T15", "2026-07-10T16", "2026-07-10T17", "2026-07-10T19",
+        "2026-07-10T20", "2026-07-10T21", "2026-07-10T22",
+        "2026-07-17T19",
+        "2026-07-22T17",
+        "2026-08-19T15",
+        "2026-08-20T00", "2026-08-20T18", "2026-08-20T19", "2026-08-20T20"
+      ]
+    },
+    {
+      "id": "improve",
+      "label": "Rust improvements",
+      "color": "#1e3a5f",
+      "summary": "October query behavior, ls, DESCRIBE, SHOW TABLES, SAVE, and REPL work.",
+      "hours": [
+        "2026-10-04T04",
+        "2026-10-10T12", "2026-10-10T13", "2026-10-10T15", "2026-10-10T17",
+        "2026-10-11T03", "2026-10-11T13", "2026-10-11T16",
+        "2026-10-12T14", "2026-10-12T23",
+        "2026-10-13T15", "2026-10-13T16",
+        "2026-10-14T02", "2026-10-14T05"
+      ]
+    },
+    {
+      "id": "acceptance",
+      "label": "Acceptance tests",
+      "color": "#1f5c45",
+      "summary": "Black-box acceptance tests. The 3 Oct pexpect hour stays here.",
+      "hours": [
+        "2026-08-21T15", "2026-08-21T17", "2026-08-21T18", "2026-08-21T19",
+        "2026-08-21T20", "2026-08-21T22",
+        "2026-08-23T17", "2026-08-23T18", "2026-08-23T19", "2026-08-23T20", "2026-08-23T21",
+        "2026-10-03T20"
+      ]
+    },
+    {
+      "id": "notebook",
+      "label": "Notebook",
+      "color": "#0f6e8c",
+      "summary": "Notebook planning and implementation.",
+      "hours": [
+        "2026-09-18T23",
+        "2026-09-19T01", "2026-09-19T04", "2026-09-19T13", "2026-09-19T16", "2026-09-19T20",
+        "2026-10-04T13", "2026-10-04T20", "2026-10-04T22",
+        "2026-10-05T00"
+      ]
+    },
+    {
+      "id": "web",
+      "label": "Web",
+      "color": "#7c4a12",
+      "summary": "Web UI.",
+      "hours": [
+        "2026-10-07T17", "2026-10-07T18", "2026-10-07T19", "2026-10-07T20",
+        "2026-10-07T21", "2026-10-07T22", "2026-10-07T23",
+        "2026-10-08T01",
+        "2026-10-10T00", "2026-10-10T02", "2026-10-10T03", "2026-10-10T04",
+        "2026-10-10T05", "2026-10-10T06", "2026-10-10T16",
+        "2026-10-11T06", "2026-10-11T15", "2026-10-11T22",
+        "2026-10-12T13", "2026-10-12T20", "2026-10-12T21", "2026-10-12T22",
+        "2026-10-14T13", "2026-10-14T14", "2026-10-14T15", "2026-10-14T17",
+        "2026-10-14T18", "2026-10-14T19", "2026-10-14T20", "2026-10-14T21",
+        "2026-10-15T00", "2026-10-15T01", "2026-10-15T03", "2026-10-15T06",
+        "2026-10-15T12", "2026-10-15T13",
+        "2026-10-18T22", "2026-10-18T23",
+        "2026-10-19T00", "2026-10-19T02"
+      ]
+    }
+  ],
+  "outside": {
+    "id": "outside",
+    "label": "Outside these groups",
+    "color": "#6b3fa0",
+    "summary": "Git graph, CI, README and screenshots, justfiles, explainers, version bumps, flake fixes, and the 12 Oct 15:00 UTC hour split between a SAVE change and a black-box flake."
+  },
+  "tokens_only": {
+    "id": "tokens",
+    "label": "Token usage only",
+    "color": "#a15c07",
+    "summary": "A UTC hour with token usage and no rewrite commit."
+  },
+  "agents": [
+    ["bc-a467b549", "Notebook plan"],
+    ["bc-7bbeede0", "DQLRS fork"],
+    ["bc-79cf3007", "Rust IMPL"],
+    ["bc-7c9a145b", "DQLRS"],
+    ["bc-8f9acc09", "Acceptance tests"],
+    ["bc-15659210", "Rust review"]
+  ]
+}

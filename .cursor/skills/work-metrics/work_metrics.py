@@ -1,0 +1,949 @@
+#!/usr/bin/env python3
+"""Build work-metrics JSON, Plotly graphs, and one HTML page.
+
+Reads commit subjects, authors, and author dates, plus pull request titles
+and merge times. Does not read diffs or file contents.
+"""
+
+from __future__ import annotations
+
+import argparse
+import html
+import json
+import math
+import os
+import subprocess
+import tempfile
+from collections import Counter, defaultdict
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pandas as pd
+import plotly
+import plotly.graph_objects as go
+
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+PALETTE = ["#9a3412", "#1e3a5f", "#1f5c45", "#7c4a12", "#6b3fa0", "#0f6e8c", "#a15c07", "#3f6212", "#9f1239"]
+COMMIT_COLOR = "#9f1239"
+TOKEN_COLOR = "#1c1915"
+HOUR_COLOR = "#1f5c45"
+# 10 commits sit level with 40 million tokens on the timeline's right axis.
+TOKENS_PER_COMMIT = 4.0
+PHASES_PATH = Path(__file__).with_name("phases.json")
+
+LAYOUT = dict(
+    paper_bgcolor="#fffdf8",
+    plot_bgcolor="#fffdf8",
+    font=dict(family='"Avenir Next", "Segoe UI", sans-serif', color="#1c1915", size=13),
+    margin=dict(l=58, r=68, t=48, b=52),
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=12)),
+    hovermode="closest",
+)
+AXIS = dict(gridcolor="#e3d9c8", zerolinecolor="#e3d9c8", linecolor="#d9cdb8", tickfont=dict(size=12))
+
+
+def parse_dt(value: str) -> datetime:
+    return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+
+
+def iso_z(value: datetime) -> str:
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def hour_key(value: datetime) -> str:
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H")
+
+
+def bin_key(value: datetime, grain: str) -> str:
+    value = value.astimezone(timezone.utc)
+    if grain == "hour":
+        return value.strftime("%Y-%m-%dT%H")
+    if grain == "day":
+        return value.strftime("%Y-%m-%d")
+    if grain == "month":
+        return value.strftime("%Y-%m")
+    raise ValueError(grain)
+
+
+def bin_stamp(key: str, grain: str) -> str:
+    if grain == "hour":
+        return f"{key}:00:00Z"
+    if grain == "day":
+        return f"{key}T00:00:00Z"
+    if grain == "month":
+        return f"{key}-01T00:00:00Z"
+    raise ValueError(grain)
+
+
+def pretty_day(iso_date: str) -> str:
+    _year, month, day = iso_date[:10].split("-")
+    return f"{int(day)} {MONTHS[int(month) - 1]}"
+
+
+def pretty_bin(key: str, grain: str) -> str:
+    if grain == "month":
+        year, month = key.split("-")
+        return f"{MONTHS[int(month) - 1]} {year}"
+    if grain == "hour":
+        return f"{pretty_day(key)} {key[11:13]}:00 UTC"
+    return pretty_day(key)
+
+
+def day_counts(hour_keys: list[str]) -> str:
+    counts = Counter(key[:10] for key in hour_keys)
+    return "; ".join(f"{pretty_day(day)} ({counts[day]})" for day in sorted(counts))
+
+
+def millions(value: float) -> float:
+    return round(float(value) / 1e6, 1)
+
+
+def headline_millions(value: float) -> str:
+    return f"{int(value // 1_000_000):,}M"
+
+
+def comma(value: float) -> str:
+    return f"{int(round(value)):,}"
+
+
+def load_phases() -> dict:
+    data = json.loads(PHASES_PATH.read_text(encoding="utf-8"))
+    seen: dict[str, str] = {}
+    for area in data["areas"]:
+        for key in area["hours"]:
+            if key in seen:
+                raise SystemExit(f"{key} is listed in both {seen[key]} and {area['id']}")
+            seen[key] = area["id"]
+    data["by_hour"] = seen
+    return data
+
+
+def git_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["TZ"] = "UTC"
+    return env
+
+
+def load_commits(repo: Path, base: str, head: str) -> list[dict]:
+    raw = subprocess.check_output(
+        ["git", "log", f"{base}..{head}", "--date=iso-strict", "--format=%ad%x09%an%x09%s"],
+        cwd=repo,
+        env=git_env(),
+        text=True,
+    )
+    commits = []
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        authored, author, subject = line.split("\t", 2)
+        when = parse_dt(authored)
+        commits.append(
+            {
+                "at": iso_z(when),
+                "author": author,
+                "subject": subject,
+                "hour": hour_key(when),
+                "day": when.strftime("%Y-%m-%d"),
+                "_dt": when,
+            }
+        )
+    commits.sort(key=lambda row: row["_dt"])
+    return commits
+
+
+def load_prs(repo: Path, base: str, head: str) -> list[dict]:
+    raw = subprocess.check_output(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--state",
+            "merged",
+            "--limit",
+            "200",
+            "--json",
+            "number,title,mergedAt,mergeCommit",
+        ],
+        cwd=repo,
+        text=True,
+    )
+    listed = json.loads(raw)
+    on_branch = set(
+        subprocess.check_output(
+            ["git", "log", f"{base}..{head}", "--format=%H"],
+            cwd=repo,
+            text=True,
+        ).split()
+    )
+    kept = []
+    for pr in listed:
+        oid = (pr.get("mergeCommit") or {}).get("oid")
+        merged_at = pr.get("mergedAt")
+        if not oid or not merged_at or oid not in on_branch:
+            continue
+        when = parse_dt(merged_at)
+        kept.append(
+            {
+                "number": pr["number"],
+                "title": pr["title"],
+                "merged_at": iso_z(when),
+                "day": when.strftime("%Y-%m-%d"),
+            }
+        )
+    kept.sort(key=lambda row: (row["merged_at"], row["number"]))
+    return kept
+
+
+def load_usage(csv_path: Path) -> pd.DataFrame:
+    frame = pd.read_csv(csv_path)
+    if "Date" not in frame.columns or "Total Tokens" not in frame.columns:
+        raise SystemExit(f"{csv_path} is missing Date or Total Tokens")
+    frame["when"] = frame["Date"].map(parse_dt)
+    frame["hour"] = frame["when"].map(hour_key)
+    frame["day"] = frame["when"].map(lambda value: value.strftime("%Y-%m-%d"))
+    for column in (
+        "Input (w/ Cache Write)",
+        "Input (w/o Cache Write)",
+        "Cache Read",
+        "Output Tokens",
+        "Total Tokens",
+    ):
+        if column not in frame.columns:
+            frame[column] = 0
+        frame[column] = pd.to_numeric(frame[column], errors="coerce").fillna(0)
+    frame["dollars"] = pd.to_numeric(frame.get("Cost"), errors="coerce").fillna(0.0)
+    frame["model"] = frame.get("Model", pd.Series(dtype=str)).fillna("").replace("", "(blank)")
+    agent = frame.get("Cloud Agent ID", pd.Series(dtype=str)).fillna("").astype(str)
+    frame["agent_id"] = agent.where(~agent.isin(["nan", "None"]), "")
+    return frame
+
+
+def agent_label(agent_id: str, agents: list[list[str]]) -> str:
+    if agent_id in ("", "nan"):
+        return "No cloud agent id"
+    for prefix, label in agents:
+        if str(agent_id).startswith(prefix):
+            return label
+    return "Other agents"
+
+
+def calendar_days(start: datetime, end: datetime) -> list[str]:
+    days = []
+    cursor = start.date()
+    last = end.date()
+    while cursor <= last:
+        days.append(cursor.isoformat())
+        cursor += timedelta(days=1)
+    return days
+
+
+def apply_layout(fig: go.Figure, height: int) -> go.Figure:
+    fig.update_layout(height=height, **LAYOUT)
+    fig.update_xaxes(**AXIS)
+    fig.update_yaxes(**AXIS)
+    return fig
+
+
+def fig_div(fig: go.Figure, div_id: str) -> str:
+    return fig.to_html(
+        full_html=False,
+        include_plotlyjs=False,
+        div_id=div_id,
+        config={"displayModeBar": False, "responsive": True},
+    )
+
+
+def timeline_figure(days: list[str], hours: list[int], commits: list[int], token_m: list[float]) -> go.Figure:
+    fig = go.Figure()
+    fig.add_bar(
+        x=days,
+        y=hours,
+        name="Hours worked",
+        marker_color=HOUR_COLOR,
+        yaxis="y",
+        width=16 * 3600 * 1000,
+        hovertemplate="%{x|%d %b}: %{y} hours worked<extra></extra>",
+    )
+    fig.add_scatter(
+        x=days,
+        y=token_m,
+        name="Tokens (millions)",
+        mode="lines",
+        line=dict(color=TOKEN_COLOR, width=2),
+        yaxis="y2",
+        hovertemplate="%{x|%d %b}: %{y:.1f} million tokens<extra></extra>",
+    )
+    marked = [(day, count) for day, count in zip(days, commits) if count]
+    if marked:
+        mark_days, mark_counts = zip(*marked)
+        largest = max(mark_counts)
+        fig.add_scatter(
+            x=list(mark_days),
+            y=[count * TOKENS_PER_COMMIT for count in mark_counts],
+            name="Commits",
+            mode="markers",
+            yaxis="y2",
+            customdata=list(mark_counts),
+            marker=dict(
+                size=list(mark_counts),
+                sizemode="area",
+                sizeref=2.0 * largest / (34.0 ** 2),
+                sizemin=5,
+                color=COMMIT_COLOR,
+                opacity=0.45,
+                line=dict(color=COMMIT_COLOR, width=1.2),
+            ),
+            hovertemplate="%{x|%d %b}: %{customdata} commits<extra></extra>",
+        )
+    apply_layout(fig, 480)
+    fig.update_layout(
+        barmode="overlay",
+        yaxis=dict(title="Hours worked", rangemode="tozero", **AXIS),
+        yaxis2=dict(title="Tokens (millions)", overlaying="y", side="right", rangemode="tozero", **AXIS),
+        xaxis=dict(title="", type="date", tickformat="%b", dtick="M1", **AXIS),
+    )
+    return fig
+
+
+def hours_figure(days: list[str], series: list[tuple[str, str, list[int]]]) -> go.Figure:
+    fig = go.Figure()
+    for label, color, values in series:
+        fig.add_bar(
+            x=days,
+            y=values,
+            name=label,
+            marker_color=color,
+            width=16 * 3600 * 1000,
+            hovertemplate="%{x|%d %b}: %{y} " + label + "<extra></extra>",
+        )
+    apply_layout(fig, 440)
+    fig.update_layout(
+        barmode="stack",
+        yaxis=dict(title="Hours worked", rangemode="tozero", **AXIS),
+        xaxis=dict(type="date", tickformat="%b", dtick="M1", **AXIS),
+    )
+    return fig
+
+
+def token_bin_figure(rows: list[dict], grain: str, start: datetime, end: datetime) -> go.Figure:
+    fig = go.Figure()
+    fig.add_bar(
+        x=[row["at"] for row in rows],
+        y=[row["tokens_millions"] for row in rows],
+        name="Tokens (millions)",
+        marker_color="#1e3a5f",
+        hovertemplate="%{customdata}: %{y:.1f} million tokens<extra></extra>",
+        customdata=[row["label"] for row in rows],
+    )
+    width = {"hour": 40 * 60 * 1000, "day": 16 * 3600 * 1000, "month": 20 * 24 * 3600 * 1000}[grain]
+    fig.update_traces(width=width)
+    apply_layout(fig, 420)
+    fig.update_layout(
+        yaxis=dict(title="Tokens (millions)", rangemode="tozero", **AXIS),
+        xaxis=dict(
+            type="date",
+            tickformat="%b" if grain == "month" else ("%d %b" if grain == "hour" else "%b"),
+            dtick=None if grain == "hour" else "M1",
+            range=[start.date().isoformat(), (end.date() + timedelta(days=1)).isoformat()],
+            **AXIS,
+        ),
+        showlegend=False,
+    )
+    return fig
+
+
+def pulls_figure(rows: list[dict]) -> go.Figure:
+    fig = go.Figure()
+    fig.add_bar(
+        x=[row["label"] for row in rows],
+        y=[row["count"] for row in rows],
+        marker_color="#6b3fa0",
+        hovertemplate="%{x}: %{y} pull requests<extra></extra>",
+    )
+    apply_layout(fig, 360)
+    fig.update_layout(
+        yaxis=dict(title="Pull requests", rangemode="tozero", **AXIS),
+        xaxis=dict(type="category", **AXIS),
+        showlegend=False,
+    )
+    return fig
+
+
+def horizontal_figure(rows: list[dict], value_key: str, suffix: str) -> go.Figure:
+    fig = go.Figure()
+    fig.add_bar(
+        y=[row["label"] for row in rows],
+        x=[row[value_key] for row in rows],
+        orientation="h",
+        marker_color=[row["color"] for row in rows],
+        hovertemplate="%{y}: %{x:.1f}" + suffix + "<extra></extra>",
+    )
+    height = max(280, 36 * len(rows) + 90)
+    apply_layout(fig, height)
+    fig.update_layout(
+        yaxis=dict(autorange="reversed", **AXIS),
+        xaxis=dict(title=suffix.strip(), rangemode="tozero", **AXIS),
+        showlegend=False,
+        margin=dict(l=160, r=40, t=36, b=48),
+    )
+    return fig
+
+
+def write_json(path: Path, payload: object) -> None:
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def build(args: argparse.Namespace) -> None:
+    phases = load_phases()
+    out = args.out or Path(tempfile.mkdtemp(prefix="work-metrics-"))
+    out.mkdir(parents=True, exist_ok=True)
+    commits = load_commits(args.repo, args.base, args.head)
+    if not commits:
+        raise SystemExit(f"No commits in {args.base}..{args.head}")
+    usage = load_usage(args.csv)
+    pulls = load_prs(args.repo, args.base, args.head)
+    first = commits[0]["_dt"]
+    last = commits[-1]["_dt"]
+    span_hours = math.floor((last - first).total_seconds() / 3600)
+    span_days = math.floor((last - first).total_seconds() / 86400)
+
+    commit_hours = {row["hour"] for row in commits}
+    token_hours = set(usage.loc[usage["Total Tokens"] > 0, "hour"])
+    worked = commit_hours | token_hours
+    phase_of = phases["by_hour"]
+    outside_hours = sorted(hour for hour in commit_hours if hour not in phase_of)
+    token_only = sorted(token_hours - commit_hours)
+
+    area_rows = []
+    for area in phases["areas"]:
+        keys = [key for key in area["hours"] if key in commit_hours]
+        area_rows.append(
+            {
+                "id": area["id"],
+                "label": area["label"],
+                "color": area["color"],
+                "summary": area["summary"],
+                "hours": len(keys),
+                "canon_hours": len(area["hours"]),
+                "commits": sum(1 for row in commits if row["hour"] in set(area["hours"])),
+                "dates": day_counts(keys),
+            }
+        )
+    outside = phases["outside"]
+    area_rows.append(
+        {
+            "id": outside["id"],
+            "label": outside["label"],
+            "color": outside["color"],
+            "summary": outside["summary"],
+            "hours": len(outside_hours),
+            "canon_hours": len(outside_hours),
+            "commits": sum(1 for row in commits if row["hour"] in set(outside_hours)),
+            "dates": day_counts(outside_hours),
+        }
+    )
+
+    usage = usage.copy()
+    usage["bin"] = usage["when"].map(lambda value: bin_key(value, args.bin))
+    for row in commits:
+        row["bin"] = bin_key(row["_dt"], args.bin)
+
+    grouped: dict[str, list[dict]] = defaultdict(list)
+    for row in commits:
+        grouped[row["bin"]].append(row)
+    commit_bins = []
+    for key in sorted(grouped):
+        rows = grouped[key]
+        commit_bins.append(
+            {
+                "bin": key,
+                "label": pretty_bin(key, args.bin),
+                "at": bin_stamp(key, args.bin),
+                "commits": [
+                    {"at": row["at"], "author": row["author"], "subject": row["subject"]}
+                    for row in rows
+                ],
+            }
+        )
+
+    token_groups = (
+        usage.groupby("bin", sort=True)
+        .agg(tokens=("Total Tokens", "sum"), dollars=("dollars", "sum"), events=("Total Tokens", "size"))
+        .reset_index()
+    )
+    token_rows = []
+    for record in token_groups.to_dict("records"):
+        key = str(record["bin"])
+        token_rows.append(
+            {
+                "bin": key,
+                "label": pretty_bin(key, args.bin),
+                "at": bin_stamp(key, args.bin),
+                "tokens": int(record["tokens"]),
+                "tokens_millions": millions(record["tokens"]),
+                "dollars": round(float(record["dollars"]), 2),
+                "events": int(record["events"]),
+            }
+        )
+
+    timeline_start = min(first, usage["when"].min())
+    timeline_end = max(last, usage["when"].max())
+    days = calendar_days(timeline_start, timeline_end)
+    commits_by_day = Counter(row["day"] for row in commits)
+    hours_by_day: dict[str, Counter] = defaultdict(Counter)
+    for key in sorted(worked):
+        day = key[:10]
+        if key in phase_of:
+            name = phase_of[key]
+        elif key in commit_hours:
+            name = "outside"
+        else:
+            name = "tokens"
+        hours_by_day[day][name] += 1
+    tokens_by_day = usage.groupby("day")["Total Tokens"].sum()
+    timeline_rows = []
+    for day in days:
+        timeline_rows.append(
+            {
+                "day": day,
+                "label": pretty_day(day),
+                "commits": int(commits_by_day.get(day, 0)),
+                "hours_worked": int(sum(hours_by_day[day].values())),
+                "tokens": int(tokens_by_day.get(day, 0)),
+                "tokens_millions": millions(tokens_by_day.get(day, 0)),
+            }
+        )
+
+    hour_records = []
+    for key in sorted(worked):
+        if key in phase_of:
+            phase_id = phase_of[key]
+        elif key in commit_hours:
+            phase_id = "outside"
+        else:
+            phase_id = "tokens"
+        reasons = []
+        if key in commit_hours:
+            reasons.append("commit")
+        if key in token_hours:
+            reasons.append("tokens")
+        hour_records.append(
+            {
+                "hour": key,
+                "day": key[:10],
+                "commits": sum(1 for row in commits if row["hour"] == key),
+                "tokens": int(usage.loc[usage["hour"] == key, "Total Tokens"].sum()),
+                "phase": phase_id,
+                "reasons": reasons,
+            }
+        )
+
+    pull_counts = Counter(row["day"] for row in pulls)
+    pull_rows = [
+        {"day": day, "label": pretty_day(day), "count": pull_counts[day],
+         "pulls": [row for row in pulls if row["day"] == day]}
+        for day in sorted(pull_counts)
+    ]
+
+    model_totals = usage.groupby("model")["Total Tokens"].sum().sort_values(ascending=False)
+    model_rows = []
+    top = list(model_totals.head(7).items())
+    other = float(model_totals.iloc[7:].sum()) if len(model_totals) > 7 else 0.0
+    for index, (name, value) in enumerate(top):
+        model_rows.append(
+            {"label": str(name), "tokens": int(value), "tokens_millions": millions(value), "color": PALETTE[index]}
+        )
+    if other:
+        model_rows.append(
+            {"label": "Other", "tokens": int(other), "tokens_millions": millions(other), "color": PALETTE[7]}
+        )
+
+    usage["agent"] = usage["agent_id"].map(lambda value: agent_label(value, phases["agents"]))
+    agent_totals = usage.groupby("agent")["Total Tokens"].sum().sort_values(ascending=False)
+    agent_rows = []
+    for index, (name, value) in enumerate(agent_totals.items()):
+        if value <= 0:
+            continue
+        agent_rows.append(
+            {
+                "label": str(name),
+                "tokens": int(value),
+                "tokens_millions": millions(value),
+                "color": PALETTE[index % len(PALETTE)],
+            }
+        )
+
+    total_tokens = int(usage["Total Tokens"].sum())
+    dollars = round(float(usage["dollars"].sum()), 2)
+    stack_order = [area["id"] for area in phases["areas"]] + ["outside", "tokens"]
+    stack_meta = {area["id"]: (area["label"], area["color"]) for area in phases["areas"]}
+    stack_meta["outside"] = (outside["label"], outside["color"])
+    stack_meta["tokens"] = (phases["tokens_only"]["label"], phases["tokens_only"]["color"])
+    stack_series = []
+    for phase_id in stack_order:
+        label, color = stack_meta[phase_id]
+        stack_series.append((label, color, [int(hours_by_day[day].get(phase_id, 0)) for day in days]))
+
+    summary = {
+        "bin": args.bin,
+        "base": args.base,
+        "head": args.head,
+        "commits": len(commits),
+        "first_commit": iso_z(first),
+        "last_commit": iso_z(last),
+        "span_days": span_days,
+        "span_hours": span_hours,
+        "hours_worked": len(worked),
+        "commit_hours": len(commit_hours),
+        "token_only_hours": len(token_only),
+        "pull_requests": len(pulls),
+        "tokens": total_tokens,
+        "dollars": dollars,
+        "timeline_start": days[0],
+        "timeline_end": days[-1],
+        "areas": area_rows,
+    }
+
+    public_commits = [{key: value for key, value in row.items() if key != "_dt"} for row in commits]
+    write_json(out / "commits-by-bin.json", {"bin": args.bin, "commits": len(commits), "bins": commit_bins})
+    write_json(out / "commits.json", public_commits)
+    write_json(out / "timeline.json", {"start": days[0], "end": days[-1], "days": timeline_rows})
+    write_json(out / "tokens-by-bin.json", {"bin": args.bin, "tokens": total_tokens, "dollars": dollars, "bins": token_rows})
+    write_json(out / "pulls-by-day.json", {"pull_requests": len(pulls), "days": pull_rows})
+    write_json(out / "tokens-by-agent.json", {"agents": agent_rows})
+    write_json(out / "tokens-by-model.json", {"models": model_rows})
+    write_json(
+        out / "hours-worked.json",
+        {
+            "definition": "A UTC hour is worked when it contains a rewrite commit or a usage row with tokens.",
+            "hours_worked": len(worked),
+            "commit_hours": len(commit_hours),
+            "token_only_hours": len(token_only),
+            "hours": hour_records,
+        },
+    )
+    write_json(out / "summary.json", summary)
+
+    figures = {
+        "timeline": timeline_figure(
+            days,
+            [row["hours_worked"] for row in timeline_rows],
+            [row["commits"] for row in timeline_rows],
+            [row["tokens_millions"] for row in timeline_rows],
+        ),
+        "hours": hours_figure(days, stack_series),
+        "tokens": token_bin_figure(token_rows, args.bin, timeline_start, timeline_end),
+        "pulls": pulls_figure(pull_rows),
+        "models": horizontal_figure(model_rows, "tokens_millions", " million tokens"),
+        "agents": horizontal_figure(agent_rows, "tokens_millions", " million tokens"),
+    }
+    for name, fig in figures.items():
+        (out / f"{name}.html").write_text(fig_div(fig, name), encoding="utf-8")
+
+    page = render_html(summary, area_rows, figures, args)
+    html_path = args.html or (out / "work-metrics.html")
+    html_path.parent.mkdir(parents=True, exist_ok=True)
+    html_path.write_text(page, encoding="utf-8")
+    if html_path.resolve() != (out / "work-metrics.html").resolve():
+        (out / "work-metrics.html").write_text(page, encoding="utf-8")
+
+    print(f"out: {out}")
+    print(f"html: {html_path}")
+    print(
+        "summary:",
+        json.dumps(
+            {key: summary[key] for key in (
+                "bin", "commits", "span_days", "span_hours", "hours_worked",
+                "commit_hours", "token_only_hours", "pull_requests", "tokens", "dollars",
+            )}
+        ),
+    )
+    print("areas:", [(row["label"], row["hours"], row["commits"]) for row in area_rows])
+
+
+def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure], args: argparse.Namespace) -> str:
+    bin_label = {"hour": "hour", "day": "day", "month": "month"}[summary["bin"]]
+    first = pretty_stamp(summary["first_commit"])
+    last = pretty_stamp(summary["last_commit"])
+    dollars = f"${summary['dollars']:.2f}"
+    area_table = [
+        "<table>",
+        "<thead><tr><th>Area</th><th class=\"num\">Hours</th><th class=\"num\">Commits</th><th>Hours per day</th></tr></thead>",
+        "<tbody>",
+    ]
+    for area in areas:
+        area_table.append(
+            "<tr>"
+            f"<td>{html.escape(area['label'])}</td>"
+            f"<td class=\"num\">{area['hours']}</td>"
+            f"<td class=\"num\">{area['commits']}</td>"
+            f"<td>{html.escape(area['dates'])}</td>"
+            "</tr>"
+        )
+    area_table.append("</tbody></table>")
+    stats = [
+        ("Hours worked", comma(summary["hours_worked"])),
+        ("Hours since start", comma(summary["span_hours"])),
+        ("Commits", comma(summary["commits"])),
+        ("Pull requests merged", comma(summary["pull_requests"])),
+        ("Tokens", headline_millions(summary["tokens"])),
+    ]
+    stat_html = "".join(
+        f'<div class="stat"><b>{html.escape(value)}</b><span>{html.escape(label)}</span></div>'
+        for label, value in stats
+    )
+    plotly_js = plotly.offline.get_plotlyjs().replace("</", "<\\/")
+    grain_note = (
+        f"Token spend below is grouped by {bin_label}. "
+        "The timeline and the hours-worked chart stay on calendar days, and pull requests stay on the merge day."
+    )
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Work metrics, {html.escape(args.base)} to {html.escape(args.head)}</title>
+  <script>{plotly_js}</script>
+  <style>
+    :root {{
+      --bg: #f3efe6;
+      --paper: #fffdf8;
+      --ink: #1c1915;
+      --muted: #5e564c;
+      --line: #e3d9c8;
+      --accent: #9a3412;
+      --code: #f6f1e8;
+    }}
+    * {{ box-sizing: border-box; }}
+    html {{ scroll-behavior: smooth; }}
+    body {{
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font: 17px/1.55 "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+    }}
+    a {{ color: var(--accent); }}
+    code {{
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 0.86em;
+      background: var(--code);
+      padding: 0.1em 0.35em;
+      border-radius: 3px;
+    }}
+    .layout {{
+      display: grid;
+      grid-template-columns: 16rem minmax(0, 52rem);
+      gap: 2.5rem;
+      max-width: 76rem;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+    }}
+    nav {{
+      position: sticky;
+      top: 1.25rem;
+      align-self: start;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-size: 0.84rem;
+      line-height: 1.35;
+    }}
+    nav p {{
+      margin: 0 0 0.6rem;
+      color: var(--muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-size: 0.72rem;
+    }}
+    nav ol {{ margin: 0; padding: 0; list-style: none; }}
+    nav li {{ margin: 0.35rem 0; }}
+    nav a {{ color: var(--ink); text-decoration: none; }}
+    nav a:hover {{ color: var(--accent); }}
+    header h1 {{
+      font-weight: 600;
+      font-size: 2.15rem;
+      line-height: 1.15;
+      margin: 0 0 0.6rem;
+    }}
+    .kicker {{
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 0 0 0.4rem;
+    }}
+    h2 {{
+      font-size: 1.55rem;
+      font-weight: 600;
+      margin: 2.4rem 0 0.6rem;
+      padding-top: 0.4rem;
+    }}
+    p {{ margin: 0.7rem 0; }}
+    .lead {{ font-size: 1.12rem; margin: 0 0 1rem; }}
+    .stats {{
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 0.7rem;
+      margin: 1rem 0 0.4rem;
+    }}
+    .stat {{
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-top: 3px solid var(--accent);
+      padding: 0.75rem 0.7rem 0.65rem;
+    }}
+    .stat:nth-child(2) {{ border-top-color: #1e3a5f; }}
+    .stat:nth-child(3) {{ border-top-color: #1f5c45; }}
+    .stat:nth-child(4) {{ border-top-color: #7c4a12; }}
+    .stat:nth-child(5) {{ border-top-color: #6b3fa0; }}
+    .stat b {{
+      display: block;
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-size: 1.55rem;
+      font-weight: 650;
+      line-height: 1.1;
+    }}
+    .stat span {{
+      display: block;
+      margin-top: 0.25rem;
+      color: var(--muted);
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-size: 0.78rem;
+      line-height: 1.3;
+    }}
+    .figure {{
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.25rem 0.35rem 0.15rem;
+      margin: 0.7rem 0 0.2rem;
+    }}
+    .pair {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      align-items: start;
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--paper);
+      font-size: 0.95rem;
+      margin: 0.8rem 0 1rem;
+    }}
+    th, td {{
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+      padding: 0.45rem 0.6rem;
+    }}
+    th {{
+      font-family: "Avenir Next", "Segoe UI", sans-serif;
+      font-size: 0.78rem;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 600;
+    }}
+    td.num, th.num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+    .note {{
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      padding: 0.8rem 1rem;
+      margin: 1rem 0;
+    }}
+    .caption {{ color: var(--muted); font-size: 0.92rem; margin: 0.35rem 0 0.2rem; }}
+    footer {{ margin-top: 2.5rem; color: var(--muted); font-size: 0.92rem; }}
+    @media (max-width: 860px) {{
+      .layout {{ grid-template-columns: 1fr; padding: 1.2rem 1rem 3rem; }}
+      nav {{ position: static; }}
+      .stats, .pair {{ grid-template-columns: 1fr 1fr; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav>
+      <p>On this page</p>
+      <ol>
+        <li><a href="#summary">Summary</a></li>
+        <li><a href="#areas">Areas of work</a></li>
+        <li><a href="#timeline">Timeline</a></li>
+        <li><a href="#hours-worked">Hours worked</a></li>
+        <li><a href="#token-spend">Token spend</a></li>
+        <li><a href="#pull-requests">Pull requests</a></li>
+        <li><a href="#models">Tokens by model</a></li>
+        <li><a href="#agents">Tokens by cloud agent</a></li>
+      </ol>
+    </nav>
+    <main>
+      <header>
+        <p class="kicker">{html.escape(bin_label)} bin</p>
+        <h1>Work metrics</h1>
+      </header>
+      <h2 id="summary">Summary</h2>
+      <p class="lead">{comma(summary["commits"])} commits landed between {first} and {last}, a span of {comma(summary["span_days"])} days ({comma(summary["span_hours"])} hours). {comma(summary["hours_worked"])} hours were worked. {comma(summary["pull_requests"])} pull requests were merged. The usage export totals {headline_millions(summary["tokens"])} tokens and {dollars}.</p>
+      <div class="stats">{stat_html}</div>
+      <p class="caption">Commits are <code>{html.escape(args.base)}..{html.escape(args.head)}</code>, dated from the author timestamp in UTC. Hours since start is that span, floored. An hour is worked when it contains one of those commits or a usage row with tokens. {comma(summary["commit_hours"])} hours contain a rewrite commit. {comma(summary["token_only_hours"])} further hours contain token usage and no rewrite commit.</p>
+      <p class="note">{dollars} is the numeric Cost column. Included and Free rows have no dollar amount. Token counts are not turned into prices. Of the {comma(summary["tokens"])} tokens, the timeline draws every calendar day from {pretty_day(summary["timeline_start"])} through {pretty_day(summary["timeline_end"])}.</p>
+
+      <h2 id="areas">Areas of work</h2>
+      <p>Each rewrite commit hour is counted once, in the area canonized for that hour. A calendar day can hold more than one area. Rust impl stops on 20 Aug. October query, <code>ls</code>, SAVE, and REPL hours are Rust improvements.</p>
+      {"".join(area_table)}
+      <p class="caption">The number after each date is commit hours that day. {html.escape(areas[-1]["summary"])}</p>
+
+      <h2 id="timeline">Timeline</h2>
+      <p>{grain_note} Bars are hours worked. The line is tokens, in millions. Each circle is one day's commits, and a larger circle is more commits.</p>
+      <div class="figure">{fig_div(figures["timeline"], "timeline")}</div>
+      <p class="caption">Every day from {pretty_day(summary["timeline_start"])} through {pretty_day(summary["timeline_end"])} stays on the axis, including the empty stretches. Commit circles sit on the token axis at 4 million tokens per commit, so 10 commits are level with 40 million. Hover a bar, a point, or a circle for that day.</p>
+
+      <h2 id="hours-worked">Hours worked</h2>
+      <p>An hour counts when it has a rewrite commit or token usage. The stack is the canonized area of that commit hour.</p>
+      <div class="figure">{fig_div(figures["hours"], "hours")}</div>
+      <p class="caption">Token-usage-only hours are the hours with spend and no rewrite commit. Empty days stay on the axis.</p>
+
+      <h2 id="token-spend">Token spend by {html.escape(bin_label)}</h2>
+      <div class="figure">{fig_div(figures["tokens"], "tokens")}</div>
+      <p class="caption">Millions of tokens in the attached export, one bar per {html.escape(bin_label)}. The axis keeps the full span.</p>
+
+      <h2 id="pull-requests">Pull requests merged, by day</h2>
+      <div class="figure">{fig_div(figures["pulls"], "pulls")}</div>
+      <p class="caption">{comma(summary["pull_requests"])} merged pull requests whose merge commit is in the rewrite range.</p>
+
+      <h2 id="models">Tokens by model</h2>
+      <div class="figure">{fig_div(figures["models"], "models")}</div>
+      <p class="caption">Millions of tokens. Other is every model after the first seven.</p>
+
+      <h2 id="agents">Tokens by cloud agent</h2>
+      <div class="figure">{fig_div(figures["agents"], "agents")}</div>
+      <p class="caption">Named agents are the canonized cloud agent ids. Rows with no id stay together.</p>
+      <footer>
+        <p>Day and hour pages from the earlier pass: <a href="rewrite-metrics.html">rewrite-metrics.html</a>, <a href="rewrite-metrics-hours.html">rewrite-metrics-hours.html</a>. Back to the <a href="README.md">Rust user guide</a>.</p>
+      </footer>
+    </main>
+  </div>
+</body>
+</html>
+"""
+
+
+def pretty_stamp(iso: str) -> str:
+    when = parse_dt(iso)
+    hour = when.strftime("%H:%M")
+    return f"{when.day} {MONTHS[when.month - 1]} {when.year} {hour} UTC"
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Build work metrics from git history and a Cursor usage CSV.")
+    parser.add_argument("--bin", required=True, choices=["hour", "day", "month"])
+    parser.add_argument("--csv", required=True, type=Path, help="Cursor token-spend usage export")
+    parser.add_argument("--out", type=Path, help="Temp directory for JSON and graph fragments")
+    parser.add_argument("--html", type=Path, help="Combined HTML page. Defaults to OUT/work-metrics.html")
+    parser.add_argument("--repo", type=Path, default=Path("."))
+    parser.add_argument("--base", default="origin/v-next")
+    parser.add_argument("--head", default="origin/v-rust")
+    build(parser.parse_args())
+
+
+if __name__ == "__main__":
+    main()
