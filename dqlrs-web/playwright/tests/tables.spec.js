@@ -1,4 +1,5 @@
 import { test, expect } from "../support/app.js";
+import { playwrightArtifact } from "../support/artifacts.js";
 import { colorPattern, openResultPane, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
 
 test("opens the table browser from the #tables hash", async ({ page, app }) => {
@@ -556,6 +557,74 @@ test("gives each query result its own named card and structure icon", async ({ p
   expect(extra).toEqual([]);
   await page.keyboard.press("Escape");
   await expect(page.locator("#schema-pop")).toBeHidden();
+});
+
+test("scrolls a wide result table sideways inside the card", async ({ page, app }, testInfo) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  const columns = Array.from({ length: 14 }, (_, index) => `col_${String(index + 1).padStart(2, "0")}`);
+  const values = columns.map((column) => `'${column}-value'`);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY);`,
+      `INSERT INTO ${name} (id, ${columns.join(", ")}) VALUES ('row-1', ${values.join(", ")});`,
+      `SELECT * FROM ${name} WHERE id = 'row-1';`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+
+  const card = page.locator(`.result-card[data-table="${name}"]`);
+  const scroller = card.locator(".result-card-body");
+  await expect(card).toBeVisible();
+  await expect(page.locator("#result-table thead th")).toHaveText(["id", ...columns]);
+  await expect(page.locator("#result-table")).toContainText("col_14-value");
+
+  const paneBox = await page.locator("#result-body").boundingBox();
+  const cardBox = await card.boundingBox();
+  expect(cardBox.x).toBeGreaterThanOrEqual(paneBox.x - 1);
+  expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(paneBox.x + paneBox.width + 1);
+
+  const metrics = await scroller.evaluate((node) => ({
+    client: node.clientWidth,
+    scroll: node.scrollWidth,
+    overflowX: getComputedStyle(node).overflowX,
+  }));
+  expect(metrics.overflowX).toBe("auto");
+  expect(metrics.scroll).toBeGreaterThan(metrics.client + 24);
+
+  const last = page.locator("#result-table thead th").last();
+  const clipped = await last.evaluate((cell) => {
+    const box = cell.getBoundingClientRect();
+    const parent = cell.closest(".result-card-body").getBoundingClientRect();
+    return box.right > parent.right + 8;
+  });
+  expect(clipped).toBe(true);
+  await card.screenshot({
+    path: playwrightArtifact(`result-table-scroll-start-${testInfo.project.name}.png`),
+  });
+
+  await scroller.hover();
+  await page.mouse.wheel(480, 0);
+  await expect.poll(async () => scroller.evaluate((node) => node.scrollLeft)).toBeGreaterThan(20);
+
+  await scroller.evaluate((node) => {
+    node.scrollLeft = node.scrollWidth;
+  });
+  const endVisible = await last.evaluate((cell) => {
+    const box = cell.getBoundingClientRect();
+    const parent = cell.closest(".result-card-body").getBoundingClientRect();
+    return box.right <= parent.right + 2 && box.left < parent.right - 8;
+  });
+  expect(endVisible).toBe(true);
+  await card.screenshot({
+    path: playwrightArtifact(`result-table-scroll-end-${testInfo.project.name}.png`),
+  });
 });
 
 function uniqueTable() {

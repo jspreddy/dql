@@ -1184,7 +1184,8 @@ body.results-resizing * {
 #result-body .result-card-query .tok-operator { color: var(--text-secondary); }
 
 #result-body .result-card-body {
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   border-radius: 0 0 9px 9px;
 }
 
@@ -1235,10 +1236,16 @@ body.results-resizing * {
 }
 
 #result-body .result-card table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   margin: 0;
   border: 0;
   border-radius: 0;
+}
+
+#result-body .result-card th,
+#result-body .result-card td {
+  white-space: nowrap;
 }
 
 #result-body .result-card thead th:first-child,
