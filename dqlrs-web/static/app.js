@@ -2546,6 +2546,35 @@ function parseExplainFields(text) {
   return fields;
 }
 
+// Pretty labels and JSON keys share this order. Fields that are absent are
+// skipped. Any other detail keeps its source order after these.
+const EXPLAIN_FIELD_ORDER = [
+  ["index", "index"],
+  ["attributes", "projection expression"],
+  ["key_condition", "key condition expression"],
+  ["filter", "filter expression"],
+  ["attribute_names", "attribute names"],
+  ["expression_values", "attribute values"],
+];
+
+function explainRows(step) {
+  const byKey = new Map(step.fields.map((field) => [field.key, field.value]));
+  const used = new Set();
+  const rows = [];
+  if (step.target) rows.push({ label: "table name", value: step.target });
+  for (const [key, label] of EXPLAIN_FIELD_ORDER) {
+    if (!byKey.has(key)) continue;
+    used.add(key);
+    rows.push({ label, value: byKey.get(key) });
+  }
+  for (const field of step.fields) {
+    if (used.has(field.key)) continue;
+    rows.push({ label: field.key.replaceAll("_", " "), value: field.value });
+  }
+  if (step.operation) rows.push({ label: "operation", value: step.operation });
+  return rows;
+}
+
 function explainPlan(steps) {
   const card = document.createElement("section");
   card.className = "explain";
@@ -2575,8 +2604,8 @@ function explainPlan(steps) {
   json.className = "explain-json";
   json.dataset.testid = "explain-json";
   json.textContent = JSON.stringify(steps.map((step) => {
-    const row = { operation: step.operation, target: step.target };
-    for (const field of step.fields) row[field.key] = field.value;
+    const row = {};
+    for (const field of explainRows(step)) row[field.label] = field.value;
     return row;
   }), null, 2);
   card.append(head, json);
@@ -2590,20 +2619,18 @@ function explainPlan(steps) {
     badge.className = "explain-badge";
     badge.dataset.testid = "explain-op";
     badge.textContent = step.operation.replaceAll("_", " ");
-    const target = document.createElement("span");
-    target.className = "explain-target";
-    target.dataset.testid = "explain-target";
-    target.textContent = step.target;
-    op.append(badge, target);
+    op.append(badge);
     row.append(op);
-    if (step.fields.length) {
+    const fields = explainRows(step);
+    if (fields.length) {
       const list = document.createElement("dl");
       list.className = "explain-fields";
-      for (const field of step.fields) {
+      for (const field of fields) {
         const term = document.createElement("dt");
-        term.textContent = field.key.replaceAll("_", " ");
+        term.textContent = field.label;
         const detail = document.createElement("dd");
         detail.textContent = field.value;
+        if (field.label === "table name") detail.dataset.testid = "explain-target";
         list.append(term, detail);
       }
       row.append(list);

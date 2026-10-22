@@ -935,7 +935,7 @@ test("shows an explain plan as operations and conditions", async ({ page, app },
 
   await replaceEditor(
     page,
-    `EXPLAIN SELECT * FROM ${name} WHERE id = 'a' AND n > 1 AND name = 'ada';`,
+    `EXPLAIN SELECT CONSISTENT name FROM ${name} WHERE id = 'a' AND n > 1 AND name = 'ada';`,
   );
   await pressMod(page, "A");
   await page.locator("#run").click();
@@ -948,14 +948,30 @@ test("shows an explain plan as operations and conditions", async ({ page, app },
   const fields = plan.locator(".explain-fields");
   const field = (label) =>
     fields.locator("dt", { hasText: new RegExp("^" + label + "$") }).locator("xpath=following-sibling::dd[1]");
-  await expect(field("key condition")).toContainText("id = ");
-  await expect(field("key condition")).toContainText("n > ");
-  await expect(field("filter")).toContainText("#f");
-  await expect(field("attribute names")).toContainText("name");
-  await expect(field("expression values")).toContainText('"a"');
-  await expect(field("expression values")).toContainText('"ada"');
-  await expect(field("expression values")).toContainText("1");
+  const labels = [
+    "table name",
+    "index",
+    "projection expression",
+    "key condition expression",
+    "filter expression",
+    "attribute names",
+    "attribute values",
+    "consistent",
+    "operation",
+  ];
+  await expect(fields.locator("dt")).toHaveText(labels);
+  await expect(field("table name")).toHaveText(name);
   await expect(field("index")).toHaveText("TABLE");
+  await expect(field("projection expression")).toContainText("#f");
+  await expect(field("key condition expression")).toContainText("id = ");
+  await expect(field("key condition expression")).toContainText("n > ");
+  await expect(field("filter expression")).toContainText("#f");
+  await expect(field("attribute names")).toContainText("name");
+  await expect(field("attribute values")).toContainText('"a"');
+  await expect(field("attribute values")).toContainText('"ada"');
+  await expect(field("attribute values")).toContainText("1");
+  await expect(field("consistent")).toHaveText("true");
+  await expect(field("operation")).toHaveText("query");
   await page.locator("#result-body").screenshot({
     path: playwrightArtifact(`explain-attributes-${testInfo.project.name}.png`),
   });
@@ -971,23 +987,27 @@ test("shows an explain plan as operations and conditions", async ({ page, app },
   await expect(plan.locator('[data-testid="explain-step"]')).toBeHidden();
   await expect(raw).toBeVisible();
   const text = await raw.innerText();
-  expect(text).toContain('\n    "operation": "query"');
   const parsed = JSON.parse(text);
   expect(parsed).toHaveLength(1);
-  expect(parsed[0].operation).toBe("query");
-  expect(parsed[0].target).toBe(name);
+  expect(Object.keys(parsed[0])).toEqual(labels);
+  expect(parsed[0]["table name"]).toBe(name);
   expect(parsed[0].index).toBe("TABLE");
-  expect(parsed[0].key_condition).toContain("id = ");
-  expect(parsed[0].key_condition).toContain("n > ");
-  expect(parsed[0].filter).toContain("#f");
-  expect(parsed[0].attribute_names).toContain("name");
-  expect(parsed[0].expression_values).toContain('"a"');
-  expect(parsed[0].expression_values).toContain('"ada"');
+  expect(parsed[0]["projection expression"]).toContain("#f");
+  expect(parsed[0]["key condition expression"]).toContain("id = ");
+  expect(parsed[0]["key condition expression"]).toContain("n > ");
+  expect(parsed[0]["filter expression"]).toContain("#f");
+  expect(parsed[0]["attribute names"]).toContain("name");
+  expect(parsed[0]["attribute values"]).toContain('"a"');
+  expect(parsed[0]["attribute values"]).toContain('"ada"');
+  expect(parsed[0].operation).toBe("query");
+  await page.locator("#result-body").screenshot({
+    path: playwrightArtifact(`explain-json-${testInfo.project.name}.png`),
+  });
   await page.reload();
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
   await replaceEditor(
     page,
-    `EXPLAIN SELECT * FROM ${name} WHERE id = 'a' AND n > 1 AND name = 'ada';`,
+    `EXPLAIN SELECT CONSISTENT name FROM ${name} WHERE id = 'a' AND n > 1 AND name = 'ada';`,
   );
   await pressMod(page, "A");
   await page.locator("#run").click();
