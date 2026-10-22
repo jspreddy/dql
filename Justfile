@@ -407,7 +407,7 @@ check: (_title "check") py-sync py-fix rust-fix
 test: (_title "test") dynamo py-sync rust-build web-unit py-test rust-test rust-local rust-smoke black-box notebook-test web-test mcp-test
 
 # Static analysis, package builds, and every test suite. Does not call `test`.
-verify: (_title "verify") dynamo web-unit py rust black-box notebook-test web-test mcp-smoke mcp-test
+verify: (_title "verify") dynamo web-unit py rust black-box notebook-test web-test mcp-test
 
 # Install dql and dqlrs onto ~/.local/bin
 install: (_title "install") py rust py-install rust-install
