@@ -33,8 +33,6 @@ TOKEN_COLOR = "#1c1915"
 HOUR_COLOR = "#0067A5"
 TOKEN_BAR_COLOR = "#F38400"
 PULL_COLOR = "#6A3D9A"
-# 10 commits sit level with 40 million tokens on the timeline's right axis.
-TOKENS_PER_COMMIT = 4.0
 PHASES_PATH = Path(__file__).with_name("phases.json")
 
 LAYOUT = dict(
@@ -318,12 +316,13 @@ def timeline_figure(days: list[str], hours: list[int], commits: list[int], token
     if marked:
         mark_days, mark_counts = zip(*marked)
         largest = max(mark_counts)
+        circle_y = (max(hours) if hours else 0) + 4
         fig.add_scatter(
             x=list(mark_days),
-            y=[count * TOKENS_PER_COMMIT for count in mark_counts],
+            y=[circle_y] * len(mark_counts),
             name="Commits",
             mode="markers",
-            yaxis="y2",
+            yaxis="y",
             customdata=list(mark_counts),
             marker=dict(
                 size=list(mark_counts),
@@ -950,7 +949,7 @@ def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure],
       <h2 id="timeline">Timeline</h2>
       <p>{grain_note} Bars are hours worked. The line is tokens, in millions. Each circle is one day's commits, and a larger circle is more commits.</p>
       <div class="figure">{fig_div(figures["timeline"], "timeline")}</div>
-      <p class="caption">Every {html.escape(bin_label)} from {html.escape(pretty_bin(summary["timeline_start"], summary["bin"]))} through {html.escape(pretty_bin(summary["timeline_end"], summary["bin"]))} stays on the axis, including the empty stretches. Commit circles sit on the token axis at 4 million tokens per commit, so 10 commits are level with 40 million. Hover a bar, a point, or a circle for that {html.escape(bin_label)}.</p>
+      <p class="caption">Every {html.escape(bin_label)} from {html.escape(pretty_bin(summary["timeline_start"], summary["bin"]))} through {html.escape(pretty_bin(summary["timeline_end"], summary["bin"]))} stays on the axis, including the empty stretches. Commit circles sit on one line, 4 hours above the tallest hours-worked bar. A larger circle is more commits. Hover a bar, a point, or a circle for that {html.escape(bin_label)}.</p>
 
       <h2 id="hours-worked">Hours worked</h2>
       <p>An hour counts when it has a commit in this repo. The stack is the canonized area of a rewrite commit hour, summed into each {html.escape(bin_label)}.</p>

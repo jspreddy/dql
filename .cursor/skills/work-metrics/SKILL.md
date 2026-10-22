@@ -48,7 +48,7 @@ In the temp folder:
 - `hours-worked.json` and `hours.html` — hours worked, defined below.
 - `summary.json` and `work-metrics.html` — the combined page.
 
-Gather commits, usage, and pull requests at UTC hour grain. An hour is worked when that hour has a commit on any ref in this repo. The report then sums those hours, the commits, the tokens, and the merged pull requests into the bin. Commit circles sit on the token axis at 4 million tokens per commit, so 10 commits are level with 40 million, and a larger circle is more commits.
+Gather commits, usage, and pull requests at UTC hour grain. An hour is worked when that hour has a commit on any ref in this repo. The report then sums those hours, the commits, the tokens, and the merged pull requests into the bin. Commit circles sit on one horizontal line, 4 hours above the highest hours-worked bar. Their size shows the commit count.
 
 Series colors live in `phases.json` and in `PALETTE` in the script. Neighboring series stay far apart in hue. Do not put two browns, two blues, or two greens next to each other.
 
