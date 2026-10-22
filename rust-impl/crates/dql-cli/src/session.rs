@@ -1062,6 +1062,11 @@ mod tests {
 
         let missing = session.execute_for_serve("ls missing;");
         assert!(!missing.ok, "{missing:?}");
+
+        let glob = session.execute_for_serve("ls missing*;");
+        assert!(glob.ok, "{glob:?}");
+        let glob_text = glob.message.unwrap_or_default();
+        assert!(!glob_text.contains("not found"), "{glob_text}");
     }
 
     #[test]

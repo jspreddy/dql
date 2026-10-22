@@ -97,6 +97,13 @@ pub fn collect_view(
     let (filtered, note) = resolve_names(session, pattern)?;
     let hint = refresh_hint.or_else(|| cache_hint(session));
     match filtered.len() {
+        0 if is_glob(pattern) => Ok(with_hint(
+            LsView::Summary {
+                rows: Vec::new(),
+                note: None,
+            },
+            hint,
+        )),
         0 => Err(format!("Table {pattern:?} not found")),
         1 => {
             let name = &filtered[0];
@@ -276,6 +283,10 @@ fn merge_note(note: Option<String>, hint: Option<String>) -> Option<String> {
     }
 }
 
+fn is_glob(pattern: &str) -> bool {
+    pattern.contains('*') || pattern.contains('?')
+}
+
 fn glob_matches(pattern: &str, name: &str) -> bool {
     glob::Pattern::new(pattern)
         .map(|pattern| pattern.matches(name))
@@ -303,8 +314,13 @@ fn resolve_names(
         .filter_map(|name| session.engine.cached_definition(name))
         .map(|meta| dql_engine::MatchTable::from_meta(&meta))
         .collect();
-    let hit = dql_engine::intelligent_matches(&tables, pattern)?;
-    Ok((hit.names, Some(hit.note)))
+    match dql_engine::intelligent_matches(&tables, pattern) {
+        Ok(hit) => Ok((hit.names, Some(hit.note))),
+        // A filename glob that matches nothing, and nothing similar, is an
+        // empty list. A bare name that matches nothing stays an error.
+        Err(_) if is_glob(pattern) => Ok((Vec::new(), None)),
+        Err(message) => Err(message),
+    }
 }
 
 pub fn web_table_list(

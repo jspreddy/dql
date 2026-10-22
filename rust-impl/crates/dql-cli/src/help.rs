@@ -354,11 +354,11 @@ pub const ALTER: &str = r"
 
     Examples
     --------
-    ALTER TABLE foobars SET THROUGHPUT (4, 8);
-    ALTER TABLE foobars SET THROUGHPUT (7, *);
-    ALTER TABLE foobars SET INDEX ts-index THROUGHPUT (5, *);
-    ALTER TABLE foobars DROP INDEX ts-index;
-    ALTER TABLE foobars CREATE GLOBAL INDEX ('ts-index', ts NUMBER, THROUGHPUT (5, 5));
+    CREATE TABLE foobars (id STRING HASH KEY); ALTER TABLE foobars SET THROUGHPUT (4, 8);
+    CREATE TABLE foobars (id STRING HASH KEY); ALTER TABLE foobars SET THROUGHPUT (7, *);
+    CREATE TABLE foobars (id STRING HASH KEY, ts NUMBER) GLOBAL INDEX ('ts-index', ts NUMBER); ALTER TABLE foobars SET INDEX ts-index THROUGHPUT (5, *);
+    CREATE TABLE foobars (id STRING HASH KEY, ts NUMBER) GLOBAL INDEX ('ts-index', ts NUMBER); ALTER TABLE foobars DROP INDEX ts-index;
+    CREATE TABLE foobars (id STRING HASH KEY, ts NUMBER); ALTER TABLE foobars CREATE GLOBAL INDEX ('ts-index', ts NUMBER, THROUGHPUT (5, 5));
 ";
 
 pub const ANALYZE: &str = r"
@@ -368,8 +368,8 @@ pub const ANALYZE: &str = r"
 
     Examples
     --------
-    ANALYZE SELECT * FROM foobars WHERE id = 'a';
-    ANALYZE INSERT INTO foobars (id, name) VALUES (1, 'dsa');
+    CREATE TABLE foobars (id STRING HASH KEY); ANALYZE SELECT * FROM foobars WHERE id = 'a';
+    CREATE TABLE foobars (id STRING HASH KEY); ANALYZE INSERT INTO foobars (id, name) VALUES ('a', 'dsa');
 ";
 
 pub const CREATE: &str = r"
@@ -398,7 +398,7 @@ pub const DELETE: &str = r"
 
     Examples
     --------
-    DELETE FROM foobars WHERE foo != 'bar' AND baz >= 3;
+    CREATE TABLE foobars (id STRING HASH KEY); DELETE FROM foobars WHERE foo != 'bar' AND baz >= 3;
 ";
 
 pub const DROP: &str = r"
@@ -410,7 +410,7 @@ pub const DROP: &str = r"
 
     Examples
     --------
-    DROP TABLE foobars;
+    CREATE TABLE foobars (id STRING HASH KEY); DROP TABLE foobars;
     DROP TABLE IF EXISTS foobars;
 ";
 
@@ -422,7 +422,7 @@ pub const DUMP: &str = r"
     Examples
     --------
     DUMP SCHEMA;
-    DUMP SCHEMA foobars, widgets;
+    CREATE TABLE foobars (id STRING HASH KEY); CREATE TABLE widgets (id STRING HASH KEY); DUMP SCHEMA foobars, widgets;
 ";
 
 pub const EXPLAIN: &str = r"
@@ -432,7 +432,7 @@ pub const EXPLAIN: &str = r"
 
     Examples
     --------
-    EXPLAIN SELECT * FROM foobars WHERE id = 'a';
+    CREATE TABLE foobars (id STRING HASH KEY); EXPLAIN SELECT * FROM foobars WHERE id = 'a';
 ";
 
 pub const INSERT: &str = r"
@@ -445,8 +445,8 @@ pub const INSERT: &str = r"
 
     Examples
     --------
-    INSERT INTO foobars (id) VALUES (1);
-    INSERT INTO foobars (id='foo', bar=10);
+    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id) VALUES ('a');
+    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id='foo', bar=10);
 ";
 
 pub const LOAD: &str = r"
@@ -458,8 +458,8 @@ pub const LOAD: &str = r"
 
     Examples
     --------
-    LOAD archive.msgpack INTO mytable;
-    LOAD archive.json.gz INTO mytable;
+    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id) VALUES ('a'); SCAN * FROM foobars SAVE archive.msgpack; CREATE TABLE mytable (id STRING HASH KEY); LOAD archive.msgpack INTO mytable;
+    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id) VALUES ('a'); SCAN * FROM foobars SAVE archive.json.gz; CREATE TABLE mytable (id STRING HASH KEY); LOAD archive.json.gz INTO mytable;
 ";
 
 pub const SCAN: &str = SELECT;
@@ -479,11 +479,11 @@ pub const SELECT: &str = r"
 
     Examples
     --------
-    SELECT * FROM foobars WHERE foo = 'bar';
-    SELECT * FROM foobars KEYS IN 'id1', 'id2';
-    SELECT * FROM foobars SAVE out.msgpack;
-    SELECT * FROM foobars SAVE out.json.gz;
-    SELECT * FROM foobars SAVE 'exports/out.json' CREATE PARENTS;
+    CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars WHERE id = 'a';
+    CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars KEYS IN 'id1', 'id2';
+    CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE out.msgpack;
+    CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE out.json.gz;
+    CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE 'exports/out.json' CREATE PARENTS;
 ";
 
 pub const UPDATE: &str = r"
@@ -497,8 +497,8 @@ pub const UPDATE: &str = r"
 
     Examples
     --------
-    UPDATE foobars SET foo = 'a';
-    UPDATE foobars ADD foo 1, bar 4;
+    CREATE TABLE foobars (id STRING HASH KEY); UPDATE foobars SET foo = 'a' WHERE id = 'a';
+    CREATE TABLE foobars (id STRING HASH KEY); UPDATE foobars ADD foo 1, bar 4 WHERE id = 'a';
 ";
 
 pub const OPTIONS: &str = r"
@@ -589,6 +589,7 @@ pub const LS: &str = r"
     Several matches print a list.
     When nothing matches exactly, ls lists tables with similar names and tables
     whose keys, indexes, or attributes are similar to the text.
+    A glob that is still not similar prints an empty list.
     A two-letter pattern matches only names that start with it.
     The result says whether it is showing similar names, related keys, or both.
     The table list is saved to disk the first time it is fetched. A table
@@ -619,8 +620,7 @@ pub const DESCRIBE: &str = r"
 
     Examples
     --------
-    DESCRIBE posts;
-    ls posts
+    CREATE TABLE posts (id STRING HASH KEY); DESCRIBE posts;
     ls post*
 ";
 
@@ -722,6 +722,101 @@ mod tests {
         assert!(text.contains("- history:  List, search, dedupe, remove, or edit history"));
         assert!(text.contains("Session:"));
         assert!(text.contains("help <command>"));
+    }
+
+    fn example_lines(text: &str) -> Vec<String> {
+        let mut lines = Vec::new();
+        let mut in_examples = false;
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed == "Examples" {
+                in_examples = true;
+                continue;
+            }
+            if !in_examples || trimmed.is_empty() || trimmed.starts_with('-') {
+                continue;
+            }
+            lines.push(trimmed.to_string());
+        }
+        lines
+    }
+
+    fn serve_error(envelope: &crate::serve::protocol::ServeEnvelope) -> String {
+        envelope
+            .error
+            .as_ref()
+            .map(|err| err.message.clone())
+            .unwrap_or_else(|| "not ok".to_string())
+    }
+
+    fn run_like_web(example: &str) -> Result<(), String> {
+        let mut session = crate::session::Session::new_memory_headless("us-west-1");
+        let parts = crate::web::shape::split_statements(example);
+        if parts.is_empty() {
+            return Err("web split produced no statements".to_string());
+        }
+        for part in parts {
+            let envelope = session.execute_for_serve(&part);
+            if !envelope.ok {
+                return Err(format!("{part}: {}", serve_error(&envelope)));
+            }
+        }
+        Ok(())
+    }
+
+    fn run_like_notebook(example: &str) -> Result<(), String> {
+        let mut session = crate::session::Session::new_memory_headless("us-west-1");
+        let envelope = session.execute_for_serve(example);
+        if envelope.ok {
+            Ok(())
+        } else {
+            Err(serve_error(&envelope))
+        }
+    }
+
+    fn run_like_cli(example: &str) -> Result<(), String> {
+        let mut session = crate::session::Session::new_memory_headless("us-west-1");
+        session
+            .run_command(example, true)
+            .map_err(|err| err.to_string())
+    }
+
+    #[test]
+    fn help_examples_run_from_web_cli_notebook_and_command() {
+        let root = tempfile::tempdir().unwrap();
+        let previous = std::env::current_dir().unwrap();
+        struct Restore(std::path::PathBuf);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                let _ = std::env::set_current_dir(&self.0);
+            }
+        }
+        let _restore = Restore(previous);
+        std::env::set_current_dir(root.path()).unwrap();
+
+        let mut failures = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for topic in [
+            "alter", "analyze", "create", "delete", "drop", "dump", "explain", "insert", "load",
+            "select", "update", "ls", "describe", "show",
+        ] {
+            let text = topic_help(topic).unwrap();
+            for example in example_lines(text) {
+                if !seen.insert(example.clone()) {
+                    continue;
+                }
+                if let Err(err) = run_like_web(&example) {
+                    failures.push(format!("web {example}\n  {err}"));
+                }
+                if let Err(err) = run_like_cli(&example) {
+                    failures.push(format!("cli -c {example}\n  {err}"));
+                }
+                if let Err(err) = run_like_notebook(&example) {
+                    failures.push(format!("notebook {example}\n  {err}"));
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n\n"));
     }
 
     #[test]
