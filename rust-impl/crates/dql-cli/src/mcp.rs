@@ -109,7 +109,7 @@ fn initialize(initialized: &mut bool, params: &Value) -> Value {
         "protocolVersion": version,
         "capabilities": { "tools": { "listChanged": false } },
         "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") },
-        "instructions": "Tools read and write the .dql workspace passed to dqlrs --mcp --dir, the same folder dqlrs --web uses. global_search finds table names, cached columns and indexes, and queries in files. lint_query checks a script or a workspace file for parse errors and for queries the engine would reject, without running them or fetching a missing definition. list_tables and describe_tables use the shared table cache for this connection. create_query_file, read_query_file, and update_query_file change query files on disk."
+        "instructions": "Tools read and write the .dql workspace passed to dqlrs --mcp --dir, the same folder dqlrs --web uses. global_search finds table names, cached columns and indexes, and queries in files. lint_query checks a script, and lint_query_file checks a workspace .dql file, for parse errors and for queries the engine would reject, without running them or fetching a missing definition. list_tables and describe_tables use the shared table cache for this connection. create_query_file, read_query_file, and update_query_file change query files on disk."
     })
 }
 
@@ -125,6 +125,7 @@ fn call_tool(session: &mut Session, root: &Path, params: &Value) -> Result<Value
     match name {
         "global_search" => tool_value(global_search(session, root, &arguments)),
         "lint_query" => tool_value(lint_query(session, root, &arguments)),
+        "lint_query_file" => tool_value(lint_query_file(session, root, &arguments)),
         "list_tables" => tool_value(list_tables(session, &arguments)),
         "describe_tables" => tool_value(describe_tables(session, &arguments)),
         "list_query_files" => tool_value(list_query_files(root)),
@@ -138,13 +139,28 @@ fn call_tool(session: &mut Session, root: &Path, params: &Value) -> Result<Value
 fn lint_query(session: &mut Session, root: &Path, arguments: &Value) -> Result<Value, ToolError> {
     let text = match arguments.get("text").and_then(Value::as_str) {
         Some(text) => text.to_string(),
-        None => {
-            let path = required_str(arguments, "path")?;
-            let path = files::normalized_dql(root, path).map_err(path_error)?;
-            files::read_text(root, &path).map_err(path_error)?
-        }
+        None => read_query_text(root, arguments)?,
     };
-    let report = crate::web::lint::lint_script(session, &text);
+    lint_report(session, &text)
+}
+
+fn lint_query_file(
+    session: &mut Session,
+    root: &Path,
+    arguments: &Value,
+) -> Result<Value, ToolError> {
+    let text = read_query_text(root, arguments)?;
+    lint_report(session, &text)
+}
+
+fn read_query_text(root: &Path, arguments: &Value) -> Result<String, ToolError> {
+    let path = required_str(arguments, "path")?;
+    let path = files::normalized_dql(root, path).map_err(path_error)?;
+    files::read_text(root, &path).map_err(path_error)
+}
+
+fn lint_report(session: &mut Session, text: &str) -> Result<Value, ToolError> {
+    let report = crate::web::lint::lint_script(session, text);
     serde_json::to_value(report).map_err(|err| ToolError::new(err.to_string()))
 }
 
@@ -456,6 +472,18 @@ fn tool_definitions() -> Vec<Value> {
             }),
         ),
         tool(
+            "lint_query_file",
+            "Check a workspace .dql file for parse errors and, when a table definition is known, for queries the engine would reject. Does not run the file or fetch missing definitions. ok is false when there is an error. Warnings mean a table has no cached definition.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Workspace .dql file to check" }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            }),
+        ),
+        tool(
             "list_tables",
             "List table names. Uses the saved list, and fetches it when none is saved. Does not describe every table.",
             json!({
@@ -641,6 +669,7 @@ mod tests {
             vec![
                 "global_search",
                 "lint_query",
+                "lint_query_file",
                 "list_tables",
                 "describe_tables",
                 "list_query_files",
@@ -677,6 +706,55 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(message.contains("indexed WHERE"), "{message}");
+    }
+
+    #[test]
+    fn lint_query_file_checks_a_workspace_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut server = server(dir.path());
+        server.session.config.allow_select_scan = false;
+        init(&mut server);
+        tool_body(&rpc(
+            &mut server,
+            2,
+            "tools/call",
+            json!({
+                "name": "create_query_file",
+                "arguments": {
+                    "path": "queries/shelf.dql",
+                    "text": "CREATE TABLE shelf (id STRING HASH KEY);\nSELECT * FROM shelf;\n"
+                }
+            }),
+        ));
+        let report = tool_body(&rpc(
+            &mut server,
+            3,
+            "tools/call",
+            json!({
+                "name": "lint_query_file",
+                "arguments": { "path": "queries/shelf.dql" }
+            }),
+        ));
+        assert_eq!(report["ok"], false);
+        let message = report["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|issue| issue["message"].as_str().unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(message.contains("indexed WHERE"), "{message}");
+
+        let missing = rpc(
+            &mut server,
+            4,
+            "tools/call",
+            json!({
+                "name": "lint_query_file",
+                "arguments": {}
+            }),
+        );
+        assert_eq!(missing["result"]["isError"], true);
     }
 
     #[test]

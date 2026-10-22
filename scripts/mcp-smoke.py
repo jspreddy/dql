@@ -96,6 +96,15 @@ def main() -> None:
                 "method": "tools/call",
                 "params": {"name": "list_tables", "arguments": {}},
             },
+            {
+                "jsonrpc": "2.0",
+                "id": 9,
+                "method": "tools/call",
+                "params": {
+                    "name": "lint_query_file",
+                    "arguments": {"path": "queries/smoke.dql"},
+                },
+            },
         ]
         payload = "".join(json.dumps(request) + "\n" for request in requests)
         stdout, stderr = proc.communicate(payload, timeout=30)
@@ -112,6 +121,7 @@ def main() -> None:
         expect = [
             "global_search",
             "lint_query",
+            "lint_query_file",
             "list_tables",
             "describe_tables",
             "list_query_files",
@@ -141,6 +151,12 @@ def main() -> None:
         listed = tool_json(by_id[8])
         if "tables" not in listed:
             raise SystemExit(f"tables {listed}")
+        linted = tool_json(by_id[9])
+        if linted.get("ok") is not True:
+            raise SystemExit(f"lint file {linted}")
+        issues = linted.get("issues") or []
+        if not any("no cached definition" in issue.get("message", "") for issue in issues):
+            raise SystemExit(f"lint file {linted}")
         saved = Path(workspace, "queries", "smoke.dql").read_text(encoding="utf-8")
         if "status" not in saved:
             raise SystemExit("file on disk was not updated")
