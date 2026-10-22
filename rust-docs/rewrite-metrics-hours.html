@@ -259,7 +259,7 @@
       <p class="caption">The number after each date is hours worked that day. Outside hours are the git graph, a CI workflow, README and screenshots, justfiles, explainers, version bumps, flake fixes, and one hour on 12 Oct split between a SAVE change and a black-box flake.</p>
 
       <h2 id="main-graph">Main graph</h2>
-      <p>Every day from 5 Jul through 19 Oct. The bar height is hours worked that day. Empty stretches are the days with no <code>v-rust</code> commit. Color is the feature group, stacked when a day has more than one.</p>
+      <p>Every day from 2 Jul through 21 Oct. Bars are hours worked, stacked by feature group. The solid line is tokens, in millions. The dashed line is commits. Empty stretches stay on the axis.</p>
       
       <div class="legend">
         <span><i style="background:#9a3412"></i>Rust impl</span>
@@ -268,66 +268,131 @@
         <span><i style="background:#0f6e8c"></i>Notebook</span>
         <span><i style="background:#7c4a12"></i>Web</span>
         <span><i style="background:#6b3fa0"></i>Outside these groups</span>
+        <span><i class="dash" style="border-top-color:#9f1239"></i>Commits</span>
+        <span><i style="height:2px;background:#1c1915"></i>Tokens (millions)</span>
       </div>
     
-      <svg viewBox="0 0 960 420" role="img" aria-labelledby="mainTitle">
-<title id="mainTitle">Hours worked per day, 5 July through 19 October 2026</title>
-<line x1="44" x2="936" y1="384.0" y2="384.0" stroke="#e3d9c8"/>
-<text x="36" y="388.0" text-anchor="end" fill="#5e564c" font-size="12">0</text>
-<line x1="44" x2="936" y1="299.0" y2="299.0" stroke="#e3d9c8"/>
-<text x="36" y="303.0" text-anchor="end" fill="#5e564c" font-size="12">4</text>
-<line x1="44" x2="936" y1="214.0" y2="214.0" stroke="#e3d9c8"/>
-<text x="36" y="218.0" text-anchor="end" fill="#5e564c" font-size="12">8</text>
-<line x1="44" x2="936" y1="129.0" y2="129.0" stroke="#e3d9c8"/>
-<text x="36" y="133.0" text-anchor="end" fill="#5e564c" font-size="12">12</text>
-<line x1="44" x2="936" y1="44.0" y2="44.0" stroke="#e3d9c8"/>
-<text x="36" y="48.0" text-anchor="end" fill="#5e564c" font-size="12">16</text>
+      <svg viewBox="0 0 960 440" role="img" aria-labelledby="mainTitle">
+<title id="mainTitle">Hours worked, commits, and tokens by day, 2 July through 21 October 2026</title>
+<line x1="44" x2="908" y1="404.0" y2="404.0" stroke="#e3d9c8"/>
+<text x="36" y="408.0" text-anchor="end" fill="#5e564c" font-size="12">0</text>
+<text x="916" y="408.0" fill="#5e564c" font-size="12">0</text>
+<line x1="44" x2="908" y1="316.0" y2="316.0" stroke="#e3d9c8"/>
+<text x="36" y="320.0" text-anchor="end" fill="#5e564c" font-size="12">4</text>
+<text x="916" y="320.0" fill="#5e564c" font-size="12">40</text>
+<line x1="44" x2="908" y1="228.0" y2="228.0" stroke="#e3d9c8"/>
+<text x="36" y="232.0" text-anchor="end" fill="#5e564c" font-size="12">8</text>
+<text x="916" y="232.0" fill="#5e564c" font-size="12">80</text>
+<line x1="44" x2="908" y1="140.0" y2="140.0" stroke="#e3d9c8"/>
+<text x="36" y="144.0" text-anchor="end" fill="#5e564c" font-size="12">12</text>
+<text x="916" y="144.0" fill="#5e564c" font-size="12">120</text>
+<line x1="44" x2="908" y1="52.0" y2="52.0" stroke="#e3d9c8"/>
+<text x="36" y="56.0" text-anchor="end" fill="#5e564c" font-size="12">16</text>
+<text x="916" y="56.0" fill="#5e564c" font-size="12">160</text>
 <text x="44" y="16" fill="#1c1915" font-size="13" font-weight="700">Hours worked</text>
-<rect x="45.17" y="277.75" width="6.00" height="106.25" fill="#9a3412"><title>5 Jul: 5 hours. Rust impl 5</title></rect>
-<rect x="53.50" y="341.50" width="6.00" height="42.50" fill="#9a3412"><title>6 Jul: 2 hours. Rust impl 2</title></rect>
-<rect x="70.18" y="341.50" width="6.00" height="42.50" fill="#9a3412"><title>8 Jul: 2 hours. Rust impl 2</title></rect>
-<rect x="86.85" y="235.25" width="6.00" height="148.75" fill="#9a3412"><title>10 Jul: 7 hours. Rust impl 7</title></rect>
-<rect x="145.20" y="362.75" width="6.00" height="21.25" fill="#9a3412"><title>17 Jul: 1 hours. Rust impl 1</title></rect>
-<rect x="186.89" y="362.75" width="6.00" height="21.25" fill="#9a3412"><title>22 Jul: 1 hours. Rust impl 1</title></rect>
-<rect x="420.31" y="362.75" width="6.00" height="21.25" fill="#9a3412"><title>19 Aug: 1 hours. Rust impl 1</title></rect>
-<rect x="428.64" y="299.00" width="6.00" height="85.00" fill="#9a3412"><title>20 Aug: 4 hours. Rust impl 4</title></rect>
-<rect x="436.98" y="256.50" width="6.00" height="127.50" fill="#1f5c45"><title>21 Aug: 6 hours. Acceptance tests 6</title></rect>
-<rect x="445.32" y="362.75" width="6.00" height="21.25" fill="#6b3fa0"><title>22 Aug: 1 hours. Outside these groups 1</title></rect>
-<rect x="453.65" y="277.75" width="6.00" height="106.25" fill="#1f5c45"><title>23 Aug: 5 hours. Acceptance tests 5</title></rect>
-<rect x="670.40" y="362.75" width="6.00" height="21.25" fill="#0f6e8c"><title>18 Sep: 1 hours. Notebook 1</title></rect>
-<rect x="678.74" y="277.75" width="6.00" height="106.25" fill="#0f6e8c"><title>19 Sep: 5 hours. Notebook 5</title></rect>
-<rect x="795.45" y="362.75" width="6.00" height="21.25" fill="#1f5c45"><title>3 Oct: 1 hours. Acceptance tests 1</title></rect>
-<rect x="803.78" y="362.75" width="6.00" height="21.25" fill="#1e3a5f"><title>4 Oct: 6 hours. Rust improvements 1, Notebook 3, Outside these groups 2</title></rect>
-<rect x="803.78" y="299.00" width="6.00" height="63.75" fill="#0f6e8c"><title>4 Oct: 6 hours. Rust improvements 1, Notebook 3, Outside these groups 2</title></rect>
-<rect x="803.78" y="256.50" width="6.00" height="42.50" fill="#6b3fa0"><title>4 Oct: 6 hours. Rust improvements 1, Notebook 3, Outside these groups 2</title></rect>
-<rect x="812.12" y="362.75" width="6.00" height="21.25" fill="#0f6e8c"><title>5 Oct: 2 hours. Notebook 1, Outside these groups 1</title></rect>
-<rect x="812.12" y="341.50" width="6.00" height="21.25" fill="#6b3fa0"><title>5 Oct: 2 hours. Notebook 1, Outside these groups 1</title></rect>
-<rect x="828.79" y="235.25" width="6.00" height="148.75" fill="#7c4a12"><title>7 Oct: 7 hours. Web 7</title></rect>
-<rect x="837.13" y="362.75" width="6.00" height="21.25" fill="#7c4a12"><title>8 Oct: 1 hours. Web 1</title></rect>
-<rect x="853.80" y="299.00" width="6.00" height="85.00" fill="#1e3a5f"><title>10 Oct: 13 hours. Rust improvements 4, Web 7, Outside these groups 2</title></rect>
-<rect x="853.80" y="150.25" width="6.00" height="148.75" fill="#7c4a12"><title>10 Oct: 13 hours. Rust improvements 4, Web 7, Outside these groups 2</title></rect>
-<rect x="853.80" y="107.75" width="6.00" height="42.50" fill="#6b3fa0"><title>10 Oct: 13 hours. Rust improvements 4, Web 7, Outside these groups 2</title></rect>
-<rect x="862.14" y="320.25" width="6.00" height="63.75" fill="#1e3a5f"><title>11 Oct: 8 hours. Rust improvements 3, Web 3, Outside these groups 2</title></rect>
-<rect x="862.14" y="256.50" width="6.00" height="63.75" fill="#7c4a12"><title>11 Oct: 8 hours. Rust improvements 3, Web 3, Outside these groups 2</title></rect>
-<rect x="862.14" y="214.00" width="6.00" height="42.50" fill="#6b3fa0"><title>11 Oct: 8 hours. Rust improvements 3, Web 3, Outside these groups 2</title></rect>
-<rect x="870.48" y="341.50" width="6.00" height="42.50" fill="#1e3a5f"><title>12 Oct: 9 hours. Rust improvements 2, Web 4, Outside these groups 3</title></rect>
-<rect x="870.48" y="256.50" width="6.00" height="85.00" fill="#7c4a12"><title>12 Oct: 9 hours. Rust improvements 2, Web 4, Outside these groups 3</title></rect>
-<rect x="870.48" y="192.75" width="6.00" height="63.75" fill="#6b3fa0"><title>12 Oct: 9 hours. Rust improvements 2, Web 4, Outside these groups 3</title></rect>
-<rect x="878.81" y="341.50" width="6.00" height="42.50" fill="#1e3a5f"><title>13 Oct: 7 hours. Rust improvements 2, Outside these groups 5</title></rect>
-<rect x="878.81" y="235.25" width="6.00" height="106.25" fill="#6b3fa0"><title>13 Oct: 7 hours. Rust improvements 2, Outside these groups 5</title></rect>
-<rect x="887.15" y="341.50" width="6.00" height="42.50" fill="#1e3a5f"><title>14 Oct: 10 hours. Rust improvements 2, Web 8</title></rect>
-<rect x="887.15" y="171.50" width="6.00" height="170.00" fill="#7c4a12"><title>14 Oct: 10 hours. Rust improvements 2, Web 8</title></rect>
-<rect x="895.48" y="256.50" width="6.00" height="127.50" fill="#7c4a12"><title>15 Oct: 6 hours. Web 6</title></rect>
-<rect x="912.16" y="362.75" width="6.00" height="21.25" fill="#6b3fa0"><title>17 Oct: 1 hours. Outside these groups 1</title></rect>
-<rect x="920.49" y="341.50" width="6.00" height="42.50" fill="#7c4a12"><title>18 Oct: 5 hours. Web 2, Outside these groups 3</title></rect>
-<rect x="920.49" y="277.75" width="6.00" height="63.75" fill="#6b3fa0"><title>18 Oct: 5 hours. Web 2, Outside these groups 3</title></rect>
-<rect x="928.83" y="341.50" width="6.00" height="42.50" fill="#7c4a12"><title>19 Oct: 2 hours. Web 2</title></rect>
-<text x="48.2" y="408" fill="#5e564c" font-size="13">Jul</text>
-<text x="273.3" y="408" fill="#5e564c" font-size="13">Aug</text>
-<text x="531.7" y="408" fill="#5e564c" font-size="13">Sep</text>
-<text x="781.8" y="408" fill="#5e564c" font-size="13">Oct</text>
+<text x="908" y="16" text-anchor="end" fill="#1c1915" font-size="13" font-weight="700">Tokens (millions)</text>
+<rect x="68.22" y="294.00" width="5.55" height="110.00" fill="#9a3412"><title>5 Jul: 5 hours, 36 commits, 104.9 million tokens. Rust impl 5</title></rect>
+<rect x="75.94" y="360.00" width="5.55" height="44.00" fill="#9a3412"><title>6 Jul: 2 hours, 6 commits, 10.1 million tokens. Rust impl 2</title></rect>
+<rect x="91.37" y="360.00" width="5.55" height="44.00" fill="#9a3412"><title>8 Jul: 2 hours, 13 commits, 19.1 million tokens. Rust impl 2</title></rect>
+<rect x="106.79" y="250.00" width="5.55" height="154.00" fill="#9a3412"><title>10 Jul: 7 hours, 37 commits, 54.8 million tokens. Rust impl 7</title></rect>
+<rect x="160.79" y="382.00" width="5.55" height="22.00" fill="#9a3412"><title>17 Jul: 1 hours, 2 commits, 1.9 million tokens. Rust impl 1</title></rect>
+<rect x="199.37" y="382.00" width="5.55" height="22.00" fill="#9a3412"><title>22 Jul: 1 hours, 1 commits, 0.0 million tokens. Rust impl 1</title></rect>
+<rect x="415.37" y="382.00" width="5.55" height="22.00" fill="#9a3412"><title>19 Aug: 1 hours, 1 commits, 0.0 million tokens. Rust impl 1</title></rect>
+<rect x="423.08" y="316.00" width="5.55" height="88.00" fill="#9a3412"><title>20 Aug: 4 hours, 21 commits, 19.9 million tokens. Rust impl 4</title></rect>
+<rect x="430.79" y="272.00" width="5.55" height="132.00" fill="#1f5c45"><title>21 Aug: 6 hours, 22 commits, 35.4 million tokens. Acceptance tests 6</title></rect>
+<rect x="438.51" y="382.00" width="5.55" height="22.00" fill="#6b3fa0"><title>22 Aug: 1 hours, 1 commits, 0.0 million tokens. Outside these groups 1</title></rect>
+<rect x="446.22" y="294.00" width="5.55" height="110.00" fill="#1f5c45"><title>23 Aug: 5 hours, 23 commits, 21.8 million tokens. Acceptance tests 5</title></rect>
+<rect x="646.79" y="382.00" width="5.55" height="22.00" fill="#0f6e8c"><title>18 Sep: 1 hours, 1 commits, 0.6 million tokens. Notebook 1</title></rect>
+<rect x="654.51" y="294.00" width="5.55" height="110.00" fill="#0f6e8c"><title>19 Sep: 5 hours, 16 commits, 31.8 million tokens. Notebook 5</title></rect>
+<rect x="762.51" y="382.00" width="5.55" height="22.00" fill="#1f5c45"><title>3 Oct: 1 hours, 2 commits, 7.5 million tokens. Acceptance tests 1</title></rect>
+<rect x="770.22" y="382.00" width="5.55" height="22.00" fill="#1e3a5f"><title>4 Oct: 6 hours, 15 commits, 35.9 million tokens. Rust improvements 1, Notebook 3, Outside these groups 2</title></rect>
+<rect x="770.22" y="316.00" width="5.55" height="66.00" fill="#0f6e8c"><title>4 Oct: 6 hours, 15 commits, 35.9 million tokens. Rust improvements 1, Notebook 3, Outside these groups 2</title></rect>
+<rect x="770.22" y="272.00" width="5.55" height="44.00" fill="#6b3fa0"><title>4 Oct: 6 hours, 15 commits, 35.9 million tokens. Rust improvements 1, Notebook 3, Outside these groups 2</title></rect>
+<rect x="777.94" y="382.00" width="5.55" height="22.00" fill="#0f6e8c"><title>5 Oct: 2 hours, 3 commits, 11.7 million tokens. Notebook 1, Outside these groups 1</title></rect>
+<rect x="777.94" y="360.00" width="5.55" height="22.00" fill="#6b3fa0"><title>5 Oct: 2 hours, 3 commits, 11.7 million tokens. Notebook 1, Outside these groups 1</title></rect>
+<rect x="793.37" y="250.00" width="5.55" height="154.00" fill="#7c4a12"><title>7 Oct: 7 hours, 18 commits, 28.9 million tokens. Web 7</title></rect>
+<rect x="801.08" y="382.00" width="5.55" height="22.00" fill="#7c4a12"><title>8 Oct: 1 hours, 6 commits, 6.7 million tokens. Web 1</title></rect>
+<rect x="816.51" y="316.00" width="5.55" height="88.00" fill="#1e3a5f"><title>10 Oct: 13 hours, 40 commits, 142.9 million tokens. Rust improvements 4, Web 7, Outside these groups 2</title></rect>
+<rect x="816.51" y="162.00" width="5.55" height="154.00" fill="#7c4a12"><title>10 Oct: 13 hours, 40 commits, 142.9 million tokens. Rust improvements 4, Web 7, Outside these groups 2</title></rect>
+<rect x="816.51" y="118.00" width="5.55" height="44.00" fill="#6b3fa0"><title>10 Oct: 13 hours, 40 commits, 142.9 million tokens. Rust improvements 4, Web 7, Outside these groups 2</title></rect>
+<rect x="824.22" y="338.00" width="5.55" height="66.00" fill="#1e3a5f"><title>11 Oct: 8 hours, 16 commits, 10.9 million tokens. Rust improvements 3, Web 3, Outside these groups 2</title></rect>
+<rect x="824.22" y="272.00" width="5.55" height="66.00" fill="#7c4a12"><title>11 Oct: 8 hours, 16 commits, 10.9 million tokens. Rust improvements 3, Web 3, Outside these groups 2</title></rect>
+<rect x="824.22" y="228.00" width="5.55" height="44.00" fill="#6b3fa0"><title>11 Oct: 8 hours, 16 commits, 10.9 million tokens. Rust improvements 3, Web 3, Outside these groups 2</title></rect>
+<rect x="831.94" y="360.00" width="5.55" height="44.00" fill="#1e3a5f"><title>12 Oct: 9 hours, 32 commits, 87.2 million tokens. Rust improvements 2, Web 4, Outside these groups 3</title></rect>
+<rect x="831.94" y="272.00" width="5.55" height="88.00" fill="#7c4a12"><title>12 Oct: 9 hours, 32 commits, 87.2 million tokens. Rust improvements 2, Web 4, Outside these groups 3</title></rect>
+<rect x="831.94" y="206.00" width="5.55" height="66.00" fill="#6b3fa0"><title>12 Oct: 9 hours, 32 commits, 87.2 million tokens. Rust improvements 2, Web 4, Outside these groups 3</title></rect>
+<rect x="839.65" y="360.00" width="5.55" height="44.00" fill="#1e3a5f"><title>13 Oct: 7 hours, 21 commits, 19.7 million tokens. Rust improvements 2, Outside these groups 5</title></rect>
+<rect x="839.65" y="250.00" width="5.55" height="110.00" fill="#6b3fa0"><title>13 Oct: 7 hours, 21 commits, 19.7 million tokens. Rust improvements 2, Outside these groups 5</title></rect>
+<rect x="847.37" y="360.00" width="5.55" height="44.00" fill="#1e3a5f"><title>14 Oct: 10 hours, 23 commits, 85.0 million tokens. Rust improvements 2, Web 8</title></rect>
+<rect x="847.37" y="184.00" width="5.55" height="176.00" fill="#7c4a12"><title>14 Oct: 10 hours, 23 commits, 85.0 million tokens. Rust improvements 2, Web 8</title></rect>
+<rect x="855.08" y="272.00" width="5.55" height="132.00" fill="#7c4a12"><title>15 Oct: 6 hours, 13 commits, 35.1 million tokens. Web 6</title></rect>
+<rect x="870.51" y="382.00" width="5.55" height="22.00" fill="#6b3fa0"><title>17 Oct: 1 hours, 1 commits, 2.0 million tokens. Outside these groups 1</title></rect>
+<rect x="878.22" y="360.00" width="5.55" height="44.00" fill="#7c4a12"><title>18 Oct: 5 hours, 9 commits, 18.1 million tokens. Web 2, Outside these groups 3</title></rect>
+<rect x="878.22" y="294.00" width="5.55" height="66.00" fill="#6b3fa0"><title>18 Oct: 5 hours, 9 commits, 18.1 million tokens. Web 2, Outside these groups 3</title></rect>
+<rect x="885.94" y="360.00" width="5.55" height="44.00" fill="#7c4a12"><title>19 Oct: 2 hours, 2 commits, 6.1 million tokens. Web 2</title></rect>
+<polyline fill="none" stroke="#9f1239" stroke-width="1.8" stroke-dasharray="5 3" points="47.9,404.0 55.6,404.0 63.3,404.0 71.0,87.2 78.7,351.2 86.4,404.0 94.1,289.6 101.9,404.0 109.6,78.4 117.3,404.0 125.0,404.0 132.7,404.0 140.4,404.0 148.1,404.0 155.9,404.0 163.6,386.4 171.3,404.0 179.0,404.0 186.7,404.0 194.4,404.0 202.1,395.2 209.9,404.0 217.6,404.0 225.3,404.0 233.0,404.0 240.7,404.0 248.4,404.0 256.1,404.0 263.9,404.0 271.6,404.0 279.3,404.0 287.0,404.0 294.7,404.0 302.4,404.0 310.1,404.0 317.9,404.0 325.6,404.0 333.3,404.0 341.0,404.0 348.7,404.0 356.4,404.0 364.1,404.0 371.9,404.0 379.6,404.0 387.3,404.0 395.0,404.0 402.7,404.0 410.4,404.0 418.1,395.2 425.9,219.2 433.6,210.4 441.3,395.2 449.0,201.6 456.7,404.0 464.4,404.0 472.1,404.0 479.9,404.0 487.6,404.0 495.3,404.0 503.0,404.0 510.7,404.0 518.4,404.0 526.1,404.0 533.9,404.0 541.6,404.0 549.3,404.0 557.0,404.0 564.7,404.0 572.4,404.0 580.1,404.0 587.9,404.0 595.6,404.0 603.3,404.0 611.0,404.0 618.7,404.0 626.4,404.0 634.1,404.0 641.9,404.0 649.6,395.2 657.3,263.2 665.0,404.0 672.7,404.0 680.4,404.0 688.1,404.0 695.9,404.0 703.6,404.0 711.3,404.0 719.0,404.0 726.7,404.0 734.4,404.0 742.1,404.0 749.9,404.0 757.6,404.0 765.3,386.4 773.0,272.0 780.7,377.6 788.4,404.0 796.1,245.6 803.9,351.2 811.6,404.0 819.3,52.0 827.0,263.2 834.7,122.4 842.4,219.2 850.1,201.6 857.9,289.6 865.6,404.0 873.3,395.2 881.0,324.8 888.7,386.4 896.4,404.0 904.1,404.0"/>
+<polyline fill="none" stroke="#1c1915" stroke-width="1.8" points="47.9,398.3 55.6,404.0 63.3,404.0 71.0,173.2 78.7,381.7 86.4,404.0 94.1,362.1 101.9,404.0 109.6,283.3 117.3,404.0 125.0,404.0 132.7,404.0 140.4,404.0 148.1,404.0 155.9,404.0 163.6,399.9 171.3,404.0 179.0,404.0 186.7,404.0 194.4,404.0 202.1,404.0 209.9,404.0 217.6,404.0 225.3,404.0 233.0,404.0 240.7,404.0 248.4,404.0 256.1,404.0 263.9,404.0 271.6,404.0 279.3,404.0 287.0,404.0 294.7,404.0 302.4,404.0 310.1,404.0 317.9,404.0 325.6,404.0 333.3,404.0 341.0,404.0 348.7,404.0 356.4,404.0 364.1,404.0 371.9,404.0 379.6,404.0 387.3,404.0 395.0,404.0 402.7,404.0 410.4,404.0 418.1,404.0 425.9,360.2 433.6,326.2 441.3,404.0 449.0,356.1 456.7,404.0 464.4,404.0 472.1,404.0 479.9,399.9 487.6,404.0 495.3,404.0 503.0,404.0 510.7,404.0 518.4,404.0 526.1,404.0 533.9,404.0 541.6,404.0 549.3,404.0 557.0,404.0 564.7,404.0 572.4,404.0 580.1,404.0 587.9,404.0 595.6,404.0 603.3,404.0 611.0,404.0 618.7,404.0 626.4,404.0 634.1,404.0 641.9,404.0 649.6,402.6 657.3,334.1 665.0,404.0 672.7,404.0 680.4,404.0 688.1,404.0 695.9,404.0 703.6,404.0 711.3,404.0 719.0,404.0 726.7,404.0 734.4,404.0 742.1,404.0 749.9,404.0 757.6,404.0 765.3,387.5 773.0,325.1 780.7,378.3 788.4,404.0 796.1,340.4 803.9,389.3 811.6,404.0 819.3,89.6 827.0,379.9 834.7,212.2 842.4,360.8 850.1,217.1 857.9,326.7 865.6,404.0 873.3,399.7 881.0,364.1 888.7,390.6 896.4,390.1 904.1,380.3"/>
+<circle cx="47.9" cy="398.3" r="2.2" fill="#1c1915"><title>2 Jul: 0 hours, 0 commits, 2.6 million tokens</title></circle>
+<circle cx="71.0" cy="87.2" r="2.2" fill="#9f1239"><title>5 Jul: 5 hours, 36 commits, 104.9 million tokens. Rust impl 5</title></circle>
+<circle cx="71.0" cy="173.2" r="2.2" fill="#1c1915"><title>5 Jul: 5 hours, 36 commits, 104.9 million tokens. Rust impl 5</title></circle>
+<circle cx="78.7" cy="351.2" r="2.2" fill="#9f1239"><title>6 Jul: 2 hours, 6 commits, 10.1 million tokens. Rust impl 2</title></circle>
+<circle cx="78.7" cy="381.7" r="2.2" fill="#1c1915"><title>6 Jul: 2 hours, 6 commits, 10.1 million tokens. Rust impl 2</title></circle>
+<circle cx="94.1" cy="289.6" r="2.2" fill="#9f1239"><title>8 Jul: 2 hours, 13 commits, 19.1 million tokens. Rust impl 2</title></circle>
+<circle cx="94.1" cy="362.1" r="2.2" fill="#1c1915"><title>8 Jul: 2 hours, 13 commits, 19.1 million tokens. Rust impl 2</title></circle>
+<circle cx="109.6" cy="78.4" r="2.2" fill="#9f1239"><title>10 Jul: 7 hours, 37 commits, 54.8 million tokens. Rust impl 7</title></circle>
+<circle cx="109.6" cy="283.3" r="2.2" fill="#1c1915"><title>10 Jul: 7 hours, 37 commits, 54.8 million tokens. Rust impl 7</title></circle>
+<circle cx="163.6" cy="386.4" r="2.2" fill="#9f1239"><title>17 Jul: 1 hours, 2 commits, 1.9 million tokens. Rust impl 1</title></circle>
+<circle cx="163.6" cy="399.9" r="2.2" fill="#1c1915"><title>17 Jul: 1 hours, 2 commits, 1.9 million tokens. Rust impl 1</title></circle>
+<circle cx="202.1" cy="395.2" r="2.2" fill="#9f1239"><title>22 Jul: 1 hours, 1 commits, 0.0 million tokens. Rust impl 1</title></circle>
+<circle cx="418.1" cy="395.2" r="2.2" fill="#9f1239"><title>19 Aug: 1 hours, 1 commits, 0.0 million tokens. Rust impl 1</title></circle>
+<circle cx="425.9" cy="219.2" r="2.2" fill="#9f1239"><title>20 Aug: 4 hours, 21 commits, 19.9 million tokens. Rust impl 4</title></circle>
+<circle cx="425.9" cy="360.2" r="2.2" fill="#1c1915"><title>20 Aug: 4 hours, 21 commits, 19.9 million tokens. Rust impl 4</title></circle>
+<circle cx="433.6" cy="210.4" r="2.2" fill="#9f1239"><title>21 Aug: 6 hours, 22 commits, 35.4 million tokens. Acceptance tests 6</title></circle>
+<circle cx="433.6" cy="326.2" r="2.2" fill="#1c1915"><title>21 Aug: 6 hours, 22 commits, 35.4 million tokens. Acceptance tests 6</title></circle>
+<circle cx="441.3" cy="395.2" r="2.2" fill="#9f1239"><title>22 Aug: 1 hours, 1 commits, 0.0 million tokens. Outside these groups 1</title></circle>
+<circle cx="449.0" cy="201.6" r="2.2" fill="#9f1239"><title>23 Aug: 5 hours, 23 commits, 21.8 million tokens. Acceptance tests 5</title></circle>
+<circle cx="449.0" cy="356.1" r="2.2" fill="#1c1915"><title>23 Aug: 5 hours, 23 commits, 21.8 million tokens. Acceptance tests 5</title></circle>
+<circle cx="479.9" cy="399.9" r="2.2" fill="#1c1915"><title>27 Aug: 0 hours, 0 commits, 1.9 million tokens</title></circle>
+<circle cx="649.6" cy="395.2" r="2.2" fill="#9f1239"><title>18 Sep: 1 hours, 1 commits, 0.6 million tokens. Notebook 1</title></circle>
+<circle cx="649.6" cy="402.6" r="2.2" fill="#1c1915"><title>18 Sep: 1 hours, 1 commits, 0.6 million tokens. Notebook 1</title></circle>
+<circle cx="657.3" cy="263.2" r="2.2" fill="#9f1239"><title>19 Sep: 5 hours, 16 commits, 31.8 million tokens. Notebook 5</title></circle>
+<circle cx="657.3" cy="334.1" r="2.2" fill="#1c1915"><title>19 Sep: 5 hours, 16 commits, 31.8 million tokens. Notebook 5</title></circle>
+<circle cx="765.3" cy="386.4" r="2.2" fill="#9f1239"><title>3 Oct: 1 hours, 2 commits, 7.5 million tokens. Acceptance tests 1</title></circle>
+<circle cx="765.3" cy="387.5" r="2.2" fill="#1c1915"><title>3 Oct: 1 hours, 2 commits, 7.5 million tokens. Acceptance tests 1</title></circle>
+<circle cx="773.0" cy="272.0" r="2.2" fill="#9f1239"><title>4 Oct: 6 hours, 15 commits, 35.9 million tokens. Rust improvements 1, Notebook 3, Outside these groups 2</title></circle>
+<circle cx="773.0" cy="325.1" r="2.2" fill="#1c1915"><title>4 Oct: 6 hours, 15 commits, 35.9 million tokens. Rust improvements 1, Notebook 3, Outside these groups 2</title></circle>
+<circle cx="780.7" cy="377.6" r="2.2" fill="#9f1239"><title>5 Oct: 2 hours, 3 commits, 11.7 million tokens. Notebook 1, Outside these groups 1</title></circle>
+<circle cx="780.7" cy="378.3" r="2.2" fill="#1c1915"><title>5 Oct: 2 hours, 3 commits, 11.7 million tokens. Notebook 1, Outside these groups 1</title></circle>
+<circle cx="796.1" cy="245.6" r="2.2" fill="#9f1239"><title>7 Oct: 7 hours, 18 commits, 28.9 million tokens. Web 7</title></circle>
+<circle cx="796.1" cy="340.4" r="2.2" fill="#1c1915"><title>7 Oct: 7 hours, 18 commits, 28.9 million tokens. Web 7</title></circle>
+<circle cx="803.9" cy="351.2" r="2.2" fill="#9f1239"><title>8 Oct: 1 hours, 6 commits, 6.7 million tokens. Web 1</title></circle>
+<circle cx="803.9" cy="389.3" r="2.2" fill="#1c1915"><title>8 Oct: 1 hours, 6 commits, 6.7 million tokens. Web 1</title></circle>
+<circle cx="819.3" cy="52.0" r="2.2" fill="#9f1239"><title>10 Oct: 13 hours, 40 commits, 142.9 million tokens. Rust improvements 4, Web 7, Outside these groups 2</title></circle>
+<circle cx="819.3" cy="89.6" r="2.2" fill="#1c1915"><title>10 Oct: 13 hours, 40 commits, 142.9 million tokens. Rust improvements 4, Web 7, Outside these groups 2</title></circle>
+<circle cx="827.0" cy="263.2" r="2.2" fill="#9f1239"><title>11 Oct: 8 hours, 16 commits, 10.9 million tokens. Rust improvements 3, Web 3, Outside these groups 2</title></circle>
+<circle cx="827.0" cy="379.9" r="2.2" fill="#1c1915"><title>11 Oct: 8 hours, 16 commits, 10.9 million tokens. Rust improvements 3, Web 3, Outside these groups 2</title></circle>
+<circle cx="834.7" cy="122.4" r="2.2" fill="#9f1239"><title>12 Oct: 9 hours, 32 commits, 87.2 million tokens. Rust improvements 2, Web 4, Outside these groups 3</title></circle>
+<circle cx="834.7" cy="212.2" r="2.2" fill="#1c1915"><title>12 Oct: 9 hours, 32 commits, 87.2 million tokens. Rust improvements 2, Web 4, Outside these groups 3</title></circle>
+<circle cx="842.4" cy="219.2" r="2.2" fill="#9f1239"><title>13 Oct: 7 hours, 21 commits, 19.7 million tokens. Rust improvements 2, Outside these groups 5</title></circle>
+<circle cx="842.4" cy="360.8" r="2.2" fill="#1c1915"><title>13 Oct: 7 hours, 21 commits, 19.7 million tokens. Rust improvements 2, Outside these groups 5</title></circle>
+<circle cx="850.1" cy="201.6" r="2.2" fill="#9f1239"><title>14 Oct: 10 hours, 23 commits, 85.0 million tokens. Rust improvements 2, Web 8</title></circle>
+<circle cx="850.1" cy="217.1" r="2.2" fill="#1c1915"><title>14 Oct: 10 hours, 23 commits, 85.0 million tokens. Rust improvements 2, Web 8</title></circle>
+<circle cx="857.9" cy="289.6" r="2.2" fill="#9f1239"><title>15 Oct: 6 hours, 13 commits, 35.1 million tokens. Web 6</title></circle>
+<circle cx="857.9" cy="326.7" r="2.2" fill="#1c1915"><title>15 Oct: 6 hours, 13 commits, 35.1 million tokens. Web 6</title></circle>
+<circle cx="873.3" cy="395.2" r="2.2" fill="#9f1239"><title>17 Oct: 1 hours, 1 commits, 2.0 million tokens. Outside these groups 1</title></circle>
+<circle cx="873.3" cy="399.7" r="2.2" fill="#1c1915"><title>17 Oct: 1 hours, 1 commits, 2.0 million tokens. Outside these groups 1</title></circle>
+<circle cx="881.0" cy="324.8" r="2.2" fill="#9f1239"><title>18 Oct: 5 hours, 9 commits, 18.1 million tokens. Web 2, Outside these groups 3</title></circle>
+<circle cx="881.0" cy="364.1" r="2.2" fill="#1c1915"><title>18 Oct: 5 hours, 9 commits, 18.1 million tokens. Web 2, Outside these groups 3</title></circle>
+<circle cx="888.7" cy="386.4" r="2.2" fill="#9f1239"><title>19 Oct: 2 hours, 2 commits, 6.1 million tokens. Web 2</title></circle>
+<circle cx="888.7" cy="390.6" r="2.2" fill="#1c1915"><title>19 Oct: 2 hours, 2 commits, 6.1 million tokens. Web 2</title></circle>
+<circle cx="896.4" cy="390.1" r="2.2" fill="#1c1915"><title>20 Oct: 0 hours, 0 commits, 6.3 million tokens</title></circle>
+<circle cx="904.1" cy="380.3" r="2.2" fill="#1c1915"><title>21 Oct: 0 hours, 0 commits, 10.8 million tokens</title></circle>
+<text x="47.9" y="428" fill="#5e564c" font-size="13">Jul</text>
+<text x="279.3" y="428" fill="#5e564c" font-size="13">Aug</text>
+<text x="518.4" y="428" fill="#5e564c" font-size="13">Sep</text>
+<text x="749.9" y="428" fill="#5e564c" font-size="13">Oct</text>
 </svg>
-      <p class="caption">Axis: hours worked. 107 days, 80 of them empty. Hover a bar for that day. Source: git author dates, UTC.</p>
+      <p class="caption">Left axis: hours worked. Right axis: tokens in millions. The dashed commit line shares that grid, 10 commits level with 40 million tokens. Hover a bar or a point for that day. 112 days, 81 with neither commits nor tokens. Source: git author dates and the usage export, UTC.</p>
 
       <h2 id="details">Details</h2>
       <div class="pair">
