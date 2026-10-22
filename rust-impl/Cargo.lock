@@ -1085,6 +1085,7 @@ dependencies = [
  "color-eyre",
  "crossterm",
  "dql-engine",
+ "dql-expr",
  "dql-models",
  "dql-output",
  "dql-parser",

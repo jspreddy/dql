@@ -515,6 +515,12 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
             Ok(paths) => Reply::Json(200, json!({"ok": true, "paths": paths})),
             Err(err) => json_error(400, &err),
         },
+        "/api/lint" => {
+            let text = body.get("text").and_then(Value::as_str).unwrap_or("");
+            let mut state = lock_state(app);
+            let report = super::lint::lint_script(&mut state.session, text);
+            Reply::Json(200, serde_json::to_value(report).unwrap_or(Value::Null))
+        }
         "/api/table-cache/clear" => {
             let mut state = lock_state(app);
             state.shapes.clear();
@@ -1083,6 +1089,29 @@ mod tests {
             "http://evil.example",
         );
         assert!(foreign.contains("403"), "{foreign}");
+        drop(guard);
+    }
+
+    #[test]
+    fn lint_endpoint_reports_a_bad_query() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let reply = http(
+            addr,
+            "POST",
+            "/api/lint",
+            r#"{"text":"SELEKT * FROM shelf;\n"}"#,
+        );
+        assert!(reply.contains("\"ok\":false"), "{reply}");
+        assert!(reply.contains("\"severity\":\"error\""), "{reply}");
+        let clean = http(
+            addr,
+            "POST",
+            "/api/lint",
+            r#"{"text":"CREATE TABLE shelf (id STRING HASH KEY);\nSELECT * FROM shelf WHERE id = 'a';\n"}"#,
+        );
+        assert!(clean.contains("\"ok\":true"), "{clean}");
+        assert!(clean.contains("\"issues\":[]"), "{clean}");
         drop(guard);
     }
 

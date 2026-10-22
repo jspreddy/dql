@@ -6,6 +6,7 @@
 
 mod environment;
 pub(crate) mod files;
+pub(crate) mod lint;
 mod query_cache;
 pub(crate) mod search;
 mod server;

@@ -11,7 +11,7 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { bandLayer, dqlLanguage, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setRunRequest, setRunStatuses } from "./dql-mode.js";
+import { bandLayer, dqlLanguage, lintExtension, lintIssuesField, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setLintIssues, setRunRequest, setRunStatuses } from "./dql-mode.js";
 import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
 import { parseLsMessage } from "./describe-card.js";
 
@@ -36,6 +36,7 @@ const state = {
   expanded: new Set(["."]),
   expandedOnce: false,
   saveTimer: 0,
+  lintTimer: 0,
   searchTimer: 0,
   table: "",
   entries: [],
@@ -114,6 +115,7 @@ const editor = new EditorView({
       lineNumbers(),
       runStatusField,
       runStatusGutter,
+      lintExtension,
       highlightActiveLine(),
       highlightActiveLineGutter(),
       history(),
@@ -163,6 +165,8 @@ const editor = new EditorView({
         ".cm-gutters": { background: "var(--gutter)", color: "var(--placeholder)", border: "none" },
         ".cm-run-status-gutter": { width: "16px" },
         ".cm-run-status-gutter .cm-gutterElement": { padding: "0 1px" },
+        ".cm-lint-gutter": { width: "14px" },
+        ".cm-lint-gutter .cm-gutterElement": { padding: "0 1px" },
         ".cm-band-alt": { backgroundColor: "var(--raised)" },
         ".cm-band-write": { backgroundColor: "var(--write)" },
         ".cm-band-write-even": { backgroundColor: "var(--write-even)" },
@@ -184,6 +188,7 @@ const editor = new EditorView({
       }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged && !state.suppressSave) scheduleSave();
+        if (update.docChanged) scheduleLint();
         if (update.docChanged && runMarks.length) {
           runMarks = runMarks.map((mark) => ({ ...mark, from: update.changes.mapPos(mark.from, 1) }));
         }
@@ -1325,6 +1330,63 @@ async function flushSave() {
 function editorText() {
   return editor.state.doc.toString();
 }
+
+const lintStatus = document.querySelector("#lint-status");
+let lintGeneration = 0;
+
+function scheduleLint() {
+  const generation = ++lintGeneration;
+  clearTimeout(state.lintTimer);
+  state.lintTimer = setTimeout(() => lintEditor(generation), 400);
+}
+
+async function lintEditor(generation) {
+  const text = editorText();
+  let report;
+  try {
+    report = await api("/api/lint", { method: "POST", body: { text } });
+  } catch {
+    return;
+  }
+  if (generation !== lintGeneration) return;
+  const issues = Array.isArray(report.issues) ? report.issues : [];
+  editor.dispatch({ effects: setLintIssues.of(issues) });
+  paintLint(issues);
+}
+
+function paintLint(issues) {
+  if (!lintStatus) return;
+  const errors = issues.filter((issue) => issue.severity !== "warning");
+  const warnings = issues.length - errors.length;
+  if (!issues.length) {
+    lintStatus.classList.add("hidden");
+    lintStatus.classList.remove("is-warning");
+    lintStatus.textContent = "";
+    lintStatus.removeAttribute("title");
+    return;
+  }
+  const lead = errors[0] || issues[0];
+  lintStatus.classList.toggle("is-warning", errors.length === 0);
+  lintStatus.classList.remove("hidden");
+  const errorLabel = errors.length === 1 ? "1 error" : `${errors.length} errors`;
+  const warningLabel = warnings === 1 ? "1 warning" : `${warnings} warnings`;
+  if (errors.length && warnings) lintStatus.textContent = `${errorLabel}, ${warningLabel}`;
+  else if (errors.length) lintStatus.textContent = errorLabel;
+  else lintStatus.textContent = warningLabel;
+  lintStatus.title = lead.message || lintStatus.textContent;
+}
+
+lintStatus?.addEventListener("click", () => {
+  const issues = editor.state.field(lintIssuesField);
+  const first = issues.find((issue) => issue.severity !== "warning") || issues[0];
+  if (!first || typeof first.offset !== "number") return;
+  const offset = Math.max(0, Math.min(first.offset, editor.state.doc.length));
+  editor.focus();
+  editor.dispatch({
+    selection: { anchor: offset },
+    scrollIntoView: true,
+  });
+});
 
 function fastForwardIcon() {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");

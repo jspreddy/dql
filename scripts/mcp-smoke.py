@@ -111,6 +111,7 @@ def main() -> None:
         names = [tool["name"] for tool in by_id[2]["result"]["tools"]]
         expect = [
             "global_search",
+            "lint_query",
             "list_tables",
             "describe_tables",
             "list_query_files",
