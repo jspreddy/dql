@@ -443,7 +443,8 @@ test("runs every dql file in a folder from the context menu", async ({ page, app
   await page.locator("#file-name").click();
   await expect(page.locator("#file-menu")).toBeHidden();
   await node(page, folder).click({ button: "right" });
-  await expect(page.locator("#menu-clear-results")).toHaveCount(0);
+  await expect(page.locator("#menu-clear-results")).toBeVisible();
+  await expect(page.locator("#menu-clear-cache")).toHaveCount(0);
   await page.locator("#menu-run-folder").click();
   await expect(page.locator("#run")).toBeEnabled();
   await node(page, `${folder}/one.dql`).click();
@@ -457,7 +458,7 @@ test("runs every dql file in a folder from the context menu", async ({ page, app
   await expect(page.locator(".query-result").filter({ hasText: "from-b" })).toHaveCount(0);
 });
 
-test("clears the cache hashes for the files under a right-clicked folder", async ({ page, app }) => {
+test("clears stored results for each file under a right-clicked folder", async ({ page, app }, testInfo) => {
   const name = uniqueTable();
   const kept = `${name}_keep`;
   const one = `${name}_one`;
@@ -477,7 +478,8 @@ test("clears the cache hashes for the files under a right-clicked folder", async
   await page.reload();
   await expect(page.locator("#file-name")).toBeVisible();
   await node(page, folder).click({ button: "right" });
-  await expect(page.locator("#menu-clear-cache")).toBeVisible();
+  await expect(page.locator("#menu-clear-results")).toBeVisible();
+  await expect(page.locator("#menu-clear-cache")).toHaveCount(0);
   await page.locator("#menu-run-folder").click();
 
   const mentions = (needle) =>
@@ -489,8 +491,12 @@ test("clears the cache hashes for the files under a right-clicked folder", async
   expect(fs.existsSync(path.join(app.workspace, ".dqlrs-web-cache"))).toBe(true);
 
   await node(page, folder).click({ button: "right" });
-  await expect(page.locator("#menu-clear-cache")).toBeVisible();
-  await page.locator("#menu-clear-cache").click();
+  await expect(page.locator("#menu-clear-results")).toBeVisible();
+  await expect(page.locator("#menu-clear-cache")).toHaveCount(0);
+  await page.screenshot({
+    path: playwrightArtifact(`folder-clear-results-${testInfo.project.name}.png`),
+  });
+  await page.locator("#menu-clear-results").click();
   await expect(page.locator("#file-menu")).toBeHidden();
   await expect.poll(() => mentions(one)).toBe(false);
   await expect.poll(() => mentions(two)).toBe(false);
