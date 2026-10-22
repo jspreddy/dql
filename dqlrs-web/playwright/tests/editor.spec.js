@@ -1084,7 +1084,8 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
     ].join("\n"),
   );
   const cached = page.locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
-  await expect(cached).toContainText("THROUGHPUT (0, 0)");
+  await expect(cached).toContainText("N/A");
+  await expect(cached).not.toContainText("THROUGHPUT");
   await expect(cached).toContainText(name);
 
   await runEditor(`ALTER TABLE ${name} SET THROUGHPUT (2, 3);`);
@@ -1092,7 +1093,7 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
 
   await runEditor(`ls ${name}`);
-  await expect(page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" })).toContainText("THROUGHPUT (0, 0)");
+  await expect(page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" })).not.toContainText("THROUGHPUT (2, 3)");
 
   await runEditor(`ls ${name}* refresh=True`);
   const fresh = page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });

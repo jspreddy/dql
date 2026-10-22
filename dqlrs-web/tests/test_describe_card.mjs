@@ -63,6 +63,17 @@ test("parseLsMessage keeps an intelligent-match note on a description and a list
   assert.equal(exact.description.name, "posts");
   assert.deepEqual(exact.tables, []);
 
+  const cachedDetail = parseLsMessage(`cache: Fetched the table list.\n\n${detail}`);
+  assert.equal(cachedDetail.note, "");
+  assert.equal(cachedDetail.description.name, "posts");
+  assert.equal(cachedDetail.description.rangeKey.name, "n");
+
+  const cachedList = parseLsMessage(`${note}\ncache: Showing cached table list from 1 min ago.\n\n${summary}`);
+  assert.equal(cachedList.note, note);
+  assert.equal(cachedList.description, null);
+  assert.equal(cachedList.tables.length, 2);
+  assert.equal(cachedList.tables[0].name, "posts_v2");
+
   const related = parseLsMessage(
     'No exact match for "customer_id", so showing related keys.\n\n' + summary,
   );

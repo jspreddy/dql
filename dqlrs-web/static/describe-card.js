@@ -10,10 +10,20 @@ export function parseLsMessage(text) {
   const lines = raw.split("\n");
   let note = "";
   let start = 0;
-  if (INTELLIGENT_NOTE.test(lines[0].trim())) {
-    note = lines[0].trim();
-    start = 1;
-    while (start < lines.length && !lines[start].trim()) start += 1;
+  while (start < lines.length && !lines[start].trim()) start += 1;
+  if (start < lines.length && INTELLIGENT_NOTE.test(lines[start].trim())) {
+    note = lines[start].trim();
+    start += 1;
+  }
+  // `ls` prints `cache: …` ahead of the table. That hint is not part of the
+  // description or the summary, so the card parser skips it.
+  while (start < lines.length) {
+    const line = lines[start].trim();
+    if (!line || line.startsWith("cache:")) {
+      start += 1;
+      continue;
+    }
+    break;
   }
   const body = lines.slice(start).join("\n").trim();
   const description = parseTableDescription(body);
