@@ -19,8 +19,8 @@ use serde_json::{json, Value};
 use super::files::{self, PathError};
 use super::query_cache;
 use super::shape::{
-    changes_schema, column_order, explain_index, list_tables, parse_table_shape, read_query,
-    safe_table_name, split_statements, Column, ExecText, ListedTable, TableShape, PAGE_SIZE,
+    changes_schema, column_order, explain_index, parse_table_shape, read_query, safe_table_name,
+    split_statements, Column, ExecText, ListedTable, TableShape, PAGE_SIZE,
 };
 use crate::serve::protocol::{envelope_from_error, ServeEnvelope};
 use crate::session::Session;
@@ -35,6 +35,7 @@ struct WebState {
     session: Session,
     shapes: std::collections::HashMap<String, TableShape>,
     table_catalog: Option<Vec<ListedTable>>,
+    mcp_initialized: bool,
 }
 
 struct App {
@@ -43,6 +44,7 @@ struct App {
     state: Mutex<WebState>,
     cancel: dql_engine::CancelFlag,
     identity: Mutex<Option<dql_engine::CallerIdentity>>,
+    mcp: bool,
 }
 
 struct Incoming {
@@ -50,6 +52,7 @@ struct Incoming {
     path: String,
     query: String,
     body: Vec<u8>,
+    origin: Option<String>,
     keep_alive: bool,
     overflow: bool,
 }
@@ -64,15 +67,26 @@ pub fn serve(
     session: Session,
     root: PathBuf,
     listen: SocketAddr,
+    mcp: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     fs::create_dir_all(&root)?;
     let root = root.canonicalize()?;
-    let app = Arc::new(App::new(session, root));
+    let app = Arc::new(App::new(session, root, mcp));
     let listener = TcpListener::bind(listen)?;
     let bound = listener.local_addr().unwrap_or(listen);
     println!("DQLRS Web  http://{bound}");
-    println!("workspace  {}", app.root.display());
-    println!("endpoint   {}", app.endpoint);
+    if mcp {
+        let url = format!("http://{bound}/mcp");
+        println!("MCP        {url}");
+        println!("workspace  {}", app.root.display());
+        println!("endpoint   {}", app.endpoint);
+        println!();
+        println!("{}", crate::mcp::http_client_config(&url));
+    } else {
+        println!("{}", crate::mcp::web_mcp_hint(&bound.to_string()));
+        println!("workspace  {}", app.root.display());
+        println!("endpoint   {}", app.endpoint);
+    }
     let _ = io::stdout().flush();
     accept(app, listener, Arc::new(AtomicBool::new(false)));
     Ok(())
@@ -102,7 +116,7 @@ fn accept(app: Arc<App>, listener: TcpListener, stop: Arc<AtomicBool>) {
 }
 
 impl App {
-    fn new(session: Session, root: PathBuf) -> Self {
+    fn new(session: Session, root: PathBuf, mcp: bool) -> Self {
         let endpoint = match &session.local_endpoint {
             Some((host, port)) => format!("{host}:{port}"),
             None => session.region.clone(),
@@ -115,9 +129,11 @@ impl App {
                 session,
                 shapes: std::collections::HashMap::new(),
                 table_catalog: None,
+                mcp_initialized: false,
             }),
             cancel,
             identity: Mutex::new(None),
+            mcp,
         }
     }
 }
@@ -193,6 +209,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
     let (path, query) = split_url(target);
     let mut content_length = None;
     let mut connection = String::new();
+    let mut origin = None;
     let mut length_invalid = false;
     for line in lines {
         if line.is_empty() {
@@ -208,6 +225,8 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
             }
         } else if name.eq_ignore_ascii_case("connection") {
             connection = value.trim().to_ascii_lowercase();
+        } else if name.eq_ignore_ascii_case("origin") {
+            origin = Some(value.trim().to_string());
         }
     }
     let keep_alive = if connection.contains("close") {
@@ -223,6 +242,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
             path: path.to_string(),
             query: query.to_string(),
             body: Vec::new(),
+            origin,
             keep_alive: false,
             overflow: true,
         }));
@@ -234,6 +254,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
             path: path.to_string(),
             query: query.to_string(),
             body: Vec::new(),
+            origin,
             keep_alive: false,
             overflow: true,
         }));
@@ -247,6 +268,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
         path: path.to_string(),
         query: query.to_string(),
         body,
+        origin,
         keep_alive,
         overflow: false,
     }))
@@ -307,6 +329,9 @@ fn identity_reply(app: &App) -> Value {
 }
 
 fn dispatch(app: &Arc<App>, request: &Incoming) -> Reply {
+    if request.path == "/mcp" || request.path == "/mcp/" {
+        return dispatch_mcp(app, request);
+    }
     let path = request.path.as_str();
     let query = request.query.as_str();
     match request.method.as_str() {
@@ -339,17 +364,24 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
                 Err(err) => json_error(400, &err),
             }
         }
+        "/api/search" => {
+            let q = query_value(query, "q");
+            let mut state = lock_state(app);
+            let results = super::search::search(&mut state.session, &app.root, &q);
+            Reply::Json(200, serde_json::to_value(results).unwrap_or(Value::Null))
+        }
+        "/api/table-cache" => {
+            let state = lock_state(app);
+            let hint = crate::meta::ls::web_table_cache_status(&state.session);
+            Reply::Json(200, serde_json::to_value(hint).unwrap_or(Value::Null))
+        }
         "/api/tables" => {
             let pattern = query_value(query, "pattern");
             let refresh = query_flag(query, "refresh");
+            let background = query_flag(query, "async");
             let mut state = lock_state(app);
-            let mut shapes = std::mem::take(&mut state.shapes);
-            let mut catalog = state.table_catalog.take();
-            let listed = list_tables(&pattern, refresh, &mut shapes, &mut catalog, |command| {
-                ExecText::from_envelope(&state.session.execute_for_serve(command))
-            });
-            state.shapes = shapes;
-            state.table_catalog = catalog;
+            let listed =
+                crate::meta::ls::web_table_list(&mut state.session, &pattern, refresh, background);
             match listed {
                 Ok(listed) => Reply::Json(200, serde_json::to_value(listed).unwrap_or(Value::Null)),
                 Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
@@ -369,6 +401,72 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
         }
         _ => serve_static(path),
     }
+}
+
+fn dispatch_mcp(app: &App, request: &Incoming) -> Reply {
+    if !app.mcp {
+        return Reply::Json(404, json!({"ok": false, "error": "not found"}));
+    }
+    if let Some(origin) = &request.origin {
+        if !loopback_origin(origin) {
+            return Reply::Json(
+                403,
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": null,
+                    "error": { "code": -32000, "message": "origin is not allowed" }
+                }),
+            );
+        }
+    }
+    if request.method != "POST" {
+        return Reply::Json(
+            405,
+            json!({
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": { "code": -32601, "message": "POST a JSON-RPC message to /mcp" }
+            }),
+        );
+    }
+    let text = String::from_utf8_lossy(&request.body);
+    let mut state = lock_state(app);
+    let WebState {
+        session,
+        mcp_initialized,
+        ..
+    } = &mut *state;
+    match crate::mcp::exchange(mcp_initialized, session, &app.root, text.trim()) {
+        Some(response) => {
+            let value = serde_json::from_str(&response).unwrap_or_else(|_| {
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": null,
+                    "error": { "code": -32603, "message": "bad response" }
+                })
+            });
+            let status = if value["error"]["code"] == -32700 {
+                400
+            } else {
+                200
+            };
+            Reply::Json(status, value)
+        }
+        None => Reply::Bytes(202, "application/json", Vec::new()),
+    }
+}
+
+fn loopback_origin(origin: &str) -> bool {
+    let Some(rest) = origin
+        .strip_prefix("http://")
+        .or_else(|| origin.strip_prefix("https://"))
+    else {
+        return false;
+    };
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = host.rsplit_once(':').map(|(host, _)| host).unwrap_or(host);
+    let host = host.trim_matches(['[', ']']);
+    matches!(host, "127.0.0.1" | "localhost" | "::1")
 }
 
 fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
@@ -417,6 +515,19 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
             Ok(paths) => Reply::Json(200, json!({"ok": true, "paths": paths})),
             Err(err) => json_error(400, &err),
         },
+        "/api/lint" => {
+            let text = body.get("text").and_then(Value::as_str).unwrap_or("");
+            let mut state = lock_state(app);
+            let report = super::lint::lint_script(&mut state.session, text);
+            Reply::Json(200, serde_json::to_value(report).unwrap_or(Value::Null))
+        }
+        "/api/table-cache/clear" => {
+            let mut state = lock_state(app);
+            state.shapes.clear();
+            state.table_catalog = None;
+            state.session.clear_table_cache();
+            Reply::Json(200, json!({"ok": true}))
+        }
         _ => Reply::Json(404, json!({"ok": false, "error": "not found"})),
     }
 }
@@ -755,8 +866,11 @@ Connection: close\r\n\
 fn reason(status: u16) -> &'static str {
     match status {
         200 => "OK",
+        202 => "Accepted",
         400 => "Bad Request",
+        403 => "Forbidden",
         404 => "Not Found",
+        405 => "Method Not Allowed",
         502 => "Bad Gateway",
         _ => "Error",
     }
@@ -867,6 +981,9 @@ fn public_result(
             value["columns"] = serde_json::to_value(columns).unwrap_or(Value::Null);
         }
     }
+    if let Some(help) = &envelope.help {
+        value["help"] = help.clone();
+    }
     value
 }
 
@@ -907,6 +1024,152 @@ mod tests {
         assert!(ran.contains("\"elapsed_ms\":"), "{ran}");
         assert!(ran.contains("\"read_units\":"), "{ran}");
         assert!(ran.contains("\"write_units\":"), "{ran}");
+        drop(guard);
+    }
+
+    #[test]
+    fn mcp_shares_the_web_session_and_workspace() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server_mcp(root.path().to_path_buf(), true);
+
+        let absent = http(addr, "GET", "/mcp", "");
+        assert!(absent.contains("405"), "{absent}");
+
+        let early = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+        );
+        assert!(early.contains("-32002"), "{early}");
+
+        let init = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}"#,
+        );
+        assert!(init.contains("2025-06-18"), "{init}");
+        let noted = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+        );
+        assert!(noted.contains("202 Accepted"), "{noted}");
+
+        let created = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_query_file","arguments":{"path":"queries/from-mcp.dql","text":"SELECT 1;\n"}}}"#,
+        );
+        assert!(created.contains("queries/from-mcp.dql"), "{created}");
+        assert!(created.contains("\"isError\":false"), "{created}");
+        let file = http(addr, "GET", "/api/file?path=queries/from-mcp.dql", "");
+        assert!(file.contains("SELECT 1"), "{file}");
+
+        let script = "CREATE TABLE shelf (id STRING HASH KEY);";
+        let body = format!("{{\"dql\":{}}}", serde_json::to_string(script).unwrap());
+        let ran = http_body(addr, "POST", "/api/run", &body);
+        assert!(ran.contains("\"event\":\"result\""), "{ran}");
+        let listed = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_tables","arguments":{}}}"#,
+        );
+        assert!(listed.contains("shelf"), "{listed}");
+
+        let page = http(addr, "GET", "/", "");
+        assert!(page.contains("DQLRS Web"), "{page}");
+
+        let foreign = http_origin(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":4,"method":"ping"}"#,
+            "http://evil.example",
+        );
+        assert!(foreign.contains("403"), "{foreign}");
+        drop(guard);
+    }
+
+    #[test]
+    fn lint_endpoint_reports_a_bad_query() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let reply = http(
+            addr,
+            "POST",
+            "/api/lint",
+            r#"{"text":"SELEKT * FROM shelf;\n"}"#,
+        );
+        assert!(reply.contains("\"ok\":false"), "{reply}");
+        assert!(reply.contains("\"severity\":\"error\""), "{reply}");
+        let clean = http(
+            addr,
+            "POST",
+            "/api/lint",
+            r#"{"text":"CREATE TABLE shelf (id STRING HASH KEY);\nSELECT * FROM shelf WHERE id = 'a';\n"}"#,
+        );
+        assert!(clean.contains("\"ok\":true"), "{clean}");
+        assert!(clean.contains("\"issues\":[]"), "{clean}");
+        drop(guard);
+    }
+
+    #[test]
+    fn lint_endpoint_does_not_run_the_script() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let setup = "CREATE TABLE shelf (id STRING HASH KEY); INSERT INTO shelf (id, title) VALUES ('a', 'kept');";
+        let setup_body = format!("{{\"dql\":{}}}", serde_json::to_string(setup).unwrap());
+        let created = http_body(addr, "POST", "/api/run", &setup_body);
+        assert!(created.contains("\"event\":\"result\""), "{created}");
+
+        let script = "\
+CREATE TABLE other (id STRING HASH KEY);
+INSERT INTO shelf (id, title) VALUES ('b', 'new');
+UPDATE shelf SET title = 'changed' WHERE id = 'a';
+DELETE FROM shelf WHERE id = 'a';
+SELECT title FROM shelf WHERE id = 'a';
+SELECT * FROM shelf;
+SCAN * FROM shelf;
+DROP TABLE shelf;
+DROP TABLE other;
+";
+        let lint_body = format!("{{\"text\":{}}}", serde_json::to_string(script).unwrap());
+        let linted = http(addr, "POST", "/api/lint", &lint_body);
+        assert!(linted.contains("\"ok\":false"), "{linted}");
+        assert!(linted.contains("indexed WHERE"), "{linted}");
+
+        let check = "SELECT * FROM shelf WHERE id = 'a';";
+        let check_body = format!("{{\"dql\":{}}}", serde_json::to_string(check).unwrap());
+        let kept = http_body(addr, "POST", "/api/run", &check_body);
+        assert!(kept.contains("\"title\":\"kept\""), "{kept}");
+        assert!(!kept.contains("changed"), "{kept}");
+        assert!(!kept.contains("\"id\":\"b\""), "{kept}");
+
+        let missing = "SELECT * FROM other WHERE id = 'a';";
+        let missing_body = format!("{{\"dql\":{}}}", serde_json::to_string(missing).unwrap());
+        let absent = http_body(addr, "POST", "/api/run", &missing_body);
+        assert!(absent.contains("not found"), "{absent}");
+        drop(guard);
+    }
+
+    #[test]
+    fn mcp_path_stays_closed_without_the_flag() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let missing = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#,
+        );
+        assert!(missing.contains("404"), "{missing}");
+        let page = http(addr, "GET", "/api/config", "");
+        assert!(page.contains("\"endpoint\":\"memory\""), "{page}");
         drop(guard);
     }
 
@@ -994,7 +1257,11 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
     }
 
     fn spawn_server(root: PathBuf) -> (SocketAddr, ServerGuard) {
-        let app = Arc::new(App::new(Session::new_memory_headless("memory"), root));
+        spawn_server_mcp(root, false)
+    }
+
+    fn spawn_server_mcp(root: PathBuf, mcp: bool) -> (SocketAddr, ServerGuard) {
+        let app = Arc::new(App::new(Session::new_memory_headless("memory"), root, mcp));
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let stop = Arc::new(AtomicBool::new(false));
@@ -1011,13 +1278,22 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
     }
 
     fn http(addr: SocketAddr, method: &str, path: &str, body: &str) -> String {
+        http_origin(addr, method, path, body, "")
+    }
+
+    fn http_origin(addr: SocketAddr, method: &str, path: &str, body: &str, origin: &str) -> String {
         let mut stream = TcpStream::connect(addr).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(8)))
             .unwrap();
+        let origin = if origin.is_empty() {
+            String::new()
+        } else {
+            format!("Origin: {origin}\r\n")
+        };
         write!(
             stream,
-            "{method} {path} HTTP/1.0\r\nHost: 127.0.0.1\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            "{method} {path} HTTP/1.0\r\nHost: 127.0.0.1\r\n{origin}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
             body.len()
         )
         .unwrap();

@@ -1,4 +1,3 @@
-use crate::help;
 use crate::session::Session;
 use std::collections::HashMap;
 use std::io::{self, Write};
@@ -104,21 +103,6 @@ pub fn whoami(
     _repl: bool,
 ) -> Result<(), String> {
     writeln!(out, "{}", session.engine.session_identity()).map_err(|err| err.to_string())
-}
-
-pub fn help(
-    session: &mut Session,
-    args: &[String],
-    _: &HashMap<String, String>,
-    out: &mut dyn Write,
-    _repl: bool,
-) -> Result<(), String> {
-    let _ = session;
-    let width = crossterm::terminal::size()
-        .map(|(width, _)| width as usize)
-        .unwrap_or(80)
-        .max(40);
-    help::write_help(args, out, width)
 }
 
 pub fn watch_disabled(

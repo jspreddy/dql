@@ -44,6 +44,7 @@ function dropTable(binary, name) {
         AWS_SECRET_ACCESS_KEY: "fakekey",
         AWS_REGION: "us-west-1",
         AWS_EC2_METADATA_DISABLED: "true",
+        DQLRS_TABLE_CACHE: fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-table-cache-")),
       },
     },
   );
@@ -126,6 +127,7 @@ export const test = base.extend({
           AWS_SECRET_ACCESS_KEY: "fakekey",
           AWS_REGION: "us-west-1",
           AWS_EC2_METADATA_DISABLED: "true",
+          DQLRS_TABLE_CACHE: fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-table-cache-")),
         },
         stdio: ["ignore", "pipe", "pipe"],
       },

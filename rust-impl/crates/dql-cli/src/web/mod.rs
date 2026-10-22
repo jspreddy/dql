@@ -5,16 +5,23 @@
 //! without a rebuild. The installed binary falls back to the embedded copy.
 
 mod environment;
-mod files;
+pub(crate) mod files;
+pub(crate) mod lint;
 mod query_cache;
+pub(crate) mod search;
 mod server;
-mod shape;
+pub(crate) mod shape;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use crate::session::Session;
 
-pub fn run(session: Session, root: PathBuf, listen: SocketAddr) -> color_eyre::Result<()> {
-    server::serve(session, root, listen).map_err(|err| color_eyre::eyre::eyre!("{err}"))
+pub fn run(
+    session: Session,
+    root: PathBuf,
+    listen: SocketAddr,
+    mcp: bool,
+) -> color_eyre::Result<()> {
+    server::serve(session, root, listen, mcp).map_err(|err| color_eyre::eyre::eyre!("{err}"))
 }

@@ -11,7 +11,7 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { bandLayer, dqlLanguage, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setRunRequest, setRunStatuses } from "./dql-mode.js";
+import { bandLayer, dqlLanguage, lintExtension, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setLintIssues, setRunRequest, setRunStatuses } from "./dql-mode.js";
 import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
 import { parseLsMessage } from "./describe-card.js";
 
@@ -36,6 +36,7 @@ const state = {
   expanded: new Set(["."]),
   expandedOnce: false,
   saveTimer: 0,
+  lintTimer: 0,
   searchTimer: 0,
   table: "",
   entries: [],
@@ -44,6 +45,8 @@ const state = {
   suppressSave: false,
   dragPath: "",
   tablesRequest: 0,
+  cachePoll: 0,
+  cacheStatusRequest: 0,
   listedTables: [],
   browserSchema: null,
   schemaKind: "",
@@ -112,6 +115,7 @@ const editor = new EditorView({
       lineNumbers(),
       runStatusField,
       runStatusGutter,
+      lintExtension,
       highlightActiveLine(),
       highlightActiveLineGutter(),
       history(),
@@ -161,6 +165,8 @@ const editor = new EditorView({
         ".cm-gutters": { background: "var(--gutter)", color: "var(--placeholder)", border: "none" },
         ".cm-run-status-gutter": { width: "16px" },
         ".cm-run-status-gutter .cm-gutterElement": { padding: "0 1px" },
+        ".cm-lint-gutter": { width: "14px" },
+        ".cm-lint-gutter .cm-gutterElement": { padding: "0 1px" },
         ".cm-band-alt": { backgroundColor: "var(--raised)" },
         ".cm-band-write": { backgroundColor: "var(--write)" },
         ".cm-band-write-even": { backgroundColor: "var(--write-even)" },
@@ -182,6 +188,7 @@ const editor = new EditorView({
       }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged && !state.suppressSave) scheduleSave();
+        if (update.docChanged) scheduleLint();
         if (update.docChanged && runMarks.length) {
           runMarks = runMarks.map((mark) => ({ ...mark, from: update.changes.mapPos(mark.from, 1) }));
         }
@@ -191,6 +198,68 @@ const editor = new EditorView({
   }),
 });
 editorReady = true;
+const lintTip = document.querySelector("#lint-tip");
+let lintTipAnchor = null;
+
+function lintHoverTarget(node) {
+  if (!node || !node.closest || !editor.dom.contains(node)) return null;
+  const gutter = node.closest(".lint-gutter");
+  if (gutter) return gutter;
+  const line = node.closest(".cm-line");
+  if (line && line.querySelector(".cm-lint-error, .cm-lint-warning")) return line;
+  return null;
+}
+
+function lintHoverText(target) {
+  if (target.classList.contains("lint-gutter")) return target.getAttribute("title") || "";
+  return [...target.querySelectorAll(".cm-lint-error, .cm-lint-warning")]
+    .map((mark) => mark.getAttribute("title") || "")
+    .filter(Boolean)
+    .join("\n");
+}
+
+function hideLintTip() {
+  lintTipAnchor = null;
+  if (lintTip) lintTip.hidden = true;
+}
+
+function placeLintTip(target) {
+  if (!lintTip) return;
+  const text = lintHoverText(target);
+  if (!text) {
+    hideLintTip();
+    return;
+  }
+  if (lintTipAnchor !== target || lintTip.textContent !== text || lintTip.hidden) {
+    lintTip.textContent = text;
+    lintTip.hidden = false;
+    lintTipAnchor = target;
+  }
+  const rect = target.getBoundingClientRect();
+  const tip = lintTip.getBoundingClientRect();
+  let top = rect.bottom + 6;
+  let left = Math.max(8, rect.left);
+  if (top + tip.height > window.innerHeight - 8) top = Math.max(8, rect.top - tip.height - 6);
+  if (left + tip.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - tip.width - 8);
+  lintTip.style.top = `${top}px`;
+  lintTip.style.left = `${left}px`;
+}
+
+editor.dom.addEventListener("mouseover", (event) => {
+  const target = lintHoverTarget(event.target);
+  if (!target) {
+    hideLintTip();
+    return;
+  }
+  placeLintTip(target);
+});
+editor.dom.addEventListener("mouseout", (event) => {
+  if (!lintHoverTarget(event.target)) return;
+  if (lintHoverTarget(event.relatedTarget)) return;
+  hideLintTip();
+});
+editor.scrollDOM.addEventListener("scroll", hideLintTip, { passive: true });
+
 const resultBody = document.querySelector("#result-body");
 const runProgress = document.querySelector("#run-progress");
 const resultMeta = document.querySelector("#result-meta");
@@ -396,16 +465,44 @@ document.querySelector("#new-file").addEventListener("click", createFile);
 const runButton = document.querySelector("#run");
 const stopButton = document.querySelector("#stop");
 const runShortcut = document.querySelector("#run-shortcut");
+const runMod = runShortcut.querySelector(".run-mod");
+const runTip = document.querySelector("#run-tip");
 const macShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
-const runShortcutLabel = macShortcut ? "⌘ Enter" : "Ctrl+Enter";
-runShortcut.textContent = runShortcutLabel;
-runButton.title = "Run selection (" + runShortcutLabel + ")";
+runMod.textContent = macShortcut ? "⌘" : "Ctrl";
 runButton.setAttribute("aria-keyshortcuts", macShortcut ? "Meta+Enter" : "Control+Enter");
+let runTipTimer = 0;
+function hideRunTip() {
+  clearTimeout(runTipTimer);
+  runTipTimer = 0;
+  runTip.hidden = true;
+}
+function showRunTip() {
+  runTip.hidden = false;
+  const box = runButton.getBoundingClientRect();
+  const tip = runTip.getBoundingClientRect();
+  const left = Math.max(8, Math.min(box.left + (box.width - tip.width) / 2, window.innerWidth - tip.width - 8));
+  const top = Math.min(window.innerHeight - tip.height - 8, box.bottom + 6);
+  runTip.style.left = `${Math.round(left)}px`;
+  runTip.style.top = `${Math.round(top)}px`;
+}
+runButton.addEventListener("pointerenter", () => {
+  hideRunTip();
+  runTipTimer = setTimeout(showRunTip, 1000);
+});
+runButton.addEventListener("pointerleave", hideRunTip);
+runButton.addEventListener("pointerdown", hideRunTip);
+runButton.addEventListener("blur", hideRunTip);
 stopButton.title = "Stop running query (Esc)";
 stopButton.setAttribute("aria-keyshortcuts", "Escape");
-runButton.addEventListener("click", runSelection);
+runButton.addEventListener("click", () => {
+  armRunPane();
+  runSelection();
+});
 const runFileButton = document.querySelector("#run-file");
-runFileButton.addEventListener("click", runFile);
+runFileButton.addEventListener("click", () => {
+  armRunPane();
+  runFile();
+});
 const clearResultsButton = document.querySelector("#clear-results");
 clearResultsButton.addEventListener("click", () => clearFileResults(state.path));
 stopButton.addEventListener("click", stopRun);
@@ -417,11 +514,11 @@ window.addEventListener("keydown", (event) => {
 });
 
 function setRunBusy(busy) {
+  hideRunTip();
   runButton.disabled = busy;
   runButton.classList.toggle("hidden", busy);
   stopButton.classList.toggle("hidden", !busy);
   stopButton.disabled = !busy;
-  runShortcut.textContent = busy ? "Esc" : runShortcutLabel;
   runFileButton.disabled = busy || !state.path;
   syncClearResults();
   const floating = editor.dom.querySelector(".run-float");
@@ -440,6 +537,7 @@ async function stopRun() {
 
 function runFromEditor() {
   if (runButton.disabled) return true;
+  armRunPane();
   runSelection();
   return true;
 }
@@ -468,12 +566,208 @@ function applyHighlightToggles() {
     effects: highlightCompartment.reconfigure(queryHighlight(options)),
   });
 }
+const settingsPop = document.querySelector("#settings-pop");
+const settingsButton = document.querySelector("#settings-toggle");
+settingsPop.addEventListener("toggle", (event) => {
+  const open = event.newState === "open";
+  settingsButton.setAttribute("aria-expanded", open ? "true" : "false");
+  if (!open) return;
+  document.querySelector("#cache-clear-note").hidden = true;
+  refreshSettingsCacheAge();
+  const chip = settingsButton.getBoundingClientRect();
+  const width = settingsPop.getBoundingClientRect().width || 232;
+  settingsPop.style.inset = "auto";
+  settingsPop.style.margin = "0";
+  settingsPop.style.top = Math.round(chip.bottom + 6) + "px";
+  settingsPop.style.left = Math.max(8, Math.round(chip.right - width)) + "px";
+});
+document.querySelector("#clear-table-cache").addEventListener("click", async () => {
+  const button = document.querySelector("#clear-table-cache");
+  const note = document.querySelector("#cache-clear-note");
+  button.disabled = true;
+  try {
+    await api("/api/table-cache/clear", { method: "POST", body: {} });
+    note.hidden = false;
+    note.textContent = "Table cache cleared.";
+    state.cacheStatusRequest += 1;
+    renderSettingsCacheAge(null);
+    if (state.mode !== "tables") document.querySelector("#table-cache").classList.add("hidden");
+  } catch (error) {
+    note.hidden = false;
+    note.textContent = error.message;
+    return;
+  } finally {
+    button.disabled = false;
+  }
+  if (state.mode === "tables") await loadTables();
+});
+const titleSearch = document.querySelector("#title-search");
+const titleSearchList = document.querySelector("#title-search-list");
+let titleSearchItems = [];
+let titleSearchTimer = 0;
+let titleSearchRequest = 0;
+let titleSearchActive = -1;
+
+titleSearch.addEventListener("input", () => {
+  clearTimeout(titleSearchTimer);
+  const query = titleSearch.value.trim();
+  if (!query) {
+    hideTitleSearch();
+    return;
+  }
+  titleSearchTimer = setTimeout(() => runTitleSearch(query), 150);
+});
+titleSearch.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    hideTitleSearch();
+    return;
+  }
+  if (titleSearchList.hidden || !titleSearchItems.length) return;
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    const delta = event.key === "ArrowDown" ? 1 : -1;
+    const next = titleSearchActive < 0
+      ? (delta > 0 ? 0 : titleSearchItems.length - 1)
+      : (titleSearchActive + delta + titleSearchItems.length) % titleSearchItems.length;
+    setTitleSearchActive(next);
+    return;
+  }
+  if (event.key === "Enter" && titleSearchActive >= 0) {
+    event.preventDefault();
+    openSearchHit(titleSearchItems[titleSearchActive]);
+  }
+});
+titleSearch.addEventListener("focus", () => {
+  const query = titleSearch.value.trim();
+  if (query) runTitleSearch(query);
+});
+titleSearchList.addEventListener("pointerdown", (event) => {
+  if (event.target.closest(".title-search-item")) event.preventDefault();
+});
+document.addEventListener("pointerdown", (event) => {
+  if (event.target.closest(".title-search")) return;
+  hideTitleSearch();
+});
+
+async function runTitleSearch(query) {
+  const request = ++titleSearchRequest;
+  try {
+    const payload = await api("/api/search?q=" + encodeURIComponent(query));
+    if (request !== titleSearchRequest || titleSearch.value.trim() !== query) return;
+    renderTitleSearch(payload.items || []);
+  } catch (error) {
+    if (request !== titleSearchRequest) return;
+    titleSearchItems = [];
+    titleSearchList.replaceChildren();
+    const empty = document.createElement("div");
+    empty.className = "title-search-empty";
+    empty.textContent = error.message;
+    titleSearchList.append(empty);
+    titleSearchList.hidden = false;
+    titleSearch.setAttribute("aria-expanded", "true");
+  }
+}
+
+function renderTitleSearch(items) {
+  const groups = [
+    { kinds: ["table"], label: "Tables" },
+    { kinds: ["column", "index"], label: "Columns" },
+    { kinds: ["query"], label: "Queries" },
+  ];
+  const ordered = [];
+  titleSearchList.replaceChildren();
+  for (const group of groups) {
+    const rows = items.filter((item) => group.kinds.includes(item.kind));
+    if (!rows.length) continue;
+    const label = document.createElement("div");
+    label.className = "title-search-group";
+    label.textContent = group.label;
+    titleSearchList.append(label);
+    for (const item of rows) {
+      const index = ordered.length;
+      ordered.push(item);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "title-search-item";
+      button.setAttribute("role", "option");
+      button.dataset.index = String(index);
+      const kind = document.createElement("span");
+      kind.className = "title-search-kind";
+      kind.textContent = searchKindLabel(item.kind);
+      const title = document.createElement("span");
+      title.className = "title-search-title";
+      title.textContent = item.title || "";
+      button.append(kind, title);
+      if (item.detail) {
+        const detail = document.createElement("span");
+        detail.className = "title-search-detail";
+        detail.textContent = item.detail;
+        button.append(detail);
+      }
+      button.addEventListener("click", () => openSearchHit(item));
+      titleSearchList.append(button);
+    }
+  }
+  titleSearchItems = ordered;
+  titleSearchActive = -1;
+  if (!ordered.length) {
+    const empty = document.createElement("div");
+    empty.className = "title-search-empty";
+    empty.textContent = "No matches";
+    titleSearchList.append(empty);
+  }
+  titleSearchList.hidden = false;
+  titleSearch.setAttribute("aria-expanded", "true");
+}
+
+function searchKindLabel(kind) {
+  if (kind === "table") return "Table";
+  if (kind === "column") return "Column";
+  if (kind === "index") return "Index";
+  return "Query";
+}
+
+function setTitleSearchActive(index) {
+  titleSearchActive = index;
+  const buttons = titleSearchList.querySelectorAll(".title-search-item");
+  buttons.forEach((button, buttonIndex) => {
+    const selected = buttonIndex === index;
+    button.setAttribute("aria-selected", selected ? "true" : "false");
+    if (selected) button.scrollIntoView({ block: "nearest" });
+  });
+}
+
+function hideTitleSearch() {
+  titleSearchRequest += 1;
+  titleSearchList.hidden = true;
+  titleSearchList.replaceChildren();
+  titleSearchItems = [];
+  titleSearchActive = -1;
+  titleSearch.setAttribute("aria-expanded", "false");
+}
+
+async function openSearchHit(hit) {
+  hideTitleSearch();
+  if (!hit) return;
+  if (hit.kind === "query" && hit.path) {
+    await openFile(hit.path);
+    if (typeof hit.offset === "number") scrollEditorTo(hit.offset);
+    return;
+  }
+  if (!hit.table) return;
+  document.querySelector("#table-search").value = "";
+  state.table = hit.table;
+  state.page = 0;
+  if (state.mode !== "tables") setMode("tables");
+  else await loadTables();
+}
+
 document.querySelector("#table-search").addEventListener("input", () => {
   clearTimeout(state.searchTimer);
   state.searchTimer = setTimeout(loadTables, 250);
 });
 document.querySelector("#refresh-tables").addEventListener("click", () => {
-  loadTables({ refresh: true });
+  loadTables({ refresh: true, background: true });
 });
 document.querySelector("#page-prev").addEventListener("click", () => changePage(-1));
 document.querySelector("#page-next").addEventListener("click", () => changePage(1));
@@ -681,6 +975,7 @@ function setMode(mode) {
   document.querySelector("#tables-nav").classList.toggle("hidden", !tables);
   document.querySelector("#new-file").classList.toggle("hidden", tables);
   document.querySelector("#refresh-tables").classList.toggle("hidden", !tables);
+  if (!tables) document.querySelector("#table-cache").classList.add("hidden");
   document.querySelector("#side-title").textContent = tables ? "Tables" : "Files";
   closeComplete();
   if (tables) loadTables();
@@ -1016,7 +1311,6 @@ function menuItems(target) {
     { label: "New folder", run: () => createNamedFolder(dir) },
   );
   if (!target.path || target.type === "root") {
-    items.push("-", { label: "Clear cache", run: () => clearCache(".") });
     return items;
   }
   items.push(
@@ -1025,11 +1319,10 @@ function menuItems(target) {
     { label: "Rename", run: () => beginRename(target.path) },
     { label: "Move to…", run: () => moveEntry(target.path) },
   );
-  if (target.type === "file") {
+  if (target.type === "file" || target.type === "dir") {
     items.push({ label: "Clear results", run: () => clearFileResults(target.path) });
   }
   items.push(
-    { label: "Clear cache", run: () => clearCache(target.path) },
     "-",
     { label: "Delete", danger: true, run: () => deleteEntry(target.path, target.type) },
   );
@@ -1044,7 +1337,6 @@ const menuIds = {
   Rename: "menu-rename",
   "Move to…": "menu-move",
   "Clear results": "menu-clear-results",
-  "Clear cache": "menu-clear-cache",
   Delete: "menu-delete",
 };
 
@@ -1127,6 +1419,140 @@ function editorText() {
   return editor.state.doc.toString();
 }
 
+const lintStatus = document.querySelector("#lint-status");
+let lintGeneration = 0;
+let lintIssues = [];
+let resultPane = "result";
+let runEpoch = 0;
+let paneEpoch = -1;
+
+function armRunPane() {
+  runEpoch += 1;
+}
+
+function preferFreshResult() {
+  if (paneEpoch !== runEpoch) resultPane = "result";
+}
+
+function scheduleLint() {
+  const generation = ++lintGeneration;
+  clearTimeout(state.lintTimer);
+  state.lintTimer = setTimeout(() => lintEditor(generation), 400);
+}
+
+async function lintEditor(generation) {
+  const text = editorText();
+  let report;
+  try {
+    report = await api("/api/lint", { method: "POST", body: { text } });
+  } catch {
+    return;
+  }
+  if (generation !== lintGeneration) return;
+  const issues = Array.isArray(report.issues) ? report.issues : [];
+  editor.dispatch({ effects: setLintIssues.of(issues) });
+  paintLint(issues);
+}
+
+function paintLint(issues) {
+  lintIssues = issues;
+  if (lintStatus) {
+    const errors = issues.filter((issue) => issue.severity !== "warning");
+    const warnings = issues.length - errors.length;
+    if (!issues.length) {
+      lintStatus.classList.add("hidden");
+      lintStatus.classList.remove("is-warning");
+      lintStatus.textContent = "";
+      lintStatus.removeAttribute("title");
+    } else {
+      const lead = errors[0] || issues[0];
+      lintStatus.classList.toggle("is-warning", errors.length === 0);
+      lintStatus.classList.remove("hidden");
+      const errorLabel = errors.length === 1 ? "1 error" : `${errors.length} errors`;
+      const warningLabel = warnings === 1 ? "1 warning" : `${warnings} warnings`;
+      if (errors.length && warnings) lintStatus.textContent = `${errorLabel}, ${warningLabel}`;
+      else if (errors.length) lintStatus.textContent = errorLabel;
+      else lintStatus.textContent = warningLabel;
+      lintStatus.title = lead.message || lintStatus.textContent;
+    }
+  }
+  if (resultPane === "lint") renderActivePane();
+}
+
+lintStatus?.addEventListener("click", () => {
+  selectResultPane("lint");
+  document.querySelector("#result-tab-lint")?.focus();
+});
+
+function syncResultTabs() {
+  for (const tab of document.querySelectorAll(".result-tab")) {
+    const on = tab.dataset.pane === resultPane;
+    tab.classList.toggle("is-active", on);
+    tab.setAttribute("aria-selected", on ? "true" : "false");
+  }
+  resultBody?.setAttribute("aria-labelledby", `result-tab-${resultPane}`);
+}
+
+function selectResultPane(pane) {
+  if (pane !== "result" && pane !== "history" && pane !== "lint") return;
+  paneEpoch = runEpoch;
+  resultPane = pane;
+  renderActivePane();
+}
+
+document.querySelector(".result-tabs")?.addEventListener("click", (event) => {
+  const tab = event.target.closest(".result-tab");
+  if (!tab) return;
+  selectResultPane(tab.dataset.pane);
+});
+
+function renderLint(host) {
+  const panel = document.createElement("div");
+  panel.className = "lint-panel";
+  panel.dataset.testid = "lint-panel";
+  if (!lintIssues.length) {
+    const empty = document.createElement("p");
+    empty.className = "lint-empty";
+    empty.dataset.testid = "lint-empty";
+    empty.textContent = "No issues";
+    panel.append(empty);
+    host.append(panel);
+    return;
+  }
+  const doc = editor.state.doc;
+  const sorted = lintIssues.slice().sort((left, right) => (Number(left.offset) || 0) - (Number(right.offset) || 0));
+  for (const issue of sorted) {
+    const offset = Math.max(0, Math.min(Number(issue.offset) || 0, doc.length));
+    const line = doc.lineAt(offset);
+    const warning = issue.severity === "warning";
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "lint-row" + (warning ? " is-warning" : " is-error");
+    row.dataset.testid = "lint-row";
+    row.dataset.offset = String(offset);
+    const severity = document.createElement("span");
+    severity.className = "lint-row-sev";
+    severity.textContent = warning ? "Warning" : "Error";
+    const where = document.createElement("span");
+    where.className = "lint-row-where";
+    where.textContent = `Line ${line.number}`;
+    const message = document.createElement("span");
+    message.className = "lint-row-msg";
+    message.textContent = issue.message || (warning ? "Warning" : "Error");
+    row.append(severity, where, message);
+    row.addEventListener("click", () => {
+      const cursor = Math.max(0, Math.min(offset, editor.state.doc.length));
+      editor.focus();
+      editor.dispatch({
+        selection: { anchor: cursor },
+        scrollIntoView: true,
+      });
+    });
+    panel.append(row);
+  }
+  host.append(panel);
+}
+
 function fastForwardIcon() {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("class", "ff-icon");
@@ -1176,11 +1602,6 @@ async function loadFileResults(path) {
 
 async function clearFileResults(path) {
   if (!path || runButton.disabled) return;
-  await clearCache(path);
-}
-
-async function clearCache(path) {
-  if (!path || runButton.disabled) return;
   try {
     const payload = await api("/api/query-results/clear", { method: "POST", body: { path } });
     const cleared = payload.paths || [];
@@ -1195,6 +1616,7 @@ async function clearCache(path) {
 
 async function storeQueryResult(path, query, result, success) {
   if (!path) {
+    preferFreshResult();
     showResults([{ query, result, success }]);
     return;
   }
@@ -1202,7 +1624,10 @@ async function storeQueryResult(path, query, result, success) {
     method: "POST",
     body: { path, query, result, success: Boolean(success) },
   });
-  if (path === state.path) await loadFileResults(path);
+  if (path === state.path) {
+    preferFreshResult();
+    await loadFileResults(path);
+  }
 }
 
 function resultList(result) {
@@ -1223,6 +1648,7 @@ async function storeStatementResults(path, text, results) {
     };
   });
   if (!path) {
+    preferFreshResult();
     showResults(entries);
     return;
   }
@@ -1232,7 +1658,10 @@ async function storeStatementResults(path, text, results) {
       body: { path, query: entry.query, result: entry.result, success: entry.success },
     });
   }
-  if (path === state.path) await loadFileResults(path);
+  if (path === state.path) {
+    preferFreshResult();
+    await loadFileResults(path);
+  }
 }
 
 let resultPin = null;
@@ -1287,27 +1716,42 @@ function pinLatestResult() {
   fit();
 }
 
-function setResultCount(count) {
-  const total = Math.max(0, Number(count) || 0);
+function setResultCount() {
+  if (resultPane === "lint") {
+    const total = lintIssues.length;
+    resultCount.textContent = total === 1 ? "1 issue" : total + " issues";
+    return;
+  }
+  const total = resultPane === "history" ? state.entries.length : (state.entries.length ? 1 : 0);
   resultCount.textContent = total === 1 ? "1 result" : total + " results";
 }
 
 function showResults(entries) {
+  state.entries = Array.isArray(entries) ? entries.slice() : [];
+  renderActivePane();
+}
+
+function renderActivePane() {
   releaseResultPin();
-  setResultCount(entries.length);
+  syncResultTabs();
+  setResultCount();
   resultBody.replaceChildren();
   closeSchemaIfResult();
   closeRowPop();
-  if (!entries.length) {
-    resultMeta.textContent = "";
+  resultMeta.textContent = "";
+  if (resultPane === "lint") {
+    renderLint(resultBody);
     return;
   }
-  const latestItems = entries.reduce((found, item, itemIndex) => (
+  const visible = resultPane === "history" ? state.entries : state.entries.slice(-1);
+  if (!visible.length) return;
+  const latestItems = state.entries.reduce((found, item, itemIndex) => (
     resultList(item.result).some((part) => part && part.ok && part.kind === "items" && !listedItemTables(part))
       ? itemIndex
       : found
   ), -1);
-  entries.forEach((entry, index) => {
+  visible.forEach((entry, visibleIndex) => {
+    const index = resultPane === "history" ? visibleIndex : state.entries.length - 1;
     const block = document.createElement("section");
     block.className = "query-result" + (entry.success ? "" : " is-error");
     block.dataset.testid = "query-result";
@@ -1316,8 +1760,7 @@ function showResults(entries) {
     block.append(queryShell(entry.query, body));
     resultBody.append(block);
   });
-  resultMeta.textContent = "";
-  pinLatestResult();
+  if (resultPane === "history" && visible.length > 1) pinLatestResult();
 }
 
 function setEditorText(text) {
@@ -1659,6 +2102,7 @@ async function runSelection() {
 
 async function runFolder(path) {
   if (runButton.disabled) return;
+  armRunPane();
   await flushSave();
   let documents = [];
   try {
@@ -1830,12 +2274,17 @@ function renderResults(results, host, markTable = !host) {
   let itemCards = 0;
   let itemRows = 0;
   for (const item of results) {
+    if (item.ok && item.kind === "help") {
+      otherNotes += 1;
+      target.append(helpCard(item.help, item.message));
+      continue;
+    }
     if (item.ok && item.kind === "items") {
       const listed = listedItemTables(item);
       if (listed) {
         otherNotes += 1;
         listedTables = listed.tables.length;
-        target.append(intelligentSummary(listed.note, listed.summary, listed.tables));
+        target.append(intelligentSummary(listed.note, listed.summary, listed.tables, listed.cache));
         continue;
       }
       const rows = item.items || [];
@@ -1867,13 +2316,13 @@ function renderResults(results, host, markTable = !host) {
       : null;
     if (listed && listed.description) {
       otherNotes += 1;
-      target.append(describeCard(listed.description, listed.note));
+      target.append(describeCard(listed.description, listed.note, listed.cache));
       continue;
     }
     if (listed && (listed.tables.length || listed.note)) {
       otherNotes += 1;
       listedTables = listed.tables.length;
-      target.append(intelligentSummary(listed.note, listed.summary, listed.tables));
+      target.append(intelligentSummary(listed.note, listed.summary, listed.tables, listed.cache));
       continue;
     }
     otherNotes += 1;
@@ -1897,7 +2346,7 @@ function listedItemTables(item) {
 
 function tableNameFromStatement(statement) {
   const stripped = String(statement || "").replace(/--[^\n]*/g, " ");
-  const match = stripped.match(/^\s*(?:select|scan)\s+[\s\S]*?\s+from\s+([A-Za-z_][A-Za-z0-9_.-]*)\b/i);
+  const match = stripped.match(/^\s*(?:analyze\s+)?(?:select|scan)\s+[\s\S]*?\s+from\s+([A-Za-z_][A-Za-z0-9_.-]*)\b/i);
   return match ? match[1] : "";
 }
 
@@ -1965,13 +2414,18 @@ function formatUnits(value) {
 }
 
 function formatCapacity(readUnits, writeUnits) {
-  if (!Number.isFinite(readUnits) && !Number.isFinite(writeUnits)) return "";
-  const read = Number.isFinite(readUnits) ? readUnits : 0;
-  const write = Number.isFinite(writeUnits) ? writeUnits : 0;
   const parts = [];
-  if (read > 0 || write === 0) parts.push(formatUnits(read) + " RCU");
-  if (write > 0) parts.push(formatUnits(write) + " WCU");
+  const read = capacityText(readUnits);
+  const write = capacityText(writeUnits);
+  if (read) parts.push(read + " RCU");
+  if (write) parts.push(write + " WCU");
   return parts.join(" · ");
+}
+
+function capacityText(value) {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  const text = formatUnits(value);
+  return text === "0" ? "" : text;
 }
 
 function queryShell(queryText, content) {
@@ -1979,7 +2433,8 @@ function queryShell(queryText, content) {
   shell.className = "result-shell";
   const visuals = [...content.children];
   const text = String(queryText || "").trim();
-  if (!text || !visuals.length) {
+  const helpOnly = visuals.length > 0 && visuals.every((node) => node.classList.contains("help-card"));
+  if (!text || !visuals.length || helpOnly) {
     shell.append(visuals.length === 1 ? visuals[0] : content);
     return shell;
   }
@@ -2110,6 +2565,35 @@ function parseExplainFields(text) {
   return fields;
 }
 
+// Pretty labels and JSON keys share this order. Fields that are absent are
+// skipped. Any other detail keeps its source order after these.
+const EXPLAIN_FIELD_ORDER = [
+  ["index", "index"],
+  ["attributes", "projection expression"],
+  ["key_condition", "key condition expression"],
+  ["filter", "filter expression"],
+  ["attribute_names", "attribute names"],
+  ["expression_values", "attribute values"],
+];
+
+function explainRows(step) {
+  const byKey = new Map(step.fields.map((field) => [field.key, field.value]));
+  const used = new Set();
+  const rows = [];
+  if (step.target) rows.push({ label: "table name", value: step.target });
+  for (const [key, label] of EXPLAIN_FIELD_ORDER) {
+    if (!byKey.has(key)) continue;
+    used.add(key);
+    rows.push({ label, value: byKey.get(key) });
+  }
+  for (const field of step.fields) {
+    if (used.has(field.key)) continue;
+    rows.push({ label: field.key.replaceAll("_", " "), value: field.value });
+  }
+  if (step.operation) rows.push({ label: "operation", value: step.operation });
+  return rows;
+}
+
 function explainPlan(steps) {
   const card = document.createElement("section");
   card.className = "explain";
@@ -2139,8 +2623,8 @@ function explainPlan(steps) {
   json.className = "explain-json";
   json.dataset.testid = "explain-json";
   json.textContent = JSON.stringify(steps.map((step) => {
-    const row = { operation: step.operation, target: step.target };
-    for (const field of step.fields) row[field.key] = field.value;
+    const row = {};
+    for (const field of explainRows(step)) row[field.label] = field.value;
     return row;
   }), null, 2);
   card.append(head, json);
@@ -2154,18 +2638,32 @@ function explainPlan(steps) {
     badge.className = "explain-badge";
     badge.dataset.testid = "explain-op";
     badge.textContent = step.operation.replaceAll("_", " ");
-    const target = document.createElement("span");
-    target.className = "explain-target";
-    target.dataset.testid = "explain-target";
-    target.textContent = step.target;
-    op.append(badge, target);
+    op.append(badge);
+    const rows = explainRows(step);
+    const tableName = rows.find((field) => field.label === "table name");
+    const indexName = rows.find((field) => field.label === "index");
+    if (tableName) {
+      const name = document.createElement("span");
+      name.className = "explain-target";
+      name.dataset.testid = "explain-target";
+      name.textContent = tableName.value;
+      op.append(name);
+    }
+    if (indexName) {
+      const index = document.createElement("span");
+      index.className = "explain-index";
+      index.dataset.testid = "explain-index";
+      index.textContent = indexName.value;
+      op.append(index);
+    }
     row.append(op);
-    if (step.fields.length) {
+    const fields = rows.filter((field) => field.label !== "table name" && field.label !== "index");
+    if (fields.length) {
       const list = document.createElement("dl");
       list.className = "explain-fields";
-      for (const field of step.fields) {
+      for (const field of fields) {
         const term = document.createElement("dt");
-        term.textContent = field.key.replaceAll("_", " ");
+        term.textContent = field.label;
         const detail = document.createElement("dd");
         detail.textContent = field.value;
         list.append(term, detail);
@@ -2185,7 +2683,7 @@ function resultLabel(item) {
   return item.message || "ok";
 }
 
-function describeCard(description, note) {
+function describeCard(description, note, cache) {
   const card = document.createElement("section");
   card.className = "describe";
   card.dataset.testid = "result-note";
@@ -2197,12 +2695,16 @@ function describeCard(description, note) {
   title.className = "describe-name";
   title.textContent = description.name;
   head.append(title);
+  const aside = document.createElement("div");
+  aside.className = "describe-head-aside";
+  if (cache) aside.append(cacheHint(cache));
   if (description.status) {
     const status = document.createElement("span");
     status.className = "describe-status " + statusClass(description.status);
     status.textContent = description.status;
-    head.append(status);
+    aside.append(status);
   }
+  if (aside.childNodes.length) head.append(aside);
   card.append(head);
 
   const stats = [
@@ -2242,11 +2744,11 @@ function describeCard(description, note) {
   return card;
 }
 
-function intelligentSummary(note, summary, tables) {
+function intelligentSummary(note, summary, tables, cache) {
   const card = document.createElement("section");
   card.className = "describe";
   card.dataset.testid = "result-note";
-  if (note) card.append(matchNote(note));
+  if (note || cache) card.append(describeChrome(note, cache));
   if (tables && tables.length) card.append(summaryTable(tables));
   else {
     const body = document.createElement("pre");
@@ -2303,6 +2805,51 @@ function summaryTable(tables) {
   table.append(thead, body);
   wrap.append(table);
   return wrap;
+}
+
+function describeChrome(note, cache) {
+  const row = document.createElement("div");
+  row.className = "describe-chrome";
+  if (note) row.append(matchNote(note));
+  if (cache) row.append(cacheHint(cache));
+  return row;
+}
+
+function cacheHint(text) {
+  const hint = document.createElement("span");
+  hint.className = "describe-cache";
+  hint.tabIndex = 0;
+  hint.dataset.testid = "cache-hint";
+  if (/^cache refresh failed\b/i.test(text)) hint.classList.add("is-warning");
+  hint.setAttribute("aria-label", text);
+  hint.append(cacheIcon(), cacheTip(text));
+  return hint;
+}
+
+function cacheIcon() {
+  const icon = document.createElement("span");
+  icon.className = "describe-cache-icon";
+  icon.setAttribute("aria-hidden", "true");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  const mark = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  mark.setAttribute("fill", "none");
+  mark.setAttribute("stroke", "currentColor");
+  mark.setAttribute("stroke-width", "1.4");
+  mark.setAttribute("stroke-linecap", "round");
+  mark.setAttribute("stroke-linejoin", "round");
+  mark.setAttribute("d", "M8 2.6a5.4 5.4 0 1 1 0 10.8A5.4 5.4 0 0 1 8 2.6ZM8 4.9V8l2.1 1.3");
+  svg.append(mark);
+  icon.append(svg);
+  return icon;
+}
+
+function cacheTip(text) {
+  const tip = document.createElement("span");
+  tip.className = "describe-cache-tip";
+  tip.setAttribute("role", "tooltip");
+  tip.textContent = text;
+  return tip;
 }
 
 function sidebarMatchNote(text) {
@@ -2376,6 +2923,49 @@ function statusClass(status) {
   if (key === "deleting") return "is-deleting";
   if (key === "creating" || key === "updating") return "is-updating";
   return "";
+}
+
+function helpCard(page, fallback) {
+  const card = document.createElement("article");
+  card.className = "help-card";
+  card.dataset.testid = "help-card";
+  const blocks = page && Array.isArray(page.blocks) ? page.blocks : null;
+  if (!blocks) {
+    card.append(note(fallback || "help", false));
+    return card;
+  }
+  const title = document.createElement("h2");
+  title.className = "help-title";
+  title.textContent = page.title || "HELP";
+  card.append(title);
+  for (const block of blocks) {
+    if (block.kind === "heading") {
+      const heading = document.createElement("h3");
+      heading.className = "help-heading";
+      heading.textContent = block.text || "";
+      card.append(heading);
+    } else if (block.kind === "code") {
+      const code = highlightedQuery(block.text || "", "help-code");
+      code.dataset.testid = "help-code";
+      card.append(code);
+    } else if (block.kind === "entry") {
+      const row = document.createElement("div");
+      row.className = "help-entry";
+      const name = document.createElement("span");
+      name.className = "tok-keyword";
+      name.textContent = block.name || "";
+      const summary = document.createElement("span");
+      summary.textContent = block.summary || "";
+      row.append(name, summary);
+      card.append(row);
+    } else {
+      const prose = document.createElement("p");
+      prose.className = "help-prose";
+      prose.textContent = block.text || "";
+      card.append(prose);
+    }
+  }
+  return card;
 }
 
 function highlightedQuery(text, className) {
@@ -2802,11 +3392,13 @@ function schemaPresent(present, total) {
 
 async function loadTables(options = {}) {
   const refresh = Boolean(options.refresh);
+  const background = Boolean(options.background);
+  const poll = Boolean(options.poll);
   const request = ++state.tablesRequest;
   const pattern = document.querySelector("#table-search").value.trim();
   const list = document.querySelector("#table-list");
   const refreshButton = document.querySelector("#refresh-tables");
-  const showBusy = refresh || !list.hasChildNodes();
+  const showBusy = !poll && !background && (refresh || !list.hasChildNodes());
   if (showBusy) {
     refreshButton.disabled = true;
     refreshButton.classList.toggle("is-busy", refresh);
@@ -2816,8 +3408,11 @@ async function loadTables(options = {}) {
   try {
     const query = new URLSearchParams({ pattern });
     if (refresh) query.set("refresh", "1");
+    if (background) query.set("async", "1");
     const payload = await api("/api/tables?" + query.toString());
     if (request !== state.tablesRequest) return;
+    renderCacheHint(payload.cache);
+    watchCacheRefresh(payload.cache);
     list.replaceChildren();
     if (payload.note) list.append(sidebarMatchNote(payload.note));
     if (!payload.tables.length) {
@@ -2856,6 +3451,64 @@ async function loadTables(options = {}) {
       refreshButton.setAttribute("aria-busy", "false");
     }
   }
+}
+
+function cacheAgeLabel(savedAtMs) {
+  if (!savedAtMs) return "";
+  const elapsed = Math.max(0, Math.floor((Date.now() - savedAtMs) / 1000));
+  if (elapsed < 5) return "just now";
+  if (elapsed < 60) return elapsed + "s ago";
+  const minutes = Math.floor(elapsed / 60);
+  if (elapsed < 3600) return minutes + " min ago";
+  const hours = Math.floor(elapsed / 3600);
+  if (elapsed < 86400) return hours + " hr ago";
+  const days = Math.floor(elapsed / 86400);
+  return days + (days === 1 ? " day ago" : " days ago");
+}
+
+function renderCacheHint(cache) {
+  state.cacheStatusRequest += 1;
+  const node = document.querySelector("#table-cache");
+  if (!node) return;
+  const detail = cache && cache.text ? cache.text : "";
+  const age = cacheAgeLabel(cache && cache.savedAtMs) || (detail ? "just now" : "");
+  const label = age ? "(" + age + ")" : "";
+  node.querySelector(".table-cache-age").textContent = label;
+  node.querySelector(".table-cache-tip").textContent = detail;
+  node.classList.toggle("hidden", !label || state.mode !== "tables");
+  node.classList.toggle("is-refreshing", Boolean(cache && cache.refreshing));
+  renderSettingsCacheAge(cache);
+}
+
+function renderSettingsCacheAge(cache) {
+  const node = document.querySelector("#settings-cache-age");
+  if (!node) return;
+  const age = cacheAgeLabel(cache && cache.savedAtMs);
+  const detail = cache && cache.text ? cache.text : "";
+  node.textContent = age ? "(" + age + ")" : "not cached";
+  node.title = detail || "No table list cached.";
+  node.classList.toggle("is-refreshing", Boolean(cache && cache.refreshing));
+}
+
+async function refreshSettingsCacheAge() {
+  const request = ++state.cacheStatusRequest;
+  try {
+    const cache = await api("/api/table-cache");
+    if (request !== state.cacheStatusRequest) return;
+    renderSettingsCacheAge(cache);
+  } catch (error) {
+    if (request !== state.cacheStatusRequest) return;
+    const node = document.querySelector("#settings-cache-age");
+    node.textContent = "unavailable";
+    node.title = error.message;
+    node.classList.remove("is-refreshing");
+  }
+}
+
+function watchCacheRefresh(cache) {
+  clearTimeout(state.cachePoll);
+  if (!cache || !cache.refreshing) return;
+  state.cachePoll = setTimeout(() => loadTables({ poll: true }), 700);
 }
 
 function selectTable(name) {

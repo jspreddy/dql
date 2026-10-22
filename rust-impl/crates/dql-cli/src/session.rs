@@ -1,6 +1,7 @@
 use crate::config::CliConfig;
 use dql_engine::{
     Engine, EngineError, FragmentEngine, LastQueryContext, SdkBackend, SdkConfig, StatementResult,
+    TableCacheStore,
 };
 use dql_output::{render_result, DisplayMode, OutputConfig, RichContext};
 use std::env;
@@ -112,6 +113,23 @@ impl RuntimeEngine {
         match self {
             Self::Memory(engine) => engine.execute(fragment),
             Self::Remote(engine) => engine.execute(fragment),
+        }
+    }
+
+    pub fn ls_report(
+        &mut self,
+        pattern: Option<&str>,
+        refresh: bool,
+        background: bool,
+        metrics: bool,
+    ) -> Result<dql_engine::LsReport, EngineError> {
+        match self {
+            Self::Memory(engine) => engine
+                .inner_mut()
+                .ls_report(pattern, refresh, background, metrics),
+            Self::Remote(engine) => engine
+                .inner_mut()
+                .ls_report(pattern, refresh, background, metrics),
         }
     }
 
@@ -240,6 +258,20 @@ impl RuntimeEngine {
         }
     }
 
+    pub fn set_table_cache(&mut self, cache: Option<dql_engine::SharedTableCache>) {
+        match self {
+            Self::Memory(engine) => engine.inner_mut().set_table_cache(cache),
+            Self::Remote(engine) => engine.inner_mut().set_table_cache(cache),
+        }
+    }
+
+    pub fn table_cache(&self) -> Option<dql_engine::SharedTableCache> {
+        match self {
+            Self::Memory(engine) => engine.inner().table_cache().cloned(),
+            Self::Remote(engine) => engine.inner().table_cache().cloned(),
+        }
+    }
+
     pub fn list_tables(&self) -> Result<Vec<String>, EngineError> {
         match self {
             Self::Memory(engine) => engine.inner().list_tables(),
@@ -247,13 +279,10 @@ impl RuntimeEngine {
         }
     }
 
-    pub fn describe_all(
-        &mut self,
-        refresh: bool,
-    ) -> Result<Vec<dql_models::TableMeta>, EngineError> {
+    pub fn cached_table_names(&mut self, refresh: bool) -> Result<Vec<String>, EngineError> {
         match self {
-            Self::Memory(engine) => engine.inner_mut().describe_all(refresh),
-            Self::Remote(engine) => engine.inner_mut().describe_all(refresh),
+            Self::Memory(engine) => engine.inner_mut().cached_table_names(refresh),
+            Self::Remote(engine) => engine.inner_mut().cached_table_names(refresh),
         }
     }
 
@@ -265,6 +294,58 @@ impl RuntimeEngine {
         match self {
             Self::Memory(engine) => engine.inner_mut().describe(table, refresh),
             Self::Remote(engine) => engine.inner_mut().describe(table, refresh),
+        }
+    }
+
+    pub fn cached_definition(&mut self, table: &str) -> Option<dql_models::TableMeta> {
+        match self {
+            Self::Memory(engine) => engine.inner_mut().cached_definition(table),
+            Self::Remote(engine) => engine.inner_mut().cached_definition(table),
+        }
+    }
+
+    pub fn refresh_cached_definitions(&mut self) -> Result<usize, EngineError> {
+        match self {
+            Self::Memory(engine) => engine.inner_mut().refresh_cached_definitions(),
+            Self::Remote(engine) => engine.inner_mut().refresh_cached_definitions(),
+        }
+    }
+
+    pub fn names_from_cache(&self) -> bool {
+        match self {
+            Self::Memory(engine) => engine.inner().names_from_cache(),
+            Self::Remote(engine) => engine.inner().names_from_cache(),
+        }
+    }
+
+    pub fn names_saved_at_ms(&self) -> Option<u64> {
+        match self {
+            Self::Memory(engine) => engine.inner().names_saved_at_ms(),
+            Self::Remote(engine) => engine.inner().names_saved_at_ms(),
+        }
+    }
+
+    pub fn last_read_from_cache(&self) -> bool {
+        match self {
+            Self::Memory(engine) => engine.inner().last_read_from_cache(),
+            Self::Remote(engine) => engine.inner().last_read_from_cache(),
+        }
+    }
+
+    pub fn clear_table_cache(&mut self) {
+        match self {
+            Self::Memory(engine) => engine.inner_mut().clear_table_cache(),
+            Self::Remote(engine) => engine.inner_mut().clear_table_cache(),
+        }
+    }
+
+    pub fn describe_all(
+        &mut self,
+        refresh: bool,
+    ) -> Result<Vec<dql_models::TableMeta>, EngineError> {
+        match self {
+            Self::Memory(engine) => engine.inner_mut().describe_all(refresh),
+            Self::Remote(engine) => engine.inner_mut().describe_all(refresh),
         }
     }
 
@@ -350,6 +431,7 @@ pub struct Session {
     pub region: String,
     pub history: crate::history::HistoryManager,
     pub throttle: crate::throttle::TableLimits,
+    pub table_disk: Option<std::sync::Arc<crate::table_cache::DiskTableCache>>,
 }
 
 impl Session {
@@ -379,14 +461,79 @@ impl Session {
             args.port,
             config.allow_select_scan,
         )?;
-        Ok(Self {
+        let mut session = Self {
             config,
             engine,
             local_endpoint: args.host.as_ref().map(|host| (host.clone(), args.port)),
             region: args.region.clone(),
             history,
             throttle,
-        })
+            table_disk: None,
+        };
+        session.attach_table_cache();
+        Ok(session)
+    }
+
+    /// Point the engine at the on-disk table cache for this connection.
+    ///
+    /// In-memory sessions skip the disk. `use` and `local` call this again so
+    /// the cache follows the endpoint.
+    pub fn attach_table_cache(&mut self) {
+        if self.engine.is_memory() {
+            self.table_disk = None;
+            self.engine.set_table_cache(None);
+            return;
+        }
+        let identity = self.engine.session_identity();
+        let key = crate::table_cache::endpoint_key(
+            &self.region,
+            self.local_endpoint.as_ref().map(|(host, _)| host.as_str()),
+            self.local_endpoint
+                .as_ref()
+                .map(|(_, port)| *port)
+                .unwrap_or(8000),
+            &identity,
+        );
+        let endpoint = crate::table_cache::CacheEndpoint {
+            region: self.region.clone(),
+            host: self.local_endpoint.as_ref().map(|(host, _)| host.clone()),
+            port: self
+                .local_endpoint
+                .as_ref()
+                .map(|(_, port)| *port)
+                .unwrap_or(8000),
+            allow_select_scan: self.config.allow_select_scan,
+        };
+        let cache = crate::table_cache::DiskTableCache::open(&key, endpoint);
+        self.engine
+            .set_table_cache(Some(cache.clone() as dql_engine::SharedTableCache));
+        self.table_disk = Some(cache);
+    }
+
+    /// Refresh the cached list and cached definitions on a background thread.
+    ///
+    /// Returns false when this session has no disk cache or nothing is cached yet.
+    pub fn start_background_refresh(&self) -> bool {
+        self.table_disk
+            .as_ref()
+            .is_some_and(|cache| cache.start_refresh())
+    }
+
+    pub fn cache_refreshing(&self) -> bool {
+        self.table_disk
+            .as_ref()
+            .is_some_and(|cache| cache.refreshing())
+    }
+
+    pub fn cache_error(&self) -> Option<String> {
+        self.table_disk
+            .as_ref()
+            .and_then(|cache| cache.last_error())
+    }
+
+    /// Remove the saved table list and every saved definition for this connection.
+    pub fn clear_table_cache(&mut self) {
+        self.engine.clear_table_cache();
     }
 
     pub fn progress(&self) -> &dql_engine::ProgressSink {
@@ -422,6 +569,7 @@ impl Session {
             region: region.to_string(),
             history,
             throttle,
+            table_disk: None,
         }
     }
 
@@ -780,7 +928,7 @@ mod tests {
 
         let every = session.execute_for_serve("ls;");
         assert!(every.ok, "{every:?}");
-        assert_eq!(every.kind, "text");
+        assert_eq!(every.kind, "schema");
         let every_text = every.message.unwrap();
         assert!(every_text.contains("Tables"), "{every_text}");
         assert!(every_text.contains("alpha_ls"), "{every_text}");
@@ -851,6 +999,81 @@ mod tests {
             .iter()
             .map(|item| item["name"].as_str().unwrap().to_string())
             .collect()
+    }
+
+    #[test]
+    fn describe_and_show_reload_while_plain_ls_stays_cached() {
+        let mut session = Session::new_memory_headless("us-west-1");
+        let created = session.execute_for_serve("CREATE TABLE alpha_fresh (id STRING HASH KEY);");
+        assert!(created.ok, "{created:?}");
+
+        let cached = session.execute_for_serve("ls alpha_fresh;");
+        assert!(cached.ok, "{cached:?}");
+        let cached_text = cached.message.unwrap();
+        assert!(cached_text.contains("Read: N/A"), "{cached_text}");
+        assert!(!cached_text.contains("THROUGHPUT"));
+
+        let altered = session.execute_for_serve("ALTER TABLE alpha_fresh SET THROUGHPUT (2, 3);");
+        assert!(altered.ok, "{altered:?}");
+
+        let stale = session.execute_for_serve("ls alpha_fresh");
+        assert!(stale.ok, "{stale:?}");
+        let stale_text = stale.message.unwrap();
+        assert!(stale_text.contains("Read: N/A"), "{stale_text}");
+        assert!(!stale_text.contains("THROUGHPUT (2, 3)"), "{stale_text}");
+
+        let described = session.execute_for_serve("DESCRIBE alpha_fresh;");
+        assert!(described.ok, "{described:?}");
+        assert_eq!(described.kind, "schema");
+        let described_text = described.message.clone().unwrap();
+        assert!(
+            described_text.contains("THROUGHPUT (2, 3)"),
+            "{described_text}"
+        );
+        assert!(described_text.contains("Read: 2"), "{described_text}");
+        assert!(described_text.contains("Write: 3"), "{described_text}");
+
+        let after_describe = session.execute_for_serve("ls alpha_fresh;");
+        assert_eq!(
+            after_describe.message.as_deref(),
+            Some(described_text.as_str()),
+            "DESCRIBE saves the description, so the next cached ls reads it"
+        );
+
+        let other = session.execute_for_serve("CREATE TABLE beta_fresh (id STRING HASH KEY);");
+        assert!(other.ok, "{other:?}");
+        let primed = session.execute_for_serve("ls beta_fresh;");
+        assert!(primed.message.unwrap().contains("Read: N/A"));
+        let altered_beta =
+            session.execute_for_serve("ALTER TABLE beta_fresh SET THROUGHPUT (4, 5);");
+        assert!(altered_beta.ok, "{altered_beta:?}");
+        let beta_stale = session.execute_for_serve("ls beta_fresh");
+        assert!(
+            !beta_stale.message.unwrap().contains("THROUGHPUT (4, 5)"),
+            "plain ls keeps the snapshot from before the alter"
+        );
+
+        let shown = session.execute_for_serve("SHOW TABLES;");
+        assert!(shown.ok, "{shown:?}");
+        let shown_text = shown.message.unwrap();
+        assert!(
+            shown_text.lines().any(|line| {
+                line.contains("beta_fresh") && line.contains("4") && line.contains("5")
+            }),
+            "{shown_text}"
+        );
+        assert!(
+            shown_text.lines().any(|line| {
+                line.contains("alpha_fresh") && line.contains("2") && line.contains("3")
+            }),
+            "{shown_text}"
+        );
+
+        let beta_after = session.execute_for_serve("ls beta_fresh;");
+        assert!(
+            beta_after.message.unwrap().contains("THROUGHPUT (4, 5)"),
+            "SHOW saves the reloaded descriptions for later cached reads"
+        );
     }
 
     #[test]
@@ -931,6 +1154,11 @@ mod tests {
 
         let missing = session.execute_for_serve("ls missing;");
         assert!(!missing.ok, "{missing:?}");
+
+        let glob = session.execute_for_serve("ls missing*;");
+        assert!(glob.ok, "{glob:?}");
+        let glob_text = glob.message.unwrap_or_default();
+        assert!(!glob_text.contains("not found"), "{glob_text}");
     }
 
     #[test]

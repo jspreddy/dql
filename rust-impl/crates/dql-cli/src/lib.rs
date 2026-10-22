@@ -3,11 +3,13 @@ pub mod config;
 pub mod error;
 pub mod help;
 pub mod history;
+pub mod mcp;
 pub mod meta;
 pub mod notebook;
 pub mod repl;
 pub mod serve;
 pub mod session;
+pub mod table_cache;
 pub mod throttle;
 pub mod web;
 
@@ -38,6 +40,7 @@ const KNOWN_FLAGS: &[&str] = &[
     "--serve",
     "--bind",
     "--web",
+    "--mcp",
     "--listen",
     "--dir",
     "--version",
@@ -94,8 +97,8 @@ pub fn run() -> color_eyre::Result<()> {
     if args.listen.is_some() && !args.web {
         bail!("--listen requires --web");
     }
-    if args.dir.is_some() && !args.web {
-        bail!("--dir requires --web");
+    if args.dir.is_some() && !args.web && !args.mcp {
+        bail!("--dir requires --web or --mcp");
     }
     if args.serve && args.command.is_some() {
         bail!("--serve cannot be used with -c/--command");
@@ -106,13 +109,17 @@ pub fn run() -> color_eyre::Result<()> {
     if args.web && args.command.is_some() {
         bail!("--web cannot be used with -c/--command");
     }
+    if args.mcp && (args.serve || args.command.is_some()) {
+        bail!("--mcp cannot be used with --serve or -c/--command");
+    }
+
+    if (args.web || args.mcp) && args.host.is_some() {
+        set_default_env("AWS_ACCESS_KEY_ID", "fakeid");
+        set_default_env("AWS_SECRET_ACCESS_KEY", "fakekey");
+        set_default_env("AWS_EC2_METADATA_DISABLED", "true");
+    }
 
     if args.web {
-        if args.host.is_some() {
-            set_default_env("AWS_ACCESS_KEY_ID", "fakeid");
-            set_default_env("AWS_SECRET_ACCESS_KEY", "fakekey");
-            set_default_env("AWS_EC2_METADATA_DISABLED", "true");
-        }
         let listen = match args.listen.as_deref() {
             Some(spec) => {
                 serve::parse_bind(spec).map_err(|err| color_eyre::eyre::eyre!("{err}"))?
@@ -126,7 +133,17 @@ pub fn run() -> color_eyre::Result<()> {
             None => std::env::current_dir().wrap_err("current directory")?,
         };
         let session = Session::new_for_serve(&args).wrap_err("failed to start session")?;
-        web::run(session, dir, listen)?;
+        web::run(session, dir, listen, args.mcp)?;
+        return Ok(());
+    }
+
+    if args.mcp {
+        let dir = match args.dir.clone() {
+            Some(dir) => std::path::PathBuf::from(dir),
+            None => std::env::current_dir().wrap_err("current directory")?,
+        };
+        let session = Session::new_for_serve(&args).wrap_err("failed to start session")?;
+        mcp::run(session, dir)?;
         return Ok(());
     }
 

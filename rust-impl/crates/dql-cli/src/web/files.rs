@@ -76,6 +76,25 @@ pub fn resolve_inside(root: &Path, relative: &str) -> Result<PathBuf, PathError>
     Ok(candidate)
 }
 
+pub fn list_dql_files(root: &Path) -> Result<Vec<(String, String)>, PathError> {
+    let node = tree(root)?;
+    let mut files = Vec::new();
+    collect_dql_files(&node, &mut files);
+    files.sort();
+    Ok(files)
+}
+
+fn collect_dql_files(node: &Node, files: &mut Vec<(String, String)>) {
+    if node.kind == "file" {
+        files.push((node.path.clone(), node.name.clone()));
+    }
+    if let Some(children) = &node.children {
+        for child in children {
+            collect_dql_files(child, files);
+        }
+    }
+}
+
 pub fn tree(root: &Path) -> Result<Node, PathError> {
     fs::create_dir_all(root).map_err(|err| PathError(err.to_string()))?;
     let root = canonical_root(root)?;

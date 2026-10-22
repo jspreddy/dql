@@ -1,0 +1,54 @@
+-- load the nested table; run 00-table.dql first
+-- maps inside maps, lists of maps, and a few sparse rows
+CREATE TABLE IF NOT EXISTS sample_nested (
+  tenant STRING HASH KEY,
+  doc_id STRING RANGE KEY
+) GLOBAL INDEX ('by-kind', kind STRING, doc_id STRING);
+
+-- full shape: city under author, tags that are not all the same, editions, groups
+INSERT INTO sample_nested (
+  tenant='field',
+  doc_id='note-ada',
+  kind='note',
+  status='open',
+  author={'name': 'Ada', 'city': {'name': 'London', 'postal': 'EC1', 'geo': {'lat': 51.5, 'lon': -0.12}}},
+  tags=[{'name': 'rust', 'weight': 2}, {'name': 'db', 'weight': 1}, {'other': 1}],
+  place={'geo': {'lat': 51.5, 'lon': -0.12}, 'address': {'city': 'London', 'line': '1 Threadneedle'}},
+  editions=[{'year': 2019, 'publisher': {'name': 'North', 'city': 'Leeds'}}, {'year': 2024, 'publisher': {'name': 'South', 'city': 'Brighton'}}],
+  groups=[{'name': 'compilers', 'members': [{'name': 'Ada'}, {'name': 'Grace'}]}, {'name': 'empty', 'members': []}],
+  notes=['draft', 'review'],
+  meta={'ship-to': {'city': 'London'}}
+);
+
+-- rust is the second tag, and editions is an empty list
+INSERT INTO sample_nested (
+  tenant='field',
+  doc_id='note-grace',
+  kind='note',
+  status='open',
+  author={'name': 'Grace', 'city': {'name': 'New York', 'geo': {'lat': 40.65, 'lon': -73.78}}},
+  tags=[{'name': 'cobol', 'weight': 4}, {'name': 'rust', 'weight': 1}],
+  place={'geo': {'lat': 40.65, 'lon': -73.78}},
+  editions=[],
+  notes=['filed']
+);
+
+-- author has a name and nothing under city
+INSERT INTO sample_nested (
+  tenant='field',
+  doc_id='note-blank',
+  kind='sketch',
+  status='draft',
+  author={'name': 'Blank'}
+);
+
+-- a different partition, with a reading nested under a list
+INSERT INTO sample_nested (
+  tenant='lab',
+  doc_id='note-mina',
+  kind='reading',
+  status='open',
+  author={'name': 'Mina', 'city': {'name': '東京'}},
+  readings=[{'when': 'dawn', 'value': {'temp_c': 18.4, 'unit': 'C'}}],
+  place={'address': {'city': '東京', 'line': '1-1'}}
+);

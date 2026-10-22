@@ -306,6 +306,18 @@ pub enum Statement {
     Describe {
         table: String,
     },
+    /// `LS` lists tables. `LS <glob>` describes one match or lists several.
+    /// `refresh`, `async`, and `metrics` are `name=value` options.
+    Ls {
+        pattern: Option<String>,
+        refresh: bool,
+        background: bool,
+        metrics: bool,
+    },
+    /// `HELP` or `HELP <topic>`.
+    Help {
+        topic: Option<String>,
+    },
     Load {
         file: String,
         table: String,
@@ -469,8 +481,10 @@ fn tokenize(input: &str) -> Result<(Vec<Token>, Vec<usize>), ParseError> {
                 offsets.push(start);
                 tokens.push(Token::Star);
             }
+            // `.` is also an identifier character, so `a.b.c` stays one ident.
+            // A dot after `]` (`a[0].b`, `a[].b`) is a separate symbol.
             '(' | ')' | '[' | ']' | '{' | '}' | ',' | ':' | ';' | '=' | '<' | '>' | '!' | '+'
-            | '/' => {
+            | '/' | '?' | '.' => {
                 chars.next();
                 offsets.push(start);
                 tokens.push(Token::Symbol(ch));
@@ -625,6 +639,10 @@ impl Parser {
             self.parse_show()
         } else if self.accept_keyword("DESCRIBE") {
             self.parse_describe()
+        } else if self.accept_keyword("LS") {
+            self.parse_ls()
+        } else if self.accept_keyword("HELP") {
+            self.parse_help()
         } else {
             Err(self.error("expected a DQL statement"))
         }
@@ -1248,6 +1266,15 @@ impl Parser {
         Ok(Statement::Describe { table })
     }
 
+    fn parse_help(&mut self) -> Result<Statement, ParseError> {
+        let topic = if self.is_eof() || self.peek_symbol(';') {
+            None
+        } else {
+            Some(self.expect_ident()?)
+        };
+        Ok(Statement::Help { topic })
+    }
+
     fn parse_show(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword("TABLES")?;
         let like = if self.accept_keyword("LIKE") {
@@ -1256,6 +1283,110 @@ impl Parser {
             None
         };
         Ok(Statement::ShowTables { like })
+    }
+
+    fn parse_ls(&mut self) -> Result<Statement, ParseError> {
+        let mut pattern = None;
+        let mut refresh = false;
+        let mut background = false;
+        let mut metrics = false;
+        while !self.is_eof() && !self.peek_symbol(';') {
+            if self.peek_ls_option() {
+                let name = self.expect_ident()?.to_ascii_lowercase();
+                self.expect_symbol('=')?;
+                let value = self.parse_ls_bool()?;
+                match name.as_str() {
+                    "refresh" => refresh = value,
+                    "async" => background = value,
+                    "metrics" => metrics = value,
+                    other => {
+                        return Err(self.error(format!("unknown ls option '{other}'")));
+                    }
+                }
+            } else if pattern.is_none() {
+                pattern = Some(self.parse_ls_pattern()?);
+            } else {
+                return Err(self.error("unexpected extra ls argument"));
+            }
+        }
+        Ok(Statement::Ls {
+            pattern,
+            refresh,
+            background,
+            metrics,
+        })
+    }
+
+    fn peek_ls_option(&self) -> bool {
+        matches!(self.peek(), Some(Token::Ident(_)))
+            && matches!(self.tokens.get(self.pos + 1), Some(Token::Symbol('=')))
+    }
+
+    fn parse_ls_bool(&mut self) -> Result<bool, ParseError> {
+        let text = match self.next().cloned() {
+            Some(Token::Ident(value) | Token::Number(value) | Token::String(value)) => value,
+            Some(token) => {
+                return Err(self.error_at_previous(format!("expected true or false, got {token:?}")))
+            }
+            None => return Err(self.error("expected true or false")),
+        };
+        Ok(matches!(
+            text.to_ascii_lowercase().as_str(),
+            "true" | "1" | "yes"
+        ))
+    }
+
+    /// A filename glob: adjacent idents, `*`, `?`, and `-`, or one quoted string.
+    fn parse_ls_pattern(&mut self) -> Result<String, ParseError> {
+        if matches!(self.peek(), Some(Token::String(_))) {
+            return self.expect_string();
+        }
+        if !self.peek_ls_glob_atom() {
+            return Err(self.error("expected a table pattern"));
+        }
+        let mut pattern = String::new();
+        let mut previous = None;
+        while self.peek_ls_glob_atom() {
+            if let Some(previous) = previous {
+                if !self.tokens_touch(previous, self.pos) {
+                    break;
+                }
+            }
+            let index = self.pos;
+            pattern.push_str(&self.take_ls_glob_atom()?);
+            previous = Some(index);
+        }
+        Ok(pattern)
+    }
+
+    fn peek_ls_glob_atom(&self) -> bool {
+        matches!(
+            self.peek(),
+            Some(Token::Ident(_) | Token::Star) | Some(Token::Symbol('-' | '?'))
+        )
+    }
+
+    fn take_ls_glob_atom(&mut self) -> Result<String, ParseError> {
+        match self.next().cloned() {
+            Some(Token::Ident(value)) => Ok(value),
+            Some(Token::Star) => Ok("*".to_string()),
+            Some(Token::Symbol('-')) => Ok("-".to_string()),
+            Some(Token::Symbol('?')) => Ok("?".to_string()),
+            Some(token) => {
+                Err(self.error_at_previous(format!("expected a table pattern, got {token:?}")))
+            }
+            None => Err(self.error("expected a table pattern")),
+        }
+    }
+
+    fn tokens_touch(&self, left: usize, right: usize) -> bool {
+        let Some(token) = self.tokens.get(left) else {
+            return false;
+        };
+        let Some(&right_at) = self.offsets.get(right) else {
+            return false;
+        };
+        self.offsets.get(left).copied().unwrap_or(0) + token_width(token) == right_at
     }
 
     fn parse_load(&mut self) -> Result<Statement, ParseError> {
@@ -1285,12 +1416,12 @@ impl Parser {
                 let upper = item.to_ascii_uppercase();
                 if let Some(index) = upper.rfind(" AS ") {
                     SelectionItem {
-                        expression: normalize_ws(&item[..index]),
+                        expression: compact_path_punctuation(&item[..index]),
                         alias: Some(item[index + 4..].trim().to_string()),
                     }
                 } else {
                     SelectionItem {
-                        expression: normalize_ws(item),
+                        expression: compact_path_punctuation(item),
                         alias: None,
                     }
                 }
@@ -1936,6 +2067,49 @@ fn normalize_ws(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Drop whitespace that only separates `.`, `[`, and `]` in a selection path.
+///
+/// `a [ 0 ] . b` and `a [ ] . b` become `a[0].b` and `a[].b`. Spaces around
+/// `+` and `AS` stay, so `bar + baz AS ret` is unchanged.
+pub fn compact_path_punctuation(value: &str) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    let mut out = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index].is_whitespace() {
+            let mut next = index;
+            while next < chars.len() && chars[next].is_whitespace() {
+                next += 1;
+            }
+            let prev_glue = out
+                .chars()
+                .last()
+                .is_some_and(|ch| matches!(ch, '.' | '[' | ']'));
+            let next_glue = chars
+                .get(next)
+                .copied()
+                .is_some_and(|ch| matches!(ch, '.' | '[' | ']'));
+            if !prev_glue && !next_glue && !out.is_empty() && next < chars.len() {
+                out.push(' ');
+            }
+            index = next;
+        } else {
+            out.push(chars[index]);
+            index += 1;
+        }
+    }
+    out
+}
+
+fn token_width(token: &Token) -> usize {
+    match token {
+        Token::Ident(value) | Token::Number(value) => value.len(),
+        Token::String(value) => value.len() + 2,
+        Token::Binary(value) => value.len() + 3,
+        Token::Symbol(_) | Token::Star => 1,
+    }
+}
+
 fn token_to_source(token: &Token) -> String {
     match token {
         Token::Ident(value) | Token::Number(value) => value.clone(),
@@ -2251,6 +2425,68 @@ mod tests {
     }
 
     #[test]
+    fn parses_ls() {
+        assert_eq!(
+            parse_statement("LS;").unwrap(),
+            Statement::Ls {
+                pattern: None,
+                refresh: false,
+                background: false,
+                metrics: false,
+            }
+        );
+        assert_eq!(
+            parse_statement("ls foo-*;").unwrap(),
+            Statement::Ls {
+                pattern: Some("foo-*".to_string()),
+                refresh: false,
+                background: false,
+                metrics: false,
+            }
+        );
+        assert_eq!(
+            parse_statement("ls *foo* refresh=True;").unwrap(),
+            Statement::Ls {
+                pattern: Some("*foo*".to_string()),
+                refresh: true,
+                background: false,
+                metrics: false,
+            }
+        );
+        assert_eq!(
+            parse_statement("ls refresh=True async=yes metrics=1;").unwrap(),
+            Statement::Ls {
+                pattern: None,
+                refresh: true,
+                background: true,
+                metrics: true,
+            }
+        );
+        assert_eq!(
+            parse_statement("ls foo? refresh=false;").unwrap(),
+            Statement::Ls {
+                pattern: Some("foo?".to_string()),
+                refresh: false,
+                background: false,
+                metrics: false,
+            }
+        );
+        assert_eq!(
+            parse_statement("ls \"a b\";").unwrap(),
+            Statement::Ls {
+                pattern: Some("a b".to_string()),
+                refresh: false,
+                background: false,
+                metrics: false,
+            }
+        );
+        let err = parse_statement("ls bogus=True;").unwrap_err();
+        assert!(err.to_string().contains("unknown ls option"), "{err}");
+        let err = parse_statement("ls foo bar;").unwrap_err();
+        assert!(err.to_string().contains("unexpected extra"), "{err}");
+    }
+
+    #[test]
     fn parses_describe_table() {
         assert_eq!(
             parse_statement("DESCRIBE posts").unwrap(),
@@ -2266,6 +2502,50 @@ mod tests {
         );
         assert!(parse_statement("DESCRIBE").is_err());
         assert!(parse_statement("DESCRIBE 'posts'").is_err());
+    }
+
+    #[test]
+    fn parses_nested_selection_paths_and_aliases() {
+        let selection =
+            parse_selection("a.b.c.d, a[0].b, a [ ] . c AS names, foo + bar AS baz").unwrap();
+        match selection {
+            Selection::Items(items) => {
+                assert_eq!(items.len(), 4);
+                assert_eq!(items[0].expression, "a.b.c.d");
+                assert_eq!(items[0].alias, None);
+                assert_eq!(items[1].expression, "a[0].b");
+                assert_eq!(items[1].alias, None);
+                assert_eq!(items[2].expression, "a[].c");
+                assert_eq!(items[2].alias.as_deref(), Some("names"));
+                assert_eq!(items[3].expression, "foo + bar");
+                assert_eq!(items[3].alias.as_deref(), Some("baz"));
+            }
+            other => panic!("unexpected selection: {other:?}"),
+        }
+
+        let statement = parse_statement(
+            "SELECT author . city . name AS city FROM posts WHERE tags[0].name = 'rust'",
+        )
+        .unwrap();
+        match statement {
+            Statement::Select {
+                selection: Selection::Items(items),
+                condition: Some(Condition::Compare { field, .. }),
+                ..
+            } => {
+                assert_eq!(items[0].expression, "author.city.name");
+                assert_eq!(items[0].alias.as_deref(), Some("city"));
+                assert_eq!(field, "tags[0].name");
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+
+        let err = parse_statement("SELECT * FROM posts WHERE tags[].name = 'rust'").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("unexpected token in query options"),
+            "{err}"
+        );
     }
 
     #[test]

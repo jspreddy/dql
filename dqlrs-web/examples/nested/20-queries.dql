@@ -1,0 +1,73 @@
+-- paths into maps and lists; load 10-documents.dql first
+
+-- a map three levels down, renamed
+SELECT doc_id, author.city.name AS city FROM sample_nested
+WHERE tenant = 'field' AND doc_id = 'note-ada';
+
+-- the first tag on every note in the partition
+-- note-blank has no tags, so both fields come back null
+SELECT doc_id, tags[0].name, tags[0].weight FROM sample_nested
+WHERE tenant = 'field' AND begins_with(doc_id, 'note-');
+
+-- every tag name; the map with no name is null in the list
+SELECT doc_id, tags[].name AS names, missing.path FROM sample_nested
+WHERE tenant = 'field' AND doc_id = 'note-ada';
+
+-- index into a list of maps, then into the map
+SELECT doc_id, editions[0].publisher.city, editions[1].year FROM sample_nested
+WHERE tenant = 'field' AND doc_id = 'note-ada';
+
+-- wildcard through two lists
+SELECT doc_id, groups[].members[].name AS people FROM sample_nested
+WHERE tenant = 'field' AND doc_id = 'note-ada';
+
+-- a hyphen in the middle of the path
+SELECT doc_id, meta.ship-to.city AS ship_city FROM sample_nested
+WHERE tenant = 'field' AND doc_id = 'note-ada';
+
+-- first tag and city have to match together: Ada, not Grace
+SELECT doc_id, author.city.name AS city, tags[0].name FROM sample_nested
+WHERE tenant = 'field' AND tags[0].name = 'rust' AND author.city.name = 'London';
+
+-- rust sits in the second slot here, so the first-slot filter misses it
+SELECT doc_id, tags[1].name FROM sample_nested
+WHERE tenant = 'field' AND tags[1].name = 'rust';
+
+-- a number inside a nested map
+SELECT doc_id, place.geo.lat FROM sample_nested
+WHERE tenant = 'field' AND place.geo.lat > 45;
+
+-- kind index, then a filter on the nested city
+SELECT doc_id, author.city.name AS city FROM sample_nested
+WHERE kind = 'note' AND author.city.name = 'New York'
+USING by-kind;
+
+-- two keys, nested fields from different shapes
+SELECT tenant, doc_id, readings[0].value.temp_c, place.address.city FROM sample_nested
+KEYS IN ('lab', 'note-mina'), ('field', 'note-ada');
+
+-- no city on the author, or an editions list that is present and empty
+SCAN doc_id, author.city.name AS city, editions FROM sample_nested
+WHERE attribute_not_exists(author.city) OR size(editions) = 0;
+
+EXPLAIN SELECT author.city.name AS city, tags[0].name FROM sample_nested
+WHERE tenant = 'field' AND doc_id = 'note-ada';
+
+select tenant, doc_id, author.city.name, author.city.postal from sample_nested where tenant='field' and doc_id='note-ada';
+
+-- write a nested map, including a field that was not there
+UPDATE sample_nested
+SET author.city.name = 'Oxford', author.city.postal = 'OX1'
+WHERE tenant = 'field' AND doc_id = 'note-ada';
+
+select tenant, doc_id, author.city.name, author.city.postal from sample_nested where tenant='field' and doc_id='note-ada';
+
+-- drop the postal code written above
+UPDATE sample_nested
+REMOVE author.city.postal
+WHERE tenant = 'field' AND doc_id = 'note-ada';
+
+SELECT doc_id, author.city.name AS city, author.city.postal, tags[0].weight, notes FROM sample_nested
+WHERE tenant = 'field' AND doc_id = 'note-ada';
+
+help select;

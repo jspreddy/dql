@@ -1,6 +1,4 @@
-use dql_models::{TableMeta, TableStatus};
-use humansize::{format_size, BINARY};
-use std::fmt::Write as _;
+use dql_models::TableMeta;
 
 #[derive(Debug, Clone, Default)]
 pub struct TableStats {
@@ -8,64 +6,17 @@ pub struct TableStats {
     pub size_bytes: u64,
 }
 
-const MIN_NAME_WIDTH: usize = 24;
-
 pub fn format_table_summary_table(tables: &[(TableMeta, TableStats)]) -> String {
-    let name_width = tables
+    let rows: Vec<(&TableMeta, usize, u64)> = tables
         .iter()
-        .map(|(meta, _)| meta.name.chars().count())
-        .max()
-        .unwrap_or(0)
-        .max(MIN_NAME_WIDTH);
-    let mut output = String::new();
-    let _ = writeln!(output, "Tables");
-    let _ = writeln!(
-        output,
-        "{:<name_width$} {:>8} {:>8} {:>8} {:>10} {:>8}",
-        "Name",
-        "Items",
-        "Read",
-        "Write",
-        "Status",
-        "Size",
-        name_width = name_width
-    );
-    for (meta, stats) in tables {
-        let read = meta
-            .total_read_throughput()
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "-".to_string());
-        let write = meta
-            .total_write_throughput()
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "-".to_string());
-        let status = status_label(meta.status);
-        let _ = writeln!(
-            output,
-            "{:<name_width$} {:>8} {:>8} {:>8} {:>10} {:>8}",
-            meta.name,
-            stats.item_count,
-            read,
-            write,
-            status,
-            format_size(stats.size_bytes, BINARY)
-        );
-    }
-    output
+        .map(|(meta, stats)| (meta, stats.item_count, stats.size_bytes))
+        .collect();
+    dql_engine::format_table_summary(&rows)
 }
 
 /// Rich detail view for a single table — information parity with Python `pformat(rich)`.
 pub fn format_table_detail(meta: &TableMeta, stats: &TableStats) -> String {
     dql_engine::format_table_description(meta, stats.item_count, stats.size_bytes)
-}
-
-fn status_label(status: TableStatus) -> &'static str {
-    match status {
-        TableStatus::Active => "ACTIVE",
-        TableStatus::Creating => "CREATING",
-        TableStatus::Updating => "UPDATING",
-        TableStatus::Deleting => "DELETING",
-    }
 }
 
 #[cfg(test)]

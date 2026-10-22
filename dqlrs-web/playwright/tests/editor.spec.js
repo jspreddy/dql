@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
-import { lineByText, lineOverlaps, mod, node, openApp, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
+import { playwrightArtifact } from "../support/artifacts.js";
+import { lineByText, lineOverlaps, mod, node, openApp, openResultPane, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
 
 function cachedResults(workspace) {
   const root = path.join(workspace, ".dqlrs-web-cache");
@@ -115,11 +116,22 @@ test("shows the endpoint and the editor shortcut", async ({ page }) => {
   await expect(page.locator("#endpoint")).not.toHaveAttribute("aria-haspopup", "dialog");
   await page.locator("#endpoint").click();
   await expect(page.locator("#env-pop")).toBeHidden();
-  await expect(page.locator("#run-shortcut")).toHaveText(mac ? "⌘ Enter" : "Ctrl+Enter");
+  await expect(page.locator("#run-shortcut")).toHaveText(mac ? "⌘ + Enter" : "Ctrl + Enter");
+  await expect(page.locator("#run .run-play")).toBeVisible();
+  await expect(page.locator("#run")).toHaveCSS("height", "22px");
+  await expect(page.locator("#run")).toHaveAttribute("aria-label", "Run selection");
+  await expect(page.locator("#run")).not.toHaveAttribute("title");
   await expect(page.locator("#run")).toHaveAttribute(
     "aria-keyshortcuts",
     mac ? "Meta+Enter" : "Control+Enter",
   );
+  const tip = page.locator("#run-tip");
+  await page.locator("#run").hover();
+  await page.waitForTimeout(400);
+  await expect(tip).toBeHidden();
+  await page.waitForTimeout(700);
+  await expect(tip).toBeVisible();
+  await expect(tip).toHaveText("Run selection");
 });
 
 test("opens aws environment details from the header", async ({ page }) => {
@@ -297,6 +309,8 @@ test("saves highlight toggles and switches write bands to a gutter bar", async (
   await expect(page.locator(".cm-band-alt").first()).toBeVisible();
   await expect(page.locator(".cm-band-write-even").first()).toBeVisible();
 
+  await page.locator("#settings-toggle").click();
+  await expect(page.locator("#settings-pop")).toBeVisible();
   await page.locator("#opt-even-odd").uncheck();
   await expect(page.locator(".cm-band-alt")).toHaveCount(0);
   await expect(page.locator(".cm-band-write-even")).toHaveCount(0);
@@ -310,6 +324,8 @@ test("saves highlight toggles and switches write bands to a gutter bar", async (
   expect(stored).toEqual({ minimalWrite: true, evenOdd: false });
 
   await page.reload();
+  await page.locator("#settings-toggle").click();
+  await expect(page.locator("#settings-pop")).toBeVisible();
   await expect(page.locator("#opt-minimal-write")).toBeChecked();
   await expect(page.locator("#opt-even-odd")).not.toBeChecked();
   await node(page, "queries/read.dql").click();
@@ -339,7 +355,7 @@ test("runs the query at the cursor with Ctrl+Enter and marks a failure", async (
   await expect(page.locator("#run")).toBeEnabled();
 });
 
-test("runs the whole file from the button beside the filename", async ({ page, app }) => {
+test("runs the whole file from the button beside the filename", async ({ page, app }, testInfo) => {
   const name = uniqueTable();
   app.trackTable(name);
   await expect(page.locator("#run-file")).toBeVisible();
@@ -361,20 +377,44 @@ test("runs the whole file from the button beside the filename", async ({ page, a
     ].join("\n"),
   );
   await page.locator("#run-file").click();
-  await expect(page.locator(".query-result")).toHaveCount(5);
-  await expect(page.locator(".result-card")).toHaveCount(2);
+  await expect(page.locator("#result-tab-result")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".query-result")).toHaveCount(1);
+  await expect(page.locator("#result-count")).toHaveText("1 result");
   await expect(page.locator("#result-meta")).toBeEmpty();
-  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("1 row");
+  await expect(page.locator(".result-card")).toHaveCount(1);
+  await expect(page.locator(".result-card").locator(".result-card-meta")).toHaveText("1 row");
+  await expect(page.locator("#result-body")).toContainText("beta");
+  await expect(page.locator("#result-body")).not.toContainText("alpha");
+  await page.locator("#results").screenshot({
+    path: playwrightArtifact(`result-tab-latest-${testInfo.project.name}.png`),
+  });
+
+  await openResultPane(page, "history");
+  await expect(page.locator(".query-result")).toHaveCount(5);
+  await expect(page.locator("#result-count")).toHaveText("5 results");
+  await expect(page.locator(".result-card")).toHaveCount(2);
+  await expect(page.locator(".query-result").last()).toContainText("beta");
   await expect(page.locator("#result-body")).toContainText("alpha");
   await expect(page.locator("#result-body")).toContainText("beta");
+  await page.locator("#result-body").evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  await page.locator("#results").screenshot({
+    path: playwrightArtifact(`history-tab-${testInfo.project.name}.png`),
+  });
 
   await page.locator(".cm-line", { hasText: "id = 'a'" }).click();
   await page.locator("#run").click();
-  const latest = page.locator(".query-result").last();
-  await expect(page.locator(".query-result")).toHaveCount(6);
+  await expect(page.locator("#result-tab-result")).toHaveAttribute("aria-selected", "true");
+  const latest = page.locator(".query-result");
+  await expect(latest).toHaveCount(1);
   await expect(latest.locator(".result-card")).toHaveCount(1);
   await expect(latest).toContainText("alpha");
   await expect(latest).not.toContainText("beta");
+  await openResultPane(page, "history");
+  await expect(page.locator(".query-result")).toHaveCount(6);
+  await expect(page.locator(".query-result").last()).toContainText("alpha");
+  await expect(page.locator("#result-count")).toHaveText("6 results");
 });
 
 test("runs every dql file in a folder from the context menu", async ({ page, app }) => {
@@ -414,7 +454,8 @@ test("runs every dql file in a folder from the context menu", async ({ page, app
   await page.locator("#file-name").click();
   await expect(page.locator("#file-menu")).toBeHidden();
   await node(page, folder).click({ button: "right" });
-  await expect(page.locator("#menu-clear-results")).toHaveCount(0);
+  await expect(page.locator("#menu-clear-results")).toBeVisible();
+  await expect(page.locator("#menu-clear-cache")).toHaveCount(0);
   await page.locator("#menu-run-folder").click();
   await expect(page.locator("#run")).toBeEnabled();
   await node(page, `${folder}/one.dql`).click();
@@ -428,7 +469,7 @@ test("runs every dql file in a folder from the context menu", async ({ page, app
   await expect(page.locator(".query-result").filter({ hasText: "from-b" })).toHaveCount(0);
 });
 
-test("clears the cache hashes for the files under a right-clicked folder", async ({ page, app }) => {
+test("clears stored results for each file under a right-clicked folder", async ({ page, app }, testInfo) => {
   const name = uniqueTable();
   const kept = `${name}_keep`;
   const one = `${name}_one`;
@@ -448,7 +489,8 @@ test("clears the cache hashes for the files under a right-clicked folder", async
   await page.reload();
   await expect(page.locator("#file-name")).toBeVisible();
   await node(page, folder).click({ button: "right" });
-  await expect(page.locator("#menu-clear-cache")).toBeVisible();
+  await expect(page.locator("#menu-clear-results")).toBeVisible();
+  await expect(page.locator("#menu-clear-cache")).toHaveCount(0);
   await page.locator("#menu-run-folder").click();
 
   const mentions = (needle) =>
@@ -460,8 +502,12 @@ test("clears the cache hashes for the files under a right-clicked folder", async
   expect(fs.existsSync(path.join(app.workspace, ".dqlrs-web-cache"))).toBe(true);
 
   await node(page, folder).click({ button: "right" });
-  await expect(page.locator("#menu-clear-cache")).toBeVisible();
-  await page.locator("#menu-clear-cache").click();
+  await expect(page.locator("#menu-clear-results")).toBeVisible();
+  await expect(page.locator("#menu-clear-cache")).toHaveCount(0);
+  await page.screenshot({
+    path: playwrightArtifact(`folder-clear-results-${testInfo.project.name}.png`),
+  });
+  await page.locator("#menu-clear-results").click();
   await expect(page.locator("#file-menu")).toBeHidden();
   await expect.poll(() => mentions(one)).toBe(false);
   await expect.poll(() => mentions(two)).toBe(false);
@@ -480,7 +526,10 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   await expect(page.locator("#clear-results")).toBeVisible();
   await expect(page.locator("#clear-results")).toHaveAttribute("aria-label", "Clear results");
   await expect(page.locator("#result-count")).toHaveText("0 results");
-  await expect(page.locator(".results-title")).toContainText("Results");
+  await expect(page.locator("#result-tab-result")).toHaveText("Result");
+  await expect(page.locator("#result-tab-history")).toHaveText("History");
+  await expect(page.locator("#result-tab-lint")).toHaveText("Lint");
+  await expect(page.locator("#result-tab-result")).toHaveAttribute("aria-selected", "true");
 
   await replaceEditor(
     page,
@@ -494,6 +543,10 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator("#result-table")).toContainText("alpha");
+  await expect(page.locator(".query-result")).toHaveCount(1);
+  await expect(page.locator("#result-count")).toHaveText("1 result");
+  await openResultPane(page, "history");
+  await expect(page.locator(".query-result")).toHaveCount(4);
   await expect(page.locator("#result-count")).toHaveText("4 results");
   const aligned = await page.locator(".results-head").evaluate((node) => {
     const title = node.querySelector(".results-title").getBoundingClientRect();
@@ -513,6 +566,10 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   await replaceEditor(page, `SELECT * FROM ${name}_missing WHERE id = 'a';`);
   await pressMod(page, "A");
   await page.locator("#run").click();
+  await expect(page.locator("#result-tab-result")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".query-result")).toHaveCount(1);
+  await expect(page.locator(".query-result").locator('[data-testid="result-note"].error')).toBeVisible();
+  await openResultPane(page, "history");
   await expect(page.locator(".query-result")).toHaveCount(5);
   await expect(page.locator("#result-count")).toHaveText("5 results");
   await expect(page.locator(".query-result").nth(3)).toContainText("alpha");
@@ -528,6 +585,8 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   await expect(page.locator(".query-result")).toHaveCount(5);
   await page.reload();
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await expect(page.locator(".query-result")).toHaveCount(1);
+  await openResultPane(page, "history");
   await expect(page.locator(".query-result")).toHaveCount(5);
   await expect(page.locator(".query-result").nth(3)).toContainText("alpha");
   await expect(page.locator(".query-result").nth(3).locator("table")).toContainText("alpha");
@@ -681,6 +740,127 @@ test("runs a selection and shows the result table", async ({ page, app }) => {
   await expect(page.locator("#run-progress")).toBeHidden();
 });
 
+test("analyze scan matches the scan card and shows consumed RCU", async ({ page, app }, testInfo) => {
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (pk STRING HASH KEY, sk STRING RANGE KEY);`,
+      `INSERT INTO ${name} (pk, sk, kind, name) VALUES ('sun', 'self', 'star', 'Sol');`,
+      `SCAN * FROM ${name};`,
+      `ANALYZE SCAN * FROM ${name};`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await openResultPane(page, "history");
+
+  const cards = page.locator(`.result-card[data-table="${name}"]`);
+  await expect(cards).toHaveCount(2);
+  const scan = cards.nth(0);
+  const analyzed = cards.nth(1);
+  await expect(scan.locator(".result-card-name")).toHaveText(name);
+  await expect(analyzed.locator(".result-card-name")).toHaveText(name);
+  await expect(scan.locator("thead th")).toHaveText(["pk", "sk", "kind", "name"]);
+  await expect(analyzed.locator("thead th")).toHaveText(["pk", "sk", "kind", "name"]);
+  await expect(analyzed.locator("thead th").nth(0)).toHaveClass(/col-table/);
+  await expect(analyzed.locator("thead th").nth(1)).toHaveClass(/col-table/);
+  await expect(scan.locator("tbody td")).toHaveText(["sun", "self", "star", "Sol"]);
+  await expect(analyzed.locator("tbody td")).toHaveText(["sun", "self", "star", "Sol"]);
+  const labels = await page.locator("[data-testid='result-card-capacity']").allInnerTexts();
+  expect(labels.length).toBeGreaterThan(0);
+  for (const label of labels) expect(label).not.toMatch(/^0(?:\.0+)? RCU$/);
+
+  const capacity = analyzed.locator("[data-testid='result-card-capacity']");
+  await expect(capacity).toBeVisible();
+  await expect(capacity).toHaveText(/^(?:[1-9]\d*|0\.\d*[1-9]\d*)(?:\.\d+)? RCU$/);
+  await expect(scan.locator("[data-testid='result-card-capacity']")).toHaveText(await capacity.innerText());
+
+  await scan.evaluate((card) => {
+    const pane = card.closest("#result-body");
+    const top = card.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+    pane.scrollTop = Math.max(0, top - 8);
+  });
+  await page.locator("#result-body").screenshot({
+    path: playwrightArtifact(`analyze-scan-rcu-${testInfo.project.name}.png`),
+  });
+});
+
+test("hides a zero RCU chip and keeps a positive write cost", async ({ page, app }, testInfo) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await page.route("**/api/run", async (route) => {
+    const lines = [
+      { event: "statement", index: 0 },
+      {
+        event: "result",
+        index: 0,
+        result: {
+          statement: "SCAN * FROM quiet;",
+          ok: true,
+          kind: "items",
+          message: "",
+          items: [{ id: "a", label: "alpha" }],
+          columns: [
+            { name: "id", table: "hash" },
+            { name: "label" },
+          ],
+          elapsed_ms: 4,
+          read_units: 0,
+          write_units: 0,
+          error: "",
+        },
+      },
+      { event: "statement", index: 1 },
+      {
+        event: "result",
+        index: 1,
+        result: {
+          statement: "SCAN * FROM billed;",
+          ok: true,
+          kind: "items",
+          message: "",
+          items: [{ id: "b" }],
+          columns: [{ name: "id", table: "hash" }],
+          elapsed_ms: 6,
+          read_units: 0,
+          write_units: 1.5,
+          error: "",
+        },
+      },
+    ];
+    await route.fulfill({
+      status: 200,
+      headers: { "Content-Type": "application/x-ndjson" },
+      body: lines.map((line) => JSON.stringify(line)).join("\n") + "\n",
+    });
+  });
+  await replaceEditor(page, "SCAN * FROM quiet;\nSCAN * FROM billed;");
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await openResultPane(page, "history");
+
+  const quiet = page.locator(".result-card[data-table='quiet']");
+  const billed = page.locator(".result-card[data-table='billed']");
+  await expect(quiet).toBeVisible();
+  await expect(quiet.locator("[data-testid='result-card-capacity']")).toHaveCount(0);
+  await expect(quiet.locator("[data-testid='result-card-time']")).toHaveText("4 ms");
+  await expect(quiet).toContainText("alpha");
+  await expect(billed.locator("[data-testid='result-card-capacity']")).toHaveText("1.5 WCU");
+  await expect(billed.locator("[data-testid='result-card-capacity']")).not.toContainText("RCU");
+
+  await quiet.evaluate((card) => {
+    const pane = card.closest("#result-body");
+    const top = card.getBoundingClientRect().top - pane.getBoundingClientRect().top + pane.scrollTop;
+    pane.scrollTop = Math.max(0, top - 8);
+  });
+  await page.locator("#result-body").screenshot({
+    path: playwrightArtifact(`result-card-zero-rcu-${testInfo.project.name}.png`),
+  });
+});
+
 test("pins the latest result at the top of the results pane", async ({ page, app }) => {
   const name = uniqueTable();
   app.trackTable(name);
@@ -698,6 +878,7 @@ test("pins the latest result at the top of the results pane", async ({ page, app
   await pressMod(page, "A");
   await page.locator("#run").click();
 
+  await openResultPane(page, "history");
   const body = page.locator("#result-body");
   const results = page.locator(".query-result");
   await expect(results).toHaveCount(5);
@@ -755,6 +936,7 @@ test("expands a result card query from the left dot", async ({ page, app }) => {
   );
   await pressMod(page, "A");
   await page.locator("#run").click();
+  await openResultPane(page, "history");
 
   const shells = page.locator(".result-shell");
   await expect(shells).toHaveCount(4);
@@ -875,7 +1057,7 @@ async function chevronPlacement(card, chevron) {
   };
 }
 
-test("shows an explain plan as operations and conditions", async ({ page, app }) => {
+test("shows an explain plan as operations and conditions", async ({ page, app }, testInfo) => {
   const name = uniqueTable();
   app.trackTable(name);
   await replaceEditor(
@@ -889,7 +1071,10 @@ test("shows an explain plan as operations and conditions", async ({ page, app })
   await page.locator("#run").click();
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
 
-  await replaceEditor(page, `EXPLAIN SELECT * FROM ${name} WHERE id = 'a' AND n > 1;`);
+  await replaceEditor(
+    page,
+    `EXPLAIN SELECT CONSISTENT name FROM ${name} WHERE id = 'a' AND n > 1 AND name = 'ada';`,
+  );
   await pressMod(page, "A");
   await page.locator("#run").click();
 
@@ -898,12 +1083,49 @@ test("shows an explain plan as operations and conditions", async ({ page, app })
   await expect(plan.locator('[data-testid="explain-step"]')).toHaveCount(1);
   await expect(plan.locator('[data-testid="explain-op"]')).toHaveText("query");
   await expect(plan.locator('[data-testid="explain-target"]')).toHaveText(name);
+  await expect(plan.locator('[data-testid="explain-index"]')).toHaveText("TABLE");
+  const line = await plan.locator(".explain-op").evaluate((node) => {
+    const style = getComputedStyle(node);
+    const boxes = [...node.children].map((child) => child.getBoundingClientRect());
+    const top = Math.min(...boxes.map((box) => box.top));
+    const bottom = Math.max(...boxes.map((box) => box.bottom));
+    return {
+      display: style.display,
+      direction: style.flexDirection,
+      wrap: style.flexWrap,
+      count: boxes.length,
+      ordered: boxes.every((box, index) => index === 0 || box.left >= boxes[index - 1].left),
+      oneLine: bottom - top < 28,
+    };
+  });
+  expect(line).toEqual({ display: "flex", direction: "row", wrap: "nowrap", count: 3, ordered: true, oneLine: true });
   const fields = plan.locator(".explain-fields");
   const field = (label) =>
     fields.locator("dt", { hasText: new RegExp("^" + label + "$") }).locator("xpath=following-sibling::dd[1]");
-  await expect(field("key condition")).toContainText("n > ");
-  await expect(field("filter")).toContainText("id = ");
-  await expect(field("index")).toHaveText("TABLE");
+  const detailLabels = [
+    "projection expression",
+    "key condition expression",
+    "filter expression",
+    "attribute names",
+    "attribute values",
+    "consistent",
+    "operation",
+  ];
+  const labels = ["table name", "index", ...detailLabels];
+  await expect(fields.locator("dt")).toHaveText(detailLabels);
+  await expect(field("projection expression")).toContainText("#f");
+  await expect(field("key condition expression")).toContainText("id = ");
+  await expect(field("key condition expression")).toContainText("n > ");
+  await expect(field("filter expression")).toContainText("#f");
+  await expect(field("attribute names")).toContainText("name");
+  await expect(field("attribute values")).toContainText('"a"');
+  await expect(field("attribute values")).toContainText('"ada"');
+  await expect(field("attribute values")).toContainText("1");
+  await expect(field("consistent")).toHaveText("true");
+  await expect(field("operation")).toHaveText("query");
+  await page.locator("#result-body").screenshot({
+    path: playwrightArtifact(`explain-attributes-${testInfo.project.name}.png`),
+  });
   await expect(page.locator("#result-meta")).toBeEmpty();
   await expect(page.locator(".query-result").last().locator('[data-testid="result-note"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="run-status-error"]')).toHaveCount(0);
@@ -916,17 +1138,28 @@ test("shows an explain plan as operations and conditions", async ({ page, app })
   await expect(plan.locator('[data-testid="explain-step"]')).toBeHidden();
   await expect(raw).toBeVisible();
   const text = await raw.innerText();
-  expect(text).toContain('\n    "operation": "query"');
   const parsed = JSON.parse(text);
   expect(parsed).toHaveLength(1);
-  expect(parsed[0].operation).toBe("query");
-  expect(parsed[0].target).toBe(name);
+  expect(Object.keys(parsed[0])).toEqual(labels);
+  expect(parsed[0]["table name"]).toBe(name);
   expect(parsed[0].index).toBe("TABLE");
-  expect(parsed[0].key_condition).toContain("n > ");
-  expect(parsed[0].filter).toContain("id = ");
+  expect(parsed[0]["projection expression"]).toContain("#f");
+  expect(parsed[0]["key condition expression"]).toContain("id = ");
+  expect(parsed[0]["key condition expression"]).toContain("n > ");
+  expect(parsed[0]["filter expression"]).toContain("#f");
+  expect(parsed[0]["attribute names"]).toContain("name");
+  expect(parsed[0]["attribute values"]).toContain('"a"');
+  expect(parsed[0]["attribute values"]).toContain('"ada"');
+  expect(parsed[0].operation).toBe("query");
+  await page.locator("#result-body").screenshot({
+    path: playwrightArtifact(`explain-json-${testInfo.project.name}.png`),
+  });
   await page.reload();
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
-  await replaceEditor(page, `EXPLAIN SELECT * FROM ${name} WHERE id = 'a' AND n > 1;`);
+  await replaceEditor(
+    page,
+    `EXPLAIN SELECT CONSISTENT name FROM ${name} WHERE id = 'a' AND n > 1 AND name = 'ada';`,
+  );
   await pressMod(page, "A");
   await page.locator("#run").click();
   const again = page.locator(".query-result").last().locator('[data-testid="explain-plan"]');
@@ -1041,7 +1274,7 @@ test("places a play button on the left of the run box and runs that range", asyn
   await expect(page.locator("#run")).toBeEnabled();
 });
 
-test("show-tables-like and ls glob refresh=True reload a changed table", async ({ page, app }) => {
+test("show-tables-like and ls glob refresh=True reload a changed table", async ({ page, app }, testInfo) => {
   const name = uniqueTable();
   const other = uniqueTable();
   app.trackTable(name);
@@ -1062,7 +1295,8 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
     ].join("\n"),
   );
   const cached = page.locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
-  await expect(cached).toContainText("THROUGHPUT (0, 0)");
+  await expect(cached).toContainText("N/A");
+  await expect(cached).not.toContainText("THROUGHPUT");
   await expect(cached).toContainText(name);
 
   await runEditor(`ALTER TABLE ${name} SET THROUGHPUT (2, 3);`);
@@ -1070,12 +1304,29 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
 
   await runEditor(`ls ${name}`);
-  await expect(page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" })).toContainText("THROUGHPUT (0, 0)");
+  await expect(page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" })).not.toContainText("THROUGHPUT (2, 3)");
+
+  await runEditor("SHOW TABLES;");
+  const shownRow = page.locator(".query-result").last().locator(".describe-tables tr", { hasText: name });
+  await expect(shownRow.locator("td").nth(2)).toHaveText("2");
+  await expect(shownRow.locator("td").nth(3)).toHaveText("3");
+  // The create snapshot has no throughput, which the card prints as an em dash.
+  // SHOW reloads that saved description, so the live read capacity is shown.
+  await expect(page.locator(".query-result").last().locator(".describe-tables tr", { hasText: other }).locator("td").nth(2)).toHaveText("0");
+  await shownRow.screenshot({ path: playwrightArtifact(`show-refresh-${testInfo.project.name}.png`) });
+
+  await runEditor(`DESCRIBE ${name};`);
+  const describedFresh = page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
+  await expect(describedFresh).toContainText("THROUGHPUT (2, 3)");
+  await expect(describedFresh.locator(".describe-stats")).toContainText("2");
+  await expect(describedFresh.locator(".describe-stats")).toContainText("3");
+  await describedFresh.screenshot({ path: playwrightArtifact(`describe-refresh-${testInfo.project.name}.png`) });
 
   await runEditor(`ls ${name}* refresh=True`);
   const fresh = page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
   await expect(fresh).toContainText("THROUGHPUT (2, 3)");
   await expect(fresh).toContainText(name);
+  await expect(fresh.locator("[data-testid='cache-hint']")).toHaveAttribute("aria-label", /Refreshed the cached table list/);
   await expect(fresh).not.toContainText(other);
 
   await runEditor(`SHOW TABLES LIKE '${name}';`);
@@ -1156,7 +1407,7 @@ test("show-tables-like-intelligent-match notes similar names and related keys", 
   await expect(page.locator("#result-body")).toContainText("No rows");
 });
 
-test("describe-table matches ls when one table matches", async ({ page, app }) => {
+test("describe-table matches ls when one table matches", async ({ page, app }, testInfo) => {
   const stem = uniqueTable();
   const name = `${stem}a`;
   const other = `${stem}b`;
@@ -1180,11 +1431,13 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   const described = page.locator(".describe").filter({ hasText: "Hash Key" });
   await expectDescription(page, described, name);
   await expect(described).not.toContainText(other);
+  await expect(described.locator("[data-testid='cache-hint']")).toHaveCount(0);
 
   await runEditor(`ls ${name}`);
   const listed = page.locator(".query-result").last().locator(".describe").filter({ hasText: "Hash Key" });
   await expectDescription(page, listed, name);
   await expect(listed).not.toContainText(other);
+  await expectCacheHint(listed, testInfo, "detail");
 
   await runEditor(`ls ${name}*`);
   const globbed = page.locator(".query-result").last().locator(".describe").filter({ hasText: "Hash Key" });
@@ -1200,6 +1453,7 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   await expect(summary).not.toContainText("Hash Key");
   await expect(summary.locator("[data-testid='intelligent-match']")).toHaveCount(0);
   await expect(summary.locator("#result-table")).toHaveCount(0);
+  await expectCacheHint(summary, testInfo, "summary");
 
   await runEditor("ls;");
   const all = page.locator(".query-result").last().locator(".describe").filter({ hasText: name });
@@ -1217,6 +1471,7 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   await expect(shown.locator(".describe-status.is-active").first()).toBeVisible();
   await expect(shown.locator("[data-testid='intelligent-match']")).toHaveCount(0);
   await expect(shown.locator("#result-table")).toHaveCount(0);
+  await expect(shown.locator("[data-testid='cache-hint']")).toHaveCount(0);
   await expect(page.locator("#result-meta")).toBeEmpty();
 });
 
@@ -1241,6 +1496,7 @@ test("ls-intelligent-match notes partial names when nothing matches exactly", as
   await expect(many.locator("[data-testid='intelligent-match']")).toContainText(`No exact match for "${stem}"`);
   await expect(many.locator("[data-testid='intelligent-match']")).toContainText("showing similar names");
   await expect(many.locator(".describe-match-pattern")).toContainText(`"${stem}"`);
+  await expect(many.locator("[data-testid='cache-hint']")).toHaveCount(1);
   await expect(many.locator(".describe-table-name", { hasText: name })).toHaveCount(1);
   await expect(many.locator(".describe-table-name", { hasText: other })).toHaveCount(1);
   await expect(many.locator(".describe-status.is-active")).toHaveCount(2);
@@ -1284,6 +1540,17 @@ test("ls-related-keys lists tables whose keys match", async ({ page, app }) => {
   await expect(card).not.toContainText("similar names");
   await expect(card).not.toContainText("Hash Key");
 });
+
+async function expectCacheHint(card, testInfo, kind) {
+  const hint = card.locator("[data-testid='cache-hint']");
+  await expect(hint).toHaveCount(1);
+  await expect(hint).toHaveAttribute("aria-label", /table list/);
+  await hint.hover();
+  const tip = hint.locator(".describe-cache-tip");
+  await expect(tip).toBeVisible();
+  await expect(tip).toHaveText(await hint.getAttribute("aria-label"));
+  await card.screenshot({ path: playwrightArtifact(`ls-cache-${kind}-${testInfo.project.name}.png`) });
+}
 
 async function expectDescription(page, card, tableName) {
   await expect(card.locator(".describe-name")).toHaveText(tableName);

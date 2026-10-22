@@ -4,7 +4,7 @@
  */
 import { StreamLanguage } from "@codemirror/language";
 import { Facet, RangeSet, RangeSetBuilder, StateEffect, StateField } from "@codemirror/state";
-import { Decoration, GutterMarker, RectangleMarker, ViewPlugin, gutter, layer } from "@codemirror/view";
+import { Decoration, EditorView, GutterMarker, RectangleMarker, ViewPlugin, gutter, layer } from "@codemirror/view";
 import { bandAppearance, queryBands, runTarget, startState, tokenDql } from "./dql-tokens.js";
 
 export const dqlLanguage = StreamLanguage.define({
@@ -414,4 +414,123 @@ export const runStatusGutter = gutter({
     return view.state.field(runStatusField);
   },
 });
+
+export const setLintIssues = StateEffect.define();
+
+export const lintIssuesField = StateField.define({
+  create() {
+    return [];
+  },
+  update(issues, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setLintIssues)) return effect.value;
+    }
+    if (!transaction.docChanged) return issues;
+    return issues.flatMap((issue) => {
+      const offset = transaction.changes.mapPos(issue.offset, 1);
+      const end = transaction.changes.mapPos(issue.end, 1);
+      if (end <= offset) return [];
+      return [{ ...issue, offset, end }];
+    });
+  },
+});
+
+function lintMarkSet(doc, issues) {
+  const sorted = issues
+    .map((issue) => ({
+      from: Math.max(0, Math.min(issue.offset, doc.length)),
+      to: Math.max(0, Math.min(issue.end, doc.length)),
+      severity: issue.severity === "warning" ? "warning" : "error",
+      message: String(issue.message || ""),
+    }))
+    .filter((issue) => issue.to > issue.from)
+    .sort((left, right) => left.from - right.from || left.to - right.to);
+  const builder = new RangeSetBuilder();
+  let cursor = 0;
+  for (const issue of sorted) {
+    const from = Math.max(issue.from, cursor);
+    if (issue.to <= from) continue;
+    builder.add(from, issue.to, Decoration.mark({
+      class: issue.severity === "warning" ? "cm-lint-warning" : "cm-lint-error",
+      attributes: { title: issue.message },
+    }));
+    cursor = issue.to;
+  }
+  return builder.finish();
+}
+
+const lintMarkField = StateField.define({
+  create() {
+    return Decoration.none;
+  },
+  update(marks, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setLintIssues)) return lintMarkSet(transaction.state.doc, effect.value);
+    }
+    if (transaction.docChanged) return marks.map(transaction.changes);
+    return marks;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+class LintGutterMarker extends GutterMarker {
+  constructor(severity, message) {
+    super();
+    this.severity = severity;
+    this.message = message;
+  }
+
+  eq(other) {
+    return other instanceof LintGutterMarker && other.severity === this.severity && other.message === this.message;
+  }
+
+  toDOM() {
+    const mark = document.createElement("span");
+    mark.className = "lint-gutter lint-gutter-" + this.severity;
+    mark.title = this.message;
+    mark.dataset.testid = "lint-gutter-" + this.severity;
+    mark.textContent = this.severity === "warning" ? "!" : "●";
+    return mark;
+  }
+}
+
+const lintGutterField = StateField.define({
+  create() {
+    return RangeSet.empty;
+  },
+  update(markers, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setLintIssues)) return lintGutterSet(transaction.state.doc, effect.value);
+    }
+    return markers.map(transaction.changes);
+  },
+});
+
+function lintGutterSet(doc, issues) {
+  const byLine = new Map();
+  for (const issue of issues) {
+    if (typeof issue.offset !== "number" || issue.offset < 0) continue;
+    const line = doc.lineAt(Math.min(issue.offset, doc.length));
+    const severity = issue.severity === "warning" ? "warning" : "error";
+    const existing = byLine.get(line.from);
+    if (!existing || (existing.severity !== "error" && severity === "error")) {
+      byLine.set(line.from, { severity, message: String(issue.message || "") });
+    }
+  }
+  const builder = new RangeSetBuilder();
+  for (const from of [...byLine.keys()].sort((left, right) => left - right)) {
+    const item = byLine.get(from);
+    builder.add(from, from, new LintGutterMarker(item.severity, item.message));
+  }
+  return builder.finish();
+}
+
+const lintGutter = gutter({
+  class: "cm-lint-gutter",
+  markers(view) {
+    return view.state.field(lintGutterField);
+  },
+});
+
+export const lintExtension = [lintIssuesField, lintMarkField, lintGutterField, lintGutter];
 

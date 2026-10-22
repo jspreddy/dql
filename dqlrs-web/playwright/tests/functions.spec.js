@@ -1,5 +1,5 @@
 import { test, expect } from "../support/app.js";
-import { node, openApp, pressMod, replaceEditor } from "../support/helpers.js";
+import { node, openApp, openResultPane, pressMod, replaceEditor } from "../support/helpers.js";
 
 test.beforeEach(async ({ page, app }) => {
   await openApp(page, app);
@@ -41,6 +41,7 @@ test("opens the functions sample and runs every condition function", async ({ pa
   await page.locator("#editor-content").click();
   await pressMod(page, "A");
   await page.locator("#run").click();
+  await openResultPane(page, "history");
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
   await expect(page.locator(".result-card")).toHaveCount(12);
   await expect(page.locator("#result-meta")).toBeEmpty();
@@ -59,6 +60,7 @@ test("returns the expected rows for each DynamoDB function", async ({ page, app 
   const table = uniqueTable();
   app.trackTable(table);
   await runEditor(page, seed(table).join("\n"));
+  await openResultPane(page, "history");
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
   await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "1 affected" })).toHaveCount(4);
 

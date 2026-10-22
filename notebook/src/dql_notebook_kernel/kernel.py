@@ -21,6 +21,9 @@ BANNER = (
     "DQL notebook kernel. Rust cells use `dqlrs --serve` (progress events for "
     "bulk writes); Python cells spawn `dql -c`.\n"
     "Connection: AWS_REGION, DQL_HOST, DQL_PORT, DQL_BIN / DQLRS_BIN.\n"
+    "Rust cells cache the table list and each table definition on disk as they "
+    "are fetched. A cache: line is the cache hint. "
+    "`ls refresh=true async=true` reloads what is already cached in the background.\n"
 )
 
 

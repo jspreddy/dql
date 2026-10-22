@@ -25,6 +25,7 @@ host="127.0.0.1"
 port="8765"
 aws=0
 listen=""
+mcp=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -48,6 +49,10 @@ while [[ $# -gt 0 ]]; do
       aws=1
       shift
       ;;
+    --mcp)
+      mcp=1
+      shift
+      ;;
     *)
       echo "unknown argument: $1" >&2
       exit 1
@@ -61,6 +66,9 @@ export AWS_REGION="${AWS_REGION:-us-west-1}"
 export AWS_EC2_METADATA_DISABLED="${AWS_EC2_METADATA_DISABLED:-true}"
 
 args=(--web --listen "${listen:-$host:$port}" --dir "$dir" -r "$AWS_REGION")
+if [[ "$mcp" -eq 1 ]]; then
+  args+=(--mcp)
+fi
 if [[ "$aws" -eq 0 ]]; then
   args+=(-H "${DQL_HOST:-localhost}" -p "${DQL_PORT:-8000}")
 fi

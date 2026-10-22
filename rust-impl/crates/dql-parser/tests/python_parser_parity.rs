@@ -549,6 +549,23 @@ mod phase_1_statements {
     }
 
     #[test]
+    fn parses_help_query() {
+        assert!(matches!(
+            parse_statement("HELP;"),
+            Ok(Statement::Help { topic: None })
+        ));
+        match parse_statement("HELP SELECT;").unwrap() {
+            Statement::Help { topic } => assert_eq!(topic.as_deref(), Some("SELECT")),
+            other => panic!("unexpected {other:?}"),
+        }
+        match parse_statement("help scan").unwrap() {
+            Statement::Help { topic } => assert_eq!(topic.as_deref(), Some("scan")),
+            other => panic!("unexpected {other:?}"),
+        }
+        assert_eq!(parse_fragment("HELP SELECT"), FragmentStatus::Incomplete);
+    }
+
+    #[test]
     fn parses_readme_and_query_doc_examples() {
         for statement in [
             "CREATE TABLE forum_threads (name STRING HASH KEY, subject STRING RANGE KEY, THROUGHPUT (4, 2))",

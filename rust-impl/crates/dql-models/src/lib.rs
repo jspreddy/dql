@@ -121,6 +121,26 @@ pub struct TableMeta {
 }
 
 impl TableMeta {
+    /// A list entry whose definition has not been fetched yet.
+    pub fn name_only(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            attrs: BTreeMap::new(),
+            hash_key: String::new(),
+            range_key: None,
+            local_indexes: BTreeMap::new(),
+            global_indexes: BTreeMap::new(),
+            throughput: None,
+            billing_mode: BillingMode::OnDemand,
+            status: TableStatus::Active,
+            consumed_capacity: BTreeMap::new(),
+        }
+    }
+
+    pub fn has_definition(&self) -> bool {
+        !self.hash_key.is_empty() || !self.attrs.is_empty()
+    }
+
     pub fn from_create_statement(statement: &Statement) -> Result<Self, ModelError> {
         let Statement::CreateTable {
             name,

@@ -21,6 +21,7 @@ clap.workspace = true
 color-eyre = "0.6.5"
 crossterm.workspace = true
 dql-engine = { path = "../dql-engine" }
+dql-expr = { path = "../dql-expr" }
 dql-models = { path = "../dql-models" }
 dql-output = { path = "../dql-output" }
 dql-parser = { path = "../dql-parser" }

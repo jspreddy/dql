@@ -215,7 +215,41 @@ notebook-test *args: (_title "notebook-test")
         ./notebook-tests/run.sh
     fi
 
-# Start DQLRS Web against dqlrs-web/examples. Extra args go to dqlrs-web/run.sh: just web -- --port 9000
+# MCP stdio server for the examples workspace. Point Cursor or Claude at `dqlrs --mcp` using dqlrs-web/mcp.example.json. This recipe is a manual session on that same folder.
+[group('web')]
+mcp: (_title "mcp") dynamo
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    (cd rust-impl && cargo build -p dql-cli)
+    export AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-fakeid}"
+    export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-fakekey}"
+    export AWS_REGION="${AWS_REGION:-us-west-1}"
+    export AWS_EC2_METADATA_DISABLED="${AWS_EC2_METADATA_DISABLED:-true}"
+    exec rust-impl/target/debug/dqlrs --mcp \
+        --dir "{{justfile_directory()}}/dqlrs-web/examples" \
+        -H "${DQL_HOST:-localhost}" \
+        -p "${DQL_PORT:-8000}" \
+        -r "$AWS_REGION"
+
+# Stdio smoke test for the MCP server. Does not need DynamoDB.
+[group('web')]
+mcp-smoke: (_title "mcp-smoke")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    (cd rust-impl && cargo build -p dql-cli)
+    python3 scripts/mcp-smoke.py rust-impl/target/debug/dqlrs
+
+# Unit tests and the stdio smoke test for the MCP server. Does not need DynamoDB.
+[group('web')]
+mcp-test: (_title "mcp-test") mcp-smoke
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    (cd rust-impl && cargo test -p dql-cli --lib mcp::)
+
+# Start the web UI, API, and /mcp on one host. Extra args go to dqlrs-web/run.sh: just web -- --port 9000
 [group('web')]
 web *args: (_title "web")
     #!/usr/bin/env bash
@@ -238,10 +272,18 @@ web *args: (_title "web")
     if [[ "$use_local" -eq 1 ]]; then
         just dynamo
     fi
-    if [[ ${#args[@]} -eq 0 ]]; then
-        exec ./dqlrs-web/run.sh --dir "{{justfile_directory()}}/dqlrs-web/examples"
+    mcp=(--mcp)
+    if [[ ${#args[@]} -gt 0 ]]; then
+        for arg in "${args[@]}"; do
+            if [[ "$arg" == "--mcp" ]]; then
+                mcp=()
+            fi
+        done
     fi
-    exec ./dqlrs-web/run.sh "${args[@]}"
+    if [[ ${#args[@]} -eq 0 ]]; then
+        exec ./dqlrs-web/run.sh --mcp --dir "{{justfile_directory()}}/dqlrs-web/examples"
+    fi
+    exec ./dqlrs-web/run.sh "${mcp[@]}" "${args[@]}"
 
 # Node tests for the DQLRS Web editor
 [group('web')]
@@ -362,10 +404,10 @@ version *args: (_title "version")
 check: (_title "check") py-sync py-fix rust-fix
 
 # Every test suite. Starts DynamoDB Local, syncs Python, and builds release dqlrs first.
-test: (_title "test") dynamo py-sync rust-build web-unit py-test rust-test rust-local rust-smoke black-box notebook-test web-test
+test: (_title "test") dynamo py-sync rust-build web-unit py-test rust-test rust-local rust-smoke black-box notebook-test web-test mcp-test
 
 # Static analysis, package builds, and every test suite. Does not call `test`.
-verify: (_title "verify") dynamo web-unit py rust black-box notebook-test web-test
+verify: (_title "verify") dynamo web-unit py rust black-box notebook-test web-test mcp-test
 
 # Install dql and dqlrs onto ~/.local/bin
 install: (_title "install") py rust py-install rust-install

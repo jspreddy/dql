@@ -58,6 +58,12 @@ pub struct CliArgs {
     pub web: bool,
 
     #[arg(
+        long = "mcp",
+        help = "MCP tools. Alone, stdio. With --web, HTTP at /mcp on the web host."
+    )]
+    pub mcp: bool,
+
+    #[arg(
         long = "listen",
         value_name = "ADDR",
         help = "With --web, listen on loopback HOST:PORT (default 127.0.0.1:8765)"
@@ -67,7 +73,7 @@ pub struct CliArgs {
     #[arg(
         long = "dir",
         value_name = "DIR",
-        help = "With --web, folder of .dql files (default: current directory)"
+        help = "With --web or --mcp, folder of .dql files (default: current directory)"
     )]
     pub dir: Option<String>,
 
@@ -93,8 +99,9 @@ pub fn help_text() -> String {
            --serve              Headless JSON-lines worker (stdio, or --bind on loopback). Not a TTY REPL.\n\
            --bind <ADDR>        With --serve, listen on loopback HOST:PORT (or PORT as 127.0.0.1:PORT)\n\
            --web                Serve the query editor and table browser\n\
+           --mcp                MCP tools. Alone, stdio. With --web, HTTP at /mcp\n\
            --listen <ADDR>      With --web, listen on loopback HOST:PORT (default 127.0.0.1:8765)\n\
-           --dir <DIR>          With --web, folder of .dql files (default: current directory)\n\
+           --dir <DIR>          With --web or --mcp, folder of .dql files (default: current directory)\n\
            notebook, --notebook Start JupyterLab with a DQL (Rust) kernel (this binary)\n\
            --version            Print the version and exit\n\n\
      Environment:\n\
@@ -165,5 +172,43 @@ mod tests {
         assert_eq!(args.dir.as_deref(), Some("/tmp/queries"));
         assert_eq!(args.host.as_deref(), Some("localhost"));
         assert!(!args.serve);
+        assert!(!args.mcp);
+    }
+
+    #[test]
+    fn parses_mcp_dir() {
+        let args = CliArgs::try_parse_from([
+            "dqlrs",
+            "--mcp",
+            "--dir",
+            "/tmp/queries",
+            "-H",
+            "localhost",
+            "-p",
+            "8000",
+        ])
+        .unwrap();
+        assert!(args.mcp);
+        assert_eq!(args.dir.as_deref(), Some("/tmp/queries"));
+        assert!(!args.web);
+        assert!(!args.serve);
+    }
+
+    #[test]
+    fn parses_web_and_mcp_together() {
+        let args = CliArgs::try_parse_from([
+            "dqlrs",
+            "--web",
+            "--mcp",
+            "--listen",
+            "127.0.0.1:8765",
+            "--dir",
+            "/tmp/queries",
+        ])
+        .unwrap();
+        assert!(args.web);
+        assert!(args.mcp);
+        assert_eq!(args.listen.as_deref(), Some("127.0.0.1:8765"));
+        assert_eq!(args.dir.as_deref(), Some("/tmp/queries"));
     }
 }

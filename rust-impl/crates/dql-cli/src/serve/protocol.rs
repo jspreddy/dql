@@ -29,6 +29,9 @@ pub struct ServeEnvelope {
     pub partial: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<ServeError>,
+    /// Structured `HELP` page. Present when `kind` is `help`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub help: Option<serde_json::Value>,
 }
 
 impl ServeEnvelope {
@@ -42,6 +45,7 @@ impl ServeEnvelope {
             message: None,
             partial: false,
             error: None,
+            help: None,
         }
     }
 
@@ -58,6 +62,7 @@ impl ServeEnvelope {
                 code: code.to_string(),
                 message: message.into(),
             }),
+            help: None,
         }
     }
 
@@ -111,6 +116,12 @@ pub fn envelope_from_result(result: StatementResult, partial: bool) -> ServeEnve
         StatementResult::Schema(schema) => {
             let mut envelope = ServeEnvelope::success("schema");
             envelope.message = Some(schema);
+            envelope
+        }
+        StatementResult::Help(page) => {
+            let mut envelope = ServeEnvelope::success("help");
+            envelope.message = Some(page.plain());
+            envelope.help = Some(page.to_value());
             envelope
         }
     };

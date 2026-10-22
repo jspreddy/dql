@@ -897,8 +897,10 @@ mod test_select {
             .unwrap();
         match result {
             StatementResult::Schema(schema) => {
-                assert!(schema.contains("query foobar"));
-                assert!(schema.contains("key_condition"));
+                assert!(schema.contains("query foobar"), "{schema}");
+                assert!(schema.contains("key_condition"), "{schema}");
+                assert!(schema.contains("expression_values"), "{schema}");
+                assert!(schema.contains(r#"\"a\""#), "{schema}");
             }
             other => panic!("unexpected result: {other:?}"),
         }
@@ -1074,6 +1076,56 @@ mod test_select_scan {
             }
             other => panic!("unexpected result: {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_select_nested_paths_and_alias() {
+        let mut engine = seeded_scan_table_no_range();
+        engine
+            .execute(
+                "INSERT INTO foobar (id, author, tags) VALUES ('a', {'name': 'Ada', 'city': {'name': 'London'}}, [{'name': 'rust'}, {'name': 'db'}, {'other': 1}])",
+            )
+            .unwrap();
+        let result = engine
+            .execute(
+                "SCAN author.city.name AS city, tags[0].name, tags[].name AS names, missing.path FROM foobar",
+            )
+            .unwrap();
+        match result {
+            StatementResult::Items(items) => {
+                assert_eq!(
+                    items[0].get("city"),
+                    Some(&Value::String("London".to_string()))
+                );
+                assert_eq!(
+                    items[0].get("tags[0].name"),
+                    Some(&Value::String("rust".to_string()))
+                );
+                assert_eq!(
+                    items[0].get("names"),
+                    Some(&Value::List(vec![
+                        Value::String("rust".to_string()),
+                        Value::String("db".to_string()),
+                        Value::Null,
+                    ]))
+                );
+                assert_eq!(items[0].get("missing.path"), Some(&Value::Null));
+                assert!(!items[0].contains_key("author"));
+                assert!(!items[0].contains_key("id"));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+
+        let matched = engine
+            .execute(
+                "SCAN id FROM foobar WHERE tags[0].name = 'rust' AND author.city.name = 'London'",
+            )
+            .unwrap();
+        assert_items_len(matched, 1);
+        let missed = engine
+            .execute("SCAN id FROM foobar WHERE tags[1].name = 'rust'")
+            .unwrap();
+        assert_items_len(missed, 0);
     }
 
     #[test]
@@ -1747,6 +1799,9 @@ mod test_condition_functions {
         match result {
             StatementResult::Schema(schema) => {
                 assert!(schema.contains("query foobar"), "{schema}");
+                assert!(schema.contains("expression_values"), "{schema}");
+                assert!(schema.contains(r#"\"hello\""#), "{schema}");
+                assert!(schema.contains(r#"\"name\""#), "{schema}");
             }
             other => panic!("unexpected result: {other:?}"),
         }
@@ -2261,10 +2316,16 @@ mod test_update {
         let result = engine
             .execute("EXPLAIN UPDATE foobar SET baz = 1 WHERE id = 'a'")
             .unwrap();
-        assert_eq!(
-            result,
-            StatementResult::Schema("query foobar\nupdate_item foobar".to_string())
-        );
+        match result {
+            StatementResult::Schema(schema) => {
+                assert!(schema.contains("query foobar"), "{schema}");
+                assert!(schema.contains("update_item foobar"), "{schema}");
+                assert!(schema.contains("baz"), "{schema}");
+                assert!(schema.contains(r#"\"a\""#), "{schema}");
+                assert!(schema.contains("expression_values"), "{schema}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 
     #[test]
@@ -2274,10 +2335,15 @@ mod test_update {
         let result = engine
             .execute("EXPLAIN UPDATE foobar SET baz = 1 KEYS IN 'a', 'b'")
             .unwrap();
-        assert_eq!(
-            result,
-            StatementResult::Schema("update_item foobar".to_string())
-        );
+        match result {
+            StatementResult::Schema(schema) => {
+                assert!(schema.starts_with("update_item foobar"), "{schema}");
+                assert!(!schema.contains('\n'), "{schema}");
+                assert!(schema.contains("baz"), "{schema}");
+                assert!(schema.contains("expression_values"), "{schema}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 
     #[test]
@@ -2287,10 +2353,15 @@ mod test_update {
         let result = engine
             .execute("EXPLAIN UPDATE foobar SET baz = 1 WHERE bar = 1")
             .unwrap();
-        assert_eq!(
-            result,
-            StatementResult::Schema("scan foobar\nupdate_item foobar".to_string())
-        );
+        match result {
+            StatementResult::Schema(schema) => {
+                assert!(schema.contains("scan foobar"), "{schema}");
+                assert!(schema.contains("update_item foobar"), "{schema}");
+                assert!(schema.contains("expression_values"), "{schema}");
+                assert!(schema.contains("baz"), "{schema}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 
     #[test]
@@ -2355,10 +2426,15 @@ mod test_delete {
         let result = engine
             .execute("EXPLAIN DELETE FROM foobar WHERE id = 'a'")
             .unwrap();
-        assert_eq!(
-            result,
-            StatementResult::Schema("query foobar\ndelete_item foobar".to_string())
-        );
+        match result {
+            StatementResult::Schema(schema) => {
+                assert!(schema.contains("query foobar"), "{schema}");
+                assert!(schema.contains("delete_item foobar"), "{schema}");
+                assert!(schema.contains("expression_values"), "{schema}");
+                assert!(schema.contains(r#"\"a\""#), "{schema}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
     }
 
     #[test]

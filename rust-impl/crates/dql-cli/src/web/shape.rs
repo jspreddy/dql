@@ -69,10 +69,21 @@ pub struct ListedTable {
     pub keys: Vec<KeyRole>,
 }
 
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
+pub struct TableCacheHint {
+    pub text: String,
+    #[serde(rename = "fromCache")]
+    pub from_cache: bool,
+    #[serde(rename = "savedAtMs")]
+    pub saved_at_ms: Option<u64>,
+    pub refreshing: bool,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct TableList {
     pub tables: Vec<ListedTable>,
     pub note: String,
+    pub cache: TableCacheHint,
 }
 
 pub fn split_statements(text: &str) -> Vec<String> {
@@ -131,6 +142,7 @@ pub fn split_statements(text: &str) -> Vec<String> {
     parts
 }
 
+#[cfg(test)]
 pub fn list_tables(
     pattern: &str,
     refresh: bool,
@@ -139,11 +151,10 @@ pub fn list_tables(
     mut exec: impl FnMut(&str) -> ExecText,
 ) -> Result<TableList, String> {
     if refresh {
-        shapes.clear();
         *catalog = None;
     }
     if catalog.is_none() {
-        *catalog = Some(load_table_catalog(refresh, &mut exec)?);
+        *catalog = Some(load_table_catalog(refresh, false, shapes, &mut exec)?);
     }
     Ok(filter_table_list(
         catalog.as_deref().unwrap_or(&[]),
@@ -225,11 +236,12 @@ pub fn read_query(statement: &str) -> (Option<String>, Option<Vec<String>>) {
             if piece.is_empty() {
                 return None;
             }
-            let name = AS_ALIAS
-                .captures(piece)
-                .map(|caps| caps[1].to_string())
-                .unwrap_or_else(|| piece.to_string());
-            Some(norm_ws(&name))
+            let name = if let Some(caps) = AS_ALIAS.captures(piece) {
+                norm_ws(&caps[1])
+            } else {
+                dql_parser::compact_path_punctuation(&norm_ws(piece))
+            };
+            Some(name)
         })
         .collect();
     (Some(table), Some(names))
@@ -341,19 +353,20 @@ pub fn safe_table_name(name: &str) -> bool {
     chars.all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
 }
 
-pub fn shell_quote(text: &str) -> String {
-    const SAFE: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@%+=:,./-_";
-    if !text.is_empty() && text.chars().all(|ch| SAFE.contains(ch)) {
-        return text.to_string();
-    }
-    format!("'{}'", text.replace('\'', r#"'"'"'"#))
-}
-
+#[cfg(test)]
 fn load_table_catalog(
     refresh: bool,
+    background: bool,
+    shapes: &HashMap<String, TableShape>,
     exec: &mut impl FnMut(&str) -> ExecText,
 ) -> Result<Vec<ListedTable>, String> {
-    let command = if refresh { "ls refresh=True" } else { "ls" };
+    let command = if refresh && background {
+        "ls refresh=True async=True"
+    } else if refresh {
+        "ls refresh=True"
+    } else {
+        "ls"
+    };
     let summary = exec(command);
     if !summary.ok {
         let message = summary.failure();
@@ -364,23 +377,35 @@ fn load_table_catalog(
     }
     let mut tables = Vec::new();
     for name in ls_names(&summary.message) {
-        let detail = exec(&format!("ls {}", shell_quote(&name)));
-        let keys = if detail.ok {
-            ls_keys(&detail.message)
-        } else {
-            Vec::new()
-        };
+        let keys = shapes.get(&name).map(keys_from_shape).unwrap_or_default();
         tables.push(ListedTable { name, keys });
     }
     Ok(tables)
 }
 
+#[cfg(test)]
+fn keys_from_shape(shape: &TableShape) -> Vec<KeyRole> {
+    let mut keys = vec![KeyRole {
+        name: shape.hash_key.clone(),
+        role: "hash".to_string(),
+    }];
+    if let Some(range_key) = &shape.range_key {
+        keys.push(KeyRole {
+            name: range_key.clone(),
+            role: "range".to_string(),
+        });
+    }
+    keys
+}
+
+#[cfg(test)]
 fn filter_table_list(catalog: &[ListedTable], pattern: &str) -> TableList {
     let needle = pattern.trim();
     if needle.is_empty() {
         return TableList {
             tables: catalog.to_vec(),
             note: String::new(),
+            cache: TableCacheHint::default(),
         };
     }
     let exact: Vec<ListedTable> = catalog
@@ -392,6 +417,7 @@ fn filter_table_list(catalog: &[ListedTable], pattern: &str) -> TableList {
         return TableList {
             tables: exact,
             note: String::new(),
+            cache: TableCacheHint::default(),
         };
     }
     let match_tables: Vec<dql_engine::MatchTable> = catalog
@@ -409,14 +435,17 @@ fn filter_table_list(catalog: &[ListedTable], pattern: &str) -> TableList {
                 .filter_map(|name| catalog.iter().find(|table| table.name == name).cloned())
                 .collect(),
             note: hit.note,
+            cache: TableCacheHint::default(),
         },
         Err(_) => TableList {
             tables: Vec::new(),
             note: String::new(),
+            cache: TableCacheHint::default(),
         },
     }
 }
 
+#[cfg(test)]
 fn glob_matches(pattern: &str, name: &str) -> bool {
     glob::Pattern::new(pattern)
         .map(|compiled| compiled.matches(name))
@@ -439,6 +468,7 @@ fn ls_note(text: &str) -> String {
     String::new()
 }
 
+#[cfg(test)]
 fn ls_names(text: &str) -> Vec<String> {
     let mut described = Vec::new();
     let mut summary = Vec::new();
@@ -446,7 +476,8 @@ fn ls_names(text: &str) -> Vec<String> {
     let mut past_header = false;
     for raw in text.lines() {
         let line = raw.trim();
-        if line.is_empty() || line.starts_with("No exact match for ") {
+        if line.is_empty() || line.starts_with("No exact match for ") || line.starts_with("cache:")
+        {
             continue;
         }
         if let Some(rest) = line.strip_prefix("Name:") {
@@ -482,6 +513,7 @@ fn ls_names(text: &str) -> Vec<String> {
     }
 }
 
+#[cfg(test)]
 fn ls_keys(text: &str) -> Vec<KeyRole> {
     let mut hash_key = String::new();
     let mut range_key = String::new();
@@ -631,7 +663,7 @@ static GSI_LINE: LazyLock<Regex> = LazyLock::new(|| {
 });
 static READ_QUERY: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?is)^\s*(?:select|scan)\s+(?P<select>.*?)\s+from\s+(?P<table>[A-Za-z_][A-Za-z0-9_.-]*)\b",
+        r"(?is)^\s*(?:analyze\s+)?(?:select|scan)\s+(?P<select>.*?)\s+from\s+(?P<table>[A-Za-z_][A-Za-z0-9_.-]*)\b",
     )
     .expect("read query")
 });
@@ -844,6 +876,30 @@ Local Indexes:
                 Some(vec!["name".to_string(), "ts(updated)".to_string()])
             )
         );
+        assert_eq!(
+            read_query("ANALYZE SCAN * FROM sample_cosmos;"),
+            (Some("sample_cosmos".to_string()), None)
+        );
+        assert_eq!(
+            read_query("analyze select pk, sk AS child FROM sample_cosmos WHERE pk = 'sun';"),
+            (
+                Some("sample_cosmos".to_string()),
+                Some(vec!["pk".to_string(), "child".to_string()])
+            )
+        );
+        assert_eq!(
+            read_query(
+                "SELECT author.city.name AS city, tags [ 0 ] . name, tags [ ] . name AS names FROM posts;"
+            ),
+            (
+                Some("posts".to_string()),
+                Some(vec![
+                    "city".to_string(),
+                    "tags[0].name".to_string(),
+                    "names".to_string()
+                ])
+            )
+        );
         assert!(safe_table_name("nb_posts"));
         assert!(safe_table_name("nb-posts"));
         assert!(!safe_table_name("nb posts"));
@@ -852,14 +908,24 @@ Local Indexes:
 
     #[test]
     fn search_uses_cached_catalog_until_refresh() {
-        let mut shapes = HashMap::from([(
-            "nb_posts".to_string(),
-            TableShape {
-                hash_key: "id".to_string(),
-                range_key: None,
-                indexes: HashMap::new(),
-            },
-        )]);
+        let mut shapes = HashMap::from([
+            (
+                "nb_posts".to_string(),
+                TableShape {
+                    hash_key: "id".to_string(),
+                    range_key: None,
+                    indexes: HashMap::new(),
+                },
+            ),
+            (
+                "catalog".to_string(),
+                TableShape {
+                    hash_key: "isbn".to_string(),
+                    range_key: None,
+                    indexes: HashMap::new(),
+                },
+            ),
+        ]);
         let mut catalog = None;
         let mut commands = Vec::new();
         let listed = list_tables("nb_*", false, &mut shapes, &mut catalog, |command| {
@@ -871,7 +937,7 @@ Local Indexes:
         assert_eq!(listed.tables.len(), 1);
         assert_eq!(listed.tables[0].name, "nb_posts");
         assert_eq!(listed.tables[0].keys[0].name, "id");
-        assert_eq!(commands, ["ls", "ls nb_posts", "ls catalog"]);
+        assert_eq!(commands, ["ls"]);
         assert!(catalog.as_ref().is_some_and(|tables| tables.len() == 2));
         assert!(shapes.contains_key("nb_posts"));
 
@@ -891,8 +957,9 @@ Local Indexes:
         })
         .unwrap();
         assert_eq!(refreshed.note, "");
-        assert_eq!(commands, ["ls refresh=True", "ls nb_posts", "ls catalog"]);
-        assert!(shapes.is_empty());
+        assert_eq!(commands, ["ls refresh=True"]);
+        assert!(shapes.contains_key("nb_posts"));
+        assert!(shapes.contains_key("catalog"));
 
         commands.clear();
         let similar = list_tables("post", false, &mut shapes, &mut catalog, |command| {

@@ -38,16 +38,44 @@
       <button type="button" id="mode-query" class="active" role="tab" aria-selected="true">Query</button>
       <button type="button" id="mode-tables" role="tab" aria-selected="false">Tables</button>
     </div>
-    <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false" aria-label="Switch to dark mode" title="Dark mode">
-      <svg class="theme-moon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-        <path fill="currentColor" d="M9.6 1.4a6.2 6.2 0 1 0 5 9.6 5 5 0 0 1-5-9.6Z"/>
-      </svg>
-      <svg class="theme-sun" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-        <circle cx="8" cy="8" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
-        <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.3 3.3l1.1 1.1M11.6 11.6l1.1 1.1M12.7 3.3l-1.1 1.1M4.4 11.6l-1.1 1.1"/>
-      </svg>
-    </button>
-    <button type="button" class="endpoint" id="endpoint" data-kind="local">localhost:8000</button>
+    <div class="title-search">
+      <input id="title-search" type="search" placeholder="Search tables, columns, queries" spellcheck="false" autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="title-search-list" aria-label="Search tables, columns, and queries" />
+      <div id="title-search-list" class="title-search-list" role="listbox" hidden></div>
+    </div>
+    <div class="header-tools">
+      <div class="header-toggles">
+        <button type="button" id="settings-toggle" class="theme-toggle" popovertarget="settings-pop" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-pop" aria-label="Settings" title="Settings">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M2.2 4.2h11.6M2.2 8h11.6M2.2 11.8h11.6"/>
+            <circle cx="6" cy="4.2" r="1.45" fill="var(--bar)" stroke="currentColor" stroke-width="1.4"/>
+            <circle cx="10.4" cy="8" r="1.45" fill="var(--bar)" stroke="currentColor" stroke-width="1.4"/>
+            <circle cx="5.2" cy="11.8" r="1.45" fill="var(--bar)" stroke="currentColor" stroke-width="1.4"/>
+          </svg>
+        </button>
+        <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false" aria-label="Switch to dark mode" title="Dark mode">
+          <svg class="theme-moon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <path fill="currentColor" d="M9.6 1.4a6.2 6.2 0 1 0 5 9.6 5 5 0 0 1-5-9.6Z"/>
+          </svg>
+          <svg class="theme-sun" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+            <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.3 3.3l1.1 1.1M11.6 11.6l1.1 1.1M12.7 3.3l-1.1 1.1M4.4 11.6l-1.1 1.1"/>
+          </svg>
+        </button>
+      </div>
+      <button type="button" class="endpoint" id="endpoint" data-kind="local">localhost:8000</button>
+    </div>
+    <div id="settings-pop" class="settings-pop" popover="auto" aria-label="Settings">
+      <span class="settings-label">Highlight</span>
+      <label><input type="checkbox" id="opt-minimal-write" /> Minimal write highlight</label>
+      <label><input type="checkbox" id="opt-even-odd" checked /> Even/odd highlight</label>
+      <hr class="settings-rule" />
+      <div class="settings-cache-head">
+        <span class="settings-label">Table cache</span>
+        <span id="settings-cache-age" class="settings-cache-age">not cached</span>
+      </div>
+      <button type="button" id="clear-table-cache">Clear table cache</button>
+      <p id="cache-clear-note" class="settings-note" hidden></p>
+    </div>
     <div id="env-pop" class="env-pop" popover="auto" aria-labelledby="env-pop-title"></div>
   </header>
   <div class="body">
@@ -55,12 +83,16 @@
       <div class="side-head">
         <span class="side-heading">
           <span id="side-title">Files</span>
-          <button type="button" id="refresh-tables" class="hidden" title="Refresh tables" aria-label="Refresh tables">
+          <button type="button" id="refresh-tables" class="hidden" title="Refresh the cached table list in the background" aria-label="Refresh cached tables">
             <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
               <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M13.2 8A5.2 5.2 0 1 1 11.6 4.3"/>
               <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M13.4 2.2v3.1H10.3"/>
             </svg>
           </button>
+          <span id="table-cache" class="table-cache hidden" tabindex="0">
+            <span class="table-cache-age"></span>
+            <span class="table-cache-tip" role="tooltip"></span>
+          </span>
         </span>
         <button type="button" id="new-file" title="New .dql file">+</button>
       </div>
@@ -81,6 +113,7 @@
         <div class="pane-head">
           <span class="file-name-row">
             <span id="file-name">No file open</span>
+            <button type="button" id="lint-status" class="lint-status hidden" aria-live="polite"></button>
             <button type="button" id="run-file" class="hidden" title="Run this file">
               <svg class="ff-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
                 <path fill="currentColor" d="M1.6 3.1 7.2 8 1.6 12.9Zm6.8 0L14 8 8.4 12.9Z"/>
@@ -88,14 +121,14 @@
               Run file
             </button>
           </span>
-          <span class="toggles">
-            <label><input type="checkbox" id="opt-minimal-write" /> Minimal write highlight</label>
-            <label><input type="checkbox" id="opt-even-odd" checked /> Even/odd highlight</label>
-          </span>
           <div class="run-box">
-            <button type="button" id="run" class="primary">Run selection</button>
+            <button type="button" id="run" class="primary" aria-label="Run selection">
+              <svg class="run-play" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                <path fill="currentColor" d="M5.2 3.1 12.4 8 5.2 12.9Z"/>
+              </svg>
+              <span id="run-shortcut" class="run-shortcut"><span class="run-mod">Ctrl</span> + Enter</span>
+            </button>
             <button type="button" id="stop" class="stop hidden">Stop</button>
-            <span id="run-shortcut" class="run-shortcut">Ctrl+Enter</span>
           </div>
         </div>
         <div class="editor">
@@ -107,11 +140,15 @@
               <span class="results-grip" aria-hidden="true"></span>
             </div>
             <div class="pane-head results-head">
-              <span class="results-title">
+              <div class="results-title">
                 <span class="results-mark" aria-hidden="true"></span>
-                Results
+                <div class="result-tabs" role="tablist" aria-label="Result pane">
+                  <button type="button" class="result-tab is-active" role="tab" id="result-tab-result" data-pane="result" aria-selected="true" aria-controls="result-body">Result</button>
+                  <button type="button" class="result-tab" role="tab" id="result-tab-history" data-pane="history" aria-selected="false" aria-controls="result-body">History</button>
+                  <button type="button" class="result-tab" role="tab" id="result-tab-lint" data-pane="lint" aria-selected="false" aria-controls="result-body">Lint</button>
+                </div>
                 <progress id="run-progress" hidden aria-label="Query progress"></progress>
-              </span>
+              </div>
               <span class="results-actions">
                 <span id="result-meta" class="meta"></span>
                 <span class="results-chip">
@@ -125,7 +162,7 @@
               </span>
             </div>
           </div>
-          <div id="result-body" class="result-body"></div>
+          <div id="result-body" class="result-body" role="tabpanel" aria-labelledby="result-tab-result"></div>
         </section>
       </section>
       <section id="tables-view" class="view hidden">
@@ -207,6 +244,8 @@
       <button type="button" id="server-retry">Retry</button>
     </div>
   </dialog>
+  <div id="lint-tip" class="lint-tip" role="tooltip" hidden></div>
+  <div id="run-tip" class="run-tip" role="tooltip" hidden>Run selection</div>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

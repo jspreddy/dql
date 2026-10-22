@@ -77,6 +77,31 @@ def test_use_serve_defaults_on(monkeypatch):
     assert use_serve(env={"DQL_NOTEBOOK_SERVE": "0"}) is False
 
 
+def test_format_envelope_help_is_highlighted_html():
+    bundle = format_envelope(
+        {
+            "ok": True,
+            "kind": "help",
+            "message": "HELP select\n",
+            "help": {
+                "title": "HELP select",
+                "blocks": [
+                    {"kind": "prose", "text": "Select items from a table"},
+                    {"kind": "code", "text": "SELECT * FROM foobars WHERE id = 'a';"},
+                    {"kind": "heading", "text": "Examples"},
+                ],
+            },
+        }
+    )
+    html = bundle["text/html"]
+    assert "HELP select" in html
+    assert "Select items from a table" in html
+    assert ">SELECT<" in html
+    assert "color:#0f766e" in html
+    assert ">&#x27;a&#x27;<" in html or "'a'" in html
+    assert "HELP select" in bundle["text/plain"]
+
+
 def test_format_envelope_items_and_affected():
     items = format_envelope(
         {"ok": True, "kind": "items", "items": [{"id": "a"}, {"id": "b"}]}

@@ -3,12 +3,16 @@ use crate::convert::keys_in_to_items;
 use crate::file_io::{load_items as load_items_from_file, save_items, validate_save_path};
 use crate::progress::ProgressSink;
 use crate::query_context::{query_context_from_read, LastQueryContext};
+use crate::table_cache::SharedTableCache;
 use crate::throttle::RateLimit;
 use crate::{
-    BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
-    StatementResult, WRITE_PROGRESS_CHUNK,
+    help_page, BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation,
+    ReadRequest, StatementResult, WRITE_PROGRESS_CHUNK,
 };
-use dql_expr::{project_selection, render_condition, render_projection, resolve_timestamp};
+use dql_expr::{
+    merge_rendered_placeholders, project_selection, render_condition, render_projection,
+    render_update, resolve_timestamp, shift_rendered_expression, DynamoValue, RenderedExpression,
+};
 use dql_models::{plan_read, Operation, PlanError, PlanInput, QueryPlan, ReadKind, TableMeta};
 use dql_parser::{
     parse_script, Condition, InsertForm, OrderBy, QueryOptions, Selection, Statement,
@@ -16,6 +20,7 @@ use dql_parser::{
 };
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct Engine<B: DynamoBackend> {
     backend: B,
@@ -27,6 +32,12 @@ pub struct Engine<B: DynamoBackend> {
     allow_select_scan: bool,
     rate_limit: Option<RateLimit>,
     pub cached_descriptions: HashMap<String, TableMeta>,
+    disk: Option<SharedTableCache>,
+    cached_names: Option<Vec<String>>,
+    names_saved_at_ms: Option<u64>,
+    seen_generation: u64,
+    names_were_cached: bool,
+    last_read_from_cache: bool,
     last_query_context: Option<LastQueryContext>,
     progress: ProgressSink,
     cancel: CancelFlag,
@@ -48,6 +59,12 @@ impl<B: DynamoBackend> Engine<B> {
             allow_select_scan: false,
             rate_limit: None,
             cached_descriptions: HashMap::new(),
+            disk: None,
+            cached_names: None,
+            names_saved_at_ms: None,
+            seen_generation: 0,
+            names_were_cached: false,
+            last_read_from_cache: false,
             last_query_context: None,
             progress,
             cancel,
@@ -66,8 +83,105 @@ impl<B: DynamoBackend> Engine<B> {
         self.rate_limit = limit;
     }
 
+    pub fn set_table_cache(&mut self, cache: Option<SharedTableCache>) {
+        self.disk = cache;
+        self.cached_names = None;
+        self.names_saved_at_ms = None;
+        self.seen_generation = 0;
+        self.cached_descriptions.clear();
+    }
+
+    pub fn table_cache(&self) -> Option<&SharedTableCache> {
+        self.disk.as_ref()
+    }
+
+    /// Drop the saved table list and every saved definition.
+    pub fn clear_table_cache(&mut self) {
+        if let Some(disk) = &self.disk {
+            disk.clear();
+            self.seen_generation = disk.generation();
+        }
+        self.cached_names = None;
+        self.names_saved_at_ms = None;
+        self.names_were_cached = false;
+        self.last_read_from_cache = false;
+        self.cached_descriptions.clear();
+    }
+
     pub fn list_tables(&self) -> Result<Vec<String>, EngineError> {
         self.backend.list_tables()
+    }
+
+    /// Names from memory, then disk, then the backend.
+    ///
+    /// `refresh` skips memory and disk and stores the backend list.
+    pub fn cached_table_names(&mut self, refresh: bool) -> Result<Vec<String>, EngineError> {
+        self.note_disk_generation();
+        if !refresh {
+            if let Some(names) = &self.cached_names {
+                self.names_were_cached = true;
+                return Ok(names.clone());
+            }
+            if let Some(disk) = &self.disk {
+                if let Some(cached) = disk.get_names() {
+                    self.cached_names = Some(cached.names.clone());
+                    self.names_saved_at_ms = Some(cached.saved_at_ms);
+                    self.names_were_cached = true;
+                    return Ok(cached.names);
+                }
+            }
+        }
+        let names = self.backend.list_tables()?;
+        self.remember_names(&names);
+        self.names_were_cached = false;
+        Ok(names)
+    }
+
+    pub fn names_from_cache(&self) -> bool {
+        self.names_were_cached
+    }
+
+    pub fn names_saved_at_ms(&self) -> Option<u64> {
+        self.names_saved_at_ms
+    }
+
+    /// Definition already in memory or on disk. Does not call the backend.
+    pub fn cached_definition(&mut self, table: &str) -> Option<TableMeta> {
+        self.note_disk_generation();
+        if let Some(meta) = self.cached_descriptions.get(table) {
+            return Some(meta.clone());
+        }
+        let disk = self.disk.clone();
+        if let Some(disk) = disk {
+            if let Some(cached) = disk.get_definition(table) {
+                self.cached_descriptions
+                    .insert(table.to_string(), cached.meta.clone());
+                return Some(cached.meta);
+            }
+        }
+        None
+    }
+
+    /// Re-fetch definitions that are already cached. Does not describe anything else.
+    pub fn refresh_cached_definitions(&mut self) -> Result<usize, EngineError> {
+        self.note_disk_generation();
+        let mut names: Vec<String> = self.cached_descriptions.keys().cloned().collect();
+        if let Some(disk) = &self.disk {
+            for name in disk.definition_names() {
+                if !names.iter().any(|existing| existing == &name) {
+                    names.push(name);
+                }
+            }
+        }
+        names.sort();
+        let count = names.len();
+        for name in names {
+            match self.describe(&name, true)? {
+                Some(_) => {}
+                None => self.forget_definition(&name),
+            }
+        }
+        Ok(count)
     }
 
     pub fn describe(
@@ -76,17 +190,105 @@ impl<B: DynamoBackend> Engine<B> {
         refresh: bool,
     ) -> Result<Option<TableMeta>, EngineError> {
         if !refresh {
-            if let Some(meta) = self.cached_descriptions.get(table) {
-                return Ok(Some(meta.clone()));
+            if let Some(meta) = self.cached_definition(table) {
+                self.last_read_from_cache = true;
+                return Ok(Some(meta));
             }
         }
         let desc = self.backend.describe_table(table)?;
         if let Some(meta) = desc {
-            self.cached_descriptions
-                .insert(table.to_string(), meta.clone());
+            self.store_definition(&meta);
+            self.last_read_from_cache = false;
             Ok(Some(meta))
         } else {
+            self.last_read_from_cache = false;
             Ok(None)
+        }
+    }
+
+    pub fn last_read_from_cache(&self) -> bool {
+        self.last_read_from_cache
+    }
+
+    fn note_disk_generation(&mut self) {
+        let Some(disk) = self.disk.clone() else {
+            return;
+        };
+        let generation = disk.generation();
+        if generation != self.seen_generation {
+            self.cached_descriptions.clear();
+            self.cached_names = None;
+            self.names_saved_at_ms = None;
+            self.seen_generation = generation;
+        }
+    }
+
+    fn remember_names(&mut self, names: &[String]) {
+        self.cached_names = Some(names.to_vec());
+        if let Some(disk) = &self.disk {
+            self.names_saved_at_ms = Some(disk.put_names(names));
+            self.seen_generation = disk.generation();
+        } else {
+            self.names_saved_at_ms = Some(now_ms());
+        }
+    }
+
+    fn remember_created_name(&mut self, name: &str) {
+        self.note_disk_generation();
+        if self.cached_names.is_none() {
+            if let Some(disk) = &self.disk {
+                if let Some(cached) = disk.get_names() {
+                    self.cached_names = Some(cached.names);
+                    self.names_saved_at_ms = Some(cached.saved_at_ms);
+                }
+            }
+        }
+        let Some(names) = self.cached_names.clone() else {
+            return;
+        };
+        if names.iter().any(|existing| existing == name) {
+            return;
+        }
+        let mut names = names;
+        names.push(name.to_string());
+        names.sort();
+        self.remember_names(&names);
+    }
+
+    fn forget_name(&mut self, name: &str) {
+        self.note_disk_generation();
+        if self.cached_names.is_none() {
+            if let Some(disk) = &self.disk {
+                if let Some(cached) = disk.get_names() {
+                    self.cached_names = Some(cached.names);
+                    self.names_saved_at_ms = Some(cached.saved_at_ms);
+                }
+            }
+        }
+        let Some(names) = self.cached_names.clone() else {
+            return;
+        };
+        let names: Vec<String> = names
+            .into_iter()
+            .filter(|existing| existing != name)
+            .collect();
+        self.remember_names(&names);
+    }
+
+    fn store_definition(&mut self, meta: &TableMeta) {
+        self.cached_descriptions
+            .insert(meta.name.clone(), meta.clone());
+        if let Some(disk) = &self.disk {
+            disk.put_definition(meta);
+            self.seen_generation = disk.generation();
+        }
+    }
+
+    fn forget_definition(&mut self, name: &str) {
+        self.cached_descriptions.remove(name);
+        if let Some(disk) = &self.disk {
+            disk.remove_definition(name);
+            self.seen_generation = disk.generation();
         }
     }
 
@@ -333,9 +535,21 @@ impl<B: DynamoBackend> Engine<B> {
             Statement::DumpSchema { tables } => self.dump_schema(tables.as_deref()),
             Statement::ShowTables { like } => self.show_tables(like.as_deref()),
             Statement::Describe { table } => self.describe_statement(table),
+            Statement::Ls {
+                pattern,
+                refresh,
+                background,
+                metrics,
+            } => {
+                let report = self.ls_report(pattern.as_deref(), *refresh, *background, *metrics)?;
+                Ok(StatementResult::Schema(report.message()))
+            }
             Statement::Load { file, table } => self.load(file, table),
             Statement::Explain(inner) => self.explain(inner),
             Statement::Analyze(inner) => self.analyze(inner),
+            Statement::Help { topic } => help_page(topic.as_deref())
+                .map(StatementResult::Help)
+                .map_err(EngineError::Runtime),
         }
     }
 
@@ -360,8 +574,10 @@ impl<B: DynamoBackend> Engine<B> {
         let meta = TableMeta::from_create_statement(statement)
             .map_err(|err| EngineError::Runtime(err.to_string()))?;
         self.record("create_table", &meta.name);
-        let response = self.backend.create_table(meta, if_not_exists)?;
+        let response = self.backend.create_table(meta.clone(), if_not_exists)?;
         self.capture_capacity(response.capacity)?;
+        self.store_definition(&meta);
+        self.remember_created_name(&meta.name);
         Ok(StatementResult::Status(response.output))
     }
 
@@ -369,6 +585,8 @@ impl<B: DynamoBackend> Engine<B> {
         self.record("delete_table", name);
         let response = self.backend.delete_table(name, if_exists)?;
         self.capture_capacity(response.capacity)?;
+        self.forget_definition(name);
+        self.forget_name(name);
         Ok(StatementResult::Status(response.output))
     }
 
@@ -423,7 +641,11 @@ impl<B: DynamoBackend> Engine<B> {
         if let Some(keys_in) = &options.keys_in {
             validate_mutation_keys_in(options)?;
             let keys = self.keys_in_items(table, keys_in)?;
-            self.record("delete_item", table);
+            self.record_with_kwargs(
+                "delete_item",
+                table,
+                &explain_kwargs_for_mutation(None, condition),
+            );
             let response = self.delete_key_chunks(table, &keys, condition)?;
             return Ok(StatementResult::Affected(response.output));
         }
@@ -439,13 +661,17 @@ impl<B: DynamoBackend> Engine<B> {
             None
         };
         if let Some(plan) = &plan {
-            self.record_read_operation(plan.operation, table);
+            self.record_planned_read(table, plan, condition, &Selection::All, options);
         } else if condition.is_some() {
             self.record("query", table);
         } else {
             self.record("scan", table);
         }
-        self.record("delete_item", table);
+        self.record_with_kwargs(
+            "delete_item",
+            table,
+            &explain_kwargs_for_mutation(None, condition),
+        );
         self.report_progress(0, None, "write");
         let response = self
             .backend
@@ -475,7 +701,11 @@ impl<B: DynamoBackend> Engine<B> {
         if let Some(keys_in) = &options.keys_in {
             validate_mutation_keys_in(options)?;
             let keys = self.keys_in_items(table, keys_in)?;
-            self.record("update_item", table);
+            self.record_with_kwargs(
+                "update_item",
+                table,
+                &explain_kwargs_for_mutation(Some(update), condition),
+            );
             let response = self.update_key_chunks(table, &keys, update, condition, return_items)?;
             return finalize_update_result(response);
         }
@@ -484,7 +714,11 @@ impl<B: DynamoBackend> Engine<B> {
         } else {
             self.record("scan", table);
         }
-        self.record("update_item", table);
+        self.record_with_kwargs(
+            "update_item",
+            table,
+            &explain_kwargs_for_mutation(Some(update), condition),
+        );
         self.report_progress(0, None, "write");
         let response = self
             .backend
@@ -603,7 +837,11 @@ impl<B: DynamoBackend> Engine<B> {
         validate_read_keys_in(options, condition)?;
         let keys_in = options.keys_in.as_ref().expect("keys_in checked above");
         let keys = self.keys_in_items(table, keys_in)?;
-        self.record("batch_get_item", table);
+        self.record_with_kwargs(
+            "batch_get_item",
+            table,
+            &explain_kwargs_for_projection(selection, options),
+        );
         let response = self
             .backend
             .batch_get_keys(table, &keys, options.consistent)?;
@@ -629,7 +867,7 @@ impl<B: DynamoBackend> Engine<B> {
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
         let ordering = resolve_ordering(plan, options)?;
-        let mut kwargs = explain_kwargs_for_plan(plan, condition, options);
+        let mut kwargs = explain_kwargs_for_plan(plan, condition, selection, options);
         if let Some(forward) = ordering.scan_index_forward {
             kwargs.insert("desc".to_string(), (!forward).to_string());
             kwargs.insert("scan_index_forward".to_string(), forward.to_string());
@@ -700,9 +938,207 @@ impl<B: DynamoBackend> Engine<B> {
         Ok(StatementResult::Affected(response.output))
     }
 
+    pub fn ls_report(
+        &mut self,
+        pattern: Option<&str>,
+        refresh: bool,
+        background: bool,
+        metrics: bool,
+    ) -> Result<LsReport, EngineError> {
+        let metrics_note = if metrics { self.metrics_note() } else { None };
+        let refresh_hint = self.prepare_ls_cache(refresh, background)?;
+        self.record("list_tables", pattern.unwrap_or("*"));
+        let hint = refresh_hint.or_else(|| self.cache_hint());
+        let pattern = pattern.map(str::trim).filter(|pattern| !pattern.is_empty());
+        let (rows, note, detail) = if let Some(pattern) = pattern {
+            let (filtered, match_note) = self.resolve_ls_names(pattern)?;
+            match filtered.len() {
+                0 if is_glob(pattern) => (Vec::new(), merge_ls_note(None, hint), false),
+                0 => {
+                    return Err(EngineError::Runtime(format!("Table {pattern:?} not found")));
+                }
+                1 => {
+                    let name = filtered[0].clone();
+                    let fetch = refresh && !background;
+                    self.record("describe_table", &name);
+                    let meta = if fetch {
+                        self.describe_for_ls(&name, true, metrics)?
+                    } else {
+                        match self.cached_definition(&name) {
+                            Some(meta) if !metrics => Some(meta),
+                            _ => self.describe_for_ls(&name, false, metrics)?,
+                        }
+                    }
+                    .ok_or_else(|| EngineError::Runtime(format!("Table {name:?} not found")))?;
+                    let item_count = self.table_item_count(&name);
+                    (
+                        vec![LsRow {
+                            meta,
+                            item_count,
+                            size_bytes: 0,
+                        }],
+                        merge_ls_note(match_note, hint),
+                        true,
+                    )
+                }
+                _ => {
+                    let rows = self.ls_rows(&filtered);
+                    (rows, merge_ls_note(match_note, hint), false)
+                }
+            }
+        } else {
+            let names = self.cached_table_names(false)?;
+            let rows = self.ls_rows(&names);
+            (rows, merge_ls_note(None, hint), false)
+        };
+        Ok(LsReport {
+            metrics_note,
+            note,
+            rows,
+            detail,
+        })
+    }
+
+    fn prepare_ls_cache(
+        &mut self,
+        refresh: bool,
+        background: bool,
+    ) -> Result<Option<String>, EngineError> {
+        if background {
+            if let Some(disk) = &self.disk {
+                disk.start_refresh();
+            }
+            return Ok(None);
+        }
+        if !refresh {
+            return Ok(None);
+        }
+        let definitions = self.refresh_cached_definitions()?;
+        self.cached_table_names(true)?;
+        let text = if definitions == 0 {
+            "Refreshed the cached table list.".to_string()
+        } else if definitions == 1 {
+            "Refreshed the cached table list and 1 cached definition.".to_string()
+        } else {
+            format!("Refreshed the cached table list and {definitions} cached definitions.")
+        };
+        Ok(Some(text))
+    }
+
+    fn cache_hint(&self) -> Option<String> {
+        let (refreshing, error) = {
+            let disk = self.disk.as_ref()?;
+            (disk.refreshing(), disk.last_error())
+        };
+        if let Some(error) = error {
+            if !refreshing {
+                return Some(format!("Cache refresh failed: {error}"));
+            }
+        }
+        let age = self
+            .names_saved_at_ms()
+            .map(age_phrase)
+            .unwrap_or_else(|| "just now".to_string());
+        if refreshing {
+            if self.names_from_cache() {
+                return Some(format!(
+                    "Showing cached table list from {age}. Refreshing cached tables in the background."
+                ));
+            }
+            return Some("Refreshing cached tables in the background.".to_string());
+        }
+        if self.names_from_cache() {
+            return Some(format!("Showing cached table list from {age}."));
+        }
+        Some("Fetched the table list.".to_string())
+    }
+
+    fn resolve_ls_names(
+        &mut self,
+        pattern: &str,
+    ) -> Result<(Vec<String>, Option<String>), EngineError> {
+        let names = self.cached_table_names(false)?;
+        let exact: Vec<String> = names
+            .iter()
+            .filter(|name| glob_matches(pattern, name))
+            .cloned()
+            .collect();
+        if !exact.is_empty() {
+            return Ok((exact, None));
+        }
+        let mut tables = Vec::new();
+        for name in &names {
+            if let Some(meta) = self.cached_definition(name) {
+                tables.push(crate::MatchTable::from_meta(&meta));
+            }
+        }
+        match crate::intelligent_matches(&tables, pattern) {
+            Ok(hit) => Ok((hit.names, Some(hit.note))),
+            Err(_) if is_glob(pattern) => Ok((Vec::new(), None)),
+            Err(message) => Err(EngineError::Runtime(message)),
+        }
+    }
+
+    fn ls_rows(&mut self, names: &[String]) -> Vec<LsRow> {
+        let mut rows = Vec::with_capacity(names.len());
+        for name in names {
+            let meta = self
+                .cached_definition(name)
+                .unwrap_or_else(|| TableMeta::name_only(name));
+            let item_count = if meta.has_definition() {
+                self.table_item_count(name)
+            } else {
+                0
+            };
+            rows.push(LsRow {
+                meta,
+                item_count,
+                size_bytes: 0,
+            });
+        }
+        rows
+    }
+
+    fn describe_for_ls(
+        &mut self,
+        name: &str,
+        refresh: bool,
+        metrics: bool,
+    ) -> Result<Option<TableMeta>, EngineError> {
+        let mut meta = self.describe(name, refresh)?;
+        if metrics {
+            if let Some(meta) = meta.as_mut() {
+                self.backend.attach_consumed_metrics(meta)?;
+            }
+        }
+        Ok(meta)
+    }
+
+    fn metrics_note(&self) -> Option<String> {
+        if self.backend.is_local() {
+            return Some(
+                "note: metrics=True has no CloudWatch data for local/memory backends".to_string(),
+            );
+        }
+        #[cfg(not(feature = "cloudwatch"))]
+        {
+            let _ = self;
+            Some("note: CloudWatch metrics require rebuilding with --features watch".to_string())
+        }
+        #[cfg(feature = "cloudwatch")]
+        {
+            let _ = self;
+            None
+        }
+    }
+
     fn show_tables(&mut self, like: Option<&str>) -> Result<StatementResult, EngineError> {
         self.record("list_tables", like.unwrap_or("*"));
-        let mut names = self.table_names()?;
+        // Running the statement reloads the list and definitions already saved.
+        // Tables that have never been fetched stay name-only. The table browser,
+        // search, and lint still read the saved snapshots and do not reload on their own.
+        self.refresh_cached_definitions()?;
+        let mut names = self.cached_table_names(true)?;
         let Some(pattern) = like else {
             names.sort();
             // An empty note marks the full list. The CLI turns it into the same
@@ -722,7 +1158,10 @@ impl<B: DynamoBackend> Engine<B> {
             exact.sort();
             return Ok(StatementResult::Items(name_items(&exact)));
         }
-        let metas = self.describe_all(false)?;
+        let metas: Vec<TableMeta> = names
+            .iter()
+            .filter_map(|name| self.cached_definition(name))
+            .collect();
         let tables: Vec<_> = metas.iter().map(crate::MatchTable::from_meta).collect();
         match crate::intelligent_like_matches(&tables, pattern) {
             Ok(hit) => Ok(StatementResult::ItemsWithNote {
@@ -736,7 +1175,7 @@ impl<B: DynamoBackend> Engine<B> {
     fn describe_statement(&mut self, table: &str) -> Result<StatementResult, EngineError> {
         self.record("describe_table", table);
         let meta = self
-            .describe(table, false)?
+            .describe(table, true)?
             .ok_or_else(|| EngineError::Runtime(format!("Table {table:?} not found")))?;
         let text = crate::format_table_description(&meta, self.table_item_count(table), 0);
         Ok(StatementResult::Schema(text))
@@ -800,13 +1239,24 @@ impl<B: DynamoBackend> Engine<B> {
             throttle.map(|config| RateLimit::new(config.read_per_second, config.write_per_second));
     }
 
-    fn record_read_operation(&mut self, operation: Operation, table: &str) {
-        let operation = match operation {
+    fn record_planned_read(
+        &mut self,
+        table: &str,
+        plan: &QueryPlan,
+        condition: Option<&Condition>,
+        selection: &Selection,
+        options: &QueryOptions,
+    ) {
+        let operation = match plan.operation {
             Operation::Query => "query",
             Operation::Scan => "scan",
             Operation::BatchGetKeys => "batch_get_item",
         };
-        self.record(operation, table);
+        self.record_with_kwargs(
+            operation,
+            table,
+            &explain_kwargs_for_plan(plan, condition, selection, options),
+        );
     }
 
     fn record_update_read(
@@ -815,14 +1265,10 @@ impl<B: DynamoBackend> Engine<B> {
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) {
-        let operation = if condition.is_some() {
-            self.plan_read_operation(table, ReadKind::Scan, &Selection::All, condition, options)
-                .map(|plan| plan.operation)
-                .unwrap_or(Operation::Scan)
-        } else {
-            Operation::Scan
-        };
-        self.record_read_operation(operation, table);
+        match self.plan_read_operation(table, ReadKind::Scan, &Selection::All, condition, options) {
+            Ok(plan) => self.record_planned_read(table, &plan, condition, &Selection::All, options),
+            Err(_) => self.record("scan", table),
+        }
     }
 
     fn plan_read_operation(
@@ -881,6 +1327,91 @@ impl<B: DynamoBackend> Engine<B> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct LsRow {
+    pub meta: TableMeta,
+    pub item_count: usize,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LsReport {
+    pub metrics_note: Option<String>,
+    /// Intelligent-match note and the `cache:` line, joined the way `ls` prints them.
+    pub note: Option<String>,
+    pub rows: Vec<LsRow>,
+    pub detail: bool,
+}
+
+impl LsReport {
+    pub fn message(&self) -> String {
+        let body = if self.detail {
+            let row = &self.rows[0];
+            crate::format_table_description(&row.meta, row.item_count, row.size_bytes)
+        } else {
+            let rows: Vec<_> = self
+                .rows
+                .iter()
+                .map(|row| (&row.meta, row.item_count, row.size_bytes))
+                .collect();
+            crate::format_table_summary(&rows)
+        };
+        let mut text = String::new();
+        if let Some(note) = &self.metrics_note {
+            text.push_str(note);
+            text.push('\n');
+        }
+        if let Some(note) = self.note.as_deref().filter(|note| !note.is_empty()) {
+            text.push_str(note);
+            text.push_str("\n\n");
+        }
+        text.push_str(body.trim_end());
+        text
+    }
+}
+
+pub fn age_phrase(saved_at_ms: u64) -> String {
+    let elapsed = now_ms().saturating_sub(saved_at_ms) / 1000;
+    if elapsed < 5 {
+        "just now".to_string()
+    } else if elapsed < 60 {
+        format!("{elapsed}s ago")
+    } else if elapsed < 3600 {
+        format!("{}m ago", elapsed / 60)
+    } else {
+        format!("{}h ago", elapsed / 3600)
+    }
+}
+
+fn is_glob(pattern: &str) -> bool {
+    pattern.contains('*') || pattern.contains('?')
+}
+
+fn glob_matches(pattern: &str, name: &str) -> bool {
+    glob::Pattern::new(pattern)
+        .map(|pattern| pattern.matches(name))
+        .unwrap_or(false)
+}
+
+fn merge_ls_note(note: Option<String>, hint: Option<String>) -> Option<String> {
+    match (
+        note.filter(|text| !text.is_empty()),
+        hint.filter(|text| !text.is_empty()),
+    ) {
+        (Some(note), Some(hint)) => Some(format!("{note}\ncache: {hint}")),
+        (Some(note), None) => Some(note),
+        (None, Some(hint)) => Some(format!("cache: {hint}")),
+        (None, None) => None,
+    }
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 fn save_filename(filename: &str) -> &Path {
     Path::new(filename.trim_matches('"').trim_matches('\''))
 }
@@ -896,34 +1427,161 @@ fn format_explain_kwargs(kwargs: &BTreeMap<String, String>) -> String {
 fn explain_kwargs_for_plan(
     plan: &QueryPlan,
     condition: Option<&Condition>,
+    selection: &Selection,
     options: &QueryOptions,
 ) -> BTreeMap<String, String> {
     let mut kwargs = BTreeMap::new();
+    let mut rendered = Vec::new();
     if let Some(index) = &plan.index {
         kwargs.insert("index".to_string(), index.name.clone());
     }
     if let Some(key_condition) = &plan.key_condition {
-        if let Ok(rendered) = render_condition(key_condition) {
-            kwargs.insert("key_condition".to_string(), rendered.expression);
+        if let Ok(expression) = render_condition(key_condition) {
+            kwargs.insert("key_condition".to_string(), expression.expression.clone());
+            rendered.push(expression);
         }
     }
+    // Same filter the read sends: the planner's filter, or the whole predicate
+    // when the read is a scan with no key condition.
     let filter = plan
         .filter_condition
         .as_ref()
-        .or(if plan.key_condition.is_some() {
+        .or(if plan.key_condition.is_none() {
             condition
         } else {
             None
         });
     if let Some(filter) = filter {
-        if let Ok(rendered) = render_condition(filter) {
-            kwargs.insert("filter".to_string(), rendered.expression);
+        if let Ok(expression) = render_condition(filter) {
+            let expression = shift_rendered_expression(&expression, &rendered_refs(&rendered));
+            kwargs.insert("filter".to_string(), expression.expression.clone());
+            rendered.push(expression);
         }
+    }
+    let projection = render_projection(selection);
+    if !projection.expression.is_empty() {
+        let projection = shift_rendered_expression(&projection, &rendered_refs(&rendered));
+        kwargs.insert("attributes".to_string(), projection.expression.clone());
+        rendered.push(projection);
+    }
+    insert_expression_bindings(&mut kwargs, &rendered);
+    if options.consistent {
+        kwargs.insert("consistent".to_string(), "true".to_string());
+    }
+    kwargs
+}
+
+fn explain_kwargs_for_projection(
+    selection: &Selection,
+    options: &QueryOptions,
+) -> BTreeMap<String, String> {
+    let mut kwargs = BTreeMap::new();
+    let projection = render_projection(selection);
+    if !projection.expression.is_empty() {
+        kwargs.insert("attributes".to_string(), projection.expression.clone());
+        insert_expression_bindings(&mut kwargs, &[projection]);
     }
     if options.consistent {
         kwargs.insert("consistent".to_string(), "true".to_string());
     }
     kwargs
+}
+
+fn explain_kwargs_for_mutation(
+    update: Option<&UpdateExpr>,
+    condition: Option<&Condition>,
+) -> BTreeMap<String, String> {
+    let mut kwargs = BTreeMap::new();
+    let mut rendered = Vec::new();
+    if let Some(update) = update {
+        if let Ok(expression) = render_update(update) {
+            if !expression.expression.is_empty() {
+                kwargs.insert("expression".to_string(), expression.expression.clone());
+                rendered.push(expression);
+            }
+        }
+    }
+    if let Some(condition) = condition {
+        if let Ok(expression) = render_condition(condition) {
+            let expression = shift_rendered_expression(&expression, &rendered_refs(&rendered));
+            kwargs.insert("condition".to_string(), expression.expression.clone());
+            rendered.push(expression);
+        }
+    }
+    insert_expression_bindings(&mut kwargs, &rendered);
+    kwargs
+}
+
+fn rendered_refs(parts: &[RenderedExpression]) -> Vec<&RenderedExpression> {
+    parts.iter().collect()
+}
+
+fn insert_expression_bindings(kwargs: &mut BTreeMap<String, String>, parts: &[RenderedExpression]) {
+    let merged = merge_rendered_placeholders(&rendered_refs(parts));
+    if let Some(names) = merged.attribute_names {
+        kwargs.insert(
+            "attribute_names".to_string(),
+            format_attribute_names(&names),
+        );
+    }
+    if let Some(values) = merged.expression_values {
+        kwargs.insert(
+            "expression_values".to_string(),
+            format_expression_values(&values),
+        );
+    }
+}
+
+fn format_attribute_names(names: &BTreeMap<String, String>) -> String {
+    let body = names
+        .iter()
+        .map(|(placeholder, name)| format!("{placeholder:?}: {name:?}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{{{body}}}")
+}
+
+fn format_expression_values(values: &BTreeMap<String, DynamoValue>) -> String {
+    let body = values
+        .iter()
+        .map(|(placeholder, value)| format!("{placeholder:?}: {}", format_dynamo_literal(value)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{{{body}}}")
+}
+
+fn format_dynamo_literal(value: &DynamoValue) -> String {
+    match value {
+        DynamoValue::Null(_) => "null".to_string(),
+        DynamoValue::Bool(value) => value.to_string(),
+        DynamoValue::Number(value) => value.clone(),
+        DynamoValue::String(value) | DynamoValue::Binary(value) => format!("{value:?}"),
+        DynamoValue::NumberSet(values) => format!("[{}]", values.join(", ")),
+        DynamoValue::StringSet(values) | DynamoValue::BinarySet(values) => {
+            let inner = values
+                .iter()
+                .map(|value| format!("{value:?}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("[{inner}]")
+        }
+        DynamoValue::List(values) => {
+            let inner = values
+                .iter()
+                .map(format_dynamo_literal)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("[{inner}]")
+        }
+        DynamoValue::Map(values) => {
+            let inner = values
+                .iter()
+                .map(|(key, value)| format!("{key:?}: {}", format_dynamo_literal(value)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{{inner}}}")
+        }
+    }
 }
 
 fn plan_error_to_engine_error(err: PlanError) -> EngineError {
@@ -1248,6 +1906,55 @@ mod tests {
     }
 
     #[test]
+    fn describe_reloads_one_table_and_leaves_other_snapshots() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute(
+                "CREATE TABLE kept (id STRING HASH KEY);
+                 CREATE TABLE other (id STRING HASH KEY)",
+            )
+            .unwrap();
+        engine
+            .execute("ALTER TABLE kept SET THROUGHPUT (2, 3)")
+            .unwrap();
+        engine
+            .execute("ALTER TABLE other SET THROUGHPUT (4, 5)")
+            .unwrap();
+        assert!(engine
+            .cached_definition("kept")
+            .unwrap()
+            .throughput
+            .is_none());
+        let cached = engine.describe("kept", false).unwrap().unwrap();
+        assert!(
+            cached.throughput.is_none(),
+            "a cached describe stays on the snapshot"
+        );
+
+        match engine.execute("DESCRIBE kept").unwrap() {
+            StatementResult::Schema(text) => {
+                assert!(text.contains("THROUGHPUT (2, 3)"), "{text}");
+                assert!(text.contains("Read: 2"), "{text}");
+                assert!(text.contains("Write: 3"), "{text}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        assert!(engine
+            .cached_definition("kept")
+            .unwrap()
+            .throughput
+            .is_some());
+        assert!(
+            engine
+                .cached_definition("other")
+                .unwrap()
+                .throughput
+                .is_none(),
+            "DESCRIBE reloads only the named table"
+        );
+    }
+
+    #[test]
     fn show_tables_like_filters_names() {
         let mut engine = Engine::new(MemoryBackend::new());
         engine
@@ -1530,9 +2237,65 @@ mod tests {
             .unwrap();
         match result {
             StatementResult::Schema(schema) => {
-                assert!(schema.contains("query t"));
-                assert!(schema.contains("index"));
-                assert!(schema.contains("key_condition"));
+                assert!(schema.contains("query t"), "{schema}");
+                assert!(schema.contains("index"), "{schema}");
+                assert!(schema.contains("key_condition"), "{schema}");
+                assert!(schema.contains("expression_values"), "{schema}");
+                assert!(schema.contains(r#"\"a\""#), "{schema}");
+                assert!(schema.contains("150"), "{schema}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn explain_prints_attribute_names_and_values() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE t (id STRING HASH KEY, n NUMBER RANGE KEY)")
+            .unwrap();
+        let result = engine
+            .execute(
+                "EXPLAIN SELECT name FROM t WHERE id = 'a' AND n > 1 AND status = 'open' AND name = 'ada'",
+            )
+            .unwrap();
+        match result {
+            StatementResult::Schema(schema) => {
+                assert!(schema.contains("query t"), "{schema}");
+                assert!(schema.contains("id = :v1"), "{schema}");
+                assert!(schema.contains("n > :v2"), "{schema}");
+                assert!(schema.contains("'attribute_names'"), "{schema}");
+                assert!(schema.contains(r#"\"status\""#), "{schema}");
+                assert!(schema.contains(r#"\"name\""#), "{schema}");
+                assert!(schema.contains("'expression_values'"), "{schema}");
+                assert!(schema.contains(r#"\"a\""#), "{schema}");
+                assert!(schema.contains(r#"\"open\""#), "{schema}");
+                assert!(schema.contains(r#"\"ada\""#), "{schema}");
+                assert!(schema.contains(":v2"), "{schema}");
+                assert!(!schema.contains(":v5"), "{schema}");
+                assert!(schema.contains("'filter'"), "{schema}");
+                assert!(schema.contains("'attributes'"), "{schema}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn explain_key_query_does_not_repeat_the_key_as_a_filter() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE t (id STRING HASH KEY, n NUMBER RANGE KEY)")
+            .unwrap();
+        let result = engine
+            .execute("EXPLAIN SELECT * FROM t WHERE id = 'a' AND n > 1")
+            .unwrap();
+        match result {
+            StatementResult::Schema(schema) => {
+                assert!(schema.contains("id = :v1"), "{schema}");
+                assert!(schema.contains("n > :v2"), "{schema}");
+                assert!(schema.contains(r#"\"a\""#), "{schema}");
+                assert!(!schema.contains("'filter'"), "{schema}");
+                assert!(!schema.contains(":v3"), "{schema}");
             }
             other => panic!("unexpected result: {other:?}"),
         }
@@ -1900,5 +2663,198 @@ mod tests {
         let events = seen.lock().unwrap().clone();
         assert!(events.contains(&25), "{events:?}");
         assert!(!events.contains(&60), "{events:?}");
+    }
+
+    #[test]
+    fn refresh_reloads_only_cached_definitions() {
+        use crate::table_cache::{CachedDefinition, CachedNameList, TableCacheStore};
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Default)]
+        struct MemStore {
+            generation: std::sync::atomic::AtomicU64,
+            names: Mutex<Option<CachedNameList>>,
+            defs: Mutex<std::collections::BTreeMap<String, CachedDefinition>>,
+        }
+
+        impl TableCacheStore for MemStore {
+            fn generation(&self) -> u64 {
+                self.generation.load(std::sync::atomic::Ordering::Acquire)
+            }
+
+            fn refreshing(&self) -> bool {
+                false
+            }
+
+            fn get_names(&self) -> Option<CachedNameList> {
+                self.names.lock().expect("names").clone()
+            }
+
+            fn put_names(&self, names: &[String]) -> u64 {
+                *self.names.lock().expect("names") = Some(CachedNameList {
+                    saved_at_ms: 1,
+                    names: names.to_vec(),
+                });
+                self.generation
+                    .fetch_add(1, std::sync::atomic::Ordering::Release)
+            }
+
+            fn forget_names(&self) {
+                *self.names.lock().expect("names") = None;
+                self.generation
+                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+            }
+
+            fn get_definition(&self, name: &str) -> Option<CachedDefinition> {
+                self.defs.lock().expect("defs").get(name).cloned()
+            }
+
+            fn put_definition(&self, meta: &TableMeta) -> u64 {
+                self.defs.lock().expect("defs").insert(
+                    meta.name.clone(),
+                    CachedDefinition {
+                        saved_at_ms: 1,
+                        meta: meta.clone(),
+                    },
+                );
+                self.generation
+                    .fetch_add(1, std::sync::atomic::Ordering::Release)
+            }
+
+            fn remove_definition(&self, name: &str) {
+                self.defs.lock().expect("defs").remove(name);
+                self.generation
+                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+            }
+
+            fn definition_names(&self) -> Vec<String> {
+                let mut names: Vec<_> = self.defs.lock().expect("defs").keys().cloned().collect();
+                names.sort();
+                names
+            }
+
+            fn clear(&self) {
+                *self.names.lock().expect("names") = None;
+                self.defs.lock().expect("defs").clear();
+                self.generation
+                    .fetch_add(1, std::sync::atomic::Ordering::Release);
+            }
+        }
+
+        let store = Arc::new(MemStore::default());
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine.set_table_cache(Some(store.clone()));
+        engine
+            .execute(
+                "CREATE TABLE kept (id STRING HASH KEY);
+                 CREATE TABLE other (n NUMBER HASH KEY)",
+            )
+            .unwrap();
+        assert!(
+            store.get_names().is_none(),
+            "create does not invent a name list"
+        );
+        assert_eq!(
+            store.definition_names(),
+            vec!["kept".to_string(), "other".to_string()]
+        );
+
+        store.remove_definition("other");
+        engine.set_table_cache(Some(store.clone()));
+        let names = engine.cached_table_names(false).unwrap();
+        assert_eq!(names, vec!["kept".to_string(), "other".to_string()]);
+        assert!(engine.cached_definition("kept").is_some());
+        assert!(engine.cached_definition("other").is_none());
+
+        engine
+            .execute("ALTER TABLE kept CREATE GLOBAL INDEX ('by-n', n NUMBER)")
+            .unwrap();
+        assert_eq!(engine.refresh_cached_definitions().unwrap(), 1);
+        let kept = engine.cached_definition("kept").unwrap();
+        assert!(kept.global_indexes.contains_key("by-n"));
+        assert!(
+            engine.cached_definition("other").is_none(),
+            "refresh must not describe tables that were never cached"
+        );
+        engine.cached_table_names(true).unwrap();
+        assert!(engine.cached_definition("other").is_none());
+
+        engine
+            .execute("ALTER TABLE kept SET THROUGHPUT (8, 9)")
+            .unwrap();
+        assert!(
+            engine
+                .cached_definition("kept")
+                .unwrap()
+                .throughput
+                .is_none(),
+            "an alter leaves the saved definition in place"
+        );
+        engine.execute("SHOW TABLES").unwrap();
+        assert!(
+            engine
+                .cached_definition("kept")
+                .unwrap()
+                .throughput
+                .is_some(),
+            "SHOW reloads definitions that are already saved"
+        );
+        assert!(
+            engine.cached_definition("other").is_none(),
+            "SHOW must not describe tables that were never cached"
+        );
+        assert!(
+            !engine.names_from_cache(),
+            "SHOW reloads the table list instead of reusing it"
+        );
+
+        engine.clear_table_cache();
+        assert!(store.get_names().is_none());
+        assert!(store.definition_names().is_empty());
+        assert!(engine.cached_definition("kept").is_none());
+    }
+
+    #[test]
+    fn ls_lists_and_describes() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE posts (id STRING HASH KEY);")
+            .unwrap();
+        engine
+            .execute("CREATE TABLE nb_posts (id STRING HASH KEY);")
+            .unwrap();
+        let listed = engine.execute("LS;").unwrap();
+        let StatementResult::Schema(text) = listed else {
+            panic!("expected schema, got {listed:?}");
+        };
+        assert!(text.starts_with("Tables"), "{text}");
+        assert!(text.contains("posts"), "{text}");
+        assert!(text.contains("nb_posts"), "{text}");
+        assert!(!text.contains("cache:"), "{text}");
+
+        let one = engine.execute("ls posts;").unwrap();
+        let StatementResult::Schema(text) = one else {
+            panic!("expected schema, got {one:?}");
+        };
+        assert!(text.contains("Name: posts"), "{text}");
+        assert!(text.contains("Hash Key: id"), "{text}");
+        assert!(!text.contains("nb_posts"), "{text}");
+
+        let err = engine.execute("ls missing;").unwrap_err();
+        assert!(err.to_string().contains("not found"), "{err}");
+
+        let glob = engine.execute("ls missing*;").unwrap();
+        let StatementResult::Schema(text) = glob else {
+            panic!("expected schema, got {glob:?}");
+        };
+        assert!(text.contains("Tables"), "{text}");
+        assert!(!text.contains("Hash Key"), "{text}");
+        assert!(!text.contains("posts"), "{text}");
+
+        let fresh = engine.execute("ls posts refresh=True;").unwrap();
+        let StatementResult::Schema(text) = fresh else {
+            panic!("expected schema, got {fresh:?}");
+        };
+        assert!(text.contains("Hash Key: id"), "{text}");
     }
 }

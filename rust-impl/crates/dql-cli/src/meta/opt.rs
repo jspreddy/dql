@@ -178,6 +178,7 @@ mod tests {
             region: "memory".to_string(),
             history: HistoryManager::new(),
             throttle: TableLimits::default(),
+            table_disk: None,
         }
     }
 

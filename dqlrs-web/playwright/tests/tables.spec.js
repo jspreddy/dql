@@ -1,5 +1,6 @@
 import { test, expect } from "../support/app.js";
-import { colorPattern, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
+import { playwrightArtifact } from "../support/artifacts.js";
+import { colorPattern, openResultPane, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
 
 test("opens the table browser from the #tables hash", async ({ page, app }) => {
   await page.goto(`${app.baseURL}/#tables`);
@@ -13,7 +14,7 @@ test("opens the table browser from the #tables hash", async ({ page, app }) => {
   const heading = await page.locator(".side-heading").evaluate((row) =>
     [...row.children].map((child) => child.id),
   );
-  expect(heading).toEqual(["side-title", "refresh-tables"]);
+  expect(heading).toEqual(["side-title", "refresh-tables", "table-cache"]);
   await expect(page.locator("#tree")).toBeHidden();
   await expect(page.locator("#tables-nav")).toBeVisible();
   await expect(page.locator(".side #table-list")).toBeVisible();
@@ -22,6 +23,7 @@ test("opens the table browser from the #tables hash", async ({ page, app }) => {
   await page.locator("#mode-query").click();
   await expect(page.locator("#side-title")).toHaveText("Files");
   await expect(page.locator("#refresh-tables")).toBeHidden();
+  await expect(page.locator("#table-cache")).toBeHidden();
   await expect(page.locator("#tree")).toBeVisible();
   await expect(page.locator("#tables-nav")).toBeHidden();
   await expect(page.locator("#new-file")).toBeVisible();
@@ -44,9 +46,65 @@ test("refresh button reloads the table list without the description cache", asyn
   });
   await button.click();
   const request = await pending;
-  expect(new URL(request.url()).searchParams.get("pattern")).toBe("");
+  const params = new URL(request.url()).searchParams;
+  expect(params.get("pattern")).toBe("");
+  expect(params.get("async")).toBe("1");
   await expect(button).toBeEnabled();
   await expect(page.locator("#table-list")).not.toHaveText("Loading…");
+  const cache = page.locator("#table-cache");
+  await expect(cache).toBeVisible();
+  await expect(cache.locator(".table-cache-age")).toHaveText(/^\((just now|\d+s ago|\d+ min ago|\d+ hr ago|\d+ day ago|\d+ days ago)\)$/);
+  await cache.hover();
+  await expect(cache.locator(".table-cache-tip")).toBeVisible();
+  await expect(cache.locator(".table-cache-tip")).toContainText("cached");
+});
+
+test("settings menu clears the table cache", async ({ page, app }) => {
+  const first = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.ok() && url.pathname === "/api/tables" && url.searchParams.get("refresh") !== "1";
+  });
+  await page.goto(`${app.baseURL}/#tables`);
+  await first;
+  await expect(page.locator("#table-cache")).toBeVisible();
+
+  const settings = await page.locator("#settings-toggle").boundingBox();
+  const theme = await page.locator("#theme-toggle").boundingBox();
+  expect(settings.x + settings.width).toBeLessThanOrEqual(theme.x + 1);
+  expect(Math.abs(settings.y - theme.y)).toBeLessThan(4);
+
+  await page.locator("#settings-toggle").click();
+  await expect(page.locator("#settings-pop")).toBeVisible();
+  await expect(page.locator("#opt-minimal-write")).toBeVisible();
+  await expect(page.locator("#opt-even-odd")).toBeVisible();
+  const sidebarAge = await page.locator(".table-cache-age").innerText();
+  await expect(page.locator("#settings-cache-age")).toHaveText(sidebarAge);
+  await expect(page.locator("#settings-cache-age")).toHaveAttribute("title", /.+/);
+
+  const cleared = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === "POST" && url.pathname === "/api/table-cache/clear" && response.ok();
+  });
+  const listed = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.ok() && url.pathname === "/api/tables";
+  });
+  await page.locator("#clear-table-cache").click();
+  await cleared;
+  await listed;
+  await expect(page.locator("#cache-clear-note")).toHaveText("Table cache cleared.");
+  await expect(page.locator("#clear-table-cache")).toBeEnabled();
+  await expect(page.locator(".table-cache-tip")).toHaveText("Fetched the table list.");
+  await expect(page.locator(".table-cache-age")).toHaveText("(just now)");
+  await expect(page.locator("#settings-cache-age")).toHaveText("(just now)");
+});
+
+test("settings menu shows the cache age before the table list is open", async ({ page, app }) => {
+  await page.goto(app.baseURL);
+  await page.locator("#settings-toggle").click();
+  await expect(page.locator("#settings-pop")).toBeVisible();
+  await expect(page.locator("#settings-cache-age")).toHaveText("not cached");
+  await expect(page.locator("#settings-cache-age")).toHaveAttribute("title", "No table list cached.");
 });
 
 test("searching tables filters the cached list without refresh", async ({ page, app }) => {
@@ -461,6 +519,7 @@ test("gives each query result its own named card and structure icon", async ({ p
   );
   await pressMod(page, "A");
   await page.locator("#run").click();
+  await openResultPane(page, "history");
   await expect(page.locator(".result-card")).toHaveCount(2);
   await expect(page.locator("#result-meta")).toBeEmpty();
   await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("1 row");
@@ -498,6 +557,74 @@ test("gives each query result its own named card and structure icon", async ({ p
   expect(extra).toEqual([]);
   await page.keyboard.press("Escape");
   await expect(page.locator("#schema-pop")).toBeHidden();
+});
+
+test("scrolls a wide result table sideways inside the card", async ({ page, app }, testInfo) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  const columns = Array.from({ length: 14 }, (_, index) => `col_${String(index + 1).padStart(2, "0")}`);
+  const values = columns.map((column) => `'${column}-value'`);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY);`,
+      `INSERT INTO ${name} (id, ${columns.join(", ")}) VALUES ('row-1', ${values.join(", ")});`,
+      `SELECT * FROM ${name} WHERE id = 'row-1';`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+
+  const card = page.locator(`.result-card[data-table="${name}"]`);
+  const scroller = card.locator(".result-card-body");
+  await expect(card).toBeVisible();
+  await expect(page.locator("#result-table thead th")).toHaveText(["id", ...columns]);
+  await expect(page.locator("#result-table")).toContainText("col_14-value");
+
+  const paneBox = await page.locator("#result-body").boundingBox();
+  const cardBox = await card.boundingBox();
+  expect(cardBox.x).toBeGreaterThanOrEqual(paneBox.x - 1);
+  expect(cardBox.x + cardBox.width).toBeLessThanOrEqual(paneBox.x + paneBox.width + 1);
+
+  const metrics = await scroller.evaluate((node) => ({
+    client: node.clientWidth,
+    scroll: node.scrollWidth,
+    overflowX: getComputedStyle(node).overflowX,
+  }));
+  expect(metrics.overflowX).toBe("auto");
+  expect(metrics.scroll).toBeGreaterThan(metrics.client + 24);
+
+  const last = page.locator("#result-table thead th").last();
+  const clipped = await last.evaluate((cell) => {
+    const box = cell.getBoundingClientRect();
+    const parent = cell.closest(".result-card-body").getBoundingClientRect();
+    return box.right > parent.right + 8;
+  });
+  expect(clipped).toBe(true);
+  await card.screenshot({
+    path: playwrightArtifact(`result-table-scroll-start-${testInfo.project.name}.png`),
+  });
+
+  await scroller.hover();
+  await page.mouse.wheel(480, 0);
+  await expect.poll(async () => scroller.evaluate((node) => node.scrollLeft)).toBeGreaterThan(20);
+
+  await scroller.evaluate((node) => {
+    node.scrollLeft = node.scrollWidth;
+  });
+  const endVisible = await last.evaluate((cell) => {
+    const box = cell.getBoundingClientRect();
+    const parent = cell.closest(".result-card-body").getBoundingClientRect();
+    return box.right <= parent.right + 2 && box.left < parent.right - 8;
+  });
+  expect(endVisible).toBe(true);
+  await card.screenshot({
+    path: playwrightArtifact(`result-table-scroll-end-${testInfo.project.name}.png`),
+  });
 });
 
 function uniqueTable() {

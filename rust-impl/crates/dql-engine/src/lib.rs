@@ -6,26 +6,30 @@ mod convert;
 mod engine;
 mod file_io;
 pub mod fragment;
+mod help;
 pub mod json_util;
 mod memory;
 mod progress;
 mod query_context;
+mod table_cache;
 mod table_match;
 mod table_text;
 mod throttle;
 
 pub use fragment::FragmentEngine;
+pub use help::{help_page, topic_help, HelpBlock, HelpPage};
 
 pub use throttle::RateLimit;
 
 pub use aws::{CallerIdentity, SdkBackend, SdkConfig};
 pub use cancel::CancelFlag;
-pub use engine::Engine;
+pub use engine::{age_phrase, Engine, LsReport, LsRow};
 pub use memory::MemoryBackend;
 pub use progress::{ProgressEvent, ProgressSink, WRITE_PROGRESS_CHUNK};
 pub use query_context::{query_context_from_read, LastQueryContext};
+pub use table_cache::{CachedDefinition, CachedNameList, SharedTableCache, TableCacheStore};
 pub use table_match::{intelligent_like_matches, intelligent_matches, MatchTable};
-pub use table_text::format_table_description;
+pub use table_text::{format_table_description, format_table_summary};
 
 use crate::json_util::{item_to_json, string_to_json};
 use dql_parser::{AlterAction, Condition, OrderBy, QueryOptions, Selection, UpdateExpr};
@@ -53,6 +57,8 @@ pub enum StatementResult {
         note: String,
     },
     Schema(String),
+    /// `HELP` or `HELP <topic>`.
+    Help(HelpPage),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -190,6 +196,17 @@ pub trait DynamoBackend {
     fn set_cancel_flag(&mut self, flag: CancelFlag) {
         let _ = flag;
     }
+
+    /// Local DynamoDB and the in-memory backend have no CloudWatch metrics.
+    fn is_local(&self) -> bool {
+        true
+    }
+
+    /// Attach consumed-capacity metrics onto a described table. The default is a no-op.
+    fn attach_consumed_metrics(&self, meta: &mut dql_models::TableMeta) -> Result<(), EngineError> {
+        let _ = meta;
+        Ok(())
+    }
 }
 
 pub fn in_memory_engine() -> InMemoryEngine {
@@ -215,6 +232,7 @@ impl StatementResult {
             }
             StatementResult::Affected(count) => format!("{count}\n"),
             StatementResult::Schema(schema) => string_to_json(schema),
+            StatementResult::Help(page) => page.to_value().to_string() + "\n",
             StatementResult::Status(_) | StatementResult::None => String::new(),
         }
     }
@@ -240,6 +258,7 @@ impl fmt::Display for StatementResult {
                 Ok(())
             }
             StatementResult::Schema(schema) => writeln!(f, "{schema}"),
+            StatementResult::Help(page) => writeln!(f, "{}", page.plain()),
         }
     }
 }

@@ -390,18 +390,63 @@ pub fn render_projection(selection: &Selection) -> RenderedExpression {
     let mut visitor = Visitor::with_default_reserved_words();
     let expression = match selection {
         Selection::All | Selection::CountAll => String::new(),
-        Selection::Items(items) => items
-            .iter()
-            .flat_map(|item| extract_fields(&item.expression))
-            .map(|field| visitor.get_field(&field))
-            .collect::<Vec<_>>()
-            .join(", "),
+        Selection::Items(items) => {
+            let mut paths = Vec::new();
+            for item in items {
+                for field in extract_fields(&item.expression) {
+                    let fetch = dynamo_fetch_path(&field);
+                    if fetch.is_empty() || paths.iter().any(|existing: &String| existing == &fetch)
+                    {
+                        continue;
+                    }
+                    paths.push(fetch);
+                }
+            }
+            // DynamoDB rejects a projection where one path is a prefix of another
+            // (`a` and `a.b`, or `tags` and `tags[0].name`). Fetch the whole item
+            // and let the client shape the columns.
+            if paths.iter().any(|left| {
+                paths
+                    .iter()
+                    .any(|right| left != right && projection_paths_overlap(left, right))
+            }) {
+                String::new()
+            } else {
+                paths
+                    .iter()
+                    .map(|field| visitor.get_field(field))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
+        }
     };
     RenderedExpression {
         expression,
         attribute_names: visitor.attribute_names(),
         expression_values: visitor.expression_values(),
     }
+}
+
+/// `a[].b` cannot be a ProjectionExpression. Fetch the list `a` and expand it
+/// on the client. `a[0].b` and `a.b.c` are already legal document paths.
+fn dynamo_fetch_path(field: &str) -> String {
+    match field.find("[]") {
+        Some(index) => field[..index].to_string(),
+        None => field.to_string(),
+    }
+}
+
+fn projection_paths_overlap(left: &str, right: &str) -> bool {
+    let (shorter, longer) = if left.len() <= right.len() {
+        (left, right)
+    } else {
+        (right, left)
+    };
+    longer.starts_with(shorter)
+        && longer
+            .as_bytes()
+            .get(shorter.len())
+            .is_some_and(|ch| *ch == b'.' || *ch == b'[')
 }
 
 pub fn dynamo_to_value(value: &DynamoValue) -> Result<Value, ExprError> {
@@ -996,8 +1041,99 @@ fn tokenize_selection(expression: &str) -> Vec<String> {
     tokens
 }
 
+enum PathSeg {
+    Field(String),
+    Index(usize),
+    Each,
+}
+
 fn item_field(item: &BTreeMap<String, Value>, field: &str) -> Option<Value> {
-    item.get(field).cloned()
+    match parse_attr_path(field) {
+        Some(path) => Some(resolve_selection_path(item, &path)),
+        None => item.get(field).cloned(),
+    }
+}
+
+fn parse_attr_path(field: &str) -> Option<Vec<PathSeg>> {
+    let mut rest = field;
+    let mut steps = Vec::new();
+    let (name, next) = take_path_name(rest)?;
+    steps.push(PathSeg::Field(name));
+    rest = next;
+    while !rest.is_empty() {
+        if let Some(tail) = rest.strip_prefix('.') {
+            let (name, next) = take_path_name(tail)?;
+            steps.push(PathSeg::Field(name));
+            rest = next;
+        } else {
+            let tail = rest.strip_prefix('[')?;
+            if let Some(next) = tail.strip_prefix(']') {
+                steps.push(PathSeg::Each);
+                rest = next;
+            } else {
+                let end = tail.find(']')?;
+                let raw = &tail[..end];
+                if raw.is_empty() || !raw.chars().all(|ch| ch.is_ascii_digit()) {
+                    return None;
+                }
+                steps.push(PathSeg::Index(raw.parse().ok()?));
+                rest = &tail[end + 1..];
+            }
+        }
+    }
+    Some(steps)
+}
+
+fn take_path_name(input: &str) -> Option<(String, &str)> {
+    let len = input
+        .char_indices()
+        .take_while(|(_, ch)| ch.is_ascii_alphanumeric() || *ch == '_' || *ch == '-')
+        .last()
+        .map(|(index, ch)| index + ch.len_utf8())?;
+    if len == 0 {
+        return None;
+    }
+    Some((input[..len].to_string(), &input[len..]))
+}
+
+fn resolve_selection_path(item: &BTreeMap<String, Value>, steps: &[PathSeg]) -> Value {
+    let Some((PathSeg::Field(root), rest)) = steps.split_first() else {
+        return Value::Null;
+    };
+    match item.get(root) {
+        Some(value) => walk_selection_value(value, rest),
+        None => Value::Null,
+    }
+}
+
+fn walk_selection_value(value: &Value, steps: &[PathSeg]) -> Value {
+    let Some((step, rest)) = steps.split_first() else {
+        return value.clone();
+    };
+    match step {
+        PathSeg::Field(name) => match value {
+            Value::Map(map) => match map.get(name) {
+                Some(next) => walk_selection_value(next, rest),
+                None => Value::Null,
+            },
+            _ => Value::Null,
+        },
+        PathSeg::Index(index) => match value {
+            Value::List(list) => match list.get(*index) {
+                Some(next) => walk_selection_value(next, rest),
+                None => Value::Null,
+            },
+            _ => Value::Null,
+        },
+        PathSeg::Each => match value {
+            Value::List(list) => Value::List(
+                list.iter()
+                    .map(|item| walk_selection_value(item, rest))
+                    .collect(),
+            ),
+            _ => Value::Null,
+        },
+    }
 }
 
 fn timestamp_expr_from_value(value: &Value) -> Result<TimestampExpr, ExprError> {
@@ -1233,6 +1369,91 @@ mod tests {
             rendered.attribute_names.unwrap(),
             BTreeMap::from([("#f1".to_string(), "order".to_string())])
         );
+    }
+
+    #[test]
+    fn projects_nested_maps_indexes_and_wildcard_lists() {
+        let mut city = BTreeMap::new();
+        city.insert("name".to_string(), Value::String("London".to_string()));
+        let mut author = BTreeMap::new();
+        author.insert("name".to_string(), Value::String("Ada".to_string()));
+        author.insert("city".to_string(), Value::Map(city));
+        let tag = |name: &str| {
+            let mut map = BTreeMap::new();
+            map.insert("name".to_string(), Value::String(name.to_string()));
+            Value::Map(map)
+        };
+        let mut missing = BTreeMap::new();
+        missing.insert("other".to_string(), Value::Number("1".to_string()));
+        let mut inner = BTreeMap::new();
+        inner.insert(
+            "c".to_string(),
+            Value::List(vec![
+                Value::String("x".to_string()),
+                Value::String("y".to_string()),
+            ]),
+        );
+        let mut item = BTreeMap::new();
+        item.insert("author".to_string(), Value::Map(author));
+        item.insert(
+            "tags".to_string(),
+            Value::List(vec![tag("rust"), tag("db"), Value::Map(missing)]),
+        );
+        item.insert("groups".to_string(), Value::List(vec![Value::Map(inner)]));
+
+        let selection = parse_selection(
+            "author.city.name AS city, tags[0].name, tags[9].name, tags[].name AS names, missing.path, groups[].c[]",
+        )
+        .unwrap();
+        let projected = project_selection(&item, &selection);
+        assert_eq!(
+            projected.get("city"),
+            Some(&Value::String("London".to_string()))
+        );
+        assert_eq!(
+            projected.get("tags[0].name"),
+            Some(&Value::String("rust".to_string()))
+        );
+        assert_eq!(projected.get("tags[9].name"), Some(&Value::Null));
+        assert_eq!(
+            projected.get("names"),
+            Some(&Value::List(vec![
+                Value::String("rust".to_string()),
+                Value::String("db".to_string()),
+                Value::Null,
+            ]))
+        );
+        assert_eq!(projected.get("missing.path"), Some(&Value::Null));
+        assert_eq!(
+            projected.get("groups[].c[]"),
+            Some(&Value::List(vec![Value::List(vec![
+                Value::String("x".to_string()),
+                Value::String("y".to_string()),
+            ])]))
+        );
+    }
+
+    #[test]
+    fn renders_nested_projection_without_overlapping_paths() {
+        let wildcard = render_projection(&parse_selection("tags[].name, tags[].other").unwrap());
+        assert_eq!(wildcard.expression, "tags");
+        assert!(wildcard.attribute_names.is_none());
+
+        let indexed = render_projection(
+            &parse_selection("author.city.name, tags[0].name, order.foo").unwrap(),
+        );
+        assert_eq!(indexed.expression, "author.city.#f1, tags[0].#f1, #f2.foo");
+        let names = indexed.attribute_names.unwrap();
+        assert_eq!(names.get("#f1"), Some(&"name".to_string()));
+        assert_eq!(names.get("#f2"), Some(&"order".to_string()));
+
+        let overlap = render_projection(&parse_selection("author, author.city.name").unwrap());
+        assert_eq!(overlap.expression, "");
+        assert!(overlap.attribute_names.is_none());
+
+        let list_and_index =
+            render_projection(&parse_selection("tags[].name, tags[0].name").unwrap());
+        assert_eq!(list_and_index.expression, "");
     }
 
     #[test]

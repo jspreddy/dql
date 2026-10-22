@@ -40,6 +40,7 @@ test("parseLsMessage keeps an intelligent-match note on a description and a list
   const note = 'No exact match for "post", so showing similar names.';
   const one = parseLsMessage(`${note}\n\n${detail}`);
   assert.equal(one.note, note);
+  assert.equal(one.cache, "");
   assert.equal(one.description.name, "posts");
   assert.equal(one.summary, "");
 
@@ -60,8 +61,28 @@ test("parseLsMessage keeps an intelligent-match note on a description and a list
 
   const exact = parseLsMessage(detail);
   assert.equal(exact.note, "");
+  assert.equal(exact.cache, "");
   assert.equal(exact.description.name, "posts");
   assert.deepEqual(exact.tables, []);
+
+  const cachedDetail = parseLsMessage(`cache: Fetched the table list.\n\n${detail}`);
+  assert.equal(cachedDetail.note, "");
+  assert.equal(cachedDetail.cache, "Fetched the table list.");
+  assert.equal(cachedDetail.description.name, "posts");
+  assert.equal(cachedDetail.description.rangeKey.name, "n");
+  assert.equal(cachedDetail.description.extra.includes("cache:"), false);
+
+  const cachedList = parseLsMessage(`${note}\ncache: Showing cached table list from 1 min ago.\n\n${summary}`);
+  assert.equal(cachedList.note, note);
+  assert.equal(cachedList.cache, "Showing cached table list from 1 min ago.");
+  assert.equal(cachedList.description, null);
+  assert.equal(cachedList.tables.length, 2);
+  assert.equal(cachedList.tables[0].name, "posts_v2");
+
+  const cacheFirst = parseLsMessage(`cache: Cache refresh failed: timeout.\n\n${note}\n\n${summary}`);
+  assert.equal(cacheFirst.note, note);
+  assert.equal(cacheFirst.cache, "Cache refresh failed: timeout.");
+  assert.equal(cacheFirst.tables.length, 2);
 
   const related = parseLsMessage(
     'No exact match for "customer_id", so showing related keys.\n\n' + summary,

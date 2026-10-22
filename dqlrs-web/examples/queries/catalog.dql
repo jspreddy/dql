@@ -94,3 +94,11 @@ WHERE sku = 'CABLE-USBC' AND revision = 2;
 
 DELETE FROM sample_catalog
 WHERE sku = 'SEED-0' AND revision = 0;
+
+
+describe sample_catalog;
+
+scan sku, revision, gallery from sample_catalog;
+
+-- collect attributes by dot notation
+scan sku, revision, gallery[].kind as kind, gallery[].h as h, gallery[].url as url from sample_catalog; 
