@@ -47,7 +47,7 @@ In the temp folder:
 - `hours-worked.json` and `hours.html` — hours worked, defined below.
 - `summary.json` and `work-metrics.html` — the combined page.
 
-The timeline and the hours-worked chart stay on calendar days. Token spend uses the chosen bin. Pull requests stay on the merge day. Commit circles sit on the token axis at 4 million tokens per commit, so 10 commits are level with 40 million, and a larger circle is more commits.
+The timeline and the hours-worked chart stay on calendar days. Token spend uses the chosen bin. An hour bin is a stem with a marker, because a bar one hour wide disappears on a span of months. Day and month bins stay bars. Pull requests stay on the merge day. Commit circles sit on the token axis at 4 million tokens per commit, so 10 commits are level with 40 million, and a larger circle is more commits.
 
 Series colors live in `phases.json` and in `PALETTE` in the script. Neighboring series stay far apart in hue. Do not put two browns, two blues, or two greens next to each other.
 

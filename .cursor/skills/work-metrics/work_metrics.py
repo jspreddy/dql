@@ -351,16 +351,41 @@ def hours_figure(days: list[str], series: list[tuple[str, str, list[int]]]) -> g
 
 def token_bin_figure(rows: list[dict], grain: str, start: datetime, end: datetime) -> go.Figure:
     fig = go.Figure()
-    fig.add_bar(
-        x=[row["at"] for row in rows],
-        y=[row["tokens_millions"] for row in rows],
-        name="Tokens (millions)",
-        marker_color=TOKEN_BAR_COLOR,
-        hovertemplate="%{customdata}: %{y:.1f} million tokens<extra></extra>",
-        customdata=[row["label"] for row in rows],
-    )
-    width = {"hour": 40 * 60 * 1000, "day": 16 * 3600 * 1000, "month": 20 * 24 * 3600 * 1000}[grain]
-    fig.update_traces(width=width)
+    if grain == "hour":
+        # A one-hour bar is thinner than a pixel across a span of months.
+        stem_x: list[str | None] = []
+        stem_y: list[float | None] = []
+        for row in rows:
+            stem_x.extend([row["at"], row["at"], None])
+            stem_y.extend([0, row["tokens_millions"], None])
+        fig.add_scatter(
+            x=stem_x,
+            y=stem_y,
+            mode="lines",
+            line=dict(color=TOKEN_BAR_COLOR, width=1.6),
+            hoverinfo="skip",
+            showlegend=False,
+        )
+        fig.add_scatter(
+            x=[row["at"] for row in rows],
+            y=[row["tokens_millions"] for row in rows],
+            mode="markers",
+            marker=dict(color=TOKEN_BAR_COLOR, size=7, line=dict(color="#fffdf8", width=1)),
+            hovertemplate="%{customdata}: %{y:.1f} million tokens<extra></extra>",
+            customdata=[row["label"] for row in rows],
+            showlegend=False,
+        )
+    else:
+        fig.add_bar(
+            x=[row["at"] for row in rows],
+            y=[row["tokens_millions"] for row in rows],
+            name="Tokens (millions)",
+            marker_color=TOKEN_BAR_COLOR,
+            hovertemplate="%{customdata}: %{y:.1f} million tokens<extra></extra>",
+            customdata=[row["label"] for row in rows],
+        )
+        width = {"day": 16 * 3600 * 1000, "month": 20 * 24 * 3600 * 1000}[grain]
+        fig.update_traces(width=width)
     apply_layout(fig, 420)
     fig.update_layout(
         yaxis=dict(title="Tokens (millions)", rangemode="tozero", **AXIS),
@@ -955,7 +980,7 @@ def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure],
 
       <h2 id="token-spend">Token spend by {html.escape(bin_label)}</h2>
       <div class="figure">{fig_div(figures["tokens"], "tokens")}</div>
-      <p class="caption">Millions of tokens kept for this repo, one bar per {html.escape(bin_label)}. The axis keeps the full span.</p>
+      <p class="caption">Millions of tokens kept for this repo, one {html.escape("stem" if summary["bin"] == "hour" else "bar")} per {html.escape(bin_label)}. The axis keeps the full span.</p>
 
       <h2 id="pull-requests">Pull requests merged, by day</h2>
       <div class="figure">{fig_div(figures["pulls"], "pulls")}</div>
