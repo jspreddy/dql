@@ -47,6 +47,12 @@ const KEYWORDS: &[&str] = &[
     "LOAD",
     "EXPLAIN",
     "ANALYZE",
+    "SHOW",
+    "LIKE",
+    "DESCRIBE",
+    "HELP",
+    "SCHEMA",
+    "PARENTS",
     "SAVE",
     "FILTER",
     "BEGINS",
@@ -143,8 +149,18 @@ pub fn highlight_line(text: &str) -> Line<'static> {
                 i += 1;
             }
             let word: String = chars[start..i].iter().collect();
-            if is_keyword(&word) {
+            if word.eq_ignore_ascii_case("drop") || word.eq_ignore_ascii_case("delete") {
+                spans.push(Span::styled(
+                    word,
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                ));
+            } else if is_keyword(&word) {
                 spans.push(Span::styled(word, keyword_style()));
+            } else if matches!(
+                word.to_ascii_uppercase().as_str(),
+                "STRING" | "NUMBER" | "BINARY" | "BOOL" | "BOOLEAN"
+            ) {
+                spans.push(Span::styled(word, Style::default().fg(Color::Blue)));
             } else {
                 spans.push(Span::raw(word));
             }

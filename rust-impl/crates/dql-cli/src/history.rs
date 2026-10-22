@@ -207,7 +207,7 @@ pub fn should_record_history(text: &str) -> bool {
     let mut parts = trimmed.split_whitespace();
     let cmd = parts.next().unwrap_or("").to_ascii_lowercase();
     match cmd.as_str() {
-        "clear" | "cls" | "c" | "exit" | "quit" | "help" | "history" => false,
+        "clear" | "cls" | "c" | "exit" | "quit" | "history" => false,
         // Bare `ls` is omitted; `ls <tablename>` (or any args) is kept.
         "ls" => parts.next().is_some(),
         _ => true,
@@ -266,7 +266,7 @@ mod encode_tests {
         assert!(!should_record_history("clear"));
         assert!(!should_record_history("exit"));
         assert!(!should_record_history("c"));
-        assert!(!should_record_history("help"));
+        assert!(should_record_history("HELP SELECT;"));
         assert!(!should_record_history("history"));
         assert!(!should_record_history("history dedupe"));
         assert!(should_record_history("ls mytable"));

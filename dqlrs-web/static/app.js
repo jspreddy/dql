@@ -2091,6 +2091,11 @@ function renderResults(results, host, markTable = !host) {
   let itemCards = 0;
   let itemRows = 0;
   for (const item of results) {
+    if (item.ok && item.kind === "help") {
+      otherNotes += 1;
+      target.append(helpCard(item.help, item.message));
+      continue;
+    }
     if (item.ok && item.kind === "items") {
       const listed = listedItemTables(item);
       if (listed) {
@@ -2637,6 +2642,49 @@ function statusClass(status) {
   if (key === "deleting") return "is-deleting";
   if (key === "creating" || key === "updating") return "is-updating";
   return "";
+}
+
+function helpCard(page, fallback) {
+  const card = document.createElement("article");
+  card.className = "help-card";
+  card.dataset.testid = "help-card";
+  const blocks = page && Array.isArray(page.blocks) ? page.blocks : null;
+  if (!blocks) {
+    card.append(note(fallback || "help", false));
+    return card;
+  }
+  const title = document.createElement("h2");
+  title.className = "help-title";
+  title.textContent = page.title || "HELP";
+  card.append(title);
+  for (const block of blocks) {
+    if (block.kind === "heading") {
+      const heading = document.createElement("h3");
+      heading.className = "help-heading";
+      heading.textContent = block.text || "";
+      card.append(heading);
+    } else if (block.kind === "code") {
+      const code = highlightedQuery(block.text || "", "help-code");
+      code.dataset.testid = "help-code";
+      card.append(code);
+    } else if (block.kind === "entry") {
+      const row = document.createElement("div");
+      row.className = "help-entry";
+      const name = document.createElement("span");
+      name.className = "tok-keyword";
+      name.textContent = block.name || "";
+      const summary = document.createElement("span");
+      summary.textContent = block.summary || "";
+      row.append(name, summary);
+      card.append(row);
+    } else {
+      const prose = document.createElement("p");
+      prose.className = "help-prose";
+      prose.textContent = block.text || "";
+      card.append(prose);
+    }
+  }
+  return card;
 }
 
 function highlightedQuery(text, className) {

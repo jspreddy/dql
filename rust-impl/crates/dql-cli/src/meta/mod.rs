@@ -87,7 +87,6 @@ fn registry() -> HashMap<&'static str, ReplCommand> {
     register!("shell", crate::meta::lifecycle::shell);
     register!("whoami", crate::meta::lifecycle::whoami);
     register!("iam", crate::meta::lifecycle::whoami);
-    register!("help", crate::meta::lifecycle::help);
     register!("history", crate::meta::history_cmd::handle);
     register!("use", crate::meta::connect::handle_use);
     register!("local", crate::meta::connect::handle_local);

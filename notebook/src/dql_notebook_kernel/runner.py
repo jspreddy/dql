@@ -264,6 +264,137 @@ def format_display(stdout: str, stderr: str) -> dict[str, str]:
     return bundle
 
 
+_HELP_KEYWORDS = {
+    "SELECT", "SCAN", "INSERT", "UPDATE", "CREATE", "ALTER", "DUMP", "LOAD", "EXPLAIN",
+    "ANALYZE", "SHOW", "LIKE", "DESCRIBE", "FROM", "WHERE", "INTO", "VALUES", "SET", "ADD",
+    "REMOVE", "USING", "LIMIT", "ORDER", "BY", "ASC", "DESC", "AS", "KEYS", "IN", "CONSISTENT",
+    "THROTTLE", "RETURNS", "SAVE", "PARENTS", "TABLE", "INDEX", "GLOBAL", "HASH", "RANGE",
+    "KEY", "THROUGHPUT", "TP", "IF", "NOT", "EXISTS", "INCLUDE", "ALL", "SCHEMA", "AND", "OR",
+    "BETWEEN", "NONE", "UPDATED", "OLD", "NEW", "LS", "OPT", "OPTIONS", "HELP", "USE", "WATCH",
+}
+_HELP_DELETED = {"DROP", "DELETE"}
+_HELP_TYPES = {"STRING", "NUMBER", "BINARY", "BOOL", "BOOLEAN"}
+_HELP_FUNCS = {
+    "COUNT", "SIZE", "BEGINS_WITH", "CONTAINS", "ATTRIBUTE_EXISTS", "ATTRIBUTE_NOT_EXISTS",
+    "ATTRIBUTE_TYPE", "IF_NOT_EXISTS", "LIST_APPEND", "TIMESTAMP", "TS", "NOW", "UTCNOW",
+}
+_HELP_TONE = {
+    "keyword": "color:#0f766e;font-weight:650",
+    "deleted": "color:#dc2626;font-weight:700",
+    "type": "color:#1d4ed8",
+    "func": "color:#7c3aed",
+    "string": "color:#be123c",
+    "number": "color:#b45309",
+    "comment": "color:#6b7280;font-style:italic",
+    "punct": "color:#64748b",
+}
+
+
+def _help_tone(word: str) -> str | None:
+    key = word.upper()
+    if key in _HELP_DELETED:
+        return "deleted"
+    if key in _HELP_KEYWORDS:
+        return "keyword"
+    if key in _HELP_TYPES:
+        return "type"
+    if key in _HELP_FUNCS:
+        return "func"
+    if key in {"TRUE", "FALSE", "NULL"}:
+        return "keyword"
+    return None
+
+
+def highlight_dql_html(text: str) -> str:
+    """Paint one DQL snippet with inline colors for a notebook output."""
+    out: list[str] = []
+    i = 0
+    raw = text or ""
+    while i < len(raw):
+        ch = raw[i]
+        if ch == "-" and raw[i : i + 2] == "--":
+            out.append(f'<span style="{_HELP_TONE["comment"]}">{html.escape(raw[i:])}</span>')
+            break
+        if ch in {"'", '"'}:
+            quote = ch
+            j = i + 1
+            while j < len(raw):
+                if raw[j] == "\\" and j + 1 < len(raw):
+                    j += 2
+                    continue
+                if raw[j] == quote:
+                    j += 1
+                    break
+                j += 1
+            out.append(f'<span style="{_HELP_TONE["string"]}">{html.escape(raw[i:j])}</span>')
+            i = j
+            continue
+        if ch.isdigit():
+            j = i + 1
+            while j < len(raw) and (raw[j].isdigit() or raw[j] == "."):
+                j += 1
+            out.append(f'<span style="{_HELP_TONE["number"]}">{html.escape(raw[i:j])}</span>')
+            i = j
+            continue
+        if ch.isalpha() or ch == "_":
+            j = i + 1
+            while j < len(raw) and (raw[j].isalnum() or raw[j] == "_"):
+                j += 1
+            word = raw[i:j]
+            tone = _help_tone(word)
+            escaped = html.escape(word)
+            if tone:
+                out.append(f'<span style="{_HELP_TONE[tone]}">{escaped}</span>')
+            else:
+                out.append(escaped)
+            i = j
+            continue
+        if ch in "=<>!,()*+-/%;.|[]":
+            out.append(f'<span style="{_HELP_TONE["punct"]}">{html.escape(ch)}</span>')
+            i += 1
+            continue
+        out.append(html.escape(ch))
+        i += 1
+    return "".join(out)
+
+
+def help_html(page: Mapping[str, Any]) -> str:
+    """Notebook card for a HELP query. Colors are inline so Jupyter can show them."""
+    title = html.escape(str(page.get("title") or "HELP"))
+    parts = [
+        '<div style="font-family:system-ui,sans-serif;line-height:1.45;color:#1f2937">',
+        f'<div style="font-size:18px;font-weight:700;color:#0f766e;margin:0 0 10px">{title}</div>',
+    ]
+    for block in page.get("blocks") or []:
+        kind = block.get("kind")
+        if kind == "heading":
+            text = html.escape(str(block.get("text") or ""))
+            parts.append(
+                f'<div style="margin:14px 0 6px;font-size:12px;letter-spacing:0.04em;'
+                f'text-transform:uppercase;color:#64748b">{text}</div>'
+            )
+        elif kind == "code":
+            code = highlight_dql_html(str(block.get("text") or ""))
+            parts.append(
+                '<pre style="margin:0 0 10px;padding:10px 12px;background:#f8fafc;'
+                'border:1px solid #e2e8f0;border-radius:8px;font-family:ui-monospace,monospace;'
+                f'font-size:13px;line-height:1.5;white-space:pre-wrap">{code}</pre>'
+            )
+        elif kind == "entry":
+            name = html.escape(str(block.get("name") or ""))
+            summary = html.escape(str(block.get("summary") or ""))
+            parts.append(
+                '<div style="display:grid;grid-template-columns:7.5rem 1fr;gap:8px;padding:2px 0">'
+                f'<span style="font-family:ui-monospace,monospace;font-weight:650;color:#0f766e">{name}</span>'
+                f"<span>{summary}</span></div>"
+            )
+        else:
+            text = html.escape(str(block.get("text") or ""))
+            parts.append(f'<p style="margin:0 0 8px;white-space:pre-wrap">{text}</p>')
+    parts.append("</div>")
+    return "".join(parts)
+
+
 def format_envelope(envelope: Mapping[str, Any]) -> dict[str, str]:
     """Render a dqlrs --serve reply the same way as `-c --json` output."""
     kind = envelope.get("kind")
@@ -274,6 +405,13 @@ def format_envelope(envelope: Mapping[str, Any]) -> dict[str, str]:
         count = envelope.get("affected")
         text = f"{count} affected\n"
         return {"text/plain": text}
+    if kind == "help":
+        message = envelope.get("message") or ""
+        text = message if str(message).endswith("\n") else f"{message}\n"
+        return {
+            "text/plain": text,
+            "text/html": help_html(envelope.get("help") or {}),
+        }
     if kind in {"status", "schema", "text"}:
         message = envelope.get("message") or ""
         text = message if str(message).endswith("\n") else f"{message}\n"

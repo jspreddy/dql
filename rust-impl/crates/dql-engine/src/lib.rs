@@ -6,6 +6,7 @@ mod convert;
 mod engine;
 mod file_io;
 pub mod fragment;
+mod help;
 pub mod json_util;
 mod memory;
 mod progress;
@@ -16,6 +17,7 @@ mod table_text;
 mod throttle;
 
 pub use fragment::FragmentEngine;
+pub use help::{help_page, topic_help, HelpBlock, HelpPage};
 
 pub use throttle::RateLimit;
 
@@ -55,6 +57,8 @@ pub enum StatementResult {
         note: String,
     },
     Schema(String),
+    /// `HELP` or `HELP <topic>`.
+    Help(HelpPage),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -217,6 +221,7 @@ impl StatementResult {
             }
             StatementResult::Affected(count) => format!("{count}\n"),
             StatementResult::Schema(schema) => string_to_json(schema),
+            StatementResult::Help(page) => page.to_value().to_string() + "\n",
             StatementResult::Status(_) | StatementResult::None => String::new(),
         }
     }
@@ -242,6 +247,7 @@ impl fmt::Display for StatementResult {
                 Ok(())
             }
             StatementResult::Schema(schema) => writeln!(f, "{schema}"),
+            StatementResult::Help(page) => writeln!(f, "{}", page.plain()),
         }
     }
 }

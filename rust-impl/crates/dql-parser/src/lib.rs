@@ -306,6 +306,10 @@ pub enum Statement {
     Describe {
         table: String,
     },
+    /// `HELP` or `HELP <topic>`.
+    Help {
+        topic: Option<String>,
+    },
     Load {
         file: String,
         table: String,
@@ -625,6 +629,8 @@ impl Parser {
             self.parse_show()
         } else if self.accept_keyword("DESCRIBE") {
             self.parse_describe()
+        } else if self.accept_keyword("HELP") {
+            self.parse_help()
         } else {
             Err(self.error("expected a DQL statement"))
         }
@@ -1246,6 +1252,15 @@ impl Parser {
     fn parse_describe(&mut self) -> Result<Statement, ParseError> {
         let table = self.expect_ident()?;
         Ok(Statement::Describe { table })
+    }
+
+    fn parse_help(&mut self) -> Result<Statement, ParseError> {
+        let topic = if self.is_eof() || self.peek_symbol(';') {
+            None
+        } else {
+            Some(self.expect_ident()?)
+        };
+        Ok(Statement::Help { topic })
     }
 
     fn parse_show(&mut self) -> Result<Statement, ParseError> {

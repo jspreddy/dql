@@ -241,7 +241,7 @@ fn meta_commands_run_without_a_semicolon() {
         "{screen}"
     );
 
-    type_str(&mut app, "help");
+    type_str(&mut app, "HELP;");
     assert!(app.on_enter().unwrap());
     let screen = screen_of_output(&app);
     assert!(screen.contains("Available commands"), "{screen}");

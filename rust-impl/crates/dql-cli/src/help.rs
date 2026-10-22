@@ -1,691 +1,73 @@
-use crossterm::style::{Color as CtColor, Stylize};
+use dql_engine::{help_page, HelpBlock, HelpPage};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use std::io::Write;
 
-struct HelpCommand {
-    name: &'static str,
-    summary: &'static str,
-}
-
-struct HelpGroup {
-    title: &'static str,
-    blurb: &'static str,
-    commands: &'static [HelpCommand],
-}
-
-const GROUPS: &[HelpGroup] = &[
-    HelpGroup {
-        title: "Queries",
-        blurb: "DQL statements for reading and writing DynamoDB data",
-        commands: &[
-            HelpCommand {
-                name: "alter",
-                summary: "Change table throughput or global indexes",
-            },
-            HelpCommand {
-                name: "analyze",
-                summary: "Run a query and show consumed capacity",
-            },
-            HelpCommand {
-                name: "create",
-                summary: "Create a table",
-            },
-            HelpCommand {
-                name: "delete",
-                summary: "Delete items from a table",
-            },
-            HelpCommand {
-                name: "describe",
-                summary: "Print one table's description",
-            },
-            HelpCommand {
-                name: "drop",
-                summary: "Delete a table",
-            },
-            HelpCommand {
-                name: "dump",
-                summary: "Print CREATE statements for table schemas",
-            },
-            HelpCommand {
-                name: "explain",
-                summary: "Show the DynamoDB API calls a query would make",
-            },
-            HelpCommand {
-                name: "insert",
-                summary: "Insert items into a table",
-            },
-            HelpCommand {
-                name: "load",
-                summary: "Load items from a saved file into a table",
-            },
-            HelpCommand {
-                name: "scan",
-                summary: "Scan a table (same syntax family as select)",
-            },
-            HelpCommand {
-                name: "select",
-                summary: "Query items from a table or index",
-            },
-            HelpCommand {
-                name: "show",
-                summary: "List table names, optionally with a LIKE pattern",
-            },
-            HelpCommand {
-                name: "update",
-                summary: "Update items in a table",
-            },
-        ],
-    },
-    HelpGroup {
-        title: "Connection",
-        blurb: "Choose where DQL connects and inspect identity",
-        commands: &[
-            HelpCommand {
-                name: "use",
-                summary: "Connect to an AWS region",
-            },
-            HelpCommand {
-                name: "local",
-                summary: "Connect to a local DynamoDB endpoint",
-            },
-            HelpCommand {
-                name: "whoami",
-                summary: "Show the current AWS identity",
-            },
-        ],
-    },
-    HelpGroup {
-        title: "Tables & files",
-        blurb: "Inspect tables and run scripts from disk",
-        commands: &[
-            HelpCommand {
-                name: "ls",
-                summary: "List tables or describe one table",
-            },
-            HelpCommand {
-                name: "file",
-                summary: "Execute DQL statements from a file",
-            },
-            HelpCommand {
-                name: "watch",
-                summary: "Monitor CloudWatch metrics for tables",
-            },
-        ],
-    },
-    HelpGroup {
-        title: "Configuration",
-        blurb: "Tune display options and capacity throttles",
-        commands: &[
-            HelpCommand {
-                name: "opt",
-                summary: "Get or set session options",
-            },
-            HelpCommand {
-                name: "throttle",
-                summary: "Show or set capacity throttle limits",
-            },
-            HelpCommand {
-                name: "unthrottle",
-                summary: "Clear capacity throttle limits",
-            },
-        ],
-    },
-    HelpGroup {
-        title: "History",
-        blurb: "Inspect and clean the command history file",
-        commands: &[HelpCommand {
-            name: "history",
-            summary: "List, search, dedupe, remove, or edit history",
-        }],
-    },
-    HelpGroup {
-        title: "Session",
-        blurb: "REPL utilities and process control",
-        commands: &[
-            HelpCommand {
-                name: "help",
-                summary: "List commands or show details for one",
-            },
-            HelpCommand {
-                name: "clear",
-                summary: "Scroll the screen so the input is at the top",
-            },
-            HelpCommand {
-                name: "shell",
-                summary: "Run a shell command",
-            },
-            HelpCommand {
-                name: "version",
-                summary: "Print the DQL version",
-            },
-            HelpCommand {
-                name: "exit",
-                summary: "Leave the DQL prompt",
-            },
-        ],
-    },
-];
-
-/// Render top-level help or a specific topic as styled ratatui lines.
-pub fn render_lines(args: &[String], width: usize) -> Result<Vec<Line<'static>>, String> {
-    let _ = width;
-    if let Some(topic) = args.first() {
-        topic_lines(topic).ok_or_else(|| format!("No help available for {topic}"))
-    } else {
-        Ok(overview_lines())
-    }
-}
-
-/// Write top-level help or a specific topic to a plain writer (ANSI when possible).
-pub fn write_help(args: &[String], out: &mut dyn Write, width: usize) -> Result<(), String> {
-    let _ = width;
-    if let Some(topic) = args.first() {
-        let text = topic_help(topic).ok_or_else(|| format!("No help available for {topic}"))?;
-        write!(out, "{text}").map_err(|err| err.to_string())
-    } else {
-        write_overview(out).map_err(|err| err.to_string())
-    }
-}
-
-pub fn overview_lines() -> Vec<Line<'static>> {
-    let mut lines = vec![
-        Line::from(Span::styled(
-            "Available commands",
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        )),
-        Line::from(""),
-    ];
-
-    for group in GROUPS {
-        lines.extend(group_lines(group));
-        lines.push(Line::from(""));
-    }
-
-    lines.push(Line::from(Span::styled(
-        "Type 'help <command>' for details on a query or meta-command.",
-        Style::default().fg(Color::DarkGray),
-    )));
-    lines
-}
-
-fn group_lines(group: &HelpGroup) -> Vec<Line<'static>> {
-    let title = format!("{}:", group.title);
-    let rule = "-".repeat(title.len());
-    let mut lines = vec![
-        Line::from(Span::styled(title, group_style())),
-        Line::from(Span::styled(rule, Style::default().fg(Color::DarkGray))),
-        Line::from(vec![
-            Span::raw("  "),
-            Span::styled(group.blurb.to_string(), Style::default().fg(Color::Gray)),
-        ]),
-    ];
-    for command in group.commands {
-        lines.push(Line::from(vec![
-            Span::raw("  - "),
-            Span::styled(
-                command.name.to_string(),
-                Style::default().fg(Color::Magenta),
-            ),
-            Span::styled(":  ", Style::default().fg(Color::DarkGray)),
-            Span::raw(command.summary.to_string()),
-        ]));
-    }
-    lines
-}
-
-pub fn topic_lines(topic: &str) -> Option<Vec<Line<'static>>> {
-    let text = topic_help(topic)?;
-    let mut lines = Vec::new();
-    let canonical = canonical_topic(topic);
-    lines.push(Line::from(Span::styled(
-        format!("help {canonical}"),
-        Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD),
-    )));
-    for raw in text.lines() {
-        if raw.trim().is_empty() {
-            lines.push(Line::from(""));
-            continue;
-        }
-        lines.push(Line::from(raw.to_string()));
-    }
-    Some(lines)
-}
-
-pub fn topic_help(topic: &str) -> Option<&'static str> {
-    match topic.to_ascii_lowercase().as_str() {
-        "alter" => Some(ALTER),
-        "analyze" => Some(ANALYZE),
-        "create" => Some(CREATE),
-        "delete" => Some(DELETE),
-        "describe" => Some(DESCRIBE),
-        "drop" => Some(DROP),
-        "dump" => Some(DUMP),
-        "explain" => Some(EXPLAIN),
-        "insert" => Some(INSERT),
-        "load" => Some(LOAD),
-        "scan" => Some(SCAN),
-        "select" => Some(SELECT),
-        "show" => Some(SHOW),
-        "update" => Some(UPDATE),
-        "opt" | "options" => Some(OPTIONS),
-        "help" => Some(HELP),
-        "clear" | "cls" | "c" => Some(CLEAR),
-        "exit" | "quit" => Some(EXIT),
-        "shell" => Some(SHELL),
-        "version" => Some(VERSION),
-        "whoami" | "iam" => Some(WHOAMI),
-        "use" => Some(USE),
-        "local" => Some(LOCAL),
-        "file" => Some(FILE),
-        "ls" => Some(LS),
-        "history" => Some(HISTORY),
-        "throttle" => Some(THROTTLE),
-        "unthrottle" => Some(UNTHROTTLE),
-        "watch" => Some(WATCH),
-        _ => None,
-    }
-}
+pub use dql_engine::topic_help;
 
 /// Back-compat alias used by older call sites / tests.
 pub fn statement_help(topic: &str) -> Option<&'static str> {
     topic_help(topic)
 }
 
-fn canonical_topic(topic: &str) -> String {
-    match topic.to_ascii_lowercase().as_str() {
-        "options" => "opt".to_string(),
-        "cls" | "c" => "clear".to_string(),
-        "quit" => "exit".to_string(),
-        "iam" => "whoami".to_string(),
-        other => other.to_string(),
+/// Render top-level help or a specific topic as styled ratatui lines.
+pub fn render_lines(args: &[String], width: usize) -> Result<Vec<Line<'static>>, String> {
+    let _ = width;
+    let page = help_page(args.first().map(String::as_str))?;
+    Ok(page_lines(&page))
+}
+
+pub fn page_lines(page: &HelpPage) -> Vec<Line<'static>> {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            page.title.clone(),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(""),
+    ];
+    for block in &page.blocks {
+        match block {
+            HelpBlock::Heading(text) => {
+                lines.push(Line::from(Span::styled(
+                    text.clone(),
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )));
+            }
+            HelpBlock::Prose(text) => {
+                for line in text.lines() {
+                    lines.push(Line::from(Span::styled(
+                        line.to_string(),
+                        Style::default().fg(Color::Gray),
+                    )));
+                }
+                lines.push(Line::from(""));
+            }
+            HelpBlock::Code(text) => {
+                for line in text.lines() {
+                    lines.push(crate::repl::highlight::highlight_line(line));
+                }
+                lines.push(Line::from(""));
+            }
+            HelpBlock::Entry { name, summary } => {
+                lines.push(Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(
+                        name.clone(),
+                        Style::default()
+                            .fg(Color::Magenta)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled("  ", Style::default().fg(Color::DarkGray)),
+                    Span::raw(summary.clone()),
+                ]));
+            }
+        }
     }
+    lines
 }
-
-fn write_overview(out: &mut dyn Write) -> std::io::Result<()> {
-    writeln!(out, "{}", "Available commands".bold())?;
-    writeln!(out)?;
-    for group in GROUPS {
-        write_group(out, group)?;
-        writeln!(out)?;
-    }
-    writeln!(
-        out,
-        "{}",
-        "Type 'help <command>' for details on a query or meta-command.".with(CtColor::DarkGrey)
-    )?;
-    Ok(())
-}
-
-fn write_group(out: &mut dyn Write, group: &HelpGroup) -> std::io::Result<()> {
-    let title = format!("{}:", group.title);
-    let rule = "-".repeat(title.len());
-    writeln!(out, "{}", title.with(CtColor::Cyan).bold())?;
-    writeln!(out, "{}", rule.with(CtColor::DarkGrey))?;
-    writeln!(out, "  {}", group.blurb.with(CtColor::Grey))?;
-    for command in group.commands {
-        write!(out, "  - ")?;
-        write!(out, "{}", command.name.with(CtColor::Magenta))?;
-        write!(out, "{}", ":  ".with(CtColor::DarkGrey))?;
-        writeln!(out, "{}", command.summary)?;
-    }
-    Ok(())
-}
-
-fn group_style() -> Style {
-    Style::default()
-        .fg(Color::Cyan)
-        .add_modifier(Modifier::BOLD)
-}
-
-pub const ALTER: &str = r"
-    Alter a table's throughput or create/drop global indexes
-
-    ALTER TABLE tablename
-        SET [INDEX index] THROUGHPUT throughput
-    ALTER TABLE tablename
-        DROP INDEX index [IF EXISTS]
-    ALTER TABLE tablename
-        CREATE GLOBAL [ALL|KEYS|INCLUDE] INDEX global_index [IF NOT EXISTS]
-
-    Examples
-    --------
-    CREATE TABLE foobars (id STRING HASH KEY); ALTER TABLE foobars SET THROUGHPUT (4, 8);
-    CREATE TABLE foobars (id STRING HASH KEY); ALTER TABLE foobars SET THROUGHPUT (7, *);
-    CREATE TABLE foobars (id STRING HASH KEY, ts NUMBER) GLOBAL INDEX ('ts-index', ts NUMBER); ALTER TABLE foobars SET INDEX ts-index THROUGHPUT (5, *);
-    CREATE TABLE foobars (id STRING HASH KEY, ts NUMBER) GLOBAL INDEX ('ts-index', ts NUMBER); ALTER TABLE foobars DROP INDEX ts-index;
-    CREATE TABLE foobars (id STRING HASH KEY, ts NUMBER); ALTER TABLE foobars CREATE GLOBAL INDEX ('ts-index', ts NUMBER, THROUGHPUT (5, 5));
-";
-
-pub const ANALYZE: &str = r"
-    Run a query and print out the consumed capacity
-
-    ANALYZE query
-
-    Examples
-    --------
-    CREATE TABLE foobars (id STRING HASH KEY); ANALYZE SELECT * FROM foobars WHERE id = 'a';
-    CREATE TABLE foobars (id STRING HASH KEY); ANALYZE INSERT INTO foobars (id, name) VALUES ('a', 'dsa');
-";
-
-pub const CREATE: &str = r"
-    Create a new table
-
-    CREATE TABLE
-        [IF NOT EXISTS]
-        tablename
-        attributes
-        [GLOBAL [ALL|KEYS|INCLUDE] INDEX global_index]
-
-    Examples
-    --------
-    CREATE TABLE foobars (id STRING HASH KEY);
-    CREATE TABLE IF NOT EXISTS foobars (id STRING HASH KEY);
-";
-
-pub const DELETE: &str = r"
-    Delete items from a table
-
-    DELETE FROM
-        tablename
-        [ KEYS IN primary_keys ]
-        [ WHERE expression ]
-        [ USING index ]
-
-    Examples
-    --------
-    CREATE TABLE foobars (id STRING HASH KEY); DELETE FROM foobars WHERE foo != 'bar' AND baz >= 3;
-";
-
-pub const DROP: &str = r"
-    Delete a table
-
-    DROP TABLE
-        [ IF EXISTS ]
-        tablename
-
-    Examples
-    --------
-    CREATE TABLE foobars (id STRING HASH KEY); DROP TABLE foobars;
-    DROP TABLE IF EXISTS foobars;
-";
-
-pub const DUMP: &str = r"
-    Print the schema creation statements for your tables
-
-    DUMP SCHEMA [ tablename [, ...] ]
-
-    Examples
-    --------
-    DUMP SCHEMA;
-    CREATE TABLE foobars (id STRING HASH KEY); CREATE TABLE widgets (id STRING HASH KEY); DUMP SCHEMA foobars, widgets;
-";
-
-pub const EXPLAIN: &str = r"
-    Print out the DynamoDB queries that will be executed for a command
-
-    EXPLAIN query
-
-    Examples
-    --------
-    CREATE TABLE foobars (id STRING HASH KEY); EXPLAIN SELECT * FROM foobars WHERE id = 'a';
-";
-
-pub const INSERT: &str = r"
-    Insert data into a table
-
-    INSERT INTO tablename
-        attributes VALUES values
-    INSERT INTO tablename
-        items
-
-    Examples
-    --------
-    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id) VALUES ('a');
-    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id='foo', bar=10);
-";
-
-pub const LOAD: &str = r"
-    Load data from a file (saved with SELECT ... SAVE) into a table
-
-    LOAD filename INTO tablename
-
-    Formats: .json / .csv / .msgpack (optional .gz). Pickle (.p) is not supported.
-
-    Examples
-    --------
-    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id) VALUES ('a'); SCAN * FROM foobars SAVE archive.msgpack; CREATE TABLE mytable (id STRING HASH KEY); LOAD archive.msgpack INTO mytable;
-    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id) VALUES ('a'); SCAN * FROM foobars SAVE archive.json.gz; CREATE TABLE mytable (id STRING HASH KEY); LOAD archive.json.gz INTO mytable;
-";
-
-pub const SCAN: &str = SELECT;
-pub const SELECT: &str = r"
-    Select items from a table by querying an index
-
-    SELECT
-        [ CONSISTENT ]
-        attributes
-        FROM tablename
-        [ KEYS IN primary_keys | WHERE expression ]
-        [ USING index ]
-        [ LIMIT limit ]
-        [ ORDER BY field ]
-        [ ASC | DESC ]
-        [ SAVE file.json [ CREATE PARENTS ] ]
-
-    Examples
-    --------
-    CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars WHERE id = 'a';
-    CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars KEYS IN 'id1', 'id2';
-    CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE out.msgpack;
-    CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE out.json.gz;
-    CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE 'exports/out.json' CREATE PARENTS;
-";
-
-pub const UPDATE: &str = r"
-    Update items in a table
-
-    UPDATE tablename
-        update_expression
-        [ KEYS IN primary_keys ]
-        [ WHERE expression ]
-        [ USING index ]
-
-    Examples
-    --------
-    CREATE TABLE foobars (id STRING HASH KEY); UPDATE foobars SET foo = 'a' WHERE id = 'a';
-    CREATE TABLE foobars (id STRING HASH KEY); UPDATE foobars ADD foo 1, bar 4 WHERE id = 'a';
-";
-
-pub const OPTIONS: &str = r"
-    Get or set options
-
-    use 'opt <option>' to get the value of option, and 'opt <option> <value>'
-    to set the option.
-
-                width : int, The number of characters wide to format the display
-             pagesize : int, The number of results to get per page for queries
-              display : (less|stdout), The reader used to view query results
-               format : (smart|column|expanded|json|rich), Display format for query results
-    allow_select_scan : bool, If True, SELECT statements can perform table scans
-";
-
-pub const HELP: &str = r"
-    List commands or print details about a command
-
-    help
-    help <command>
-";
-
-pub const CLEAR: &str = r"
-    Scroll the visible screen into the scrollback so the input line is at the top.
-    Previous output stays available with the scroll wheel.
-
-    clear
-    Aliases: cls, c
-";
-
-pub const EXIT: &str = r"
-    Exit the DQL prompt
-
-    exit
-    Aliases: quit
-";
-
-pub const SHELL: &str = r"
-    Run a shell command
-
-    shell <command> [args...]
-";
-
-pub const VERSION: &str = r"
-    Print the DQL version
-
-    version
-";
-
-pub const WHOAMI: &str = r"
-    Print the current AWS identity
-
-    whoami
-    Aliases: iam
-";
-
-pub const USE: &str = r"
-    Connect to an AWS region
-
-    use <region>
-";
-
-pub const LOCAL: &str = r"
-    Connect to a local DynamoDB endpoint
-
-    local [host] [port]
-    local host=<host> port=<port>
-";
-
-pub const FILE: &str = r"
-    Execute DQL statements from a file
-
-    file <path>
-";
-
-pub const LS: &str = r"
-    List tables or describe one table
-
-    ls
-    ls <glob>
-    ls <glob> refresh=True
-    ls refresh=True
-    ls refresh=True async=True
-    ls <glob> metrics=True
-
-    <glob> uses * and ? the same way as a filename glob.
-    One match prints that table's description, the same text as DESCRIBE.
-    Several matches print a list.
-    When nothing matches exactly, ls lists tables with similar names and tables
-    whose keys, indexes, or attributes are similar to the text.
-    A glob that is still not similar prints an empty list.
-    A two-letter pattern matches only names that start with it.
-    The result says whether it is showing similar names, related keys, or both.
-    The table list is saved to disk the first time it is fetched. A table
-    definition is saved when that table is fetched. Later ls commands reuse
-    those snapshots. A line starting with cache: says where the list came from.
-    refresh=True reloads the cached list and the definitions already saved.
-    It does not describe tables that have never been fetched.
-    async=True with refresh=True returns the snapshot immediately and reloads
-    those cached entries in the background. That reload runs until the process
-    exits, so it finishes in the REPL, the web UI, and `dqlrs --serve`.
-    True, true, and yes are accepted.
-
-    Examples
-    --------
-    ls
-    ls foo-*
-    ls *foo* refresh=True
-";
-
-pub const DESCRIBE: &str = r"
-    Print one table's description
-
-    DESCRIBE <table>;
-
-    The text matches `ls <table>` when that name matches one table.
-    A glob that matches one table prints this description too.
-    Several matches print the list instead.
-
-    Examples
-    --------
-    CREATE TABLE posts (id STRING HASH KEY); DESCRIBE posts;
-    ls post*
-";
-
-pub const SHOW: &str = r"
-    List table names
-
-    SHOW TABLES;
-    SHOW TABLES LIKE 'pattern';
-
-    SHOW TABLES prints the same list as `ls`: name, items, read, write, status,
-    and size. LIKE is case-sensitive. % matches any sequence. _ matches one
-    character.
-    When that matches nothing, the result lists tables with similar names and
-    tables whose keys, indexes, or attributes are similar to the text.
-    A two-letter pattern matches only names that start with it.
-    The result says whether it is showing similar names, related keys, or both.
-    A pattern that is still not similar stays an empty list.
-
-    Examples
-    --------
-    SHOW TABLES;
-    SHOW TABLES LIKE 'alpha%';
-    SHOW TABLES LIKE 'foo_bar';
-    SHOW TABLES LIKE 'post';
-";
-
-pub const HISTORY: &str = r#"
-    Inspect and manage command history
-
-    history
-        List history entries
-    history search <string>
-        Search history (case-insensitive)
-    history dedupe
-        Keep the most recent of each unique command; drop skippable entries
-    history remove --exact "string"
-        Remove entries that exactly match the string
-    history edit <editor-name>
-        Open the history file in an editor, then exit dql
-"#;
-
-pub const THROTTLE: &str = r"
-    Show or set capacity throttle limits
-
-    throttle
-    throttle <read> <write>
-    throttle default <read> <write>
-    throttle <table> <read> <write>
-    throttle <table> <index> <read> <write>
-";
-
-pub const UNTHROTTLE: &str = r"
-    Clear capacity throttle limits
-
-    unthrottle
-    unthrottle default
-    unthrottle <table>
-    unthrottle <table> <index>
-";
-
-pub const WATCH: &str = r"
-    Monitor CloudWatch metrics for tables (requires --features watch)
-
-    watch <table> [table...]
-";
 
 #[cfg(test)]
 mod tests {
@@ -700,12 +82,13 @@ mod tests {
         ] {
             assert!(topic_help(topic).is_some(), "missing help for {topic}");
         }
-        assert!(OPTIONS.contains("rich"));
+        assert!(topic_help("opt").unwrap().contains("rich"));
     }
 
     #[test]
     fn overview_lists_queries_and_meta() {
-        let text: String = overview_lines()
+        let text: String = render_lines(&[], 80)
+            .unwrap()
             .iter()
             .map(|line| {
                 line.spans
@@ -715,13 +98,15 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(text.contains("Queries:"));
-        assert!(text.contains("-------"));
+        assert!(text.contains("Available commands"));
+        assert!(text.contains("Queries"));
         assert!(text.contains("DQL statements for reading and writing DynamoDB data"));
-        assert!(text.contains("- select:  Query items from a table or index"));
-        assert!(text.contains("- history:  List, search, dedupe, remove, or edit history"));
-        assert!(text.contains("Session:"));
-        assert!(text.contains("help <command>"));
+        assert!(text.contains("select"));
+        assert!(text.contains("Query items from a table or index"));
+        assert!(text.contains("history"));
+        assert!(text.contains("List, search, dedupe, remove, or edit history"));
+        assert!(text.contains("Session"));
+        assert!(text.contains("HELP <topic>;"));
     }
 
     fn example_lines(text: &str) -> Vec<String> {
@@ -824,9 +209,16 @@ mod tests {
         let overview = render_lines(&[], 80).unwrap();
         assert!(!overview.is_empty());
         let select = render_lines(&[String::from("select")], 80).unwrap();
-        assert!(select
-            .iter()
-            .any(|line| line.spans.iter().any(|s| s.content.contains("help select"))));
+        assert!(select.iter().any(|line| {
+            line.spans
+                .iter()
+                .any(|span| span.content.contains("HELP select"))
+        }));
+        assert!(select.iter().any(|line| {
+            line.spans.iter().any(|span| {
+                span.content.as_ref() == "SELECT" && span.style.fg == Some(Color::Magenta)
+            })
+        }));
         assert!(render_lines(&[String::from("nope")], 80).is_err());
     }
 }

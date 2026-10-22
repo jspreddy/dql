@@ -918,17 +918,7 @@ impl<'a> ReplApp<'a> {
         let output_config = self.session.config.output_config();
         let mut backend = BufferBackend::default();
         let rich_context = self.session.engine.rich_context();
-        if first == "help" {
-            let arglist = execute_text
-                .split_once(char::is_whitespace)
-                .map(|(_, rest)| rest.trim())
-                .unwrap_or("");
-            let (args, _) = crate::meta::parse_repl_args(arglist);
-            match crate::help::render_lines(&args, terminal_width()) {
-                Ok(lines) => self.output_lines.extend(lines),
-                Err(err) => self.push_error(eyre!(err).wrap_err("help failed")),
-            }
-        } else if output_config.format == OutputFormat::Rich && first == "ls" {
+        if output_config.format == OutputFormat::Rich && first == "ls" {
             let arglist = execute_text
                 .split_once(char::is_whitespace)
                 .map(|(_, rest)| rest.trim())
@@ -948,33 +938,44 @@ impl<'a> ReplApp<'a> {
             match crate::meta::dispatch(self.session, &execute_text, writer.as_mut(), true) {
                 Ok(Some(result)) => {
                     drop(writer);
-                    let result = crate::meta::ls::annotate_table_list(self.session, result);
-                    let render = if output_config.format == OutputFormat::Rich {
-                        match &result {
-                            StatementResult::Items(items) => {
-                                let layout = build_rich_layout(items, rich_context.as_ref());
-                                self.output_lines
-                                    .extend(rich_layout_to_lines(&layout, terminal_width() as u16));
-                                Ok(())
-                            }
-                            StatementResult::ItemsWithNote { note, .. } => {
-                                for line in note.lines() {
-                                    self.output_lines.push(Line::from(line.to_string()));
+                    if let StatementResult::Help(page) = &result {
+                        self.output_lines.extend(crate::help::page_lines(page));
+                    } else {
+                        let result = crate::meta::ls::annotate_table_list(self.session, result);
+                        let render = if output_config.format == OutputFormat::Rich {
+                            match &result {
+                                StatementResult::Items(items) => {
+                                    let layout = build_rich_layout(items, rich_context.as_ref());
+                                    self.output_lines.extend(rich_layout_to_lines(
+                                        &layout,
+                                        terminal_width() as u16,
+                                    ));
+                                    Ok(())
                                 }
-                                Ok(())
+                                StatementResult::ItemsWithNote { note, .. } => {
+                                    for line in note.lines() {
+                                        self.output_lines.push(Line::from(line.to_string()));
+                                    }
+                                    Ok(())
+                                }
+                                _ => render_result(
+                                    &result,
+                                    &output_config,
+                                    &mut backend,
+                                    rich_context.as_ref(),
+                                ),
                             }
-                            _ => render_result(
+                        } else {
+                            render_result(
                                 &result,
                                 &output_config,
                                 &mut backend,
                                 rich_context.as_ref(),
-                            ),
+                            )
+                        };
+                        if let Err(err) = render {
+                            self.push_error(eyre!(err).wrap_err("failed to render result"));
                         }
-                    } else {
-                        render_result(&result, &output_config, &mut backend, rich_context.as_ref())
-                    };
-                    if let Err(err) = render {
-                        self.push_error(eyre!(err).wrap_err("failed to render result"));
                     }
                 }
                 Ok(None) => {}

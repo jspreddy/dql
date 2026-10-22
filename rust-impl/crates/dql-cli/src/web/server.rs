@@ -981,6 +981,9 @@ fn public_result(
             value["columns"] = serde_json::to_value(columns).unwrap_or(Value::Null);
         }
     }
+    if let Some(help) = &envelope.help {
+        value["help"] = help.clone();
+    }
     value
 }
 

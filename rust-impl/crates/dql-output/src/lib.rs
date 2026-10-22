@@ -27,6 +27,12 @@ pub fn render_result(
             backend.write_line(&format!("{count} item(s) affected"))
         }
         StatementResult::Schema(schema) => backend.write_line(schema),
+        StatementResult::Help(page) if config.format == OutputFormat::Json => {
+            let text = serde_json::to_string_pretty(&page.to_value()).unwrap_or_default();
+            backend.write_line(&text)
+        }
+        StatementResult::Help(page) if !config.silent => backend.write_line(&page.ansi()),
+        StatementResult::Help(_) => Ok(()),
         StatementResult::Items(items) => {
             let mut writer = backend.writer();
             let formatter = config.formatter(items, rich_context);

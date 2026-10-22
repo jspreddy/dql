@@ -6,8 +6,8 @@ use crate::query_context::{query_context_from_read, LastQueryContext};
 use crate::table_cache::SharedTableCache;
 use crate::throttle::RateLimit;
 use crate::{
-    BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation, ReadRequest,
-    StatementResult, WRITE_PROGRESS_CHUNK,
+    help_page, BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation,
+    ReadRequest, StatementResult, WRITE_PROGRESS_CHUNK,
 };
 use dql_expr::{project_selection, render_condition, render_projection, resolve_timestamp};
 use dql_models::{plan_read, Operation, PlanError, PlanInput, QueryPlan, ReadKind, TableMeta};
@@ -535,6 +535,9 @@ impl<B: DynamoBackend> Engine<B> {
             Statement::Load { file, table } => self.load(file, table),
             Statement::Explain(inner) => self.explain(inner),
             Statement::Analyze(inner) => self.analyze(inner),
+            Statement::Help { topic } => help_page(topic.as_deref())
+                .map(StatementResult::Help)
+                .map_err(EngineError::Runtime),
         }
     }
 
