@@ -2101,7 +2101,7 @@ function renderResults(results, host, markTable = !host) {
       if (listed) {
         otherNotes += 1;
         listedTables = listed.tables.length;
-        target.append(intelligentSummary(listed.note, listed.summary, listed.tables));
+        target.append(intelligentSummary(listed.note, listed.summary, listed.tables, listed.cache));
         continue;
       }
       const rows = item.items || [];
@@ -2133,13 +2133,13 @@ function renderResults(results, host, markTable = !host) {
       : null;
     if (listed && listed.description) {
       otherNotes += 1;
-      target.append(describeCard(listed.description, listed.note));
+      target.append(describeCard(listed.description, listed.note, listed.cache));
       continue;
     }
     if (listed && (listed.tables.length || listed.note)) {
       otherNotes += 1;
       listedTables = listed.tables.length;
-      target.append(intelligentSummary(listed.note, listed.summary, listed.tables));
+      target.append(intelligentSummary(listed.note, listed.summary, listed.tables, listed.cache));
       continue;
     }
     otherNotes += 1;
@@ -2451,7 +2451,7 @@ function resultLabel(item) {
   return item.message || "ok";
 }
 
-function describeCard(description, note) {
+function describeCard(description, note, cache) {
   const card = document.createElement("section");
   card.className = "describe";
   card.dataset.testid = "result-note";
@@ -2463,12 +2463,16 @@ function describeCard(description, note) {
   title.className = "describe-name";
   title.textContent = description.name;
   head.append(title);
+  const aside = document.createElement("div");
+  aside.className = "describe-head-aside";
+  if (cache) aside.append(cacheHint(cache));
   if (description.status) {
     const status = document.createElement("span");
     status.className = "describe-status " + statusClass(description.status);
     status.textContent = description.status;
-    head.append(status);
+    aside.append(status);
   }
+  if (aside.childNodes.length) head.append(aside);
   card.append(head);
 
   const stats = [
@@ -2508,11 +2512,11 @@ function describeCard(description, note) {
   return card;
 }
 
-function intelligentSummary(note, summary, tables) {
+function intelligentSummary(note, summary, tables, cache) {
   const card = document.createElement("section");
   card.className = "describe";
   card.dataset.testid = "result-note";
-  if (note) card.append(matchNote(note));
+  if (note || cache) card.append(describeChrome(note, cache));
   if (tables && tables.length) card.append(summaryTable(tables));
   else {
     const body = document.createElement("pre");
@@ -2569,6 +2573,51 @@ function summaryTable(tables) {
   table.append(thead, body);
   wrap.append(table);
   return wrap;
+}
+
+function describeChrome(note, cache) {
+  const row = document.createElement("div");
+  row.className = "describe-chrome";
+  if (note) row.append(matchNote(note));
+  if (cache) row.append(cacheHint(cache));
+  return row;
+}
+
+function cacheHint(text) {
+  const hint = document.createElement("span");
+  hint.className = "describe-cache";
+  hint.tabIndex = 0;
+  hint.dataset.testid = "cache-hint";
+  if (/^cache refresh failed\b/i.test(text)) hint.classList.add("is-warning");
+  hint.setAttribute("aria-label", text);
+  hint.append(cacheIcon(), cacheTip(text));
+  return hint;
+}
+
+function cacheIcon() {
+  const icon = document.createElement("span");
+  icon.className = "describe-cache-icon";
+  icon.setAttribute("aria-hidden", "true");
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  const mark = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  mark.setAttribute("fill", "none");
+  mark.setAttribute("stroke", "currentColor");
+  mark.setAttribute("stroke-width", "1.4");
+  mark.setAttribute("stroke-linecap", "round");
+  mark.setAttribute("stroke-linejoin", "round");
+  mark.setAttribute("d", "M8 2.6a5.4 5.4 0 1 1 0 10.8A5.4 5.4 0 0 1 8 2.6ZM8 4.9V8l2.1 1.3");
+  svg.append(mark);
+  icon.append(svg);
+  return icon;
+}
+
+function cacheTip(text) {
+  const tip = document.createElement("span");
+  tip.className = "describe-cache-tip";
+  tip.setAttribute("role", "tooltip");
+  tip.textContent = text;
+  return tip;
 }
 
 function sidebarMatchNote(text) {

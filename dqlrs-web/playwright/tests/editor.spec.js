@@ -1115,6 +1115,7 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
   const fresh = page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
   await expect(fresh).toContainText("THROUGHPUT (2, 3)");
   await expect(fresh).toContainText(name);
+  await expect(fresh.locator("[data-testid='cache-hint']")).toHaveAttribute("aria-label", /Refreshed the cached table list/);
   await expect(fresh).not.toContainText(other);
 
   await runEditor(`SHOW TABLES LIKE '${name}';`);
@@ -1195,7 +1196,7 @@ test("show-tables-like-intelligent-match notes similar names and related keys", 
   await expect(page.locator("#result-body")).toContainText("No rows");
 });
 
-test("describe-table matches ls when one table matches", async ({ page, app }) => {
+test("describe-table matches ls when one table matches", async ({ page, app }, testInfo) => {
   const stem = uniqueTable();
   const name = `${stem}a`;
   const other = `${stem}b`;
@@ -1219,11 +1220,13 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   const described = page.locator(".describe").filter({ hasText: "Hash Key" });
   await expectDescription(page, described, name);
   await expect(described).not.toContainText(other);
+  await expect(described.locator("[data-testid='cache-hint']")).toHaveCount(0);
 
   await runEditor(`ls ${name}`);
   const listed = page.locator(".query-result").last().locator(".describe").filter({ hasText: "Hash Key" });
   await expectDescription(page, listed, name);
   await expect(listed).not.toContainText(other);
+  await expectCacheHint(listed, testInfo, "detail");
 
   await runEditor(`ls ${name}*`);
   const globbed = page.locator(".query-result").last().locator(".describe").filter({ hasText: "Hash Key" });
@@ -1239,6 +1242,7 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   await expect(summary).not.toContainText("Hash Key");
   await expect(summary.locator("[data-testid='intelligent-match']")).toHaveCount(0);
   await expect(summary.locator("#result-table")).toHaveCount(0);
+  await expectCacheHint(summary, testInfo, "summary");
 
   await runEditor("ls;");
   const all = page.locator(".query-result").last().locator(".describe").filter({ hasText: name });
@@ -1256,6 +1260,7 @@ test("describe-table matches ls when one table matches", async ({ page, app }) =
   await expect(shown.locator(".describe-status.is-active").first()).toBeVisible();
   await expect(shown.locator("[data-testid='intelligent-match']")).toHaveCount(0);
   await expect(shown.locator("#result-table")).toHaveCount(0);
+  await expect(shown.locator("[data-testid='cache-hint']")).toHaveCount(0);
   await expect(page.locator("#result-meta")).toBeEmpty();
 });
 
@@ -1280,6 +1285,7 @@ test("ls-intelligent-match notes partial names when nothing matches exactly", as
   await expect(many.locator("[data-testid='intelligent-match']")).toContainText(`No exact match for "${stem}"`);
   await expect(many.locator("[data-testid='intelligent-match']")).toContainText("showing similar names");
   await expect(many.locator(".describe-match-pattern")).toContainText(`"${stem}"`);
+  await expect(many.locator("[data-testid='cache-hint']")).toHaveCount(1);
   await expect(many.locator(".describe-table-name", { hasText: name })).toHaveCount(1);
   await expect(many.locator(".describe-table-name", { hasText: other })).toHaveCount(1);
   await expect(many.locator(".describe-status.is-active")).toHaveCount(2);
@@ -1323,6 +1329,17 @@ test("ls-related-keys lists tables whose keys match", async ({ page, app }) => {
   await expect(card).not.toContainText("similar names");
   await expect(card).not.toContainText("Hash Key");
 });
+
+async function expectCacheHint(card, testInfo, kind) {
+  const hint = card.locator("[data-testid='cache-hint']");
+  await expect(hint).toHaveCount(1);
+  await expect(hint).toHaveAttribute("aria-label", /table list/);
+  await hint.hover();
+  const tip = hint.locator(".describe-cache-tip");
+  await expect(tip).toBeVisible();
+  await expect(tip).toHaveText(await hint.getAttribute("aria-label"));
+  await card.screenshot({ path: `/opt/cursor/artifacts/ls-cache-${kind}-${testInfo.project.name}.png` });
+}
 
 async function expectDescription(page, card, tableName) {
   await expect(card.locator(".describe-name")).toHaveText(tableName);

@@ -9,17 +9,25 @@ export function parseLsMessage(text) {
   if (!raw) return null;
   const lines = raw.split("\n");
   let note = "";
+  let cache = "";
   let start = 0;
-  while (start < lines.length && !lines[start].trim()) start += 1;
-  if (start < lines.length && INTELLIGENT_NOTE.test(lines[start].trim())) {
-    note = lines[start].trim();
-    start += 1;
-  }
-  // `ls` prints `cache: …` ahead of the table. That hint is not part of the
-  // description or the summary, so the card parser skips it.
+  // `ls` prints `cache: …` ahead of the table, before or after the
+  // intelligent-match note. That hint is not part of the description.
   while (start < lines.length) {
     const line = lines[start].trim();
-    if (!line || line.startsWith("cache:")) {
+    if (!line) {
+      start += 1;
+      continue;
+    }
+    const hint = line.match(/^cache:\s*(.*)$/i);
+    if (hint) {
+      const text = hint[1].trim();
+      if (text) cache = cache ? `${cache}\n${text}` : text;
+      start += 1;
+      continue;
+    }
+    if (!note && INTELLIGENT_NOTE.test(line)) {
+      note = line;
       start += 1;
       continue;
     }
@@ -28,9 +36,9 @@ export function parseLsMessage(text) {
   const body = lines.slice(start).join("\n").trim();
   const description = parseTableDescription(body);
   const tables = parseTableSummary(body);
-  if (description) return { note, description, summary: "", tables: [] };
+  if (description) return { note, cache, description, summary: "", tables: [] };
   if (note || tables || body.startsWith("Tables")) {
-    return { note, description: null, summary: body, tables: tables || [] };
+    return { note, cache, description: null, summary: body, tables: tables || [] };
   }
   return null;
 }
