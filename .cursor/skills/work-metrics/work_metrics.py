@@ -23,10 +23,16 @@ import plotly
 import plotly.graph_objects as go
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-PALETTE = ["#9a3412", "#1e3a5f", "#1f5c45", "#7c4a12", "#6b3fa0", "#0f6e8c", "#a15c07", "#3f6212", "#9f1239"]
-COMMIT_COLOR = "#9f1239"
+# Hues sit far apart so stacked and neighboring bars stay readable on the cream page.
+PALETTE = [
+    "#E31A1C", "#0067A5", "#F38400", "#6A3D9A", "#2E7D32",
+    "#E7298A", "#008888", "#882D17", "#9E9D24", "#8D6E63",
+]
+COMMIT_COLOR = "#E31A1C"
 TOKEN_COLOR = "#1c1915"
-HOUR_COLOR = "#1f5c45"
+HOUR_COLOR = "#0067A5"
+TOKEN_BAR_COLOR = "#F38400"
+PULL_COLOR = "#6A3D9A"
 # 10 commits sit level with 40 million tokens on the timeline's right axis.
 TOKENS_PER_COMMIT = 4.0
 PHASES_PATH = Path(__file__).with_name("phases.json")
@@ -308,8 +314,8 @@ def timeline_figure(days: list[str], hours: list[int], commits: list[int], token
                 sizeref=2.0 * largest / (34.0 ** 2),
                 sizemin=5,
                 color=COMMIT_COLOR,
-                opacity=0.45,
-                line=dict(color=COMMIT_COLOR, width=1.2),
+                opacity=0.92,
+                line=dict(color="#fffdf8", width=1.4),
             ),
             hovertemplate="%{x|%d %b}: %{customdata} commits<extra></extra>",
         )
@@ -349,7 +355,7 @@ def token_bin_figure(rows: list[dict], grain: str, start: datetime, end: datetim
         x=[row["at"] for row in rows],
         y=[row["tokens_millions"] for row in rows],
         name="Tokens (millions)",
-        marker_color="#1e3a5f",
+        marker_color=TOKEN_BAR_COLOR,
         hovertemplate="%{customdata}: %{y:.1f} million tokens<extra></extra>",
         customdata=[row["label"] for row in rows],
     )
@@ -375,7 +381,7 @@ def pulls_figure(rows: list[dict]) -> go.Figure:
     fig.add_bar(
         x=[row["label"] for row in rows],
         y=[row["count"] for row in rows],
-        marker_color="#6b3fa0",
+        marker_color=PULL_COLOR,
         hovertemplate="%{x}: %{y} pull requests<extra></extra>",
     )
     apply_layout(fig, 360)
@@ -756,7 +762,7 @@ def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure],
       --ink: #1c1915;
       --muted: #5e564c;
       --line: #e3d9c8;
-      --accent: #9a3412;
+      --accent: #E31A1C;
       --code: #f6f1e8;
     }}
     * {{ box-sizing: border-box; }}
@@ -836,10 +842,10 @@ def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure],
       border-top: 3px solid var(--accent);
       padding: 0.75rem 0.7rem 0.65rem;
     }}
-    .stat:nth-child(2) {{ border-top-color: #1e3a5f; }}
-    .stat:nth-child(3) {{ border-top-color: #1f5c45; }}
-    .stat:nth-child(4) {{ border-top-color: #7c4a12; }}
-    .stat:nth-child(5) {{ border-top-color: #6b3fa0; }}
+    .stat:nth-child(2) {{ border-top-color: #0067A5; }}
+    .stat:nth-child(3) {{ border-top-color: #F38400; }}
+    .stat:nth-child(4) {{ border-top-color: #6A3D9A; }}
+    .stat:nth-child(5) {{ border-top-color: #2E7D32; }}
     .stat b {{
       display: block;
       font-family: "Avenir Next", "Segoe UI", sans-serif;

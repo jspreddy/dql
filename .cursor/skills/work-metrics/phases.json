@@ -3,7 +3,7 @@
     {
       "id": "rust",
       "label": "Rust impl",
-      "color": "#9a3412",
+      "color": "#E31A1C",
       "summary": "Rust implementation through 20 Aug, ending as the acceptance tests began.",
       "hours": [
         "2026-07-05T18", "2026-07-05T19", "2026-07-05T20", "2026-07-05T21", "2026-07-05T22",
@@ -20,7 +20,7 @@
     {
       "id": "improve",
       "label": "Rust improvements",
-      "color": "#1e3a5f",
+      "color": "#0067A5",
       "summary": "October query behavior, ls, DESCRIBE, SHOW TABLES, SAVE, and REPL work.",
       "hours": [
         "2026-10-04T04",
@@ -34,7 +34,7 @@
     {
       "id": "acceptance",
       "label": "Acceptance tests",
-      "color": "#1f5c45",
+      "color": "#F38400",
       "summary": "Black-box acceptance tests. The 3 Oct pexpect hour stays here.",
       "hours": [
         "2026-08-21T15", "2026-08-21T17", "2026-08-21T18", "2026-08-21T19",
@@ -46,7 +46,7 @@
     {
       "id": "notebook",
       "label": "Notebook",
-      "color": "#0f6e8c",
+      "color": "#6A3D9A",
       "summary": "Notebook planning and implementation.",
       "hours": [
         "2026-09-18T23",
@@ -58,7 +58,7 @@
     {
       "id": "web",
       "label": "Web",
-      "color": "#7c4a12",
+      "color": "#2E7D32",
       "summary": "Web UI.",
       "hours": [
         "2026-10-07T17", "2026-10-07T18", "2026-10-07T19", "2026-10-07T20",
@@ -80,19 +80,19 @@
   "outside": {
     "id": "outside",
     "label": "Outside these groups",
-    "color": "#6b3fa0",
+    "color": "#E7298A",
     "summary": "Git graph, CI, README and screenshots, justfiles, explainers, version bumps, flake fixes, and the 12 Oct 15:00 UTC hour split between a SAVE change and a black-box flake."
   },
   "repo_commits": {
     "id": "repo",
     "label": "Other commits in this repo",
-    "color": "#3f6212",
+    "color": "#008888",
     "summary": "A commit on some ref in this repo, outside the rewrite range."
   },
   "repo_agents": {
     "id": "agent",
     "label": "This repo agent",
-    "color": "#a15c07",
+    "color": "#882D17",
     "summary": "Usage from a cloud agent on this repo, in an hour with no commit here."
   },
   "agents": [

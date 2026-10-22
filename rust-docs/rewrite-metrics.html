@@ -11,11 +11,11 @@
       --ink: #1c1915;
       --muted: #5e564c;
       --line: #e3d9c8;
-      --accent: #9a3412;
+      --accent: #E31A1C;
       --code: #f6f1e8;
-      --commits: #9a3412;
-      --tokens: #1e3a5f;
-      --marks: #1f5c45;
+      --commits: #E31A1C;
+      --tokens: #0067A5;
+      --marks: #6A3D9A;
     }
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
@@ -101,8 +101,8 @@
     }
     .stat:nth-child(2) { border-top-color: var(--tokens); }
     .stat:nth-child(3) { border-top-color: var(--marks); }
-    .stat:nth-child(4) { border-top-color: #7c4a12; }
-    .stat:nth-child(5) { border-top-color: #6b3fa0; }
+    .stat:nth-child(4) { border-top-color: #2E7D32; }
+    .stat:nth-child(5) { border-top-color: #E7298A; }
     .stat b {
       display: block;
       font-family: "Avenir Next", "Segoe UI", sans-serif;
@@ -240,16 +240,16 @@
       <svg viewBox="0 0 640 160" role="img" aria-labelledby="featureDaysTitle">
 <title id="featureDaysTitle">Days worked by feature group</title>
 <text x="200" y="30" text-anchor="end" fill="#1c1915" font-size="13">Rust impl</text>
-<rect x="212" y="16" width="320" height="18" fill="#9a3412"><title>Rust impl: 8 days</title></rect>
+<rect x="212" y="16" width="320" height="18" fill="#E31A1C"><title>Rust impl: 8 days</title></rect>
 <text x="540" y="30" fill="#5e564c" font-size="13">8</text>
 <text x="200" y="66" text-anchor="end" fill="#1c1915" font-size="13">Acceptance tests</text>
-<rect x="212" y="52" width="120" height="18" fill="#1e3a5f"><title>Acceptance tests: 3 days</title></rect>
+<rect x="212" y="52" width="120" height="18" fill="#F38400"><title>Acceptance tests: 3 days</title></rect>
 <text x="340" y="66" fill="#5e564c" font-size="13">3</text>
 <text x="200" y="102" text-anchor="end" fill="#1c1915" font-size="13">Notebook</text>
-<rect x="212" y="88" width="160" height="18" fill="#1f5c45"><title>Notebook: 4 days</title></rect>
+<rect x="212" y="88" width="160" height="18" fill="#6A3D9A"><title>Notebook: 4 days</title></rect>
 <text x="380" y="102" fill="#5e564c" font-size="13">4</text>
 <text x="200" y="138" text-anchor="end" fill="#1c1915" font-size="13">Web</text>
-<rect x="212" y="124" width="360" height="18" fill="#7c4a12"><title>Web: 9 days</title></rect>
+<rect x="212" y="124" width="360" height="18" fill="#2E7D32"><title>Web: 9 days</title></rect>
 <text x="580" y="138" fill="#5e564c" font-size="13">9</text>
 </svg>
       <p class="caption">Days with a commit on <code>v-rust</code>. Bar length is days worked. 8 + 3 + 4 + 9 = 24. The other three days stay in the 27 and outside these groups.</p>
@@ -269,8 +269,8 @@
       <h2 id="main-graph">Main graph</h2>
       <p>Each day from 2 Jul through 21 Oct. Bars are commits on <code>v-rust</code>. The line is tokens, in millions. Dashed lines mark when a major slice merged.</p>
       <div class="legend">
-        <span><i style="background:#9a3412"></i>Commits on v-rust</span>
-        <span><i style="background:#1e3a5f"></i>Tokens (millions)</span>
+        <span><i style="background:#E31A1C"></i>Commits on v-rust</span>
+        <span><i style="background:#0067A5"></i>Tokens (millions)</span>
         <span><i class="dash"></i>Merged into v-rust</span>
       </div>
       <svg viewBox="0 0 960 420" role="img" aria-labelledby="mainTitle">
@@ -290,74 +290,74 @@
 <line x1="48" x2="902" y1="58.0" y2="58.0" stroke="#e3d9c8"/>
 <text x="40" y="62.0" text-anchor="end" fill="#5e564c" font-size="12">40</text>
 <text x="910" y="62.0" fill="#5e564c" font-size="12">160</text>
-<text x="48" y="16" fill="#9a3412" font-size="13" font-weight="700">Commits</text>
-<text x="902" y="16" text-anchor="end" fill="#1e3a5f" font-size="13" font-weight="700">Tokens (millions)</text>
-<rect x="72.6" y="90.6" width="4.2" height="293.4" fill="#9a3412"><title>5 Jul: 36 commits, 104.9 million tokens</title></rect>
-<rect x="80.2" y="335.1" width="4.2" height="48.9" fill="#9a3412"><title>6 Jul: 6 commits, 10.1 million tokens</title></rect>
-<rect x="95.5" y="278.1" width="4.2" height="105.9" fill="#9a3412"><title>8 Jul: 13 commits, 20.3 million tokens</title></rect>
-<rect x="110.7" y="82.4" width="4.2" height="301.6" fill="#9a3412"><title>10 Jul: 37 commits, 58.9 million tokens</title></rect>
-<rect x="164.1" y="367.7" width="4.2" height="16.3" fill="#9a3412"><title>17 Jul: 2 commits, 1.9 million tokens</title></rect>
-<rect x="202.2" y="375.9" width="4.2" height="8.1" fill="#9a3412"><title>22 Jul: 1 commits, 0.0 million tokens</title></rect>
-<rect x="415.7" y="375.9" width="4.2" height="8.1" fill="#9a3412"><title>19 Aug: 1 commits, 1.6 million tokens</title></rect>
-<rect x="423.3" y="212.8" width="4.2" height="171.2" fill="#9a3412"><title>20 Aug: 21 commits, 21.5 million tokens</title></rect>
-<rect x="431.0" y="204.7" width="4.2" height="179.3" fill="#9a3412"><title>21 Aug: 22 commits, 37.5 million tokens</title></rect>
-<rect x="438.6" y="375.9" width="4.2" height="8.1" fill="#9a3412"><title>22 Aug: 1 commits, 5.0 million tokens</title></rect>
-<rect x="446.2" y="196.6" width="4.2" height="187.4" fill="#9a3412"><title>23 Aug: 23 commits, 21.8 million tokens</title></rect>
-<rect x="644.5" y="375.9" width="4.2" height="8.1" fill="#9a3412"><title>18 Sep: 1 commits, 0.6 million tokens</title></rect>
-<rect x="652.1" y="253.6" width="4.2" height="130.4" fill="#9a3412"><title>19 Sep: 16 commits, 86.6 million tokens</title></rect>
-<rect x="758.8" y="367.7" width="4.2" height="16.3" fill="#9a3412"><title>3 Oct: 2 commits, 21.3 million tokens</title></rect>
-<rect x="766.5" y="261.8" width="4.2" height="122.2" fill="#9a3412"><title>4 Oct: 15 commits, 51.4 million tokens</title></rect>
-<rect x="774.1" y="359.6" width="4.2" height="24.4" fill="#9a3412"><title>5 Oct: 3 commits, 13.4 million tokens</title></rect>
-<rect x="789.3" y="237.3" width="4.2" height="146.7" fill="#9a3412"><title>7 Oct: 18 commits, 28.9 million tokens</title></rect>
-<rect x="797.0" y="335.1" width="4.2" height="48.9" fill="#9a3412"><title>8 Oct: 6 commits, 6.7 million tokens</title></rect>
-<rect x="812.2" y="58.0" width="4.2" height="326.0" fill="#9a3412"><title>10 Oct: 40 commits, 150.7 million tokens</title></rect>
-<rect x="819.8" y="253.6" width="4.2" height="130.4" fill="#9a3412"><title>11 Oct: 16 commits, 12.6 million tokens</title></rect>
-<rect x="827.5" y="123.2" width="4.2" height="260.8" fill="#9a3412"><title>12 Oct: 32 commits, 92.7 million tokens</title></rect>
-<rect x="835.1" y="212.8" width="4.2" height="171.2" fill="#9a3412"><title>13 Oct: 21 commits, 45.4 million tokens</title></rect>
-<rect x="842.7" y="196.6" width="4.2" height="187.4" fill="#9a3412"><title>14 Oct: 23 commits, 93.9 million tokens</title></rect>
-<rect x="850.3" y="278.1" width="4.2" height="105.9" fill="#9a3412"><title>15 Oct: 13 commits, 35.9 million tokens</title></rect>
-<rect x="865.6" y="375.9" width="4.2" height="8.1" fill="#9a3412"><title>17 Oct: 1 commits, 2.0 million tokens</title></rect>
-<rect x="873.2" y="310.6" width="4.2" height="73.4" fill="#9a3412"><title>18 Oct: 9 commits, 21.4 million tokens</title></rect>
-<rect x="880.8" y="367.7" width="4.2" height="16.3" fill="#9a3412"><title>19 Oct: 2 commits, 6.2 million tokens</title></rect>
-<polyline fill="none" stroke="#1e3a5f" stroke-width="2.2" points="51.8,378.7 59.4,384.0 67.1,384.0 74.7,170.3 82.3,363.4 89.9,384.0 97.6,342.6 105.2,384.0 112.8,264.0 120.4,384.0 128.1,384.0 135.7,384.0 143.3,384.0 150.9,384.0 158.6,384.0 166.2,380.1 173.8,384.0 181.4,384.0 189.1,384.0 196.7,384.0 204.3,384.0 211.9,384.0 219.6,384.0 227.2,384.0 234.8,384.0 242.4,384.0 250.1,384.0 257.7,384.0 265.3,384.0 272.9,384.0 280.6,384.0 288.2,384.0 295.8,384.0 303.4,384.0 311.1,384.0 318.7,384.0 326.3,384.0 333.9,384.0 341.6,384.0 349.2,384.0 356.8,384.0 364.4,384.0 372.1,384.0 379.7,384.0 387.3,384.0 394.9,384.0 402.6,384.0 410.2,384.0 417.8,380.7 425.4,340.2 433.1,307.6 440.7,373.8 448.3,339.6 455.9,384.0 463.6,384.0 471.2,384.0 478.8,380.1 486.4,384.0 494.1,384.0 501.7,384.0 509.3,384.0 516.9,384.0 524.6,384.0 532.2,384.0 539.8,384.0 547.4,384.0 555.1,384.0 562.7,384.0 570.3,384.0 577.9,384.0 585.6,384.0 593.2,384.0 600.8,384.0 608.4,384.0 616.1,384.0 623.7,384.0 631.3,384.0 638.9,384.0 646.6,382.8 654.2,207.6 661.8,384.0 669.4,384.0 677.1,384.0 684.7,384.0 692.3,384.0 699.9,384.0 707.6,384.0 715.2,384.0 722.8,384.0 730.4,384.0 738.1,384.0 745.7,384.0 753.3,384.0 760.9,340.6 768.6,279.3 776.2,356.7 783.8,384.0 791.4,325.1 799.1,370.3 806.7,384.0 814.3,76.9 821.9,358.3 829.6,195.1 837.2,291.5 844.8,192.7 852.4,310.9 860.1,384.0 867.7,379.9 875.3,340.4 882.9,371.4 890.6,352.4 898.2,360.8"/>
-<circle cx="51.8" cy="378.7" r="3" fill="#1e3a5f"><title>2 Jul: 2.6 million tokens, 0 commits</title></circle>
-<circle cx="74.7" cy="170.3" r="3" fill="#1e3a5f"><title>5 Jul: 104.9 million tokens, 36 commits</title></circle>
-<circle cx="82.3" cy="363.4" r="3" fill="#1e3a5f"><title>6 Jul: 10.1 million tokens, 6 commits</title></circle>
-<circle cx="97.6" cy="342.6" r="3" fill="#1e3a5f"><title>8 Jul: 20.3 million tokens, 13 commits</title></circle>
-<circle cx="112.8" cy="264.0" r="3" fill="#1e3a5f"><title>10 Jul: 58.9 million tokens, 37 commits</title></circle>
-<circle cx="166.2" cy="380.1" r="3" fill="#1e3a5f"><title>17 Jul: 1.9 million tokens, 2 commits</title></circle>
-<circle cx="417.8" cy="380.7" r="3" fill="#1e3a5f"><title>19 Aug: 1.6 million tokens, 1 commits</title></circle>
-<circle cx="425.4" cy="340.2" r="3" fill="#1e3a5f"><title>20 Aug: 21.5 million tokens, 21 commits</title></circle>
-<circle cx="433.1" cy="307.6" r="3" fill="#1e3a5f"><title>21 Aug: 37.5 million tokens, 22 commits</title></circle>
-<circle cx="440.7" cy="373.8" r="3" fill="#1e3a5f"><title>22 Aug: 5.0 million tokens, 1 commits</title></circle>
-<circle cx="448.3" cy="339.6" r="3" fill="#1e3a5f"><title>23 Aug: 21.8 million tokens, 23 commits</title></circle>
-<circle cx="478.8" cy="380.1" r="3" fill="#1e3a5f"><title>27 Aug: 1.9 million tokens, 0 commits</title></circle>
-<circle cx="646.6" cy="382.8" r="3" fill="#1e3a5f"><title>18 Sep: 0.6 million tokens, 1 commits</title></circle>
-<circle cx="654.2" cy="207.6" r="3" fill="#1e3a5f"><title>19 Sep: 86.6 million tokens, 16 commits</title></circle>
-<circle cx="760.9" cy="340.6" r="3" fill="#1e3a5f"><title>3 Oct: 21.3 million tokens, 2 commits</title></circle>
-<circle cx="768.6" cy="279.3" r="3" fill="#1e3a5f"><title>4 Oct: 51.4 million tokens, 15 commits</title></circle>
-<circle cx="776.2" cy="356.7" r="3" fill="#1e3a5f"><title>5 Oct: 13.4 million tokens, 3 commits</title></circle>
-<circle cx="791.4" cy="325.1" r="3" fill="#1e3a5f"><title>7 Oct: 28.9 million tokens, 18 commits</title></circle>
-<circle cx="799.1" cy="370.3" r="3" fill="#1e3a5f"><title>8 Oct: 6.7 million tokens, 6 commits</title></circle>
-<circle cx="814.3" cy="76.9" r="3" fill="#1e3a5f"><title>10 Oct: 150.7 million tokens, 40 commits</title></circle>
-<circle cx="821.9" cy="358.3" r="3" fill="#1e3a5f"><title>11 Oct: 12.6 million tokens, 16 commits</title></circle>
-<circle cx="829.6" cy="195.1" r="3" fill="#1e3a5f"><title>12 Oct: 92.7 million tokens, 32 commits</title></circle>
-<circle cx="837.2" cy="291.5" r="3" fill="#1e3a5f"><title>13 Oct: 45.4 million tokens, 21 commits</title></circle>
-<circle cx="844.8" cy="192.7" r="3" fill="#1e3a5f"><title>14 Oct: 93.9 million tokens, 23 commits</title></circle>
-<circle cx="852.4" cy="310.9" r="3" fill="#1e3a5f"><title>15 Oct: 35.9 million tokens, 13 commits</title></circle>
-<circle cx="867.7" cy="379.9" r="3" fill="#1e3a5f"><title>17 Oct: 2.0 million tokens, 1 commits</title></circle>
-<circle cx="875.3" cy="340.4" r="3" fill="#1e3a5f"><title>18 Oct: 21.4 million tokens, 9 commits</title></circle>
-<circle cx="882.9" cy="371.4" r="3" fill="#1e3a5f"><title>19 Oct: 6.2 million tokens, 2 commits</title></circle>
-<circle cx="890.6" cy="352.4" r="3" fill="#1e3a5f"><title>20 Oct: 15.5 million tokens, 0 commits</title></circle>
-<circle cx="898.2" cy="360.8" r="3" fill="#1e3a5f"><title>21 Oct: 11.4 million tokens, 0 commits</title></circle>
-<line x1="425.4" x2="425.4" y1="52" y2="384.0" stroke="#1f5c45" stroke-dasharray="4 3"/>
-<line x1="448.3" x2="448.3" y1="52" y2="384.0" stroke="#1f5c45" stroke-dasharray="4 3"/>
-<line x1="425.4" x2="448.3" y1="38" y2="38" stroke="#1f5c45"/>
-<text x="436.9" y="32" text-anchor="middle" fill="#1f5c45" font-size="13" font-weight="700">Rust and tests</text>
-<line x1="814.3" x2="814.3" y1="52" y2="384.0" stroke="#1f5c45" stroke-dasharray="4 3"/>
-<text x="814.3" y="32" text-anchor="middle" fill="#1f5c45" font-size="13" font-weight="700">Web UI</text>
-<line x1="882.9" x2="882.9" y1="52" y2="384.0" stroke="#1f5c45" stroke-dasharray="4 3"/>
-<text x="882.9" y="48" text-anchor="middle" fill="#1f5c45" font-size="13" font-weight="700">CLI and web</text>
+<text x="48" y="16" fill="#E31A1C" font-size="13" font-weight="700">Commits</text>
+<text x="902" y="16" text-anchor="end" fill="#0067A5" font-size="13" font-weight="700">Tokens (millions)</text>
+<rect x="72.6" y="90.6" width="4.2" height="293.4" fill="#E31A1C"><title>5 Jul: 36 commits, 104.9 million tokens</title></rect>
+<rect x="80.2" y="335.1" width="4.2" height="48.9" fill="#E31A1C"><title>6 Jul: 6 commits, 10.1 million tokens</title></rect>
+<rect x="95.5" y="278.1" width="4.2" height="105.9" fill="#E31A1C"><title>8 Jul: 13 commits, 20.3 million tokens</title></rect>
+<rect x="110.7" y="82.4" width="4.2" height="301.6" fill="#E31A1C"><title>10 Jul: 37 commits, 58.9 million tokens</title></rect>
+<rect x="164.1" y="367.7" width="4.2" height="16.3" fill="#E31A1C"><title>17 Jul: 2 commits, 1.9 million tokens</title></rect>
+<rect x="202.2" y="375.9" width="4.2" height="8.1" fill="#E31A1C"><title>22 Jul: 1 commits, 0.0 million tokens</title></rect>
+<rect x="415.7" y="375.9" width="4.2" height="8.1" fill="#E31A1C"><title>19 Aug: 1 commits, 1.6 million tokens</title></rect>
+<rect x="423.3" y="212.8" width="4.2" height="171.2" fill="#E31A1C"><title>20 Aug: 21 commits, 21.5 million tokens</title></rect>
+<rect x="431.0" y="204.7" width="4.2" height="179.3" fill="#E31A1C"><title>21 Aug: 22 commits, 37.5 million tokens</title></rect>
+<rect x="438.6" y="375.9" width="4.2" height="8.1" fill="#E31A1C"><title>22 Aug: 1 commits, 5.0 million tokens</title></rect>
+<rect x="446.2" y="196.6" width="4.2" height="187.4" fill="#E31A1C"><title>23 Aug: 23 commits, 21.8 million tokens</title></rect>
+<rect x="644.5" y="375.9" width="4.2" height="8.1" fill="#E31A1C"><title>18 Sep: 1 commits, 0.6 million tokens</title></rect>
+<rect x="652.1" y="253.6" width="4.2" height="130.4" fill="#E31A1C"><title>19 Sep: 16 commits, 86.6 million tokens</title></rect>
+<rect x="758.8" y="367.7" width="4.2" height="16.3" fill="#E31A1C"><title>3 Oct: 2 commits, 21.3 million tokens</title></rect>
+<rect x="766.5" y="261.8" width="4.2" height="122.2" fill="#E31A1C"><title>4 Oct: 15 commits, 51.4 million tokens</title></rect>
+<rect x="774.1" y="359.6" width="4.2" height="24.4" fill="#E31A1C"><title>5 Oct: 3 commits, 13.4 million tokens</title></rect>
+<rect x="789.3" y="237.3" width="4.2" height="146.7" fill="#E31A1C"><title>7 Oct: 18 commits, 28.9 million tokens</title></rect>
+<rect x="797.0" y="335.1" width="4.2" height="48.9" fill="#E31A1C"><title>8 Oct: 6 commits, 6.7 million tokens</title></rect>
+<rect x="812.2" y="58.0" width="4.2" height="326.0" fill="#E31A1C"><title>10 Oct: 40 commits, 150.7 million tokens</title></rect>
+<rect x="819.8" y="253.6" width="4.2" height="130.4" fill="#E31A1C"><title>11 Oct: 16 commits, 12.6 million tokens</title></rect>
+<rect x="827.5" y="123.2" width="4.2" height="260.8" fill="#E31A1C"><title>12 Oct: 32 commits, 92.7 million tokens</title></rect>
+<rect x="835.1" y="212.8" width="4.2" height="171.2" fill="#E31A1C"><title>13 Oct: 21 commits, 45.4 million tokens</title></rect>
+<rect x="842.7" y="196.6" width="4.2" height="187.4" fill="#E31A1C"><title>14 Oct: 23 commits, 93.9 million tokens</title></rect>
+<rect x="850.3" y="278.1" width="4.2" height="105.9" fill="#E31A1C"><title>15 Oct: 13 commits, 35.9 million tokens</title></rect>
+<rect x="865.6" y="375.9" width="4.2" height="8.1" fill="#E31A1C"><title>17 Oct: 1 commits, 2.0 million tokens</title></rect>
+<rect x="873.2" y="310.6" width="4.2" height="73.4" fill="#E31A1C"><title>18 Oct: 9 commits, 21.4 million tokens</title></rect>
+<rect x="880.8" y="367.7" width="4.2" height="16.3" fill="#E31A1C"><title>19 Oct: 2 commits, 6.2 million tokens</title></rect>
+<polyline fill="none" stroke="#0067A5" stroke-width="2.2" points="51.8,378.7 59.4,384.0 67.1,384.0 74.7,170.3 82.3,363.4 89.9,384.0 97.6,342.6 105.2,384.0 112.8,264.0 120.4,384.0 128.1,384.0 135.7,384.0 143.3,384.0 150.9,384.0 158.6,384.0 166.2,380.1 173.8,384.0 181.4,384.0 189.1,384.0 196.7,384.0 204.3,384.0 211.9,384.0 219.6,384.0 227.2,384.0 234.8,384.0 242.4,384.0 250.1,384.0 257.7,384.0 265.3,384.0 272.9,384.0 280.6,384.0 288.2,384.0 295.8,384.0 303.4,384.0 311.1,384.0 318.7,384.0 326.3,384.0 333.9,384.0 341.6,384.0 349.2,384.0 356.8,384.0 364.4,384.0 372.1,384.0 379.7,384.0 387.3,384.0 394.9,384.0 402.6,384.0 410.2,384.0 417.8,380.7 425.4,340.2 433.1,307.6 440.7,373.8 448.3,339.6 455.9,384.0 463.6,384.0 471.2,384.0 478.8,380.1 486.4,384.0 494.1,384.0 501.7,384.0 509.3,384.0 516.9,384.0 524.6,384.0 532.2,384.0 539.8,384.0 547.4,384.0 555.1,384.0 562.7,384.0 570.3,384.0 577.9,384.0 585.6,384.0 593.2,384.0 600.8,384.0 608.4,384.0 616.1,384.0 623.7,384.0 631.3,384.0 638.9,384.0 646.6,382.8 654.2,207.6 661.8,384.0 669.4,384.0 677.1,384.0 684.7,384.0 692.3,384.0 699.9,384.0 707.6,384.0 715.2,384.0 722.8,384.0 730.4,384.0 738.1,384.0 745.7,384.0 753.3,384.0 760.9,340.6 768.6,279.3 776.2,356.7 783.8,384.0 791.4,325.1 799.1,370.3 806.7,384.0 814.3,76.9 821.9,358.3 829.6,195.1 837.2,291.5 844.8,192.7 852.4,310.9 860.1,384.0 867.7,379.9 875.3,340.4 882.9,371.4 890.6,352.4 898.2,360.8"/>
+<circle cx="51.8" cy="378.7" r="3" fill="#0067A5"><title>2 Jul: 2.6 million tokens, 0 commits</title></circle>
+<circle cx="74.7" cy="170.3" r="3" fill="#0067A5"><title>5 Jul: 104.9 million tokens, 36 commits</title></circle>
+<circle cx="82.3" cy="363.4" r="3" fill="#0067A5"><title>6 Jul: 10.1 million tokens, 6 commits</title></circle>
+<circle cx="97.6" cy="342.6" r="3" fill="#0067A5"><title>8 Jul: 20.3 million tokens, 13 commits</title></circle>
+<circle cx="112.8" cy="264.0" r="3" fill="#0067A5"><title>10 Jul: 58.9 million tokens, 37 commits</title></circle>
+<circle cx="166.2" cy="380.1" r="3" fill="#0067A5"><title>17 Jul: 1.9 million tokens, 2 commits</title></circle>
+<circle cx="417.8" cy="380.7" r="3" fill="#0067A5"><title>19 Aug: 1.6 million tokens, 1 commits</title></circle>
+<circle cx="425.4" cy="340.2" r="3" fill="#0067A5"><title>20 Aug: 21.5 million tokens, 21 commits</title></circle>
+<circle cx="433.1" cy="307.6" r="3" fill="#0067A5"><title>21 Aug: 37.5 million tokens, 22 commits</title></circle>
+<circle cx="440.7" cy="373.8" r="3" fill="#0067A5"><title>22 Aug: 5.0 million tokens, 1 commits</title></circle>
+<circle cx="448.3" cy="339.6" r="3" fill="#0067A5"><title>23 Aug: 21.8 million tokens, 23 commits</title></circle>
+<circle cx="478.8" cy="380.1" r="3" fill="#0067A5"><title>27 Aug: 1.9 million tokens, 0 commits</title></circle>
+<circle cx="646.6" cy="382.8" r="3" fill="#0067A5"><title>18 Sep: 0.6 million tokens, 1 commits</title></circle>
+<circle cx="654.2" cy="207.6" r="3" fill="#0067A5"><title>19 Sep: 86.6 million tokens, 16 commits</title></circle>
+<circle cx="760.9" cy="340.6" r="3" fill="#0067A5"><title>3 Oct: 21.3 million tokens, 2 commits</title></circle>
+<circle cx="768.6" cy="279.3" r="3" fill="#0067A5"><title>4 Oct: 51.4 million tokens, 15 commits</title></circle>
+<circle cx="776.2" cy="356.7" r="3" fill="#0067A5"><title>5 Oct: 13.4 million tokens, 3 commits</title></circle>
+<circle cx="791.4" cy="325.1" r="3" fill="#0067A5"><title>7 Oct: 28.9 million tokens, 18 commits</title></circle>
+<circle cx="799.1" cy="370.3" r="3" fill="#0067A5"><title>8 Oct: 6.7 million tokens, 6 commits</title></circle>
+<circle cx="814.3" cy="76.9" r="3" fill="#0067A5"><title>10 Oct: 150.7 million tokens, 40 commits</title></circle>
+<circle cx="821.9" cy="358.3" r="3" fill="#0067A5"><title>11 Oct: 12.6 million tokens, 16 commits</title></circle>
+<circle cx="829.6" cy="195.1" r="3" fill="#0067A5"><title>12 Oct: 92.7 million tokens, 32 commits</title></circle>
+<circle cx="837.2" cy="291.5" r="3" fill="#0067A5"><title>13 Oct: 45.4 million tokens, 21 commits</title></circle>
+<circle cx="844.8" cy="192.7" r="3" fill="#0067A5"><title>14 Oct: 93.9 million tokens, 23 commits</title></circle>
+<circle cx="852.4" cy="310.9" r="3" fill="#0067A5"><title>15 Oct: 35.9 million tokens, 13 commits</title></circle>
+<circle cx="867.7" cy="379.9" r="3" fill="#0067A5"><title>17 Oct: 2.0 million tokens, 1 commits</title></circle>
+<circle cx="875.3" cy="340.4" r="3" fill="#0067A5"><title>18 Oct: 21.4 million tokens, 9 commits</title></circle>
+<circle cx="882.9" cy="371.4" r="3" fill="#0067A5"><title>19 Oct: 6.2 million tokens, 2 commits</title></circle>
+<circle cx="890.6" cy="352.4" r="3" fill="#0067A5"><title>20 Oct: 15.5 million tokens, 0 commits</title></circle>
+<circle cx="898.2" cy="360.8" r="3" fill="#0067A5"><title>21 Oct: 11.4 million tokens, 0 commits</title></circle>
+<line x1="425.4" x2="425.4" y1="52" y2="384.0" stroke="#6A3D9A" stroke-dasharray="4 3"/>
+<line x1="448.3" x2="448.3" y1="52" y2="384.0" stroke="#6A3D9A" stroke-dasharray="4 3"/>
+<line x1="425.4" x2="448.3" y1="38" y2="38" stroke="#6A3D9A"/>
+<text x="436.9" y="32" text-anchor="middle" fill="#6A3D9A" font-size="13" font-weight="700">Rust and tests</text>
+<line x1="814.3" x2="814.3" y1="52" y2="384.0" stroke="#6A3D9A" stroke-dasharray="4 3"/>
+<text x="814.3" y="32" text-anchor="middle" fill="#6A3D9A" font-size="13" font-weight="700">Web UI</text>
+<line x1="882.9" x2="882.9" y1="52" y2="384.0" stroke="#6A3D9A" stroke-dasharray="4 3"/>
+<text x="882.9" y="48" text-anchor="middle" fill="#6A3D9A" font-size="13" font-weight="700">CLI and web</text>
 <text x="51.8" y="408" fill="#5e564c" font-size="13">Jul</text>
 <text x="280.6" y="408" fill="#5e564c" font-size="13">Aug</text>
 <text x="516.9" y="408" fill="#5e564c" font-size="13">Sep</text>
@@ -392,23 +392,23 @@
 <text x="30" y="69.5" text-anchor="end" fill="#5e564c" font-size="11">165</text>
 <line x1="36" x2="508" y1="16.0" y2="16.0" stroke="#e3d9c8"/>
 <text x="30" y="20.0" text-anchor="end" fill="#5e564c" font-size="11">220</text>
-<rect x="58.4" y="145.6" width="73.2" height="68.4" fill="#9a3412"><title>Jul, Sai: 76</title></rect>
-<rect x="58.4" y="128.5" width="73.2" height="17.1" fill="#1e3a5f"><title>Jul, Cursor Agent: 19</title></rect>
+<rect x="58.4" y="145.6" width="73.2" height="68.4" fill="#E31A1C"><title>Jul, Sai: 76</title></rect>
+<rect x="58.4" y="128.5" width="73.2" height="17.1" fill="#0067A5"><title>Jul, Cursor Agent: 19</title></rect>
 <text x="95.0" y="236" text-anchor="middle" fill="#5e564c" font-size="12">Jul</text>
-<rect x="176.4" y="167.2" width="73.2" height="46.8" fill="#9a3412"><title>Aug, Sai: 52</title></rect>
-<rect x="176.4" y="152.8" width="73.2" height="14.4" fill="#1e3a5f"><title>Aug, Cursor Agent: 16</title></rect>
+<rect x="176.4" y="167.2" width="73.2" height="46.8" fill="#E31A1C"><title>Aug, Sai: 52</title></rect>
+<rect x="176.4" y="152.8" width="73.2" height="14.4" fill="#0067A5"><title>Aug, Cursor Agent: 16</title></rect>
 <text x="213.0" y="236" text-anchor="middle" fill="#5e564c" font-size="12">Aug</text>
-<rect x="294.4" y="214.0" width="73.2" height="0.0" fill="#9a3412"><title>Sep, Sai: 0</title></rect>
-<rect x="294.4" y="198.7" width="73.2" height="15.3" fill="#1e3a5f"><title>Sep, Cursor Agent: 17</title></rect>
+<rect x="294.4" y="214.0" width="73.2" height="0.0" fill="#E31A1C"><title>Sep, Sai: 0</title></rect>
+<rect x="294.4" y="198.7" width="73.2" height="15.3" fill="#0067A5"><title>Sep, Cursor Agent: 17</title></rect>
 <text x="331.0" y="236" text-anchor="middle" fill="#5e564c" font-size="12">Sep</text>
-<rect x="412.4" y="106.0" width="73.2" height="108.0" fill="#9a3412"><title>Oct, Sai: 120</title></rect>
-<rect x="412.4" y="33.1" width="73.2" height="72.9" fill="#1e3a5f"><title>Oct, Cursor Agent: 81</title></rect>
+<rect x="412.4" y="106.0" width="73.2" height="108.0" fill="#E31A1C"><title>Oct, Sai: 120</title></rect>
+<rect x="412.4" y="33.1" width="73.2" height="72.9" fill="#0067A5"><title>Oct, Cursor Agent: 81</title></rect>
 <text x="449.0" y="236" text-anchor="middle" fill="#5e564c" font-size="12">Oct</text>
 </svg>
           <p class="caption">Commits on <code>v-rust</code> after <code>v-next</code>. Sai is 248 commits. Cursor Agent is 133.</p>
           <div class="legend">
-            <span><i style="background:#9a3412"></i>Sai</span>
-            <span><i style="background:#1e3a5f"></i>Cursor Agent</span>
+            <span><i style="background:#E31A1C"></i>Sai</span>
+            <span><i style="background:#0067A5"></i>Cursor Agent</span>
           </div>
         </section>
         <section>
@@ -425,25 +425,25 @@
 <text x="30" y="64.0" text-anchor="end" fill="#5e564c" font-size="11">15</text>
 <line x1="36" x2="508" y1="8.0" y2="8.0" stroke="#e3d9c8"/>
 <text x="30" y="12.0" text-anchor="end" fill="#5e564c" font-size="11">20</text>
-<rect x="45.0" y="184.8" width="29.3" height="31.2" fill="#9a3412"><title>20 Aug: 3 pull requests</title></rect>
+<rect x="45.0" y="184.8" width="29.3" height="31.2" fill="#E31A1C"><title>20 Aug: 3 pull requests</title></rect>
 <text x="59.6" y="244" text-anchor="end" fill="#5e564c" font-size="11" transform="rotate(-45 59.6 244)">20 Aug</text>
-<rect x="92.2" y="195.2" width="29.3" height="20.8" fill="#1e3a5f"><title>21 Aug: 2 pull requests</title></rect>
+<rect x="92.2" y="195.2" width="29.3" height="20.8" fill="#0067A5"><title>21 Aug: 2 pull requests</title></rect>
 <text x="106.8" y="244" text-anchor="end" fill="#5e564c" font-size="11" transform="rotate(-45 106.8 244)">21 Aug</text>
-<rect x="139.4" y="195.2" width="29.3" height="20.8" fill="#1f5c45"><title>23 Aug: 2 pull requests</title></rect>
+<rect x="139.4" y="195.2" width="29.3" height="20.8" fill="#6A3D9A"><title>23 Aug: 2 pull requests</title></rect>
 <text x="154.0" y="244" text-anchor="end" fill="#5e564c" font-size="11" transform="rotate(-45 154.0 244)">23 Aug</text>
-<rect x="186.6" y="205.6" width="29.3" height="10.4" fill="#7c4a12"><title>3 Oct: 1 pull requests</title></rect>
+<rect x="186.6" y="205.6" width="29.3" height="10.4" fill="#2E7D32"><title>3 Oct: 1 pull requests</title></rect>
 <text x="201.2" y="244" text-anchor="end" fill="#5e564c" font-size="11" transform="rotate(-45 201.2 244)">3 Oct</text>
-<rect x="233.8" y="70.4" width="29.3" height="145.6" fill="#6b3fa0"><title>10 Oct: 14 pull requests</title></rect>
+<rect x="233.8" y="70.4" width="29.3" height="145.6" fill="#E7298A"><title>10 Oct: 14 pull requests</title></rect>
 <text x="248.4" y="244" text-anchor="end" fill="#5e564c" font-size="11" transform="rotate(-45 248.4 244)">10 Oct</text>
-<rect x="281.0" y="153.6" width="29.3" height="62.4" fill="#0f6e8c"><title>11 Oct: 6 pull requests</title></rect>
+<rect x="281.0" y="153.6" width="29.3" height="62.4" fill="#008888"><title>11 Oct: 6 pull requests</title></rect>
 <text x="295.6" y="244" text-anchor="end" fill="#5e564c" font-size="11" transform="rotate(-45 295.6 244)">11 Oct</text>
-<rect x="328.2" y="174.4" width="29.3" height="41.6" fill="#a15c07"><title>12 Oct: 4 pull requests</title></rect>
+<rect x="328.2" y="174.4" width="29.3" height="41.6" fill="#882D17"><title>12 Oct: 4 pull requests</title></rect>
 <text x="342.8" y="244" text-anchor="end" fill="#5e564c" font-size="11" transform="rotate(-45 342.8 244)">12 Oct</text>
-<rect x="375.4" y="205.6" width="29.3" height="10.4" fill="#3f6212"><title>13 Oct: 1 pull requests</title></rect>
+<rect x="375.4" y="205.6" width="29.3" height="10.4" fill="#9E9D24"><title>13 Oct: 1 pull requests</title></rect>
 <text x="390.0" y="244" text-anchor="end" fill="#5e564c" font-size="11" transform="rotate(-45 390.0 244)">13 Oct</text>
-<rect x="422.6" y="164.0" width="29.3" height="52.0" fill="#9f1239"><title>14 Oct: 5 pull requests</title></rect>
+<rect x="422.6" y="164.0" width="29.3" height="52.0" fill="#8D6E63"><title>14 Oct: 5 pull requests</title></rect>
 <text x="437.2" y="244" text-anchor="end" fill="#5e564c" font-size="11" transform="rotate(-45 437.2 244)">14 Oct</text>
-<rect x="469.8" y="49.6" width="29.3" height="166.4" fill="#9a3412"><title>19 Oct: 16 pull requests</title></rect>
+<rect x="469.8" y="49.6" width="29.3" height="166.4" fill="#E31A1C"><title>19 Oct: 16 pull requests</title></rect>
 <text x="484.4" y="244" text-anchor="end" fill="#5e564c" font-size="11" transform="rotate(-45 484.4 244)">19 Oct</text>
 </svg>
           <p class="caption">54 pull requests. 18 are merge commits and 36 are squash merges.</p>
@@ -455,31 +455,31 @@
           <svg viewBox="0 0 520 268" role="img" aria-labelledby="modelTitle">
 <title id="modelTitle">Tokens by model, in millions</title>
 <text x="180" y="24" text-anchor="end" fill="#1c1915" font-size="12">grok-4.7-high-fast</text>
-<rect x="188" y="13" width="280.0" height="14" fill="#9a3412"><title>grok-4.7-high-fast: 296M</title></rect>
+<rect x="188" y="13" width="280.0" height="14" fill="#E31A1C"><title>grok-4.7-high-fast: 296M</title></rect>
 <text x="474.0" y="24" fill="#5e564c" font-size="12">296M</text>
 <text x="180" y="52" text-anchor="end" fill="#1c1915" font-size="12">auto</text>
-<rect x="188" y="41" width="205.6" height="14" fill="#1e3a5f"><title>auto: 217.4M</title></rect>
+<rect x="188" y="41" width="205.6" height="14" fill="#0067A5"><title>auto: 217.4M</title></rect>
 <text x="399.6" y="52" fill="#5e564c" font-size="12">217.4M</text>
 <text x="180" y="80" text-anchor="end" fill="#1c1915" font-size="12">cursor-grok-4.6-high-fast</text>
-<rect x="188" y="69" width="121.5" height="14" fill="#1f5c45"><title>cursor-grok-4.6-high-fast: 128.4M</title></rect>
+<rect x="188" y="69" width="121.5" height="14" fill="#6A3D9A"><title>cursor-grok-4.6-high-fast: 128.4M</title></rect>
 <text x="315.5" y="80" fill="#5e564c" font-size="12">128.4M</text>
 <text x="180" y="108" text-anchor="end" fill="#1c1915" font-size="12">grok-4.7</text>
-<rect x="188" y="97" width="116.8" height="14" fill="#7c4a12"><title>grok-4.7: 123.5M</title></rect>
+<rect x="188" y="97" width="116.8" height="14" fill="#2E7D32"><title>grok-4.7: 123.5M</title></rect>
 <text x="310.8" y="108" fill="#5e564c" font-size="12">123.5M</text>
 <text x="180" y="136" text-anchor="end" fill="#1c1915" font-size="12">cursor-grok-4.6-high</text>
-<rect x="188" y="125" width="69.8" height="14" fill="#6b3fa0"><title>cursor-grok-4.6-high: 73.8M</title></rect>
+<rect x="188" y="125" width="69.8" height="14" fill="#E7298A"><title>cursor-grok-4.6-high: 73.8M</title></rect>
 <text x="263.8" y="136" fill="#5e564c" font-size="12">73.8M</text>
 <text x="180" y="164" text-anchor="end" fill="#1c1915" font-size="12">gpt-5.5-high</text>
-<rect x="188" y="153" width="48.1" height="14" fill="#0f6e8c"><title>gpt-5.5-high: 50.8M</title></rect>
+<rect x="188" y="153" width="48.1" height="14" fill="#008888"><title>gpt-5.5-high: 50.8M</title></rect>
 <text x="242.1" y="164" fill="#5e564c" font-size="12">50.8M</text>
 <text x="180" y="192" text-anchor="end" fill="#1c1915" font-size="12">grok-4.5-fast-xhigh</text>
-<rect x="188" y="181" width="37.7" height="14" fill="#a15c07"><title>grok-4.5-fast-xhigh: 39.9M</title></rect>
+<rect x="188" y="181" width="37.7" height="14" fill="#882D17"><title>grok-4.5-fast-xhigh: 39.9M</title></rect>
 <text x="231.7" y="192" fill="#5e564c" font-size="12">39.9M</text>
 <text x="180" y="220" text-anchor="end" fill="#1c1915" font-size="12">Other</text>
-<rect x="188" y="209" width="27.1" height="14" fill="#3f6212"><title>Other: 28.6M</title></rect>
+<rect x="188" y="209" width="27.1" height="14" fill="#9E9D24"><title>Other: 28.6M</title></rect>
 <text x="221.1" y="220" fill="#5e564c" font-size="12">28.6M</text>
 <text x="180" y="248" text-anchor="end" fill="#1c1915" font-size="12">claude-4.5-sonnet</text>
-<rect x="188" y="237" width="24.5" height="14" fill="#9f1239"><title>claude-4.5-sonnet: 25.9M</title></rect>
+<rect x="188" y="237" width="24.5" height="14" fill="#8D6E63"><title>claude-4.5-sonnet: 25.9M</title></rect>
 <text x="218.5" y="248" fill="#5e564c" font-size="12">25.9M</text>
 </svg>
           <p class="caption">Millions of tokens. <code>grok-4.7</code> includes the $12.56. Other is nine smaller models.</p>
@@ -489,25 +489,25 @@
           <svg viewBox="0 0 520 212" role="img" aria-labelledby="agentTitle">
 <title id="agentTitle">Tokens by cloud agent, in millions</title>
 <text x="180" y="24" text-anchor="end" fill="#1c1915" font-size="12">Notebook plan</text>
-<rect x="188" y="13" width="280.0" height="14" fill="#9a3412"><title>Notebook plan: 346.5M</title></rect>
+<rect x="188" y="13" width="280.0" height="14" fill="#E31A1C"><title>Notebook plan: 346.5M</title></rect>
 <text x="474.0" y="24" fill="#5e564c" font-size="12">346.5M</text>
 <text x="180" y="52" text-anchor="end" fill="#1c1915" font-size="12">No cloud agent id</text>
-<rect x="188" y="41" width="247.8" height="14" fill="#1e3a5f"><title>No cloud agent id: 306.7M</title></rect>
+<rect x="188" y="41" width="247.8" height="14" fill="#0067A5"><title>No cloud agent id: 306.7M</title></rect>
 <text x="441.8" y="52" fill="#5e564c" font-size="12">306.7M</text>
 <text x="180" y="80" text-anchor="end" fill="#1c1915" font-size="12">DQLRS fork</text>
-<rect x="188" y="69" width="149.3" height="14" fill="#1f5c45"><title>DQLRS fork: 184.7M</title></rect>
+<rect x="188" y="69" width="149.3" height="14" fill="#6A3D9A"><title>DQLRS fork: 184.7M</title></rect>
 <text x="343.3" y="80" fill="#5e564c" font-size="12">184.7M</text>
 <text x="180" y="108" text-anchor="end" fill="#1c1915" font-size="12">DQLRS</text>
-<rect x="188" y="97" width="54.4" height="14" fill="#7c4a12"><title>DQLRS: 67.3M</title></rect>
+<rect x="188" y="97" width="54.4" height="14" fill="#2E7D32"><title>DQLRS: 67.3M</title></rect>
 <text x="248.4" y="108" fill="#5e564c" font-size="12">67.3M</text>
 <text x="180" y="136" text-anchor="end" fill="#1c1915" font-size="12">Rust IMPL</text>
-<rect x="188" y="125" width="41.1" height="14" fill="#6b3fa0"><title>Rust IMPL: 50.8M</title></rect>
+<rect x="188" y="125" width="41.1" height="14" fill="#E7298A"><title>Rust IMPL: 50.8M</title></rect>
 <text x="235.1" y="136" fill="#5e564c" font-size="12">50.8M</text>
 <text x="180" y="164" text-anchor="end" fill="#1c1915" font-size="12">Acceptance tests</text>
-<rect x="188" y="153" width="19.8" height="14" fill="#0f6e8c"><title>Acceptance tests: 24.5M</title></rect>
+<rect x="188" y="153" width="19.8" height="14" fill="#008888"><title>Acceptance tests: 24.5M</title></rect>
 <text x="213.8" y="164" fill="#5e564c" font-size="12">24.5M</text>
 <text x="180" y="192" text-anchor="end" fill="#1c1915" font-size="12">Other agents</text>
-<rect x="188" y="181" width="3.3" height="14" fill="#a15c07"><title>Other agents: 4.1M</title></rect>
+<rect x="188" y="181" width="3.3" height="14" fill="#882D17"><title>Other agents: 4.1M</title></rect>
 <text x="197.3" y="192" fill="#5e564c" font-size="12">4.1M</text>
 </svg>
           <p class="caption">Millions of tokens. Other agents are the rust review, pending plans, and this metrics run. The fork agent is the $12.56.</p>
