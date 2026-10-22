@@ -9,7 +9,10 @@ use crate::{
     help_page, BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation,
     ReadRequest, StatementResult, WRITE_PROGRESS_CHUNK,
 };
-use dql_expr::{project_selection, render_condition, render_projection, resolve_timestamp};
+use dql_expr::{
+    merge_rendered_placeholders, project_selection, render_condition, render_projection,
+    render_update, resolve_timestamp, shift_rendered_expression, DynamoValue, RenderedExpression,
+};
 use dql_models::{plan_read, Operation, PlanError, PlanInput, QueryPlan, ReadKind, TableMeta};
 use dql_parser::{
     parse_script, Condition, InsertForm, OrderBy, QueryOptions, Selection, Statement,
@@ -629,7 +632,11 @@ impl<B: DynamoBackend> Engine<B> {
         if let Some(keys_in) = &options.keys_in {
             validate_mutation_keys_in(options)?;
             let keys = self.keys_in_items(table, keys_in)?;
-            self.record("delete_item", table);
+            self.record_with_kwargs(
+                "delete_item",
+                table,
+                &explain_kwargs_for_mutation(None, condition),
+            );
             let response = self.delete_key_chunks(table, &keys, condition)?;
             return Ok(StatementResult::Affected(response.output));
         }
@@ -645,13 +652,17 @@ impl<B: DynamoBackend> Engine<B> {
             None
         };
         if let Some(plan) = &plan {
-            self.record_read_operation(plan.operation, table);
+            self.record_planned_read(table, plan, condition, &Selection::All, options);
         } else if condition.is_some() {
             self.record("query", table);
         } else {
             self.record("scan", table);
         }
-        self.record("delete_item", table);
+        self.record_with_kwargs(
+            "delete_item",
+            table,
+            &explain_kwargs_for_mutation(None, condition),
+        );
         self.report_progress(0, None, "write");
         let response = self
             .backend
@@ -681,7 +692,11 @@ impl<B: DynamoBackend> Engine<B> {
         if let Some(keys_in) = &options.keys_in {
             validate_mutation_keys_in(options)?;
             let keys = self.keys_in_items(table, keys_in)?;
-            self.record("update_item", table);
+            self.record_with_kwargs(
+                "update_item",
+                table,
+                &explain_kwargs_for_mutation(Some(update), condition),
+            );
             let response = self.update_key_chunks(table, &keys, update, condition, return_items)?;
             return finalize_update_result(response);
         }
@@ -690,7 +705,11 @@ impl<B: DynamoBackend> Engine<B> {
         } else {
             self.record("scan", table);
         }
-        self.record("update_item", table);
+        self.record_with_kwargs(
+            "update_item",
+            table,
+            &explain_kwargs_for_mutation(Some(update), condition),
+        );
         self.report_progress(0, None, "write");
         let response = self
             .backend
@@ -809,7 +828,11 @@ impl<B: DynamoBackend> Engine<B> {
         validate_read_keys_in(options, condition)?;
         let keys_in = options.keys_in.as_ref().expect("keys_in checked above");
         let keys = self.keys_in_items(table, keys_in)?;
-        self.record("batch_get_item", table);
+        self.record_with_kwargs(
+            "batch_get_item",
+            table,
+            &explain_kwargs_for_projection(selection, options),
+        );
         let response = self
             .backend
             .batch_get_keys(table, &keys, options.consistent)?;
@@ -835,7 +858,7 @@ impl<B: DynamoBackend> Engine<B> {
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
         let ordering = resolve_ordering(plan, options)?;
-        let mut kwargs = explain_kwargs_for_plan(plan, condition, options);
+        let mut kwargs = explain_kwargs_for_plan(plan, condition, selection, options);
         if let Some(forward) = ordering.scan_index_forward {
             kwargs.insert("desc".to_string(), (!forward).to_string());
             kwargs.insert("scan_index_forward".to_string(), forward.to_string());
@@ -1009,13 +1032,24 @@ impl<B: DynamoBackend> Engine<B> {
             throttle.map(|config| RateLimit::new(config.read_per_second, config.write_per_second));
     }
 
-    fn record_read_operation(&mut self, operation: Operation, table: &str) {
-        let operation = match operation {
+    fn record_planned_read(
+        &mut self,
+        table: &str,
+        plan: &QueryPlan,
+        condition: Option<&Condition>,
+        selection: &Selection,
+        options: &QueryOptions,
+    ) {
+        let operation = match plan.operation {
             Operation::Query => "query",
             Operation::Scan => "scan",
             Operation::BatchGetKeys => "batch_get_item",
         };
-        self.record(operation, table);
+        self.record_with_kwargs(
+            operation,
+            table,
+            &explain_kwargs_for_plan(plan, condition, selection, options),
+        );
     }
 
     fn record_update_read(
@@ -1024,14 +1058,10 @@ impl<B: DynamoBackend> Engine<B> {
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) {
-        let operation = if condition.is_some() {
-            self.plan_read_operation(table, ReadKind::Scan, &Selection::All, condition, options)
-                .map(|plan| plan.operation)
-                .unwrap_or(Operation::Scan)
-        } else {
-            Operation::Scan
-        };
-        self.record_read_operation(operation, table);
+        match self.plan_read_operation(table, ReadKind::Scan, &Selection::All, condition, options) {
+            Ok(plan) => self.record_planned_read(table, &plan, condition, &Selection::All, options),
+            Err(_) => self.record("scan", table),
+        }
     }
 
     fn plan_read_operation(
@@ -1112,34 +1142,161 @@ fn format_explain_kwargs(kwargs: &BTreeMap<String, String>) -> String {
 fn explain_kwargs_for_plan(
     plan: &QueryPlan,
     condition: Option<&Condition>,
+    selection: &Selection,
     options: &QueryOptions,
 ) -> BTreeMap<String, String> {
     let mut kwargs = BTreeMap::new();
+    let mut rendered = Vec::new();
     if let Some(index) = &plan.index {
         kwargs.insert("index".to_string(), index.name.clone());
     }
     if let Some(key_condition) = &plan.key_condition {
-        if let Ok(rendered) = render_condition(key_condition) {
-            kwargs.insert("key_condition".to_string(), rendered.expression);
+        if let Ok(expression) = render_condition(key_condition) {
+            kwargs.insert("key_condition".to_string(), expression.expression.clone());
+            rendered.push(expression);
         }
     }
+    // Same filter the read sends: the planner's filter, or the whole predicate
+    // when the read is a scan with no key condition.
     let filter = plan
         .filter_condition
         .as_ref()
-        .or(if plan.key_condition.is_some() {
+        .or(if plan.key_condition.is_none() {
             condition
         } else {
             None
         });
     if let Some(filter) = filter {
-        if let Ok(rendered) = render_condition(filter) {
-            kwargs.insert("filter".to_string(), rendered.expression);
+        if let Ok(expression) = render_condition(filter) {
+            let expression = shift_rendered_expression(&expression, &rendered_refs(&rendered));
+            kwargs.insert("filter".to_string(), expression.expression.clone());
+            rendered.push(expression);
         }
+    }
+    let projection = render_projection(selection);
+    if !projection.expression.is_empty() {
+        let projection = shift_rendered_expression(&projection, &rendered_refs(&rendered));
+        kwargs.insert("attributes".to_string(), projection.expression.clone());
+        rendered.push(projection);
+    }
+    insert_expression_bindings(&mut kwargs, &rendered);
+    if options.consistent {
+        kwargs.insert("consistent".to_string(), "true".to_string());
+    }
+    kwargs
+}
+
+fn explain_kwargs_for_projection(
+    selection: &Selection,
+    options: &QueryOptions,
+) -> BTreeMap<String, String> {
+    let mut kwargs = BTreeMap::new();
+    let projection = render_projection(selection);
+    if !projection.expression.is_empty() {
+        kwargs.insert("attributes".to_string(), projection.expression.clone());
+        insert_expression_bindings(&mut kwargs, &[projection]);
     }
     if options.consistent {
         kwargs.insert("consistent".to_string(), "true".to_string());
     }
     kwargs
+}
+
+fn explain_kwargs_for_mutation(
+    update: Option<&UpdateExpr>,
+    condition: Option<&Condition>,
+) -> BTreeMap<String, String> {
+    let mut kwargs = BTreeMap::new();
+    let mut rendered = Vec::new();
+    if let Some(update) = update {
+        if let Ok(expression) = render_update(update) {
+            if !expression.expression.is_empty() {
+                kwargs.insert("expression".to_string(), expression.expression.clone());
+                rendered.push(expression);
+            }
+        }
+    }
+    if let Some(condition) = condition {
+        if let Ok(expression) = render_condition(condition) {
+            let expression = shift_rendered_expression(&expression, &rendered_refs(&rendered));
+            kwargs.insert("condition".to_string(), expression.expression.clone());
+            rendered.push(expression);
+        }
+    }
+    insert_expression_bindings(&mut kwargs, &rendered);
+    kwargs
+}
+
+fn rendered_refs(parts: &[RenderedExpression]) -> Vec<&RenderedExpression> {
+    parts.iter().collect()
+}
+
+fn insert_expression_bindings(kwargs: &mut BTreeMap<String, String>, parts: &[RenderedExpression]) {
+    let merged = merge_rendered_placeholders(&rendered_refs(parts));
+    if let Some(names) = merged.attribute_names {
+        kwargs.insert(
+            "attribute_names".to_string(),
+            format_attribute_names(&names),
+        );
+    }
+    if let Some(values) = merged.expression_values {
+        kwargs.insert(
+            "expression_values".to_string(),
+            format_expression_values(&values),
+        );
+    }
+}
+
+fn format_attribute_names(names: &BTreeMap<String, String>) -> String {
+    let body = names
+        .iter()
+        .map(|(placeholder, name)| format!("{placeholder:?}: {name:?}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{{{body}}}")
+}
+
+fn format_expression_values(values: &BTreeMap<String, DynamoValue>) -> String {
+    let body = values
+        .iter()
+        .map(|(placeholder, value)| format!("{placeholder:?}: {}", format_dynamo_literal(value)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{{{body}}}")
+}
+
+fn format_dynamo_literal(value: &DynamoValue) -> String {
+    match value {
+        DynamoValue::Null(_) => "null".to_string(),
+        DynamoValue::Bool(value) => value.to_string(),
+        DynamoValue::Number(value) => value.clone(),
+        DynamoValue::String(value) | DynamoValue::Binary(value) => format!("{value:?}"),
+        DynamoValue::NumberSet(values) => format!("[{}]", values.join(", ")),
+        DynamoValue::StringSet(values) | DynamoValue::BinarySet(values) => {
+            let inner = values
+                .iter()
+                .map(|value| format!("{value:?}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("[{inner}]")
+        }
+        DynamoValue::List(values) => {
+            let inner = values
+                .iter()
+                .map(format_dynamo_literal)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("[{inner}]")
+        }
+        DynamoValue::Map(values) => {
+            let inner = values
+                .iter()
+                .map(|(key, value)| format!("{key:?}: {}", format_dynamo_literal(value)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{{{inner}}}")
+        }
+    }
 }
 
 fn plan_error_to_engine_error(err: PlanError) -> EngineError {
@@ -1746,9 +1903,65 @@ mod tests {
             .unwrap();
         match result {
             StatementResult::Schema(schema) => {
-                assert!(schema.contains("query t"));
-                assert!(schema.contains("index"));
-                assert!(schema.contains("key_condition"));
+                assert!(schema.contains("query t"), "{schema}");
+                assert!(schema.contains("index"), "{schema}");
+                assert!(schema.contains("key_condition"), "{schema}");
+                assert!(schema.contains("expression_values"), "{schema}");
+                assert!(schema.contains(r#"\"a\""#), "{schema}");
+                assert!(schema.contains("150"), "{schema}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn explain_prints_attribute_names_and_values() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE t (id STRING HASH KEY, n NUMBER RANGE KEY)")
+            .unwrap();
+        let result = engine
+            .execute(
+                "EXPLAIN SELECT name FROM t WHERE id = 'a' AND n > 1 AND status = 'open' AND name = 'ada'",
+            )
+            .unwrap();
+        match result {
+            StatementResult::Schema(schema) => {
+                assert!(schema.contains("query t"), "{schema}");
+                assert!(schema.contains("id = :v1"), "{schema}");
+                assert!(schema.contains("n > :v2"), "{schema}");
+                assert!(schema.contains("'attribute_names'"), "{schema}");
+                assert!(schema.contains(r#"\"status\""#), "{schema}");
+                assert!(schema.contains(r#"\"name\""#), "{schema}");
+                assert!(schema.contains("'expression_values'"), "{schema}");
+                assert!(schema.contains(r#"\"a\""#), "{schema}");
+                assert!(schema.contains(r#"\"open\""#), "{schema}");
+                assert!(schema.contains(r#"\"ada\""#), "{schema}");
+                assert!(schema.contains(":v2"), "{schema}");
+                assert!(!schema.contains(":v5"), "{schema}");
+                assert!(schema.contains("'filter'"), "{schema}");
+                assert!(schema.contains("'attributes'"), "{schema}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn explain_key_query_does_not_repeat_the_key_as_a_filter() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE t (id STRING HASH KEY, n NUMBER RANGE KEY)")
+            .unwrap();
+        let result = engine
+            .execute("EXPLAIN SELECT * FROM t WHERE id = 'a' AND n > 1")
+            .unwrap();
+        match result {
+            StatementResult::Schema(schema) => {
+                assert!(schema.contains("id = :v1"), "{schema}");
+                assert!(schema.contains("n > :v2"), "{schema}");
+                assert!(schema.contains(r#"\"a\""#), "{schema}");
+                assert!(!schema.contains("'filter'"), "{schema}");
+                assert!(!schema.contains(":v3"), "{schema}");
             }
             other => panic!("unexpected result: {other:?}"),
         }

@@ -879,7 +879,7 @@ async function chevronPlacement(card, chevron) {
   };
 }
 
-test("shows an explain plan as operations and conditions", async ({ page, app }) => {
+test("shows an explain plan as operations and conditions", async ({ page, app }, testInfo) => {
   const name = uniqueTable();
   app.trackTable(name);
   await replaceEditor(
@@ -893,7 +893,10 @@ test("shows an explain plan as operations and conditions", async ({ page, app })
   await page.locator("#run").click();
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
 
-  await replaceEditor(page, `EXPLAIN SELECT * FROM ${name} WHERE id = 'a' AND n > 1;`);
+  await replaceEditor(
+    page,
+    `EXPLAIN SELECT * FROM ${name} WHERE id = 'a' AND n > 1 AND name = 'ada';`,
+  );
   await pressMod(page, "A");
   await page.locator("#run").click();
 
@@ -905,9 +908,17 @@ test("shows an explain plan as operations and conditions", async ({ page, app })
   const fields = plan.locator(".explain-fields");
   const field = (label) =>
     fields.locator("dt", { hasText: new RegExp("^" + label + "$") }).locator("xpath=following-sibling::dd[1]");
+  await expect(field("key condition")).toContainText("id = ");
   await expect(field("key condition")).toContainText("n > ");
-  await expect(field("filter")).toContainText("id = ");
+  await expect(field("filter")).toContainText("#f");
+  await expect(field("attribute names")).toContainText("name");
+  await expect(field("expression values")).toContainText('"a"');
+  await expect(field("expression values")).toContainText('"ada"');
+  await expect(field("expression values")).toContainText("1");
   await expect(field("index")).toHaveText("TABLE");
+  await page.locator("#result-body").screenshot({
+    path: `/opt/cursor/artifacts/explain-attributes-${testInfo.project.name}.png`,
+  });
   await expect(page.locator("#result-meta")).toBeEmpty();
   await expect(page.locator(".query-result").last().locator('[data-testid="result-note"]')).toHaveCount(0);
   await expect(page.locator('[data-testid="run-status-error"]')).toHaveCount(0);
@@ -926,11 +937,18 @@ test("shows an explain plan as operations and conditions", async ({ page, app })
   expect(parsed[0].operation).toBe("query");
   expect(parsed[0].target).toBe(name);
   expect(parsed[0].index).toBe("TABLE");
+  expect(parsed[0].key_condition).toContain("id = ");
   expect(parsed[0].key_condition).toContain("n > ");
-  expect(parsed[0].filter).toContain("id = ");
+  expect(parsed[0].filter).toContain("#f");
+  expect(parsed[0].attribute_names).toContain("name");
+  expect(parsed[0].expression_values).toContain('"a"');
+  expect(parsed[0].expression_values).toContain('"ada"');
   await page.reload();
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
-  await replaceEditor(page, `EXPLAIN SELECT * FROM ${name} WHERE id = 'a' AND n > 1;`);
+  await replaceEditor(
+    page,
+    `EXPLAIN SELECT * FROM ${name} WHERE id = 'a' AND n > 1 AND name = 'ada';`,
+  );
   await pressMod(page, "A");
   await page.locator("#run").click();
   const again = page.locator(".query-result").last().locator('[data-testid="explain-plan"]');

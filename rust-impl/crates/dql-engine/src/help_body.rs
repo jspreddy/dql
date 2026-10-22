@@ -84,6 +84,8 @@ pub const DUMP: &str = r"
 pub const EXPLAIN: &str = r"
     Print out the DynamoDB queries that will be executed for a command
 
+    Each operation includes the attribute names and expression values bound by the statement.
+
     EXPLAIN query
 
     Examples
