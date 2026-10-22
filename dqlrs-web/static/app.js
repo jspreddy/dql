@@ -2617,8 +2617,25 @@ function explainPlan(steps) {
     badge.dataset.testid = "explain-op";
     badge.textContent = step.operation.replaceAll("_", " ");
     op.append(badge);
+    const rows = explainRows(step);
+    const tableName = rows.find((field) => field.label === "table name");
+    const indexName = rows.find((field) => field.label === "index");
+    if (tableName) {
+      const name = document.createElement("span");
+      name.className = "explain-target";
+      name.dataset.testid = "explain-target";
+      name.textContent = tableName.value;
+      op.append(name);
+    }
+    if (indexName) {
+      const index = document.createElement("span");
+      index.className = "explain-index";
+      index.dataset.testid = "explain-index";
+      index.textContent = indexName.value;
+      op.append(index);
+    }
     row.append(op);
-    const fields = explainRows(step);
+    const fields = rows.filter((field) => field.label !== "table name" && field.label !== "index");
     if (fields.length) {
       const list = document.createElement("dl");
       list.className = "explain-fields";
@@ -2627,7 +2644,6 @@ function explainPlan(steps) {
         term.textContent = field.label;
         const detail = document.createElement("dd");
         detail.textContent = field.value;
-        if (field.label === "table name") detail.dataset.testid = "explain-target";
         list.append(term, detail);
       }
       row.append(list);

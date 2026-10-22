@@ -1072,12 +1072,26 @@ test("shows an explain plan as operations and conditions", async ({ page, app },
   await expect(plan.locator('[data-testid="explain-step"]')).toHaveCount(1);
   await expect(plan.locator('[data-testid="explain-op"]')).toHaveText("query");
   await expect(plan.locator('[data-testid="explain-target"]')).toHaveText(name);
+  await expect(plan.locator('[data-testid="explain-index"]')).toHaveText("TABLE");
+  const line = await plan.locator(".explain-op").evaluate((node) => {
+    const style = getComputedStyle(node);
+    const boxes = [...node.children].map((child) => child.getBoundingClientRect());
+    const top = Math.min(...boxes.map((box) => box.top));
+    const bottom = Math.max(...boxes.map((box) => box.bottom));
+    return {
+      display: style.display,
+      direction: style.flexDirection,
+      wrap: style.flexWrap,
+      count: boxes.length,
+      ordered: boxes.every((box, index) => index === 0 || box.left >= boxes[index - 1].left),
+      oneLine: bottom - top < 28,
+    };
+  });
+  expect(line).toEqual({ display: "flex", direction: "row", wrap: "nowrap", count: 3, ordered: true, oneLine: true });
   const fields = plan.locator(".explain-fields");
   const field = (label) =>
     fields.locator("dt", { hasText: new RegExp("^" + label + "$") }).locator("xpath=following-sibling::dd[1]");
-  const labels = [
-    "table name",
-    "index",
+  const detailLabels = [
     "projection expression",
     "key condition expression",
     "filter expression",
@@ -1086,9 +1100,8 @@ test("shows an explain plan as operations and conditions", async ({ page, app },
     "consistent",
     "operation",
   ];
-  await expect(fields.locator("dt")).toHaveText(labels);
-  await expect(field("table name")).toHaveText(name);
-  await expect(field("index")).toHaveText("TABLE");
+  const labels = ["table name", "index", ...detailLabels];
+  await expect(fields.locator("dt")).toHaveText(detailLabels);
   await expect(field("projection expression")).toContainText("#f");
   await expect(field("key condition expression")).toContainText("id = ");
   await expect(field("key condition expression")).toContainText("n > ");

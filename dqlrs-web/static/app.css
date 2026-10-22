@@ -1936,7 +1936,8 @@ body.results-resizing * {
 
 #result-body .explain-op {
   display: flex;
-  align-items: baseline;
+  flex-flow: row nowrap;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }
@@ -1953,11 +1954,20 @@ body.results-resizing * {
   text-transform: uppercase;
 }
 
-#result-body .explain-target {
+#result-body .explain-target,
+#result-body .explain-index {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: var(--mono);
   font-weight: 650;
+}
+
+#result-body .explain-index {
+  flex: none;
+  color: var(--muted);
+  font-weight: 550;
 }
 
 #result-body .explain-fields {
