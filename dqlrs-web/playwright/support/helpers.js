@@ -27,6 +27,15 @@ export function colorPattern(color) {
   return new RegExp(color.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 }
 
+export async function openResultPane(page, pane) {
+  // A finished run selects Result after it stores rows. Wait for that before
+  // choosing another tab, or the store overwrites the click.
+  await expect(page.locator("#run")).toBeEnabled();
+  const tab = page.locator(`#result-tab-${pane}`);
+  await tab.click();
+  await expect(tab).toHaveAttribute("aria-selected", "true");
+}
+
 export async function openApp(page, app) {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
-import { lineByText, lineOverlaps, mod, node, openApp, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
+import { lineByText, lineOverlaps, mod, node, openApp, openResultPane, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
 
 function cachedResults(workspace) {
   const root = path.join(workspace, ".dqlrs-web-cache");
@@ -344,7 +344,7 @@ test("runs the query at the cursor with Ctrl+Enter and marks a failure", async (
   await expect(page.locator("#run")).toBeEnabled();
 });
 
-test("runs the whole file from the button beside the filename", async ({ page, app }) => {
+test("runs the whole file from the button beside the filename", async ({ page, app }, testInfo) => {
   const name = uniqueTable();
   app.trackTable(name);
   await expect(page.locator("#run-file")).toBeVisible();
@@ -366,20 +366,44 @@ test("runs the whole file from the button beside the filename", async ({ page, a
     ].join("\n"),
   );
   await page.locator("#run-file").click();
-  await expect(page.locator(".query-result")).toHaveCount(5);
-  await expect(page.locator(".result-card")).toHaveCount(2);
+  await expect(page.locator("#result-tab-result")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".query-result")).toHaveCount(1);
+  await expect(page.locator("#result-count")).toHaveText("1 result");
   await expect(page.locator("#result-meta")).toBeEmpty();
-  await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("1 row");
+  await expect(page.locator(".result-card")).toHaveCount(1);
+  await expect(page.locator(".result-card").locator(".result-card-meta")).toHaveText("1 row");
+  await expect(page.locator("#result-body")).toContainText("beta");
+  await expect(page.locator("#result-body")).not.toContainText("alpha");
+  await page.locator("#results").screenshot({
+    path: playwrightArtifact(`result-tab-latest-${testInfo.project.name}.png`),
+  });
+
+  await openResultPane(page, "history");
+  await expect(page.locator(".query-result")).toHaveCount(5);
+  await expect(page.locator("#result-count")).toHaveText("5 results");
+  await expect(page.locator(".result-card")).toHaveCount(2);
+  await expect(page.locator(".query-result").last()).toContainText("beta");
   await expect(page.locator("#result-body")).toContainText("alpha");
   await expect(page.locator("#result-body")).toContainText("beta");
+  await page.locator("#result-body").evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  await page.locator("#results").screenshot({
+    path: playwrightArtifact(`history-tab-${testInfo.project.name}.png`),
+  });
 
   await page.locator(".cm-line", { hasText: "id = 'a'" }).click();
   await page.locator("#run").click();
-  const latest = page.locator(".query-result").last();
-  await expect(page.locator(".query-result")).toHaveCount(6);
+  await expect(page.locator("#result-tab-result")).toHaveAttribute("aria-selected", "true");
+  const latest = page.locator(".query-result");
+  await expect(latest).toHaveCount(1);
   await expect(latest.locator(".result-card")).toHaveCount(1);
   await expect(latest).toContainText("alpha");
   await expect(latest).not.toContainText("beta");
+  await openResultPane(page, "history");
+  await expect(page.locator(".query-result")).toHaveCount(6);
+  await expect(page.locator(".query-result").last()).toContainText("alpha");
+  await expect(page.locator("#result-count")).toHaveText("6 results");
 });
 
 test("runs every dql file in a folder from the context menu", async ({ page, app }) => {
@@ -485,7 +509,10 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   await expect(page.locator("#clear-results")).toBeVisible();
   await expect(page.locator("#clear-results")).toHaveAttribute("aria-label", "Clear results");
   await expect(page.locator("#result-count")).toHaveText("0 results");
-  await expect(page.locator(".results-title")).toContainText("Results");
+  await expect(page.locator("#result-tab-result")).toHaveText("Result");
+  await expect(page.locator("#result-tab-history")).toHaveText("History");
+  await expect(page.locator("#result-tab-lint")).toHaveText("Lint");
+  await expect(page.locator("#result-tab-result")).toHaveAttribute("aria-selected", "true");
 
   await replaceEditor(
     page,
@@ -499,6 +526,10 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator("#result-table")).toContainText("alpha");
+  await expect(page.locator(".query-result")).toHaveCount(1);
+  await expect(page.locator("#result-count")).toHaveText("1 result");
+  await openResultPane(page, "history");
+  await expect(page.locator(".query-result")).toHaveCount(4);
   await expect(page.locator("#result-count")).toHaveText("4 results");
   const aligned = await page.locator(".results-head").evaluate((node) => {
     const title = node.querySelector(".results-title").getBoundingClientRect();
@@ -518,6 +549,10 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   await replaceEditor(page, `SELECT * FROM ${name}_missing WHERE id = 'a';`);
   await pressMod(page, "A");
   await page.locator("#run").click();
+  await expect(page.locator("#result-tab-result")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".query-result")).toHaveCount(1);
+  await expect(page.locator(".query-result").locator('[data-testid="result-note"].error')).toBeVisible();
+  await openResultPane(page, "history");
   await expect(page.locator(".query-result")).toHaveCount(5);
   await expect(page.locator("#result-count")).toHaveText("5 results");
   await expect(page.locator(".query-result").nth(3)).toContainText("alpha");
@@ -533,6 +568,8 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   await expect(page.locator(".query-result")).toHaveCount(5);
   await page.reload();
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await expect(page.locator(".query-result")).toHaveCount(1);
+  await openResultPane(page, "history");
   await expect(page.locator(".query-result")).toHaveCount(5);
   await expect(page.locator(".query-result").nth(3)).toContainText("alpha");
   await expect(page.locator(".query-result").nth(3).locator("table")).toContainText("alpha");
@@ -703,6 +740,7 @@ test("pins the latest result at the top of the results pane", async ({ page, app
   await pressMod(page, "A");
   await page.locator("#run").click();
 
+  await openResultPane(page, "history");
   const body = page.locator("#result-body");
   const results = page.locator(".query-result");
   await expect(results).toHaveCount(5);
@@ -760,6 +798,7 @@ test("expands a result card query from the left dot", async ({ page, app }) => {
   );
   await pressMod(page, "A");
   await page.locator("#run").click();
+  await openResultPane(page, "history");
 
   const shells = page.locator(".result-shell");
   await expect(shells).toHaveCount(4);

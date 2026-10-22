@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
-import { openApp, pressMod, replaceEditor } from "../support/helpers.js";
+import { openApp, openResultPane, pressMod, replaceEditor } from "../support/helpers.js";
 
 // Relative SAVE and LOAD paths follow the dqlrs process directory, not --dir.
 test.use({ isolateCwd: true });
@@ -57,6 +57,7 @@ test("saves JSON and CSV in the process directory and loads both back", async ({
   await expect(page.locator("#result-table")).toContainText("beta");
   await expect(page.locator("#result-table")).toContainText("3");
   await expect(page.locator("#result-table")).toContainText("7");
+  await openResultPane(page, "history");
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
   await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "2 affected" })).toHaveCount(3);
 
@@ -90,6 +91,7 @@ test("saves JSON and CSV in the process directory and loads both back", async ({
   await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("2 rows");
   await expect(page.locator("#result-table")).toContainText("alpha");
   await expect(page.locator("#result-table")).toContainText("beta");
+  await openResultPane(page, "history");
   await expect(page.locator(".query-result").last().locator('[data-testid="result-note"].error')).toHaveCount(0);
   await expect(page.locator(".query-result").nth(-2).locator('[data-testid="result-note"]').filter({ hasText: "2 affected" })).toHaveCount(1);
 });

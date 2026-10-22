@@ -11,7 +11,7 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { bandLayer, dqlLanguage, lintExtension, lintIssuesField, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setLintIssues, setRunRequest, setRunStatuses } from "./dql-mode.js";
+import { bandLayer, dqlLanguage, lintExtension, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setLintIssues, setRunRequest, setRunStatuses } from "./dql-mode.js";
 import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
 import { parseLsMessage } from "./describe-card.js";
 
@@ -198,6 +198,68 @@ const editor = new EditorView({
   }),
 });
 editorReady = true;
+const lintTip = document.querySelector("#lint-tip");
+let lintTipAnchor = null;
+
+function lintHoverTarget(node) {
+  if (!node || !node.closest || !editor.dom.contains(node)) return null;
+  const gutter = node.closest(".lint-gutter");
+  if (gutter) return gutter;
+  const line = node.closest(".cm-line");
+  if (line && line.querySelector(".cm-lint-error, .cm-lint-warning")) return line;
+  return null;
+}
+
+function lintHoverText(target) {
+  if (target.classList.contains("lint-gutter")) return target.getAttribute("title") || "";
+  return [...target.querySelectorAll(".cm-lint-error, .cm-lint-warning")]
+    .map((mark) => mark.getAttribute("title") || "")
+    .filter(Boolean)
+    .join("\n");
+}
+
+function hideLintTip() {
+  lintTipAnchor = null;
+  if (lintTip) lintTip.hidden = true;
+}
+
+function placeLintTip(target) {
+  if (!lintTip) return;
+  const text = lintHoverText(target);
+  if (!text) {
+    hideLintTip();
+    return;
+  }
+  if (lintTipAnchor !== target || lintTip.textContent !== text || lintTip.hidden) {
+    lintTip.textContent = text;
+    lintTip.hidden = false;
+    lintTipAnchor = target;
+  }
+  const rect = target.getBoundingClientRect();
+  const tip = lintTip.getBoundingClientRect();
+  let top = rect.bottom + 6;
+  let left = Math.max(8, rect.left);
+  if (top + tip.height > window.innerHeight - 8) top = Math.max(8, rect.top - tip.height - 6);
+  if (left + tip.width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - tip.width - 8);
+  lintTip.style.top = `${top}px`;
+  lintTip.style.left = `${left}px`;
+}
+
+editor.dom.addEventListener("mouseover", (event) => {
+  const target = lintHoverTarget(event.target);
+  if (!target) {
+    hideLintTip();
+    return;
+  }
+  placeLintTip(target);
+});
+editor.dom.addEventListener("mouseout", (event) => {
+  if (!lintHoverTarget(event.target)) return;
+  if (lintHoverTarget(event.relatedTarget)) return;
+  hideLintTip();
+});
+editor.scrollDOM.addEventListener("scroll", hideLintTip, { passive: true });
+
 const resultBody = document.querySelector("#result-body");
 const runProgress = document.querySelector("#run-progress");
 const resultMeta = document.querySelector("#result-meta");
@@ -410,9 +472,15 @@ runButton.title = "Run selection (" + runShortcutLabel + ")";
 runButton.setAttribute("aria-keyshortcuts", macShortcut ? "Meta+Enter" : "Control+Enter");
 stopButton.title = "Stop running query (Esc)";
 stopButton.setAttribute("aria-keyshortcuts", "Escape");
-runButton.addEventListener("click", runSelection);
+runButton.addEventListener("click", () => {
+  armRunPane();
+  runSelection();
+});
 const runFileButton = document.querySelector("#run-file");
-runFileButton.addEventListener("click", runFile);
+runFileButton.addEventListener("click", () => {
+  armRunPane();
+  runFile();
+});
 const clearResultsButton = document.querySelector("#clear-results");
 clearResultsButton.addEventListener("click", () => clearFileResults(state.path));
 stopButton.addEventListener("click", stopRun);
@@ -447,6 +515,7 @@ async function stopRun() {
 
 function runFromEditor() {
   if (runButton.disabled) return true;
+  armRunPane();
   runSelection();
   return true;
 }
@@ -1333,6 +1402,18 @@ function editorText() {
 
 const lintStatus = document.querySelector("#lint-status");
 let lintGeneration = 0;
+let lintIssues = [];
+let resultPane = "result";
+let runEpoch = 0;
+let paneEpoch = -1;
+
+function armRunPane() {
+  runEpoch += 1;
+}
+
+function preferFreshResult() {
+  if (paneEpoch !== runEpoch) resultPane = "result";
+}
 
 function scheduleLint() {
   const generation = ++lintGeneration;
@@ -1355,38 +1436,103 @@ async function lintEditor(generation) {
 }
 
 function paintLint(issues) {
-  if (!lintStatus) return;
-  const errors = issues.filter((issue) => issue.severity !== "warning");
-  const warnings = issues.length - errors.length;
-  if (!issues.length) {
-    lintStatus.classList.add("hidden");
-    lintStatus.classList.remove("is-warning");
-    lintStatus.textContent = "";
-    lintStatus.removeAttribute("title");
-    return;
+  lintIssues = issues;
+  if (lintStatus) {
+    const errors = issues.filter((issue) => issue.severity !== "warning");
+    const warnings = issues.length - errors.length;
+    if (!issues.length) {
+      lintStatus.classList.add("hidden");
+      lintStatus.classList.remove("is-warning");
+      lintStatus.textContent = "";
+      lintStatus.removeAttribute("title");
+    } else {
+      const lead = errors[0] || issues[0];
+      lintStatus.classList.toggle("is-warning", errors.length === 0);
+      lintStatus.classList.remove("hidden");
+      const errorLabel = errors.length === 1 ? "1 error" : `${errors.length} errors`;
+      const warningLabel = warnings === 1 ? "1 warning" : `${warnings} warnings`;
+      if (errors.length && warnings) lintStatus.textContent = `${errorLabel}, ${warningLabel}`;
+      else if (errors.length) lintStatus.textContent = errorLabel;
+      else lintStatus.textContent = warningLabel;
+      lintStatus.title = lead.message || lintStatus.textContent;
+    }
   }
-  const lead = errors[0] || issues[0];
-  lintStatus.classList.toggle("is-warning", errors.length === 0);
-  lintStatus.classList.remove("hidden");
-  const errorLabel = errors.length === 1 ? "1 error" : `${errors.length} errors`;
-  const warningLabel = warnings === 1 ? "1 warning" : `${warnings} warnings`;
-  if (errors.length && warnings) lintStatus.textContent = `${errorLabel}, ${warningLabel}`;
-  else if (errors.length) lintStatus.textContent = errorLabel;
-  else lintStatus.textContent = warningLabel;
-  lintStatus.title = lead.message || lintStatus.textContent;
+  if (resultPane === "lint") renderActivePane();
 }
 
 lintStatus?.addEventListener("click", () => {
-  const issues = editor.state.field(lintIssuesField);
-  const first = issues.find((issue) => issue.severity !== "warning") || issues[0];
-  if (!first || typeof first.offset !== "number") return;
-  const offset = Math.max(0, Math.min(first.offset, editor.state.doc.length));
-  editor.focus();
-  editor.dispatch({
-    selection: { anchor: offset },
-    scrollIntoView: true,
-  });
+  selectResultPane("lint");
+  document.querySelector("#result-tab-lint")?.focus();
 });
+
+function syncResultTabs() {
+  for (const tab of document.querySelectorAll(".result-tab")) {
+    const on = tab.dataset.pane === resultPane;
+    tab.classList.toggle("is-active", on);
+    tab.setAttribute("aria-selected", on ? "true" : "false");
+  }
+  resultBody?.setAttribute("aria-labelledby", `result-tab-${resultPane}`);
+}
+
+function selectResultPane(pane) {
+  if (pane !== "result" && pane !== "history" && pane !== "lint") return;
+  paneEpoch = runEpoch;
+  resultPane = pane;
+  renderActivePane();
+}
+
+document.querySelector(".result-tabs")?.addEventListener("click", (event) => {
+  const tab = event.target.closest(".result-tab");
+  if (!tab) return;
+  selectResultPane(tab.dataset.pane);
+});
+
+function renderLint(host) {
+  const panel = document.createElement("div");
+  panel.className = "lint-panel";
+  panel.dataset.testid = "lint-panel";
+  if (!lintIssues.length) {
+    const empty = document.createElement("p");
+    empty.className = "lint-empty";
+    empty.dataset.testid = "lint-empty";
+    empty.textContent = "No issues";
+    panel.append(empty);
+    host.append(panel);
+    return;
+  }
+  const doc = editor.state.doc;
+  const sorted = lintIssues.slice().sort((left, right) => (Number(left.offset) || 0) - (Number(right.offset) || 0));
+  for (const issue of sorted) {
+    const offset = Math.max(0, Math.min(Number(issue.offset) || 0, doc.length));
+    const line = doc.lineAt(offset);
+    const warning = issue.severity === "warning";
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "lint-row" + (warning ? " is-warning" : " is-error");
+    row.dataset.testid = "lint-row";
+    row.dataset.offset = String(offset);
+    const severity = document.createElement("span");
+    severity.className = "lint-row-sev";
+    severity.textContent = warning ? "Warning" : "Error";
+    const where = document.createElement("span");
+    where.className = "lint-row-where";
+    where.textContent = `Line ${line.number}`;
+    const message = document.createElement("span");
+    message.className = "lint-row-msg";
+    message.textContent = issue.message || (warning ? "Warning" : "Error");
+    row.append(severity, where, message);
+    row.addEventListener("click", () => {
+      const cursor = Math.max(0, Math.min(offset, editor.state.doc.length));
+      editor.focus();
+      editor.dispatch({
+        selection: { anchor: cursor },
+        scrollIntoView: true,
+      });
+    });
+    panel.append(row);
+  }
+  host.append(panel);
+}
 
 function fastForwardIcon() {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -1456,6 +1602,7 @@ async function clearCache(path) {
 
 async function storeQueryResult(path, query, result, success) {
   if (!path) {
+    preferFreshResult();
     showResults([{ query, result, success }]);
     return;
   }
@@ -1463,7 +1610,10 @@ async function storeQueryResult(path, query, result, success) {
     method: "POST",
     body: { path, query, result, success: Boolean(success) },
   });
-  if (path === state.path) await loadFileResults(path);
+  if (path === state.path) {
+    preferFreshResult();
+    await loadFileResults(path);
+  }
 }
 
 function resultList(result) {
@@ -1484,6 +1634,7 @@ async function storeStatementResults(path, text, results) {
     };
   });
   if (!path) {
+    preferFreshResult();
     showResults(entries);
     return;
   }
@@ -1493,7 +1644,10 @@ async function storeStatementResults(path, text, results) {
       body: { path, query: entry.query, result: entry.result, success: entry.success },
     });
   }
-  if (path === state.path) await loadFileResults(path);
+  if (path === state.path) {
+    preferFreshResult();
+    await loadFileResults(path);
+  }
 }
 
 let resultPin = null;
@@ -1548,27 +1702,42 @@ function pinLatestResult() {
   fit();
 }
 
-function setResultCount(count) {
-  const total = Math.max(0, Number(count) || 0);
+function setResultCount() {
+  if (resultPane === "lint") {
+    const total = lintIssues.length;
+    resultCount.textContent = total === 1 ? "1 issue" : total + " issues";
+    return;
+  }
+  const total = resultPane === "history" ? state.entries.length : (state.entries.length ? 1 : 0);
   resultCount.textContent = total === 1 ? "1 result" : total + " results";
 }
 
 function showResults(entries) {
+  state.entries = Array.isArray(entries) ? entries.slice() : [];
+  renderActivePane();
+}
+
+function renderActivePane() {
   releaseResultPin();
-  setResultCount(entries.length);
+  syncResultTabs();
+  setResultCount();
   resultBody.replaceChildren();
   closeSchemaIfResult();
   closeRowPop();
-  if (!entries.length) {
-    resultMeta.textContent = "";
+  resultMeta.textContent = "";
+  if (resultPane === "lint") {
+    renderLint(resultBody);
     return;
   }
-  const latestItems = entries.reduce((found, item, itemIndex) => (
+  const visible = resultPane === "history" ? state.entries : state.entries.slice(-1);
+  if (!visible.length) return;
+  const latestItems = state.entries.reduce((found, item, itemIndex) => (
     resultList(item.result).some((part) => part && part.ok && part.kind === "items" && !listedItemTables(part))
       ? itemIndex
       : found
   ), -1);
-  entries.forEach((entry, index) => {
+  visible.forEach((entry, visibleIndex) => {
+    const index = resultPane === "history" ? visibleIndex : state.entries.length - 1;
     const block = document.createElement("section");
     block.className = "query-result" + (entry.success ? "" : " is-error");
     block.dataset.testid = "query-result";
@@ -1577,8 +1746,7 @@ function showResults(entries) {
     block.append(queryShell(entry.query, body));
     resultBody.append(block);
   });
-  resultMeta.textContent = "";
-  pinLatestResult();
+  if (resultPane === "history" && visible.length > 1) pinLatestResult();
 }
 
 function setEditorText(text) {
@@ -1920,6 +2088,7 @@ async function runSelection() {
 
 async function runFolder(path) {
   if (runButton.disabled) return;
+  armRunPane();
   await flushSave();
   let documents = [];
   try {

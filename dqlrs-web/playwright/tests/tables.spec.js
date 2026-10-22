@@ -1,5 +1,5 @@
 import { test, expect } from "../support/app.js";
-import { colorPattern, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
+import { colorPattern, openResultPane, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
 
 test("opens the table browser from the #tables hash", async ({ page, app }) => {
   await page.goto(`${app.baseURL}/#tables`);
@@ -518,6 +518,7 @@ test("gives each query result its own named card and structure icon", async ({ p
   );
   await pressMod(page, "A");
   await page.locator("#run").click();
+  await openResultPane(page, "history");
   await expect(page.locator(".result-card")).toHaveCount(2);
   await expect(page.locator("#result-meta")).toBeEmpty();
   await expect(page.locator(".result-card").last().locator(".result-card-meta")).toHaveText("1 row");

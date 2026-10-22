@@ -138,11 +138,15 @@
               <span class="results-grip" aria-hidden="true"></span>
             </div>
             <div class="pane-head results-head">
-              <span class="results-title">
+              <div class="results-title">
                 <span class="results-mark" aria-hidden="true"></span>
-                Results
+                <div class="result-tabs" role="tablist" aria-label="Result pane">
+                  <button type="button" class="result-tab is-active" role="tab" id="result-tab-result" data-pane="result" aria-selected="true" aria-controls="result-body">Result</button>
+                  <button type="button" class="result-tab" role="tab" id="result-tab-history" data-pane="history" aria-selected="false" aria-controls="result-body">History</button>
+                  <button type="button" class="result-tab" role="tab" id="result-tab-lint" data-pane="lint" aria-selected="false" aria-controls="result-body">Lint</button>
+                </div>
                 <progress id="run-progress" hidden aria-label="Query progress"></progress>
-              </span>
+              </div>
               <span class="results-actions">
                 <span id="result-meta" class="meta"></span>
                 <span class="results-chip">
@@ -156,7 +160,7 @@
               </span>
             </div>
           </div>
-          <div id="result-body" class="result-body"></div>
+          <div id="result-body" class="result-body" role="tabpanel" aria-labelledby="result-tab-result"></div>
         </section>
       </section>
       <section id="tables-view" class="view hidden">
@@ -238,6 +242,7 @@
       <button type="button" id="server-retry">Retry</button>
     </div>
   </dialog>
+  <div id="lint-tip" class="lint-tip" role="tooltip" hidden></div>
   <script type="module" src="/app.js"></script>
 </body>
 </html>
