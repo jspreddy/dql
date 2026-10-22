@@ -29,29 +29,6 @@ pub fn rich_layout_to_lines(layout: &RichLayout, width: u16) -> Vec<Line<'static
         lines.push(Line::from(""));
         lines.extend(cutoff_panel(&cut_off, width));
     }
-    if layout.overflow_columns.is_empty() {
-        return lines;
-    }
-
-    lines.push(Line::from(""));
-    let overflow_rows: Vec<Vec<String>> = layout
-        .overflow_columns
-        .iter()
-        .map(|column| vec![column.clone()])
-        .collect();
-    let overflow_columns = vec![RichColumn {
-        name: "...".to_string(),
-        important: false,
-        ellipsis: true,
-        table_key: ColumnKey::None,
-        index_key: ColumnKey::None,
-    }];
-    lines.extend(render_table_to_lines(
-        "More columns available",
-        &overflow_columns,
-        &overflow_rows,
-        width,
-    ));
     lines
 }
 
@@ -368,7 +345,7 @@ fn columns_cut_off(
             continue;
         };
         let end = x.saturating_add(width);
-        if end > terminal_width && !column.ellipsis {
+        if end > terminal_width {
             cut_off.push(column.clone());
         }
         x = end;
@@ -531,7 +508,7 @@ fn data_row_style(_row_index: usize) -> Style {
 }
 
 fn result_block(title: &str, row_count: usize) -> Block<'static> {
-    card_block(title, &row_meta(title, row_count))
+    card_block(title, &row_meta(row_count))
 }
 
 fn card_block(title: &str, meta: &str) -> Block<'static> {
@@ -562,23 +539,15 @@ fn column_count_label(count: usize) -> String {
     }
 }
 
-fn row_meta(title: &str, count: usize) -> String {
-    let (singular, plural) = if title == "More columns available" {
-        ("column", "columns")
-    } else {
-        ("row", "rows")
-    };
+fn row_meta(count: usize) -> String {
     if count == 1 {
-        format!("1 {singular}")
+        "1 row".to_string()
     } else {
-        format!("{count} {plural}")
+        format!("{count} rows")
     }
 }
 
 fn column_tint(column: &RichColumn) -> ColumnTint {
-    if column.ellipsis {
-        return ColumnTint::Plain;
-    }
     let table = column.table_key != ColumnKey::None
         || (column.important && column.index_key == ColumnKey::None);
     let index = column.index_key != ColumnKey::None;
@@ -687,12 +656,7 @@ fn table_area_width(
 
 fn header_cell(column: &RichColumn) -> Cell<'static> {
     let tint = column_tint(column);
-    let mut name_style = styled_accent(tint);
-    if column.ellipsis {
-        name_style = Style::default().fg(Color::DarkGray);
-    } else {
-        name_style = name_style.add_modifier(Modifier::BOLD);
-    }
+    let name_style = styled_accent(tint).add_modifier(Modifier::BOLD);
     let mut spans = vec![Span::styled(format!(" {}", column.name), name_style)];
     if let Some(color) = accent(tint) {
         let icon = Style::default().fg(color);
@@ -704,10 +668,7 @@ fn header_cell(column: &RichColumn) -> Cell<'static> {
 }
 
 fn data_cell(value: &str, column: &RichColumn, row_index: usize) -> Cell<'static> {
-    let mut style = styled_accent(column_tint(column)).bg(cell_bg(column_tint(column), row_index));
-    if column.ellipsis {
-        style = style.fg(Color::DarkGray);
-    }
+    let style = styled_accent(column_tint(column)).bg(cell_bg(column_tint(column), row_index));
     Cell::from(format!(" {value}")).style(style)
 }
 
@@ -846,7 +807,6 @@ mod tests {
         RichColumn {
             name: name.to_string(),
             important: table_key != ColumnKey::None || index_key != ColumnKey::None,
-            ellipsis: false,
             table_key,
             index_key,
         }
@@ -874,7 +834,6 @@ mod tests {
                 vec!["a".to_string(), "Earth".to_string()],
                 vec!["b".to_string(), "Mars".to_string()],
             ],
-            overflow_columns: Vec::new(),
         };
         let lines = rich_layout_to_lines(&layout, 40);
         let rendered = lines
@@ -920,7 +879,6 @@ mod tests {
                 column("sk", ColumnKey::Range, ColumnKey::Range),
             ],
             rows: vec![vec!["Earth".to_string(), "a".to_string()]],
-            overflow_columns: Vec::new(),
         };
         let lines = rich_layout_to_lines(&layout, 48);
         assert_eq!(span_style(&lines, "name").fg, Some(Color::Cyan));
@@ -955,11 +913,7 @@ mod tests {
         let rows = vec![(0..6)
             .map(|index| format!("value-{index:02}-xxxxxxxx"))
             .collect::<Vec<_>>()];
-        let layout = RichLayout {
-            columns,
-            rows,
-            overflow_columns: Vec::new(),
-        };
+        let layout = RichLayout { columns, rows };
         let lines = rich_layout_to_lines(&layout, 40);
         let rendered = lines
             .iter()
@@ -1039,7 +993,6 @@ mod tests {
                 "y".repeat(20),
                 "z".repeat(20),
             ]],
-            overflow_columns: Vec::new(),
         };
         let lines = rich_layout_to_lines(&layout, 40);
         let title_at = lines
@@ -1062,5 +1015,36 @@ mod tests {
         assert_eq!(span_style(panel, "sk").bg, Some(live_panel_bg()));
         assert_eq!(span_style(panel, "note").fg, Some(Color::Reset));
         assert_eq!(span_style(panel, "note").bg, Some(live_panel_bg()));
+    }
+
+    #[test]
+    fn wide_results_keep_every_column_in_one_table() {
+        let mut item = Item::new();
+        for index in 0..16 {
+            item.insert(format!("col{index:02}"), Value::String("v".to_string()));
+        }
+        let layout = build_rich_layout(&[item], None);
+        let wide = rich_layout_to_lines(&layout, 4000);
+        let wide_text = wide
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(wide_text.contains("col15"), "{wide_text}");
+        assert!(!wide_text.contains("more columns available"), "{wide_text}");
+        assert_eq!(wide_text.matches("Results").count(), 1, "{wide_text}");
+
+        let narrow = rich_layout_to_lines(&layout, 40);
+        let narrow_text = narrow
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            narrow_text.matches("more columns available").count(),
+            1,
+            "{narrow_text}"
+        );
+        assert!(narrow_text.contains("col15"), "{narrow_text}");
     }
 }
