@@ -12,6 +12,9 @@ test("renders HELP SELECT with syntax highlighting", async ({ page }, testInfo) 
   const card = page.locator("[data-testid='help-card']");
   await expect(card).toBeVisible();
   await expect(card.locator(".help-title")).toHaveText("HELP select");
+  const shell = card.locator("xpath=ancestor::*[contains(@class,'result-shell')]");
+  await expect(shell.locator("[data-testid='result-query-toggle']")).toHaveCount(0);
+  await expect(shell.locator("[data-testid='result-card-query']")).toHaveCount(0);
   const keyword = card.locator(".help-code .tok-keyword", { hasText: /^SELECT$/ }).first();
   await expect(keyword).toBeVisible();
   await expect(keyword).toHaveCSS("color", await themeColor(page, "--teal-ink"));

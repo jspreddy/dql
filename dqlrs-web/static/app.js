@@ -2245,7 +2245,8 @@ function queryShell(queryText, content) {
   shell.className = "result-shell";
   const visuals = [...content.children];
   const text = String(queryText || "").trim();
-  if (!text || !visuals.length) {
+  const helpOnly = visuals.length > 0 && visuals.every((node) => node.classList.contains("help-card"));
+  if (!text || !visuals.length || helpOnly) {
     shell.append(visuals.length === 1 ? visuals[0] : content);
     return shell;
   }
