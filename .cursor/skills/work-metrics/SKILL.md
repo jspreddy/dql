@@ -40,7 +40,7 @@ Defaults are `--base origin/v-next` and `--head origin/v-rust`. Author dates are
 In the temp folder:
 
 - `commits-by-bin.json` — rewrite commits grouped by the chosen bin, each bin ordered by author time. This is the commit timeline.
-- `timeline.json` and `timeline.html` — one point per bin, from the first commit or token day through the last, empty bins included. Commit count (circle sized by the count), hours worked (bars), tokens spent (line, in millions).
+- `timeline.json` and `timeline.html` — one point per bin, from the first commit or token day through the last, empty bins included. Hours worked are blue bars. Tokens are green dots, in millions. Commits are red circles sized by the count.
 - `tokens-by-bin.json` and `tokens.html` — token spend for the chosen bin.
 - `pulls-by-day.json` and `pulls.html` — pull requests merged, grouped by the report bin. A pull request counts when its merge commit is in `base..head`.
 - `tokens-by-agent.json` and `agents.html` — tokens by cloud agent.
@@ -48,7 +48,7 @@ In the temp folder:
 - `hours-worked.json` and `hours.html` — hours worked, defined below.
 - `summary.json` and `work-metrics.html` — the combined page.
 
-Gather commits, usage, and pull requests at UTC hour grain. An hour is worked when that hour has a commit on any ref in this repo. The report then sums those hours, the commits, the tokens, and the merged pull requests into the bin. Commit circles sit on one horizontal line, 4 hours above the highest hours-worked bar. Their size shows the commit count.
+Gather commits, usage, and pull requests at UTC hour grain. An hour is worked when that hour has a commit on any ref in this repo. The report then sums those hours, the commits, the tokens, and the merged pull requests into the bin. On the timeline, hours worked are blue bars, tokens are green dots, and commits are red circles. The circles sit on one horizontal line, 4 hours above the highest hours-worked bar. Their size shows the commit count.
 
 Series colors live in `phases.json` and in `PALETTE` in the script. Neighboring series stay far apart in hue. Do not put two browns, two blues, or two greens next to each other.
 

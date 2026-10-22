@@ -29,7 +29,7 @@ PALETTE = [
     "#E7298A", "#008888", "#882D17", "#9E9D24", "#8D6E63",
 ]
 COMMIT_COLOR = "#E31A1C"
-TOKEN_COLOR = "#1c1915"
+TOKEN_COLOR = "#2E7D32"
 HOUR_COLOR = "#0067A5"
 TOKEN_BAR_COLOR = "#F38400"
 PULL_COLOR = "#6A3D9A"
@@ -303,15 +303,18 @@ def timeline_figure(days: list[str], hours: list[int], commits: list[int], token
         width=BAR_WIDTH[grain],
         hovertemplate="%{x|" + hover + "}: %{y} hours worked<extra></extra>",
     )
-    fig.add_scatter(
-        x=days,
-        y=token_m,
-        name="Tokens (millions)",
-        mode="lines",
-        line=dict(color=TOKEN_COLOR, width=2),
-        yaxis="y2",
-        hovertemplate="%{x|" + hover + "}: %{y:.1f} million tokens<extra></extra>",
-    )
+    token_marks = [(day, value) for day, value in zip(days, token_m) if value]
+    if token_marks:
+        token_days, token_values = zip(*token_marks)
+        fig.add_scatter(
+            x=list(token_days),
+            y=list(token_values),
+            name="Tokens (millions)",
+            mode="markers",
+            marker=dict(color=TOKEN_COLOR, size=8, line=dict(color="#fffdf8", width=1)),
+            yaxis="y2",
+            hovertemplate="%{x|" + hover + "}: %{y:.1f} million tokens<extra></extra>",
+        )
     marked = [(day, count) for day, count in zip(days, commits) if count]
     if marked:
         mark_days, mark_counts = zip(*marked)
@@ -947,7 +950,7 @@ def render_html(summary: dict, areas: list[dict], figures: dict[str, go.Figure],
       <p class="caption">The number after each date is commit hours that day. {html.escape(areas[-1]["summary"])}</p>
 
       <h2 id="timeline">Timeline</h2>
-      <p>{grain_note} Bars are hours worked. The line is tokens, in millions. Each circle is one day's commits, and a larger circle is more commits.</p>
+      <p>{grain_note} Blue bars are hours worked. Green dots are tokens, in millions. Red circles are commits, and a larger circle is more commits.</p>
       <div class="figure">{fig_div(figures["timeline"], "timeline")}</div>
       <p class="caption">Every {html.escape(bin_label)} from {html.escape(pretty_bin(summary["timeline_start"], summary["bin"]))} through {html.escape(pretty_bin(summary["timeline_end"], summary["bin"]))} stays on the axis, including the empty stretches. Commit circles sit on one line, 4 hours above the tallest hours-worked bar. A larger circle is more commits. Hover a bar, a point, or a circle for that {html.escape(bin_label)}.</p>
 
