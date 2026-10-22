@@ -555,6 +555,20 @@ mod tests {
     }
 
     #[test]
+    fn ls_is_a_statement() {
+        let mut session = session(false);
+        let report = lint_script(&mut session, "LS posts;\n");
+        assert!(report.ok, "{:?}", report.issues);
+        let bad = lint_script(&mut session, "LS bogus=True;\n");
+        assert!(!bad.ok, "{:?}", bad.issues);
+        assert!(
+            messages(&bad).join("\n").contains("unknown ls option"),
+            "{:?}",
+            bad.issues
+        );
+    }
+
+    #[test]
     fn create_table_checks_the_following_select_and_insert() {
         let mut session = session(false);
         let script = "\

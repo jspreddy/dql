@@ -30,6 +30,18 @@ pub trait TableCacheStore: Send + Sync {
     fn remove_definition(&self, name: &str);
     fn definition_names(&self) -> Vec<String>;
     fn clear(&self);
+
+    /// Reload the saved list and saved definitions on a background thread.
+    ///
+    /// The default does nothing. A disk store starts the reload and returns
+    /// false when nothing is saved yet.
+    fn start_refresh(&self) -> bool {
+        false
+    }
+
+    fn last_error(&self) -> Option<String> {
+        None
+    }
 }
 
 pub type SharedTableCache = Arc<dyn TableCacheStore>;

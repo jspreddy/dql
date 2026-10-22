@@ -97,7 +97,8 @@ fn enter_submits_sql_only_when_terminated() {
     assert!(!buffer_submits_on_enter("SELECT name\nFROM t"));
     assert!(buffer_submits_on_enter("SELECT name FROM t;"));
     assert!(buffer_submits_on_enter("SELECT name\nFROM t;"));
-    assert!(buffer_submits_on_enter("ls"));
+    assert!(!buffer_submits_on_enter("ls"));
+    assert!(buffer_submits_on_enter("ls;"));
     assert!(buffer_submits_on_enter("  opt format rich"));
     assert!(buffer_submits_on_enter("help;"));
     assert!(!buffer_submits_on_enter("SCAN * FROM t"));
@@ -233,6 +234,8 @@ fn meta_commands_run_without_a_semicolon() {
     let mut session = session();
     let mut app = ReplApp::new(&mut session);
     type_str(&mut app, "ls");
+    assert!(!app.on_enter().unwrap());
+    type_str(&mut app, ";");
     assert!(app.on_enter().unwrap());
     assert!(app.command_ok);
     let screen = screen_of_output(&app);

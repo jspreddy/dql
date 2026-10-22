@@ -72,6 +72,10 @@ const GROUPS: &[HelpGroup] = &[
                 summary: "Load items from a saved file into a table",
             },
             HelpCommand {
+                name: "ls",
+                summary: "List tables or describe one table",
+            },
+            HelpCommand {
                 name: "scan",
                 summary: "Scan a table (same syntax family as select)",
             },
@@ -109,12 +113,8 @@ const GROUPS: &[HelpGroup] = &[
     },
     HelpGroup {
         title: "Tables & files",
-        blurb: "Inspect tables and run scripts from disk",
+        blurb: "Run a script from disk and watch table metrics",
         commands: &[
-            HelpCommand {
-                name: "ls",
-                summary: "List tables or describe one table",
-            },
             HelpCommand {
                 name: "file",
                 summary: "Execute DQL statements from a file",

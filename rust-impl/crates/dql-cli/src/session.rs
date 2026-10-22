@@ -116,6 +116,23 @@ impl RuntimeEngine {
         }
     }
 
+    pub fn ls_report(
+        &mut self,
+        pattern: Option<&str>,
+        refresh: bool,
+        background: bool,
+        metrics: bool,
+    ) -> Result<dql_engine::LsReport, EngineError> {
+        match self {
+            Self::Memory(engine) => engine
+                .inner_mut()
+                .ls_report(pattern, refresh, background, metrics),
+            Self::Remote(engine) => engine
+                .inner_mut()
+                .ls_report(pattern, refresh, background, metrics),
+        }
+    }
+
     pub fn execute_script(&mut self, input: &str) -> Result<StatementResult, EngineError> {
         match self {
             Self::Memory(engine) => engine.inner_mut().execute(input),
@@ -911,7 +928,7 @@ mod tests {
 
         let every = session.execute_for_serve("ls;");
         assert!(every.ok, "{every:?}");
-        assert_eq!(every.kind, "text");
+        assert_eq!(every.kind, "schema");
         let every_text = every.message.unwrap();
         assert!(every_text.contains("Tables"), "{every_text}");
         assert!(every_text.contains("alpha_ls"), "{every_text}");

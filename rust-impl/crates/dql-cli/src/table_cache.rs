@@ -7,7 +7,7 @@ use std::cell::Cell;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use dql_engine::{CachedDefinition, CachedNameList, SharedTableCache, TableCacheStore};
@@ -34,6 +34,7 @@ pub struct DiskTableCache {
     refreshing: AtomicBool,
     last_error: Mutex<Option<String>>,
     lock: Mutex<()>,
+    me: OnceLock<Weak<Self>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -55,7 +56,7 @@ impl DiskTableCache {
     }
 
     pub fn open_at(dir: PathBuf, endpoint: CacheEndpoint) -> Arc<Self> {
-        Arc::new(Self {
+        let cache = Arc::new(Self {
             dir,
             endpoint,
             generation: AtomicU64::new(1),
@@ -63,11 +64,18 @@ impl DiskTableCache {
             refreshing: AtomicBool::new(false),
             last_error: Mutex::new(None),
             lock: Mutex::new(()),
-        })
+            me: OnceLock::new(),
+        });
+        let _ = cache.me.set(Arc::downgrade(&cache));
+        cache
+    }
+
+    fn stored_error(&self) -> Option<String> {
+        self.last_error.lock().ok().and_then(|guard| guard.clone())
     }
 
     pub fn last_error(&self) -> Option<String> {
-        self.last_error.lock().ok().and_then(|guard| guard.clone())
+        self.stored_error()
     }
 
     /// Starts a background refresh of the cached list and cached definitions.
@@ -224,6 +232,17 @@ impl TableCacheStore for DiskTableCache {
         self.bump();
     }
 
+    fn start_refresh(&self) -> bool {
+        self.me
+            .get()
+            .and_then(Weak::upgrade)
+            .is_some_and(|cache| DiskTableCache::start_refresh(&cache))
+    }
+
+    fn last_error(&self) -> Option<String> {
+        self.stored_error()
+    }
+
     fn clear(&self) {
         self.job_id.fetch_add(1, Ordering::AcqRel);
         let _guard = self.lock.lock().expect("table cache");
@@ -354,16 +373,7 @@ pub fn endpoint_key(region: &str, host: Option<&str>, port: u16, identity: &str)
 }
 
 pub fn age_phrase(saved_at_ms: u64) -> String {
-    let elapsed = now_ms().saturating_sub(saved_at_ms) / 1000;
-    if elapsed < 5 {
-        "just now".to_string()
-    } else if elapsed < 60 {
-        format!("{elapsed}s ago")
-    } else if elapsed < 3600 {
-        format!("{}m ago", elapsed / 60)
-    } else {
-        format!("{}h ago", elapsed / 3600)
-    }
+    dql_engine::age_phrase(saved_at_ms)
 }
 
 #[cfg(test)]

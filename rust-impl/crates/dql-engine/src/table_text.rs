@@ -4,6 +4,67 @@ use crate::format_throughput;
 use dql_models::{ProjectionType, TableMeta, TableStatus};
 use dql_parser::AttributeType;
 use humansize::{format_size, BINARY};
+use std::fmt::Write as _;
+
+const MIN_NAME_WIDTH: usize = 24;
+
+/// Summary table printed by `LS` and `SHOW TABLES`.
+pub fn format_table_summary(tables: &[(&TableMeta, usize, u64)]) -> String {
+    let name_width = tables
+        .iter()
+        .map(|(meta, _, _)| meta.name.chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(MIN_NAME_WIDTH);
+    let mut output = String::new();
+    let _ = writeln!(output, "Tables");
+    let _ = writeln!(
+        output,
+        "{:<name_width$} {:>8} {:>8} {:>8} {:>10} {:>8}",
+        "Name",
+        "Items",
+        "Read",
+        "Write",
+        "Status",
+        "Size",
+        name_width = name_width
+    );
+    for (meta, item_count, size_bytes) in tables {
+        let (items, read, write, status, size) = if meta.has_definition() {
+            (
+                item_count.to_string(),
+                meta.total_read_throughput()
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+                meta.total_write_throughput()
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+                status_label(meta.status).to_string(),
+                format_size(*size_bytes, BINARY),
+            )
+        } else {
+            (
+                "-".to_string(),
+                "-".to_string(),
+                "-".to_string(),
+                "-".to_string(),
+                "-".to_string(),
+            )
+        };
+        let _ = writeln!(
+            output,
+            "{:<name_width$} {:>8} {:>8} {:>8} {:>10} {:>8}",
+            meta.name,
+            items,
+            read,
+            write,
+            status,
+            size,
+            name_width = name_width
+        );
+    }
+    output
+}
 
 /// Detail view for one table. `ls` prints this when a pattern matches one table.
 pub fn format_table_description(meta: &TableMeta, item_count: usize, size_bytes: u64) -> String {

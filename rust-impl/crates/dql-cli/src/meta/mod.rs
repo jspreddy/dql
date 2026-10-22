@@ -48,7 +48,7 @@ pub fn dispatch(
     repl: bool,
 ) -> Result<Option<StatementResult>, dql_engine::EngineError> {
     let trimmed = line.trim();
-    // Meta-commands may be typed with a trailing ';' (`ls;`). Strip that mark
+    // Meta-commands may be typed with a trailing ';' (`opt;`). Strip that mark
     // before matching the command name — it is not part of a flag value
     // (`refresh=True;`).
     let for_meta = trimmed.trim_end_matches(';').trim();
@@ -91,7 +91,6 @@ fn registry() -> HashMap<&'static str, ReplCommand> {
     register!("use", crate::meta::connect::handle_use);
     register!("local", crate::meta::connect::handle_local);
     register!("file", crate::meta::file::handle);
-    register!("ls", crate::meta::ls::handle);
     register!("throttle", crate::meta::throttle::handle_throttle);
     register!("unthrottle", crate::meta::throttle::handle_unthrottle);
     #[cfg(feature = "watch")]
@@ -157,7 +156,7 @@ mod tests {
 
     #[test]
     fn meta_commands_are_recognized_without_semicolon() {
-        assert!(is_meta_command("ls"));
+        assert!(!is_meta_command("ls"));
         assert!(is_meta_command("opt"));
         assert!(!is_meta_command("SELECT"));
         assert!(!is_meta_command("scan"));

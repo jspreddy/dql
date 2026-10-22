@@ -237,13 +237,15 @@ pub const FILE: &str = r"
 pub const LS: &str = r"
     List tables or describe one table
 
-    ls
-    ls <glob>
-    ls <glob> refresh=True
-    ls refresh=True
-    ls refresh=True async=True
-    ls <glob> metrics=True
+    LS;
+    LS <glob>;
+    LS <glob> refresh=True;
+    LS refresh=True;
+    LS refresh=True async=True;
+    LS <glob> metrics=True;
 
+    LS is a statement. The REPL runs it when the buffer ends with a semicolon.
+    A one-shot command and the web runner close a partial LS the same way they close other statements.
     <glob> uses * and ? the same way as a filename glob.
     One match prints that table's description, the same text as DESCRIBE.
     Several matches print a list.
@@ -264,9 +266,9 @@ pub const LS: &str = r"
 
     Examples
     --------
-    ls
-    ls foo-*
-    ls *foo* refresh=True
+    LS;
+    ls foo-*;
+    ls *foo* refresh=True;
 ";
 
 pub const DESCRIBE: &str = r"

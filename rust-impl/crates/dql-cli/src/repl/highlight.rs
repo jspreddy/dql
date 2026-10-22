@@ -50,6 +50,7 @@ const KEYWORDS: &[&str] = &[
     "SHOW",
     "LIKE",
     "DESCRIBE",
+    "LS",
     "HELP",
     "SCHEMA",
     "PARENTS",

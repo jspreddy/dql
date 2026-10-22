@@ -905,6 +905,14 @@ impl DynamoBackend for SdkBackend {
     fn set_cancel_flag(&mut self, flag: CancelFlag) {
         self.cancel = flag;
     }
+
+    fn is_local(&self) -> bool {
+        SdkBackend::is_local(self)
+    }
+
+    fn attach_consumed_metrics(&self, meta: &mut TableMeta) -> Result<(), EngineError> {
+        self.attach_cloudwatch_metrics(meta)
+    }
 }
 
 impl SdkBackend {

@@ -1,6 +1,4 @@
-use dql_models::{TableMeta, TableStatus};
-use humansize::{format_size, BINARY};
-use std::fmt::Write as _;
+use dql_models::TableMeta;
 
 #[derive(Debug, Clone, Default)]
 pub struct TableStats {
@@ -8,77 +6,17 @@ pub struct TableStats {
     pub size_bytes: u64,
 }
 
-const MIN_NAME_WIDTH: usize = 24;
-
 pub fn format_table_summary_table(tables: &[(TableMeta, TableStats)]) -> String {
-    let name_width = tables
+    let rows: Vec<(&TableMeta, usize, u64)> = tables
         .iter()
-        .map(|(meta, _)| meta.name.chars().count())
-        .max()
-        .unwrap_or(0)
-        .max(MIN_NAME_WIDTH);
-    let mut output = String::new();
-    let _ = writeln!(output, "Tables");
-    let _ = writeln!(
-        output,
-        "{:<name_width$} {:>8} {:>8} {:>8} {:>10} {:>8}",
-        "Name",
-        "Items",
-        "Read",
-        "Write",
-        "Status",
-        "Size",
-        name_width = name_width
-    );
-    for (meta, stats) in tables {
-        let (items, read, write, status, size) = if meta.has_definition() {
-            (
-                stats.item_count.to_string(),
-                meta.total_read_throughput()
-                    .map(|value| value.to_string())
-                    .unwrap_or_else(|| "-".to_string()),
-                meta.total_write_throughput()
-                    .map(|value| value.to_string())
-                    .unwrap_or_else(|| "-".to_string()),
-                status_label(meta.status).to_string(),
-                format_size(stats.size_bytes, BINARY),
-            )
-        } else {
-            (
-                "-".to_string(),
-                "-".to_string(),
-                "-".to_string(),
-                "-".to_string(),
-                "-".to_string(),
-            )
-        };
-        let _ = writeln!(
-            output,
-            "{:<name_width$} {:>8} {:>8} {:>8} {:>10} {:>8}",
-            meta.name,
-            items,
-            read,
-            write,
-            status,
-            size,
-            name_width = name_width
-        );
-    }
-    output
+        .map(|(meta, stats)| (meta, stats.item_count, stats.size_bytes))
+        .collect();
+    dql_engine::format_table_summary(&rows)
 }
 
 /// Rich detail view for a single table — information parity with Python `pformat(rich)`.
 pub fn format_table_detail(meta: &TableMeta, stats: &TableStats) -> String {
     dql_engine::format_table_description(meta, stats.item_count, stats.size_bytes)
-}
-
-fn status_label(status: TableStatus) -> &'static str {
-    match status {
-        TableStatus::Active => "ACTIVE",
-        TableStatus::Creating => "CREATING",
-        TableStatus::Updating => "UPDATING",
-        TableStatus::Deleting => "DELETING",
-    }
 }
 
 #[cfg(test)]

@@ -535,6 +535,15 @@ impl<B: DynamoBackend> Engine<B> {
             Statement::DumpSchema { tables } => self.dump_schema(tables.as_deref()),
             Statement::ShowTables { like } => self.show_tables(like.as_deref()),
             Statement::Describe { table } => self.describe_statement(table),
+            Statement::Ls {
+                pattern,
+                refresh,
+                background,
+                metrics,
+            } => {
+                let report = self.ls_report(pattern.as_deref(), *refresh, *background, *metrics)?;
+                Ok(StatementResult::Schema(report.message()))
+            }
             Statement::Load { file, table } => self.load(file, table),
             Statement::Explain(inner) => self.explain(inner),
             Statement::Analyze(inner) => self.analyze(inner),
@@ -929,6 +938,200 @@ impl<B: DynamoBackend> Engine<B> {
         Ok(StatementResult::Affected(response.output))
     }
 
+    pub fn ls_report(
+        &mut self,
+        pattern: Option<&str>,
+        refresh: bool,
+        background: bool,
+        metrics: bool,
+    ) -> Result<LsReport, EngineError> {
+        let metrics_note = if metrics { self.metrics_note() } else { None };
+        let refresh_hint = self.prepare_ls_cache(refresh, background)?;
+        self.record("list_tables", pattern.unwrap_or("*"));
+        let hint = refresh_hint.or_else(|| self.cache_hint());
+        let pattern = pattern.map(str::trim).filter(|pattern| !pattern.is_empty());
+        let (rows, note, detail) = if let Some(pattern) = pattern {
+            let (filtered, match_note) = self.resolve_ls_names(pattern)?;
+            match filtered.len() {
+                0 if is_glob(pattern) => (Vec::new(), merge_ls_note(None, hint), false),
+                0 => {
+                    return Err(EngineError::Runtime(format!("Table {pattern:?} not found")));
+                }
+                1 => {
+                    let name = filtered[0].clone();
+                    let fetch = refresh && !background;
+                    self.record("describe_table", &name);
+                    let meta = if fetch {
+                        self.describe_for_ls(&name, true, metrics)?
+                    } else {
+                        match self.cached_definition(&name) {
+                            Some(meta) if !metrics => Some(meta),
+                            _ => self.describe_for_ls(&name, false, metrics)?,
+                        }
+                    }
+                    .ok_or_else(|| EngineError::Runtime(format!("Table {name:?} not found")))?;
+                    let item_count = self.table_item_count(&name);
+                    (
+                        vec![LsRow {
+                            meta,
+                            item_count,
+                            size_bytes: 0,
+                        }],
+                        merge_ls_note(match_note, hint),
+                        true,
+                    )
+                }
+                _ => {
+                    let rows = self.ls_rows(&filtered);
+                    (rows, merge_ls_note(match_note, hint), false)
+                }
+            }
+        } else {
+            let names = self.cached_table_names(false)?;
+            let rows = self.ls_rows(&names);
+            (rows, merge_ls_note(None, hint), false)
+        };
+        Ok(LsReport {
+            metrics_note,
+            note,
+            rows,
+            detail,
+        })
+    }
+
+    fn prepare_ls_cache(
+        &mut self,
+        refresh: bool,
+        background: bool,
+    ) -> Result<Option<String>, EngineError> {
+        if background {
+            if let Some(disk) = &self.disk {
+                disk.start_refresh();
+            }
+            return Ok(None);
+        }
+        if !refresh {
+            return Ok(None);
+        }
+        let definitions = self.refresh_cached_definitions()?;
+        self.cached_table_names(true)?;
+        let text = if definitions == 0 {
+            "Refreshed the cached table list.".to_string()
+        } else if definitions == 1 {
+            "Refreshed the cached table list and 1 cached definition.".to_string()
+        } else {
+            format!("Refreshed the cached table list and {definitions} cached definitions.")
+        };
+        Ok(Some(text))
+    }
+
+    fn cache_hint(&self) -> Option<String> {
+        let (refreshing, error) = {
+            let disk = self.disk.as_ref()?;
+            (disk.refreshing(), disk.last_error())
+        };
+        if let Some(error) = error {
+            if !refreshing {
+                return Some(format!("Cache refresh failed: {error}"));
+            }
+        }
+        let age = self
+            .names_saved_at_ms()
+            .map(age_phrase)
+            .unwrap_or_else(|| "just now".to_string());
+        if refreshing {
+            if self.names_from_cache() {
+                return Some(format!(
+                    "Showing cached table list from {age}. Refreshing cached tables in the background."
+                ));
+            }
+            return Some("Refreshing cached tables in the background.".to_string());
+        }
+        if self.names_from_cache() {
+            return Some(format!("Showing cached table list from {age}."));
+        }
+        Some("Fetched the table list.".to_string())
+    }
+
+    fn resolve_ls_names(
+        &mut self,
+        pattern: &str,
+    ) -> Result<(Vec<String>, Option<String>), EngineError> {
+        let names = self.cached_table_names(false)?;
+        let exact: Vec<String> = names
+            .iter()
+            .filter(|name| glob_matches(pattern, name))
+            .cloned()
+            .collect();
+        if !exact.is_empty() {
+            return Ok((exact, None));
+        }
+        let mut tables = Vec::new();
+        for name in &names {
+            if let Some(meta) = self.cached_definition(name) {
+                tables.push(crate::MatchTable::from_meta(&meta));
+            }
+        }
+        match crate::intelligent_matches(&tables, pattern) {
+            Ok(hit) => Ok((hit.names, Some(hit.note))),
+            Err(_) if is_glob(pattern) => Ok((Vec::new(), None)),
+            Err(message) => Err(EngineError::Runtime(message)),
+        }
+    }
+
+    fn ls_rows(&mut self, names: &[String]) -> Vec<LsRow> {
+        let mut rows = Vec::with_capacity(names.len());
+        for name in names {
+            let meta = self
+                .cached_definition(name)
+                .unwrap_or_else(|| TableMeta::name_only(name));
+            let item_count = if meta.has_definition() {
+                self.table_item_count(name)
+            } else {
+                0
+            };
+            rows.push(LsRow {
+                meta,
+                item_count,
+                size_bytes: 0,
+            });
+        }
+        rows
+    }
+
+    fn describe_for_ls(
+        &mut self,
+        name: &str,
+        refresh: bool,
+        metrics: bool,
+    ) -> Result<Option<TableMeta>, EngineError> {
+        let mut meta = self.describe(name, refresh)?;
+        if metrics {
+            if let Some(meta) = meta.as_mut() {
+                self.backend.attach_consumed_metrics(meta)?;
+            }
+        }
+        Ok(meta)
+    }
+
+    fn metrics_note(&self) -> Option<String> {
+        if self.backend.is_local() {
+            return Some(
+                "note: metrics=True has no CloudWatch data for local/memory backends".to_string(),
+            );
+        }
+        #[cfg(not(feature = "cloudwatch"))]
+        {
+            let _ = self;
+            Some("note: CloudWatch metrics require rebuilding with --features watch".to_string())
+        }
+        #[cfg(feature = "cloudwatch")]
+        {
+            let _ = self;
+            None
+        }
+    }
+
     fn show_tables(&mut self, like: Option<&str>) -> Result<StatementResult, EngineError> {
         self.record("list_tables", like.unwrap_or("*"));
         // Running the statement reloads the list and definitions already saved.
@@ -1121,6 +1324,84 @@ impl<B: DynamoBackend> Engine<B> {
             self.cancel.sleep(wait)?;
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LsRow {
+    pub meta: TableMeta,
+    pub item_count: usize,
+    pub size_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LsReport {
+    pub metrics_note: Option<String>,
+    /// Intelligent-match note and the `cache:` line, joined the way `ls` prints them.
+    pub note: Option<String>,
+    pub rows: Vec<LsRow>,
+    pub detail: bool,
+}
+
+impl LsReport {
+    pub fn message(&self) -> String {
+        let body = if self.detail {
+            let row = &self.rows[0];
+            crate::format_table_description(&row.meta, row.item_count, row.size_bytes)
+        } else {
+            let rows: Vec<_> = self
+                .rows
+                .iter()
+                .map(|row| (&row.meta, row.item_count, row.size_bytes))
+                .collect();
+            crate::format_table_summary(&rows)
+        };
+        let mut text = String::new();
+        if let Some(note) = &self.metrics_note {
+            text.push_str(note);
+            text.push('\n');
+        }
+        if let Some(note) = self.note.as_deref().filter(|note| !note.is_empty()) {
+            text.push_str(note);
+            text.push_str("\n\n");
+        }
+        text.push_str(body.trim_end());
+        text
+    }
+}
+
+pub fn age_phrase(saved_at_ms: u64) -> String {
+    let elapsed = now_ms().saturating_sub(saved_at_ms) / 1000;
+    if elapsed < 5 {
+        "just now".to_string()
+    } else if elapsed < 60 {
+        format!("{elapsed}s ago")
+    } else if elapsed < 3600 {
+        format!("{}m ago", elapsed / 60)
+    } else {
+        format!("{}h ago", elapsed / 3600)
+    }
+}
+
+fn is_glob(pattern: &str) -> bool {
+    pattern.contains('*') || pattern.contains('?')
+}
+
+fn glob_matches(pattern: &str, name: &str) -> bool {
+    glob::Pattern::new(pattern)
+        .map(|pattern| pattern.matches(name))
+        .unwrap_or(false)
+}
+
+fn merge_ls_note(note: Option<String>, hint: Option<String>) -> Option<String> {
+    match (
+        note.filter(|text| !text.is_empty()),
+        hint.filter(|text| !text.is_empty()),
+    ) {
+        (Some(note), Some(hint)) => Some(format!("{note}\ncache: {hint}")),
+        (Some(note), None) => Some(note),
+        (None, Some(hint)) => Some(format!("cache: {hint}")),
+        (None, None) => None,
     }
 }
 
@@ -2531,5 +2812,49 @@ mod tests {
         assert!(store.get_names().is_none());
         assert!(store.definition_names().is_empty());
         assert!(engine.cached_definition("kept").is_none());
+    }
+
+    #[test]
+    fn ls_lists_and_describes() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE posts (id STRING HASH KEY);")
+            .unwrap();
+        engine
+            .execute("CREATE TABLE nb_posts (id STRING HASH KEY);")
+            .unwrap();
+        let listed = engine.execute("LS;").unwrap();
+        let StatementResult::Schema(text) = listed else {
+            panic!("expected schema, got {listed:?}");
+        };
+        assert!(text.starts_with("Tables"), "{text}");
+        assert!(text.contains("posts"), "{text}");
+        assert!(text.contains("nb_posts"), "{text}");
+        assert!(!text.contains("cache:"), "{text}");
+
+        let one = engine.execute("ls posts;").unwrap();
+        let StatementResult::Schema(text) = one else {
+            panic!("expected schema, got {one:?}");
+        };
+        assert!(text.contains("Name: posts"), "{text}");
+        assert!(text.contains("Hash Key: id"), "{text}");
+        assert!(!text.contains("nb_posts"), "{text}");
+
+        let err = engine.execute("ls missing;").unwrap_err();
+        assert!(err.to_string().contains("not found"), "{err}");
+
+        let glob = engine.execute("ls missing*;").unwrap();
+        let StatementResult::Schema(text) = glob else {
+            panic!("expected schema, got {glob:?}");
+        };
+        assert!(text.contains("Tables"), "{text}");
+        assert!(!text.contains("Hash Key"), "{text}");
+        assert!(!text.contains("posts"), "{text}");
+
+        let fresh = engine.execute("ls posts refresh=True;").unwrap();
+        let StatementResult::Schema(text) = fresh else {
+            panic!("expected schema, got {fresh:?}");
+        };
+        assert!(text.contains("Hash Key: id"), "{text}");
     }
 }
