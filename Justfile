@@ -232,15 +232,22 @@ mcp: (_title "mcp") dynamo
         -p "${DQL_PORT:-8000}" \
         -r "$AWS_REGION"
 
-# Unit tests and a stdio smoke test for the MCP server. Does not need DynamoDB.
+# Stdio smoke test for the MCP server. Does not need DynamoDB.
 [group('web')]
-mcp-test: (_title "mcp-test")
+mcp-smoke: (_title "mcp-smoke")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    (cd rust-impl && cargo build -p dql-cli)
+    python3 scripts/mcp-smoke.py rust-impl/target/debug/dqlrs
+
+# Unit tests and the stdio smoke test for the MCP server. Does not need DynamoDB.
+[group('web')]
+mcp-test: (_title "mcp-test") mcp-smoke
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
     (cd rust-impl && cargo test -p dql-cli --lib mcp::)
-    (cd rust-impl && cargo build -p dql-cli)
-    python3 scripts/mcp-smoke.py rust-impl/target/debug/dqlrs
 
 # Start the web UI, API, and /mcp on one host. Extra args go to dqlrs-web/run.sh: just web -- --port 9000
 [group('web')]
@@ -400,7 +407,7 @@ check: (_title "check") py-sync py-fix rust-fix
 test: (_title "test") dynamo py-sync rust-build web-unit py-test rust-test rust-local rust-smoke black-box notebook-test web-test mcp-test
 
 # Static analysis, package builds, and every test suite. Does not call `test`.
-verify: (_title "verify") dynamo web-unit py rust black-box notebook-test web-test mcp-test
+verify: (_title "verify") dynamo web-unit py rust black-box notebook-test web-test mcp-smoke mcp-test
 
 # Install dql and dqlrs onto ~/.local/bin
 install: (_title "install") py rust py-install rust-install
