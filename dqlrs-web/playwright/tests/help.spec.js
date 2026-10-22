@@ -1,4 +1,5 @@
 import { test, expect } from "../support/app.js";
+import { playwrightArtifact } from "../support/artifacts.js";
 import { openApp, replaceEditor, themeColor } from "../support/helpers.js";
 
 test.beforeEach(async ({ page, app }) => {
@@ -20,11 +21,11 @@ test("renders HELP SELECT with syntax highlighting", async ({ page }, testInfo) 
   const examples = card.locator("[data-testid='help-code']").nth(1);
   await expect(examples).toContainText("CREATE TABLE");
   await page.locator("#result-body").screenshot({
-    path: `/opt/cursor/artifacts/help-select-${testInfo.project.name}.png`,
+    path: playwrightArtifact(`help-select-${testInfo.project.name}.png`),
   });
   await examples.scrollIntoViewIfNeeded();
   await page.locator("#result-body").screenshot({
-    path: `/opt/cursor/artifacts/help-select-examples-${testInfo.project.name}.png`,
+    path: playwrightArtifact(`help-select-examples-${testInfo.project.name}.png`),
   });
 });
 
@@ -38,6 +39,6 @@ test("renders the HELP index as a command list", async ({ page }, testInfo) => {
   await expect(select).toHaveCSS("color", await themeColor(page, "--teal-ink"));
   await expect(card).toContainText("Query items from a table or index");
   await page.locator("#result-body").screenshot({
-    path: `/opt/cursor/artifacts/help-index-${testInfo.project.name}.png`,
+    path: playwrightArtifact(`help-index-${testInfo.project.name}.png`),
   });
 });

@@ -1,4 +1,8 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "@playwright/test";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 // playwright test has no --slow-mo flag. just web-test-slow sets this.
 const slowMo = Number(process.env.PLAYWRIGHT_SLOW_MO || 0);
@@ -13,6 +17,7 @@ const sharedUse = {
 
 export default defineConfig({
   testDir: "./tests",
+  globalSetup: path.join(here, "support/global-setup.js"),
   timeout: 90_000,
   expect: { timeout: 20_000 },
   fullyParallel: false,

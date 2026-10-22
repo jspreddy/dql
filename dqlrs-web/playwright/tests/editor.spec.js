@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
+import { playwrightArtifact } from "../support/artifacts.js";
 import { lineByText, lineOverlaps, mod, node, openApp, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
 
 function cachedResults(workspace) {
@@ -917,7 +918,7 @@ test("shows an explain plan as operations and conditions", async ({ page, app },
   await expect(field("expression values")).toContainText("1");
   await expect(field("index")).toHaveText("TABLE");
   await page.locator("#result-body").screenshot({
-    path: `/opt/cursor/artifacts/explain-attributes-${testInfo.project.name}.png`,
+    path: playwrightArtifact(`explain-attributes-${testInfo.project.name}.png`),
   });
   await expect(page.locator("#result-meta")).toBeEmpty();
   await expect(page.locator(".query-result").last().locator('[data-testid="result-note"]')).toHaveCount(0);
@@ -1102,14 +1103,14 @@ test("show-tables-like and ls glob refresh=True reload a changed table", async (
   // The create snapshot has no throughput, which the card prints as an em dash.
   // SHOW reloads that saved description, so the live read capacity is shown.
   await expect(page.locator(".query-result").last().locator(".describe-tables tr", { hasText: other }).locator("td").nth(2)).toHaveText("0");
-  await shownRow.screenshot({ path: `/opt/cursor/artifacts/show-refresh-${testInfo.project.name}.png` });
+  await shownRow.screenshot({ path: playwrightArtifact(`show-refresh-${testInfo.project.name}.png`) });
 
   await runEditor(`DESCRIBE ${name};`);
   const describedFresh = page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
   await expect(describedFresh).toContainText("THROUGHPUT (2, 3)");
   await expect(describedFresh.locator(".describe-stats")).toContainText("2");
   await expect(describedFresh.locator(".describe-stats")).toContainText("3");
-  await describedFresh.screenshot({ path: `/opt/cursor/artifacts/describe-refresh-${testInfo.project.name}.png` });
+  await describedFresh.screenshot({ path: playwrightArtifact(`describe-refresh-${testInfo.project.name}.png`) });
 
   await runEditor(`ls ${name}* refresh=True`);
   const fresh = page.locator(".query-result").last().locator('[data-testid="result-note"]').filter({ hasText: "Hash Key" });
@@ -1338,7 +1339,7 @@ async function expectCacheHint(card, testInfo, kind) {
   const tip = hint.locator(".describe-cache-tip");
   await expect(tip).toBeVisible();
   await expect(tip).toHaveText(await hint.getAttribute("aria-label"));
-  await card.screenshot({ path: `/opt/cursor/artifacts/ls-cache-${kind}-${testInfo.project.name}.png` });
+  await card.screenshot({ path: playwrightArtifact(`ls-cache-${kind}-${testInfo.project.name}.png`) });
 }
 
 async function expectDescription(page, card, tableName) {
