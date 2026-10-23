@@ -17,6 +17,7 @@ use include_dir::{include_dir, Dir};
 use serde_json::{json, Value};
 
 use super::files::{self, PathError};
+use super::presence::{self, Kind};
 use super::query_cache;
 use super::shape::{
     changes_schema, column_order, explain_index, parse_table_shape, read_query, safe_table_name,
@@ -44,6 +45,7 @@ struct App {
     state: Mutex<WebState>,
     cancel: dql_engine::CancelFlag,
     identity: Mutex<Option<dql_engine::CallerIdentity>>,
+    presence: presence::Book,
     mcp: bool,
 }
 
@@ -53,6 +55,7 @@ struct Incoming {
     query: String,
     body: Vec<u8>,
     origin: Option<String>,
+    mcp_session: Option<String>,
     keep_alive: bool,
     overflow: bool,
 }
@@ -133,6 +136,7 @@ impl App {
             }),
             cancel,
             identity: Mutex::new(None),
+            presence: presence::Book::new(),
             mcp,
         }
     }
@@ -210,6 +214,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
     let mut content_length = None;
     let mut connection = String::new();
     let mut origin = None;
+    let mut mcp_session = None;
     let mut length_invalid = false;
     for line in lines {
         if line.is_empty() {
@@ -227,6 +232,8 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
             connection = value.trim().to_ascii_lowercase();
         } else if name.eq_ignore_ascii_case("origin") {
             origin = Some(value.trim().to_string());
+        } else if name.eq_ignore_ascii_case("mcp-session-id") {
+            mcp_session = Some(value.trim().to_string());
         }
     }
     let keep_alive = if connection.contains("close") {
@@ -243,6 +250,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
             query: query.to_string(),
             body: Vec::new(),
             origin,
+            mcp_session,
             keep_alive: false,
             overflow: true,
         }));
@@ -255,6 +263,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
             query: query.to_string(),
             body: Vec::new(),
             origin,
+            mcp_session,
             keep_alive: false,
             overflow: true,
         }));
@@ -269,6 +278,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
         query: query.to_string(),
         body,
         origin,
+        mcp_session,
         keep_alive,
         overflow: false,
     }))
@@ -352,11 +362,23 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
         },
         "/api/file" => {
             let relative = query_value(query, "path");
-            match files::read_text(&app.root, &relative) {
-                Ok(text) => Reply::Json(200, json!({"path": relative, "text": text})),
+            match files::read_file(&app.root, &relative) {
+                Ok(file) => Reply::Json(
+                    200,
+                    json!({
+                        "path": file.path,
+                        "text": file.text,
+                        "revision": file.revision,
+                    }),
+                ),
+                Err(err) if files::is_missing(&err) => Reply::Json(
+                    404,
+                    json!({"ok": false, "error": err.to_string(), "missing": true}),
+                ),
                 Err(err) => json_error(400, &err),
             }
         }
+        "/api/presence" => Reply::Json(200, app.presence.snapshot()),
         "/api/query-results" => {
             let relative = query_value(query, "path");
             match query_cache::list(&app.root, &relative) {
@@ -429,6 +451,12 @@ fn dispatch_mcp(app: &App, request: &Incoming) -> Reply {
             }),
         );
     }
+    let mcp_id = request
+        .mcp_session
+        .as_deref()
+        .and_then(presence::valid_mcp_id)
+        .unwrap_or("mcp");
+    app.presence.touch(mcp_id, Kind::Mcp);
     let text = String::from_utf8_lossy(&request.body);
     let mut state = lock_state(app);
     let WebState {
@@ -486,6 +514,14 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
     let body = parse_json(body);
     let relative = body.get("path").and_then(Value::as_str).unwrap_or("");
     match path {
+        "/api/presence" => {
+            let id = body.get("id").and_then(Value::as_str).unwrap_or("");
+            let Some(id) = presence::valid_web_id(id) else {
+                return Reply::Json(400, json!({"ok": false, "error": "client id is invalid"}));
+            };
+            app.presence.touch(id, Kind::Web);
+            Reply::Json(200, app.presence.snapshot())
+        }
         "/api/file" => match files::create_file(&app.root, relative) {
             Ok(path) => Reply::Json(200, json!({"path": path, "text": ""})),
             Err(err) => json_error(400, &err),
@@ -539,8 +575,24 @@ fn dispatch_put(app: &App, path: &str, raw: &[u8]) -> Reply {
     let body = parse_json(raw);
     let relative = body.get("path").and_then(Value::as_str).unwrap_or("");
     let text = body.get("text").and_then(Value::as_str).unwrap_or("");
-    match files::write_text(&app.root, relative, text) {
-        Ok(()) => Reply::Json(200, json!({"ok": true})),
+    let base = body.get("base").and_then(Value::as_str);
+    match files::save_file(&app.root, relative, text, base) {
+        Ok(files::SaveFile::Stored(file)) => Reply::Json(
+            200,
+            json!({"ok": true, "path": file.path, "revision": file.revision}),
+        ),
+        Ok(files::SaveFile::Conflict(file)) => Reply::Json(
+            409,
+            json!({
+                "ok": false,
+                "error": "file changed on disk",
+                "conflict": true,
+                "path": relative,
+                "text": file.text,
+                "revision": file.revision,
+                "missing": file.missing,
+            }),
+        ),
         Err(err) => json_error(400, &err),
     }
 }
@@ -871,6 +923,7 @@ fn reason(status: u16) -> &'static str {
         403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
+        409 => "Conflict",
         502 => "Bad Gateway",
         _ => "Error",
     }
@@ -1238,6 +1291,86 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         assert!(text.contains("Content-Length:"));
         assert!(!text.contains("Transfer-Encoding: chunked"));
         drop(guard);
+    }
+
+    #[test]
+    fn stale_save_conflicts_and_presence_lists_web_and_mcp() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server_mcp(root.path().to_path_buf(), true);
+        let created = http(addr, "POST", "/api/file", r#"{"path":"notes.dql"}"#);
+        assert!(created.contains("notes.dql"), "{created}");
+
+        let read = http(addr, "GET", "/api/file?path=notes.dql", "");
+        let revision = json_string_field(&read, "revision");
+        let wrote = http(
+            addr,
+            "PUT",
+            "/api/file",
+            &format!(r#"{{"path":"notes.dql","text":"from-mcp\n","base":"{revision}"}}"#),
+        );
+        assert!(wrote.contains("HTTP/1.1 200"), "{wrote}");
+        let again = http(addr, "GET", "/api/file?path=notes.dql", "");
+        assert!(again.contains("from-mcp"), "{again}");
+        let current = json_string_field(&again, "revision");
+
+        let stale = http(
+            addr,
+            "PUT",
+            "/api/file",
+            &format!(r#"{{"path":"notes.dql","text":"web-old\n","base":"{revision}"}}"#),
+        );
+        assert!(stale.contains("HTTP/1.1 409"), "{stale}");
+        assert!(stale.contains("from-mcp"), "{stale}");
+        assert!(stale.contains("\"conflict\":true"), "{stale}");
+        let still = http(addr, "GET", "/api/file?path=notes.dql", "");
+        assert!(still.contains("from-mcp"), "{still}");
+        assert!(!still.contains("web-old"), "{still}");
+        assert_eq!(json_string_field(&still, "revision"), current);
+
+        let first = http(
+            addr,
+            "POST",
+            "/api/presence",
+            r#"{"id":"web-window-a","kind":"web"}"#,
+        );
+        assert!(first.contains("web-window-a"), "{first}");
+        let second = http(
+            addr,
+            "POST",
+            "/api/presence",
+            r#"{"id":"web-window-b","kind":"web"}"#,
+        );
+        assert!(second.contains("web-window-a"), "{second}");
+        assert!(second.contains("web-window-b"), "{second}");
+        let mcp = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}"#,
+        );
+        assert!(
+            mcp.contains("serverInfo") || mcp.contains("protocolVersion"),
+            "{mcp}"
+        );
+        let listed = http(addr, "GET", "/api/presence", "");
+        assert!(listed.contains("\"kind\":\"web\""), "{listed}");
+        assert!(listed.contains("\"kind\":\"mcp\""), "{listed}");
+        assert!(listed.contains("web-window-a"), "{listed}");
+        assert!(listed.contains("web-window-b"), "{listed}");
+        drop(guard);
+    }
+
+    fn json_string_field(raw: &str, key: &str) -> String {
+        let needle = format!("\"{key}\":\"");
+        let start = raw
+            .find(&needle)
+            .unwrap_or_else(|| panic!("no {key} in {raw}"))
+            + needle.len();
+        raw[start..]
+            .split('"')
+            .next()
+            .unwrap_or_else(|| panic!("unterminated {key} in {raw}"))
+            .to_string()
     }
 
     struct ServerGuard {

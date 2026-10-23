@@ -43,6 +43,7 @@
       <div id="title-search-list" class="title-search-list" role="listbox" hidden></div>
     </div>
     <div class="header-tools">
+      <div id="presence" class="presence" role="list" aria-label="Connected clients"></div>
       <div class="header-toggles">
         <button type="button" id="settings-toggle" class="theme-toggle" popovertarget="settings-pop" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-pop" aria-label="Settings" title="Settings">
           <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
@@ -113,6 +114,7 @@
         <div class="pane-head">
           <span class="file-name-row">
             <span id="file-name">No file open</span>
+            <button type="button" id="patch-recall" class="patch-recall hidden">Unsaved patch</button>
             <button type="button" id="lint-status" class="lint-status hidden" aria-live="polite"></button>
             <button type="button" id="run-file" class="hidden" title="Run this file">
               <svg class="ff-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
@@ -237,6 +239,28 @@
     </div>
   </dialog>
   <div id="complete-list" class="complete-list" role="listbox" aria-label="Suggestions" hidden></div>
+  <dialog id="patch-pop" aria-labelledby="patch-pop-title">
+    <div class="patch-pop-card">
+      <header class="patch-pop-head">
+        <h2 id="patch-pop-title">File changed on disk</h2>
+        <button type="button" id="patch-pop-close" title="Close" aria-label="Close unsaved patch">
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M2 2l8 8M10 2l-8 8"/>
+          </svg>
+        </button>
+      </header>
+      <p id="patch-pop-note"></p>
+      <pre id="patch-pop-body"></pre>
+      <div class="patch-pop-nav">
+        <button type="button" id="patch-prev">Previous</button>
+        <span id="patch-count"></span>
+        <button type="button" id="patch-next">Next</button>
+      </div>
+      <div class="patch-pop-actions">
+        <button type="button" id="patch-copy">Copy patch</button>
+      </div>
+    </div>
+  </dialog>
   <dialog id="server-pop" aria-labelledby="server-pop-title">
     <div class="server-pop-card">
       <h2 id="server-pop-title">The server went away</h2>

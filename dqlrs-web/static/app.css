@@ -189,6 +189,39 @@ input, textarea { background: var(--paper); }
   margin-left: auto;
 }
 
+.presence {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  min-height: 22px;
+}
+
+.presence:empty { display: none; }
+
+.presence-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+.presence-icon.is-self {
+  box-shadow:
+    0 0 0 2px var(--bar),
+    0 0 0 3px #fff,
+    inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
 .header-toggles {
   display: flex;
   align-items: center;
@@ -444,6 +477,140 @@ body.side-resizing * {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.patch-recall {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--amber-border);
+  border-radius: 999px;
+  background: var(--amber-bg);
+  color: var(--amber-ink);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.patch-recall:hover,
+.patch-recall:focus-visible {
+  background: var(--amber-bg-2);
+  outline: none;
+}
+
+#patch-pop {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+#patch-pop::backdrop {
+  background: var(--shadow-modal);
+}
+
+.patch-pop-card {
+  width: min(640px, calc(100vw - 32px));
+  padding: 18px 18px 14px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px var(--shadow-lg);
+  color: var(--text);
+}
+
+.patch-pop-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.patch-pop-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+#patch-pop-close {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+#patch-pop-close:hover,
+#patch-pop-close:focus-visible {
+  background: var(--chip);
+  color: var(--text);
+  outline: none;
+}
+
+#patch-pop-note {
+  margin: 8px 0 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+#patch-pop-body {
+  margin: 0;
+  max-height: min(50vh, 420px);
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--text);
+  font: 12px/1.45 var(--mono);
+  white-space: pre;
+}
+
+.patch-pop-nav,
+.patch-pop-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.patch-pop-nav { margin-top: 10px; }
+
+.patch-pop-actions {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+#patch-count {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#patch-prev,
+#patch-next,
+#patch-copy {
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 650;
+}
+
+#patch-prev,
+#patch-next {
+  background: var(--chip);
+  color: var(--text);
+}
+
+#patch-copy {
+  background: var(--teal);
+  color: var(--on-fill);
 }
 
 .lint-status {
