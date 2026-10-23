@@ -87,7 +87,7 @@ fn dispatch(
         return Err((-32002, "server not initialized".to_string()));
     }
     match method {
-        "initialize" => Ok(initialize(initialized, params)),
+        "initialize" => Ok(initialize(initialized, root, params)),
         "ping" => Ok(json!({})),
         "logging/setLevel" => Ok(json!({})),
         "resources/list" => Ok(json!({"resources": []})),
@@ -98,7 +98,7 @@ fn dispatch(
     }
 }
 
-fn initialize(initialized: &mut bool, params: &Value) -> Value {
+fn initialize(initialized: &mut bool, root: &Path, params: &Value) -> Value {
     *initialized = true;
     let version = params
         .get("protocolVersion")
@@ -109,8 +109,16 @@ fn initialize(initialized: &mut bool, params: &Value) -> Value {
         "protocolVersion": version,
         "capabilities": { "tools": { "listChanged": false } },
         "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") },
-        "instructions": "Call help before writing DQL you are unsure of. Omit topic for the command list, or pass a topic such as select. Tools read and write the .dql workspace passed to dqlrs --mcp --dir, the same folder dqlrs --web uses. global_search finds table names, cached columns and indexes, and queries in files. lint_query checks a script, and lint_query_file checks a workspace .dql file, for parse errors and for queries the engine would reject, without running them or fetching a missing definition. list_tables and describe_tables use the shared table cache for this connection. create_query_file, read_query_file, and update_query_file change query files on disk."
+        "instructions": mcp_instructions(root),
     })
+}
+
+fn mcp_instructions(root: &Path) -> String {
+    let workspace = absolute_dir(root);
+    let workspace = workspace.display();
+    format!(
+        "The dqlrs workspace is {workspace}, the same folder dqlrs --web uses. If that directory is locally in scope of the Cursor or Claude workspace, prefer local file edits for .dql files. If it is not in scope, prefer the MCP tools create_query_file, read_query_file, and update_query_file to create and edit .dql files. Call help before writing DQL you are unsure of. Omit topic for the command list, or pass a topic such as select. global_search finds table names, cached columns and indexes, and queries in files. lint_query checks a script, and lint_query_file checks a workspace .dql file, for parse errors and for queries the engine would reject, without running them or fetching a missing definition. list_tables and describe_tables use the shared table cache for this connection."
+    )
 }
 
 fn call_tool(session: &mut Session, root: &Path, params: &Value) -> Result<Value, (i32, String)> {
@@ -666,6 +674,16 @@ mod tests {
             }),
         );
         assert_eq!(response["result"]["protocolVersion"], "2025-06-18");
+        let instructions = response["result"]["instructions"].as_str().unwrap();
+        let workspace = absolute_dir(&server.root).display().to_string();
+        assert!(
+            instructions.contains(&workspace)
+                && instructions.contains("prefer local file edits")
+                && instructions.contains(
+                    "prefer the MCP tools create_query_file, read_query_file, and update_query_file"
+                ),
+            "{instructions}"
+        );
         assert!(server
             .handle_line(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
             .is_none());
