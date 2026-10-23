@@ -77,19 +77,32 @@ test("a dirty window does not overwrite another window's save", async ({ page, a
 });
 
 test("lists each open web window on the title bar", async ({ page, app }) => {
+  await expect(page).toHaveTitle("dqlrs: W1");
   await expect(page.locator(".presence-icon")).toHaveCount(1);
-  await expect(page.locator(".presence-icon.is-self")).toHaveCount(1);
-  await expect(page.locator(".presence-icon")).toHaveText("W");
+  await expect(page.locator(".presence-icon.is-self")).toHaveText("W1");
+  await expect(page.locator("header.top")).toHaveAttribute("data-identity", "W1");
   const other = await page.context().newPage();
   await openApp(other, app);
-  await expect(page.locator(".presence-icon")).toHaveCount(2);
-  await expect(other.locator(".presence-icon")).toHaveCount(2);
-  await expect(page.locator(".presence-icon.is-self")).toHaveCount(1);
-  await expect(other.locator(".presence-icon.is-self")).toHaveCount(1);
-  await expect(page.locator("#presence")).toHaveAttribute("aria-label", "Connected: Web, Web");
+  await expect(page.locator(".presence-icon")).toHaveText(["W1", "W2"]);
+  await expect(other.locator(".presence-icon")).toHaveText(["W1", "W2"]);
+  await expect(page.locator(".presence-icon.is-self")).toHaveText("W1");
+  await expect(other.locator(".presence-icon.is-self")).toHaveText("W2");
+  await expect(other).toHaveTitle("dqlrs: W2");
+  await expect(page.locator("#presence")).toHaveAttribute("aria-label", "Connected: W1, W2");
+  await expect(other.locator("#presence")).toHaveAttribute("aria-label", "Connected: W1, W2");
+  const bar = await page.locator("header.top").evaluate((el) => getComputedStyle(el).backgroundColor);
+  const mine = await page.locator(".presence-icon.is-self").evaluate((el) => getComputedStyle(el).backgroundColor);
+  const otherBar = await other.locator("header.top").evaluate((el) => getComputedStyle(el).backgroundColor);
+  const otherMine = await other.locator(".presence-icon.is-self").evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(bar).toBe(mine);
+  expect(otherBar).toBe(otherMine);
+  expect(bar).not.toBe(otherBar);
   await page.screenshot({ path: "/opt/cursor/artifacts/presence-two-web.png" });
+  await other.screenshot({ path: "/opt/cursor/artifacts/presence-w2-titlebar.png" });
   await other.close();
   await expect(page.locator(".presence-icon")).toHaveCount(1);
+  await expect(page.locator(".presence-icon")).toHaveText("W1");
+  await expect(page).toHaveTitle("dqlrs: W1");
 });
 
 test("shows web and mcp clients as profile icons", async ({ page }) => {
@@ -99,16 +112,16 @@ test("shows web and mcp clients as profile icons", async ({ page }) => {
       contentType: "application/json",
       body: JSON.stringify({
         clients: [
-          { id: "web-window-a", kind: "web", color: "#0067a5" },
-          { id: "web-window-b", kind: "web", color: "#c2410c" },
-          { id: "mcp", kind: "mcp", color: "#6a3d9a" },
+          { id: "web-window-a", kind: "web", label: "W1", color: "#c2410c" },
+          { id: "web-window-b", kind: "web", label: "W2", color: "#0067a5" },
+          { id: "mcp", kind: "mcp", label: "M1", color: "#b45309" },
         ],
       }),
     });
   });
   await page.reload();
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
-  await expect(page.locator(".presence-icon")).toHaveText(["W", "W", "M"]);
-  await expect(page.locator("#presence")).toHaveAttribute("aria-label", "Connected: Web, Web, MCP");
+  await expect(page.locator(".presence-icon")).toHaveText(["W1", "W2", "M1"]);
+  await expect(page.locator("#presence")).toHaveAttribute("aria-label", "Connected: W1, W2, M1");
   await page.screenshot({ path: "/opt/cursor/artifacts/presence-web-mcp.png" });
 });

@@ -1357,6 +1357,9 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         assert!(listed.contains("\"kind\":\"mcp\""), "{listed}");
         assert!(listed.contains("web-window-a"), "{listed}");
         assert!(listed.contains("web-window-b"), "{listed}");
+        assert!(listed.contains("\"label\":\"W1\""), "{listed}");
+        assert!(listed.contains("\"label\":\"W2\""), "{listed}");
+        assert!(listed.contains("\"label\":\"M1\""), "{listed}");
         drop(guard);
     }
 

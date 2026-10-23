@@ -2000,23 +2000,31 @@ async function beatPresence() {
 
 function renderPresence(clients) {
   const host = document.querySelector("#presence");
+  const bar = document.querySelector("header.top");
   host.replaceChildren();
   const labels = [];
+  let selfClient = null;
   for (const client of clients) {
     const self = client.id === state.clientId && client.kind !== "mcp";
-    const name = client.kind === "mcp" ? "MCP" : "Web";
-    const label = self ? "This window" : name;
-    labels.push(name);
+    const label = client.label || (client.kind === "mcp" ? "M" : "W");
+    const name = self ? label + ", this window" : label;
+    labels.push(label);
+    if (self) selfClient = client;
     const icon = document.createElement("span");
     icon.className = "presence-icon" + (self ? " is-self" : "");
     icon.role = "listitem";
-    icon.title = label;
-    icon.setAttribute("aria-label", label);
+    icon.title = name;
+    icon.setAttribute("aria-label", name);
     icon.style.background = client.color || "#64748b";
-    icon.textContent = client.kind === "mcp" ? "M" : "W";
+    icon.textContent = label;
     host.append(icon);
   }
   host.setAttribute("aria-label", labels.length ? "Connected: " + labels.join(", ") : "Connected clients");
+  if (selfClient && selfClient.label) {
+    document.title = "dqlrs: " + selfClient.label;
+    bar.dataset.identity = selfClient.label;
+    bar.style.setProperty("--identity", selfClient.color || "#64748b");
+  }
 }
 
 function currentRunRange() {

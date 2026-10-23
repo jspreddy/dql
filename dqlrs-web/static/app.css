@@ -38,6 +38,15 @@ input, textarea { background: var(--paper); }
   z-index: 30;
 }
 
+.top[data-identity] {
+  --header-fg: #fff;
+  --header-text: rgba(255, 255, 255, 0.88);
+  --header-line: rgba(255, 255, 255, 0.45);
+  --header-line-hover: #fff;
+  background: var(--identity);
+  color: #fff;
+}
+
 .brand {
   flex: none;
   font-weight: 650;
@@ -192,33 +201,33 @@ input, textarea { background: var(--paper); }
 .presence {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex: none;
-  min-height: 22px;
+  min-height: 26px;
 }
 
 .presence:empty { display: none; }
 
 .presence-icon {
-  width: 18px;
-  height: 18px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
   color: #fff;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 1;
-  letter-spacing: 0;
+  letter-spacing: -0.03em;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
 }
 
 .presence-icon.is-self {
   box-shadow:
-    0 0 0 2px var(--bar),
-    0 0 0 3px #fff,
+    0 0 0 2px var(--identity, var(--bar)),
+    0 0 0 4px #fff,
     inset 0 0 0 1px rgba(255, 255, 255, 0.35);
 }
 
