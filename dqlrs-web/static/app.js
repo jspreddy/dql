@@ -2000,8 +2000,10 @@ async function beatPresence() {
 
 function renderPresence(clients) {
   const host = document.querySelector("#presence");
+  const mark = document.querySelector(".brand-mark");
   const bar = document.querySelector("header.top");
   host.replaceChildren();
+  mark.querySelector(".presence-icon")?.remove();
   const labels = [];
   let selfClient = null;
   for (const client of clients) {
@@ -2009,7 +2011,6 @@ function renderPresence(clients) {
     const label = client.label || (client.kind === "mcp" ? "M" : "W");
     const name = self ? label + ", this window" : label;
     labels.push(label);
-    if (self) selfClient = client;
     const icon = document.createElement("span");
     icon.className = "presence-icon" + (self ? " is-self" : "");
     icon.role = "listitem";
@@ -2017,7 +2018,12 @@ function renderPresence(clients) {
     icon.setAttribute("aria-label", name);
     icon.style.background = client.color || "#64748b";
     icon.textContent = label;
-    host.append(icon);
+    if (self) {
+      selfClient = client;
+      mark.prepend(icon);
+    } else {
+      host.append(icon);
+    }
   }
   host.setAttribute("aria-label", labels.length ? "Connected: " + labels.join(", ") : "Connected clients");
   if (selfClient && selfClient.label) {
