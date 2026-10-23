@@ -2734,6 +2734,25 @@ function describeCard(description, note, cache) {
   if (description.rangeKey) keys.append(describeKey("range", "Range Key", description.rangeKey));
   if (keys.childNodes.length) card.append(keys);
 
+  if (description.localIndexes && description.localIndexes.length) {
+    card.append(describeIndexes("Local indexes", "describe-local-indexes", [
+      ["Name", "name", "name"],
+      ["Hash", "hash"],
+      ["Range", "range"],
+      ["Projection", "projection"],
+    ], description.localIndexes));
+  }
+  if (description.globalIndexes && description.globalIndexes.length) {
+    card.append(describeIndexes("Global indexes", "describe-global-indexes", [
+      ["Name", "name", "name"],
+      ["Projection", "projection"],
+      ["Read", "read", "num"],
+      ["Write", "write", "num"],
+      ["Hash key", "hashKey", "key"],
+      ["Range key", "rangeKey", "key"],
+      ["Status", "status", "status"],
+    ], description.globalIndexes));
+  }
   if (description.extra) {
     const extra = document.createElement("pre");
     extra.className = "describe-extra";
@@ -2742,6 +2761,77 @@ function describeCard(description, note, cache) {
   }
   if (description.schema) card.append(highlightedQuery(description.schema));
   return card;
+}
+
+function describeIndexes(title, testId, columns, rows) {
+  const section = document.createElement("section");
+  section.className = "describe-indexes";
+  section.dataset.testid = testId;
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  section.append(heading);
+  const wrap = document.createElement("div");
+  wrap.className = "describe-tables-wrap";
+  const table = document.createElement("table");
+  table.className = "describe-tables";
+  const head = document.createElement("tr");
+  for (const [label, , kind] of columns) {
+    const cell = document.createElement("th");
+    if (kind === "num") cell.className = "num";
+    cell.textContent = label;
+    head.append(cell);
+  }
+  const thead = document.createElement("thead");
+  thead.append(head);
+  const body = document.createElement("tbody");
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    for (const [, key, kind] of columns) {
+      tr.append(describeIndexCell(row[key], kind));
+    }
+    body.append(tr);
+  }
+  table.append(thead, body);
+  wrap.append(table);
+  section.append(wrap);
+  return section;
+}
+
+function describeIndexCell(value, kind) {
+  const cell = document.createElement("td");
+  if (kind === "num") {
+    cell.className = "num";
+    cell.textContent = value || "—";
+    return cell;
+  }
+  if (kind === "status") {
+    const status = document.createElement("span");
+    status.className = "describe-status " + statusClass(value);
+    status.textContent = value || "";
+    cell.append(status);
+    return cell;
+  }
+  if (kind === "key") {
+    cell.className = "describe-index-key";
+    if (!value || !value.name) {
+      cell.textContent = "—";
+      return cell;
+    }
+    const name = document.createElement("span");
+    name.className = "describe-index-key-name";
+    name.textContent = value.name;
+    cell.append(name);
+    if (value.type) {
+      const type = document.createElement("span");
+      type.className = "describe-index-key-type";
+      type.textContent = value.type;
+      cell.append(type);
+    }
+    return cell;
+  }
+  if (kind === "name") cell.className = "describe-table-name";
+  cell.textContent = value || "—";
+  return cell;
 }
 
 function intelligentSummary(note, summary, tables, cache) {

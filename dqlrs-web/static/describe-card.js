@@ -114,8 +114,86 @@ export function parseTableDescription(text) {
     write: fields.Write || "",
     hashKey: parseKey(fields["Hash Key"]),
     rangeKey: fields["Range Key"] ? parseKey(fields["Range Key"]) : null,
-    extra: extra.join("\n").trim(),
+    ...splitIndexSections(extra.join("\n")),
     schema: schema.join("\n").trim(),
+  };
+}
+
+const INDEX_STATUS = "ACTIVE|CREATING|UPDATING|DELETING";
+const INDEX_RATE = "N/A|\\d+/∞|\\d+/\\d+ \\(\\d+%\\)|\\d+";
+const INDEX_KEY = "\\S+ \\([^)]+\\)|-";
+const GLOBAL_INDEX = new RegExp(
+  `^(\\S+)\\s+(\\S+)\\s+(${INDEX_RATE})\\s+(${INDEX_RATE})\\s+(${INDEX_KEY})\\s+(${INDEX_KEY})\\s+(${INDEX_STATUS})$`,
+);
+const LOCAL_INDEX = /^(\S+)\s+hash=(\S+)\s+range=(\S+)\s+projection=(.*)$/;
+
+/**
+ * Pull local and global index blocks out of the describe text that follows
+ * the key lines. Anything that is not an index stays in `extra`.
+ */
+function splitIndexSections(text) {
+  const localIndexes = [];
+  const globalIndexes = [];
+  const rest = [];
+  let section = "";
+  for (const line of String(text || "").replace(/\r\n/g, "\n").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed === "Local Indexes:") {
+      section = "local";
+      continue;
+    }
+    if (trimmed === "Global Indexes:") {
+      section = "global";
+      continue;
+    }
+    if (section === "global" && /^Name\s+Projection\b/.test(trimmed)) continue;
+    if (section === "local") {
+      const row = parseLocalIndex(trimmed);
+      if (row) {
+        localIndexes.push(row);
+        continue;
+      }
+    }
+    if (section === "global") {
+      const row = parseGlobalIndex(trimmed);
+      if (row) {
+        globalIndexes.push(row);
+        continue;
+      }
+    }
+    section = "";
+    rest.push(line);
+  }
+  return {
+    localIndexes,
+    globalIndexes,
+    extra: rest.join("\n").trim(),
+  };
+}
+
+function parseLocalIndex(line) {
+  const match = line.match(LOCAL_INDEX);
+  if (!match) return null;
+  return {
+    name: match[1],
+    hash: match[2],
+    range: match[3] === "-" ? "" : match[3],
+    projection: match[4].trim(),
+  };
+}
+
+function parseGlobalIndex(line) {
+  const match = line.match(GLOBAL_INDEX);
+  if (!match) return null;
+  return {
+    name: match[1],
+    projection: match[2],
+    read: match[3],
+    write: match[4],
+    hashKey: parseKey(match[5]),
+    rangeKey: match[6] === "-" ? null : parseKey(match[6]),
+    status: match[7],
   };
 }
 

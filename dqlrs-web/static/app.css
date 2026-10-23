@@ -1697,6 +1697,49 @@ body.results-resizing * {
   letter-spacing: 0.03em;
 }
 
+#result-body .describe-indexes {
+  margin: 14px 14px 0;
+}
+
+#result-body .describe-indexes h3 {
+  margin: 0 0 8px;
+  color: var(--label);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#result-body .describe-indexes .describe-tables-wrap {
+  margin: 0;
+  border: 1px solid var(--line-mid);
+  border-radius: 8px;
+  background: var(--paper);
+  overflow: auto;
+}
+
+#result-body .describe-indexes .describe-tables th {
+  position: static;
+  background: var(--canvas);
+}
+
+#result-body .describe-index-key {
+  white-space: nowrap;
+}
+
+#result-body .describe-index-key-name {
+  color: var(--text-strong);
+  font-weight: 650;
+}
+
+#result-body .describe-index-key-type {
+  margin-left: 6px;
+  color: var(--blue-ink);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
 #result-body .describe-extra {
   margin: 12px 14px 0;
   padding: 8px 10px;
