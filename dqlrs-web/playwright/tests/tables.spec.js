@@ -217,9 +217,8 @@ test("table column headers stay put while rows scroll", async ({ page, app }) =>
   }, name);
   await page.locator("#mode-tables").click();
   await expect(page.locator(`#table-${name}`)).toBeVisible();
-  await expect(page.locator("#rows-table thead th")).toHaveText(["id", "n", "note"]);
-  const hashHeader = page.locator("#rows-table thead th").nth(0);
-  await expect(hashHeader).toHaveClass(/row-lead/);
+  await expect(page.locator("#rows-table thead th:not(.row-peek)")).toHaveText(["id", "n", "note"]);
+  const hashHeader = page.locator("#rows-table thead th:not(.row-peek)").nth(0);
   await expect(hashHeader).toHaveClass(/col-table/);
   await expect(hashHeader).toHaveCSS("position", "sticky");
 
@@ -234,6 +233,62 @@ test("table column headers stay put while rows scroll", async ({ page, app }) =>
   expect(after).toEqual(before);
   const movedRow = await page.locator("#rows-table tbody tr").first().boundingBox();
   expect(firstRow.y - movedRow.y).toBeGreaterThan(100);
+});
+
+test("row peek stays on the left edge while the table scrolls sideways", async ({ page, app }) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  const columns = Array.from({ length: 8 }, (_, index) => `wide_${index}`);
+  const values = columns.map((column) => `'${column}-${"x".repeat(24)}'`);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY);`,
+      `INSERT INTO ${name} (id, ${columns.join(", ")}) VALUES ('row-1', ${values.join(", ")});`,
+      `SELECT * FROM ${name} WHERE id = 'row-1';`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator("#result-table tbody tr")).toContainText("row-1");
+
+  const resultScroller = page.locator(".result-card-body");
+  const resultPeek = page.locator("#result-table [data-testid='row-peek']");
+  await resultPeek.hover();
+  const resultBefore = await edgeOffset(resultPeek);
+  await resultScroller.evaluate((node) => {
+    node.scrollLeft = node.scrollWidth;
+  });
+  await expect.poll(async () => resultScroller.evaluate((node) => node.scrollLeft)).toBeGreaterThan(80);
+  const resultAfter = await edgeOffset(resultPeek);
+  expect(Math.abs(resultAfter - resultBefore)).toBeLessThanOrEqual(1);
+  await resultPeek.click();
+  await expect(page.locator("#row-pop")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await expect(page.locator("#rows-table tbody tr")).toContainText("row-1");
+  const rowsScroller = page.locator("#rows-body");
+  const rowsPeek = page.locator("#rows-table [data-testid='row-peek']");
+  await rowsPeek.hover();
+  const rowsBefore = await edgeOffset(rowsPeek);
+  await rowsScroller.evaluate((node) => {
+    node.scrollLeft = node.scrollWidth;
+  });
+  await expect.poll(async () => rowsScroller.evaluate((node) => node.scrollLeft)).toBeGreaterThan(80);
+  const rowsAfter = await edgeOffset(rowsPeek);
+  expect(Math.abs(rowsAfter - rowsBefore)).toBeLessThanOrEqual(1);
+  await expect(rowsPeek).toHaveCSS("position", "absolute");
+  await expect(page.locator("#rows-table td.row-peek")).toHaveCSS("position", "sticky");
+  await rowsPeek.click();
+  await expect(page.locator("#row-pop")).toBeVisible();
 });
 
 test("orders table and result columns by keys, index, then selection or name", async ({ page, app }) => {
@@ -253,9 +308,9 @@ test("orders table and result columns by keys, index, then selection or name", a
   );
   await pressMod(page, "A");
   await page.locator("#run").click();
-  await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "apple", "n", "zebra"]);
-  await expect(page.locator("#result-table thead th").nth(0)).toHaveClass(/col-table/);
-  await expect(page.locator("#result-table thead th").nth(0).locator('[data-key="hash"]')).toBeVisible();
+  await expect(page.locator("#result-table thead th:not(.row-peek)")).toHaveText(["id", "sk", "apple", "n", "zebra"]);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(0)).toHaveClass(/col-table/);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(0).locator('[data-key="hash"]')).toBeVisible();
   const tableHead = await themeColor(page, "--col-table-head");
   const tableLine = colorPattern(await themeColor(page, "--col-table-line"));
   const tableCell = await themeColor(page, "--col-table-cell");
@@ -266,44 +321,44 @@ test("orders table and result columns by keys, index, then selection or name", a
   const indexHead = await themeColor(page, "--col-index-head");
   const indexLine = colorPattern(await themeColor(page, "--col-index-line"));
   const indexCell = await themeColor(page, "--col-index-cell");
-  await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("background-color", tableHead);
-  await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("box-shadow", tableLine);
-  const headerIcons = await page.locator("#result-table thead th").nth(0).locator(".col-label").evaluate((label) =>
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(0)).toHaveCSS("background-color", tableHead);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(0)).toHaveCSS("box-shadow", tableLine);
+  const headerIcons = await page.locator("#result-table thead th:not(.row-peek)").nth(0).locator(".col-label").evaluate((label) =>
     [...label.children].map((child) => child.dataset.key || child.textContent.trim()),
   );
   expect(headerIcons).toEqual(["id", "hash"]);
-  await expect(page.locator("#result-table thead th").nth(1)).toHaveClass(/col-table/);
-  await expect(page.locator("#result-table thead th").nth(1).locator('[data-key="range"]')).toBeVisible();
-  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("background-color", tableCell);
-  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("box-shadow", tableCellLine);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(1)).toHaveClass(/col-table/);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(1).locator('[data-key="range"]')).toBeVisible();
+  await expect(page.locator("#result-table tbody td:not(.row-peek)").nth(0)).toHaveCSS("background-color", tableCell);
+  await expect(page.locator("#result-table tbody td:not(.row-peek)").nth(0)).toHaveCSS("box-shadow", tableCellLine);
 
   await replaceEditor(page, `SELECT zebra, apple, id FROM ${name} WHERE id = 'a' AND sk = 1;`);
   await pressMod(page, "A");
   await page.locator("#run").click();
-  await expect(page.locator("#result-table thead th")).toHaveText(["id", "zebra", "apple"]);
+  await expect(page.locator("#result-table thead th:not(.row-peek)")).toHaveText(["id", "zebra", "apple"]);
 
   await replaceEditor(page, `SELECT * FROM ${name} WHERE n = 9 AND sk = 2 USING by-n;`);
   await pressMod(page, "A");
   await page.locator("#run").click();
-  await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "n", "apple", "zebra"]);
-  await expect(page.locator("#result-table thead th").nth(0)).toHaveClass(/col-table/);
-  await expect(page.locator("#result-table thead th").nth(0)).toHaveCSS("background-color", tableHead);
-  await expect(page.locator("#result-table thead th").nth(1)).toHaveClass(/col-both/);
-  await expect(page.locator("#result-table thead th").nth(1)).toHaveCSS("background-color", bothHead);
-  await expect(page.locator("#result-table thead th").nth(1)).toHaveCSS("box-shadow", bothLine);
-  await expect(page.locator("#result-table thead th").nth(1).locator('[data-key="range"]')).toBeVisible();
-  await expect(page.locator("#result-table thead th").nth(2)).toHaveClass(/col-index/);
-  await expect(page.locator("#result-table thead th").nth(2)).toHaveCSS("background-color", indexHead);
-  await expect(page.locator("#result-table thead th").nth(2).locator('[data-key="hash"]')).toBeVisible();
-  await expect(page.locator("#result-table tbody td").nth(1)).toHaveCSS("background-color", bothCell);
-  await expect(page.locator("#result-table thead th").nth(2)).toHaveCSS("box-shadow", indexLine);
-  await expect(page.locator("#result-table tbody td").nth(2)).toHaveCSS("background-color", indexCell);
+  await expect(page.locator("#result-table thead th:not(.row-peek)")).toHaveText(["id", "sk", "n", "apple", "zebra"]);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(0)).toHaveClass(/col-table/);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(0)).toHaveCSS("background-color", tableHead);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(1)).toHaveClass(/col-both/);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(1)).toHaveCSS("background-color", bothHead);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(1)).toHaveCSS("box-shadow", bothLine);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(1).locator('[data-key="range"]')).toBeVisible();
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(2)).toHaveClass(/col-index/);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(2)).toHaveCSS("background-color", indexHead);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(2).locator('[data-key="hash"]')).toBeVisible();
+  await expect(page.locator("#result-table tbody td:not(.row-peek)").nth(1)).toHaveCSS("background-color", bothCell);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(2)).toHaveCSS("box-shadow", indexLine);
+  await expect(page.locator("#result-table tbody td:not(.row-peek)").nth(2)).toHaveCSS("background-color", indexCell);
 
   await replaceEditor(page, `SELECT * FROM ${name} WHERE apple = 'p' AND id = 'a' USING by-apple;`);
   await pressMod(page, "A");
   await page.locator("#run").click();
-  await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "apple", "n", "zebra"]);
-  const shared = page.locator("#result-table thead th").nth(0);
+  await expect(page.locator("#result-table thead th:not(.row-peek)")).toHaveText(["id", "sk", "apple", "n", "zebra"]);
+  const shared = page.locator("#result-table thead th:not(.row-peek)").nth(0);
   await expect(shared).toHaveClass(/col-both/);
   await expect(shared).toHaveCSS("background-color", bothHead);
   await expect(shared).toHaveCSS("box-shadow", bothLine);
@@ -313,28 +368,28 @@ test("orders table and result columns by keys, index, then selection or name", a
     [...label.children].map((child) => child.dataset.key || child.textContent.trim()),
   );
   expect(sharedIcons).toEqual(["id", "hash", "range"]);
-  await expect(page.locator("#result-table thead th").nth(1)).toHaveClass(/col-table/);
-  await expect(page.locator("#result-table thead th").nth(1)).not.toHaveClass(/col-both/);
-  const indexHash = page.locator("#result-table thead th").nth(2);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(1)).toHaveClass(/col-table/);
+  await expect(page.locator("#result-table thead th:not(.row-peek)").nth(1)).not.toHaveClass(/col-both/);
+  const indexHash = page.locator("#result-table thead th:not(.row-peek)").nth(2);
   await expect(indexHash).toHaveClass(/col-index/);
   await expect(indexHash).toHaveCSS("background-color", indexHead);
   await expect(indexHash.locator('[data-key="hash"]')).toHaveAttribute("aria-label", "Index hash key");
   await expect(indexHash.locator('[data-key="range"]')).toHaveCount(0);
   await expect(page.locator("#result-table tbody tr")).toHaveCount(1);
-  await expect(page.locator("#result-table tbody td").nth(0)).toHaveText("a");
-  await expect(page.locator("#result-table tbody td").nth(2)).toHaveText("p");
-  await expect(page.locator("#result-table tbody td").nth(0)).toHaveCSS("background-color", bothCell);
-  await expect(page.locator("#result-table tbody td").nth(2)).toHaveCSS("background-color", indexCell);
+  await expect(page.locator("#result-table tbody td:not(.row-peek)").nth(0)).toHaveText("a");
+  await expect(page.locator("#result-table tbody td:not(.row-peek)").nth(2)).toHaveText("p");
+  await expect(page.locator("#result-table tbody td:not(.row-peek)").nth(0)).toHaveCSS("background-color", bothCell);
+  await expect(page.locator("#result-table tbody td:not(.row-peek)").nth(2)).toHaveCSS("background-color", indexCell);
 
   await page.locator("#mode-tables").click();
   await page.locator("#table-search").fill(name);
   await expect(page.locator(`#table-${name}`)).toBeVisible();
-  await expect(page.locator("#rows-table thead th")).toHaveText(["id", "sk", "apple", "n", "zebra"]);
-  await expect(page.locator("#rows-table thead th").nth(0)).toHaveClass(/col-table/);
-  await expect(page.locator("#rows-table thead th").nth(0).locator('[data-key="hash"]')).toBeVisible();
-  await expect(page.locator("#rows-table thead th").nth(0)).toHaveCSS("background-color", tableHead);
-  await expect(page.locator("#rows-table thead th").nth(1).locator('[data-key="range"]')).toBeVisible();
-  await expect(page.locator("#rows-table thead th").nth(3)).not.toHaveClass(/col-/);
+  await expect(page.locator("#rows-table thead th:not(.row-peek)")).toHaveText(["id", "sk", "apple", "n", "zebra"]);
+  await expect(page.locator("#rows-table thead th:not(.row-peek)").nth(0)).toHaveClass(/col-table/);
+  await expect(page.locator("#rows-table thead th:not(.row-peek)").nth(0).locator('[data-key="hash"]')).toBeVisible();
+  await expect(page.locator("#rows-table thead th:not(.row-peek)").nth(0)).toHaveCSS("background-color", tableHead);
+  await expect(page.locator("#rows-table thead th:not(.row-peek)").nth(1).locator('[data-key="range"]')).toBeVisible();
+  await expect(page.locator("#rows-table thead th:not(.row-peek)").nth(3)).not.toHaveClass(/col-/);
   const listed = page.locator(`#table-${name}`);
   await expect(listed.locator('[data-key="hash"]')).toBeVisible();
   await expect(listed.locator('[data-key="range"]')).toBeVisible();
@@ -429,7 +484,7 @@ test("opens result and table-browser structure from data already in hand", async
   );
   await pressMod(page, "A");
   await page.locator("#run").click();
-  await expect(page.locator("#result-table thead th")).toHaveText(["id", "sk", "extra"]);
+  await expect(page.locator("#result-table thead th:not(.row-peek)")).toHaveText(["id", "sk", "extra"]);
   const resultCard = page.locator(`.result-card[data-table="${name}"]`);
   await expect(resultCard).toBeVisible();
   await expect(resultCard.locator(".result-card-name")).toHaveText(name);
@@ -625,7 +680,7 @@ test("scrolls a wide result table sideways inside the card", async ({ page, app 
   const card = page.locator(`.result-card[data-table="${name}"]`);
   const scroller = card.locator(".result-card-body");
   await expect(card).toBeVisible();
-  await expect(page.locator("#result-table thead th")).toHaveText(["id", ...columns]);
+  await expect(page.locator("#result-table thead th:not(.row-peek)")).toHaveText(["id", ...columns]);
   await expect(page.locator("#result-table")).toContainText("col_14-value");
 
   const paneBox = await page.locator("#result-body").boundingBox();
@@ -641,7 +696,7 @@ test("scrolls a wide result table sideways inside the card", async ({ page, app 
   expect(metrics.overflowX).toBe("auto");
   expect(metrics.scroll).toBeGreaterThan(metrics.client + 24);
 
-  const last = page.locator("#result-table thead th").last();
+  const last = page.locator("#result-table thead th:not(.row-peek)").last();
   const clipped = await last.evaluate((cell) => {
     const box = cell.getBoundingClientRect();
     const parent = cell.closest(".result-card-body").getBoundingClientRect();
@@ -672,6 +727,13 @@ test("scrolls a wide result table sideways inside the card", async ({ page, app 
 
 function uniqueTable() {
   return `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function edgeOffset(control) {
+  return control.evaluate((button) => {
+    const parent = button.closest("#rows-body, .result-card-body").getBoundingClientRect();
+    return Math.round(button.getBoundingClientRect().left - parent.left);
+  });
 }
 
 async function headerTops(page) {

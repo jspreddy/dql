@@ -80,8 +80,8 @@ test("runs the nested SELECT and SCAN help examples", async ({ page, app }) => {
       throw new Error(`unexpected error for ${script}: ${await errors.first().innerText()}`);
     }
     await expect(page.locator(".result-card").last().locator(".result-card-meta"), script).toHaveText("1 row");
-    await expect(page.locator("#result-table thead th"), script).toHaveText(shape.headers);
-    await expect(page.locator("#result-table tbody td"), script).toHaveText(shape.cells);
+    await expect(page.locator("#result-table thead th:not(.row-peek)"), script).toHaveText(shape.headers);
+    await expect(page.locator("#result-table tbody td:not(.row-peek)"), script).toHaveText(shape.cells);
     for (const value of shape.missing || []) {
       await expect(page.locator("#result-table"), script).not.toContainText(value);
     }

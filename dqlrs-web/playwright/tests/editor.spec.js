@@ -763,12 +763,12 @@ test("analyze scan matches the scan card and shows consumed RCU", async ({ page,
   const analyzed = cards.nth(1);
   await expect(scan.locator(".result-card-name")).toHaveText(name);
   await expect(analyzed.locator(".result-card-name")).toHaveText(name);
-  await expect(scan.locator("thead th")).toHaveText(["pk", "sk", "kind", "name"]);
-  await expect(analyzed.locator("thead th")).toHaveText(["pk", "sk", "kind", "name"]);
-  await expect(analyzed.locator("thead th").nth(0)).toHaveClass(/col-table/);
-  await expect(analyzed.locator("thead th").nth(1)).toHaveClass(/col-table/);
-  await expect(scan.locator("tbody td")).toHaveText(["sun", "self", "star", "Sol"]);
-  await expect(analyzed.locator("tbody td")).toHaveText(["sun", "self", "star", "Sol"]);
+  await expect(scan.locator("thead th:not(.row-peek)")).toHaveText(["pk", "sk", "kind", "name"]);
+  await expect(analyzed.locator("thead th:not(.row-peek)")).toHaveText(["pk", "sk", "kind", "name"]);
+  await expect(analyzed.locator("thead th:not(.row-peek)").nth(0)).toHaveClass(/col-table/);
+  await expect(analyzed.locator("thead th:not(.row-peek)").nth(1)).toHaveClass(/col-table/);
+  await expect(scan.locator("tbody td:not(.row-peek)")).toHaveText(["sun", "self", "star", "Sol"]);
+  await expect(analyzed.locator("tbody td:not(.row-peek)")).toHaveText(["sun", "self", "star", "Sol"]);
   const labels = await page.locator("[data-testid='result-card-capacity']").allInnerTexts();
   expect(labels.length).toBeGreaterThan(0);
   for (const label of labels) expect(label).not.toMatch(/^0(?:\.0+)? RCU$/);

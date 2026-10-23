@@ -1766,25 +1766,47 @@ body.results-resizing * {
 #result-body tbody tr:nth-child(even) td { background: var(--stripe); }
 #result-body tbody tr:hover td { background: var(--hover-teal); }
 
-#result-body th.row-lead,
-#result-body td.row-lead,
-#rows-body th.row-lead,
-#rows-body td.row-lead {
-  padding-left: 30px;
+/* The eye stays in its own column so horizontal scrolling cannot carry it
+   off the left edge. Sticky headers stay above these cells. */
+#result-body th.row-peek,
+#rows-body th.row-peek,
+#result-body td.row-peek,
+#rows-body td.row-peek {
+  position: sticky;
+  left: 0;
+  width: 28px;
+  min-width: 28px;
+  max-width: 28px;
+  padding: 0;
+  border-right: 1px solid var(--line);
+  background: var(--paper);
 }
 
-/* Peek button anchors to the body cell. A relative header would leave
-   the hash-key title out of the sticky header row. */
-#result-body td.row-lead,
-#rows-body td.row-lead {
-  position: relative;
+#result-body th.row-peek,
+#rows-body th.row-peek {
+  z-index: 4;
+}
+
+#result-body th.row-peek { background: var(--raised); }
+#rows-body th.row-peek { background: var(--gutter); }
+
+#result-body td.row-peek,
+#rows-body td.row-peek {
+  z-index: 2;
+}
+
+#result-body tbody tr:hover td.row-peek { background: var(--hover-teal); }
+
+#rows-body table {
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .result-body .row-peek-btn {
   position: absolute;
-  left: 4px;
+  left: 50%;
   top: 50%;
-  transform: translateY(-50%);
+  transform: translate(-50%, -50%);
   width: 22px;
   height: 22px;
   padding: 0;
@@ -2303,7 +2325,7 @@ th, td {
   white-space: nowrap;
 }
 
-th { background: var(--gutter); position: sticky; top: 0; z-index: 1; }
+th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
 
 .pager { flex: none; border-top: 1px solid var(--line); }
 

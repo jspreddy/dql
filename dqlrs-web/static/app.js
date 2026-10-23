@@ -2999,13 +2999,9 @@ function dataTable(rows, tableId, columns) {
   const table = document.createElement("table");
   if (tableId) table.id = tableId;
   const head = document.createElement("tr");
-  let headerLead = true;
+  head.append(rowPeekCell("th"));
   for (const column of keys) {
     const cell = document.createElement("th");
-    if (headerLead) {
-      cell.classList.add("row-lead");
-      headerLead = false;
-    }
     paintKeyColumn(cell, column);
     const label = document.createElement("span");
     label.className = "col-label";
@@ -3021,14 +3017,9 @@ function dataTable(rows, tableId, columns) {
   const body = document.createElement("tbody");
   for (const row of rows) {
     const tr = document.createElement("tr");
-    let lead = true;
+    tr.append(rowPeekCell("td", row, keys));
     for (const column of keys) {
       const cell = document.createElement("td");
-      if (lead) {
-        cell.classList.add("row-lead");
-        cell.append(rowPeekButton(row, keys));
-        lead = false;
-      }
       paintKeyColumn(cell, column);
       const value = row[column.name];
       cell.append(document.createTextNode(value === null || value === undefined ? "" : typeof value === "object" ? JSON.stringify(value) : String(value)));
@@ -3519,6 +3510,14 @@ function selectTable(name) {
     button.classList.toggle("selected", button.id === "table-" + name.replaceAll(/[^A-Za-z0-9_-]/g, "_"));
   }
   loadRows();
+}
+
+function rowPeekCell(tag, row, columns) {
+  const cell = document.createElement(tag);
+  cell.className = "row-peek";
+  if (tag === "th") cell.setAttribute("aria-hidden", "true");
+  else cell.append(rowPeekButton(row, columns));
+  return cell;
 }
 
 function rowPeekButton(row, columns) {
