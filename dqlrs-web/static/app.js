@@ -1998,10 +1998,17 @@ async function beatPresence() {
   }
 }
 
+let presenceKey = "";
+let presenceTipAnchor = null;
+
 function renderPresence(clients) {
   const host = document.querySelector("#presence");
   const mark = document.querySelector(".brand-mark");
   const bar = document.querySelector("header.top");
+  const key = state.clientId + "\n" + clients.map((client) => [client.id, client.kind, client.label, client.color].join("\t")).join("\n");
+  if (key === presenceKey) return;
+  presenceKey = key;
+  hidePresenceTip();
   host.replaceChildren();
   mark.querySelector(".presence-icon")?.remove();
   const labels = [];
@@ -2014,8 +2021,8 @@ function renderPresence(clients) {
     const icon = document.createElement("span");
     icon.className = "presence-icon" + (self ? " is-self" : "");
     icon.role = "listitem";
-    icon.title = name;
     icon.setAttribute("aria-label", name);
+    icon.setAttribute("aria-describedby", "presence-tip");
     icon.style.background = client.color || "#64748b";
     icon.textContent = label;
     if (self) {
@@ -2026,12 +2033,72 @@ function renderPresence(clients) {
     }
   }
   host.setAttribute("aria-label", labels.length ? "Connected: " + labels.join(", ") : "Connected clients");
+  fillPresenceTip(clients, selfClient);
   if (selfClient && selfClient.label) {
     document.title = "dqlrs: " + selfClient.label;
     bar.dataset.identity = selfClient.label;
     bar.style.setProperty("--identity", selfClient.color || "#64748b");
   }
 }
+
+function fillPresenceTip(clients, selfClient) {
+  const tip = document.querySelector("#presence-tip");
+  tip.replaceChildren();
+  const count = document.createElement("p");
+  count.className = "presence-tip-count";
+  count.textContent = clients.length === 1 ? "1 client connected" : clients.length + " clients connected";
+  tip.append(count);
+  if (selfClient && selfClient.label) {
+    const self = document.createElement("p");
+    self.className = "presence-tip-self";
+    self.textContent = "This window is " + selfClient.label;
+    tip.append(self);
+  }
+  const groups = [
+    ["Web", clients.filter((client) => client.kind !== "mcp")],
+    ["MCP", clients.filter((client) => client.kind === "mcp")],
+  ];
+  for (const [name, group] of groups) {
+    if (!group.length) continue;
+    const line = document.createElement("p");
+    line.className = "presence-tip-kind";
+    line.textContent = name + ": " + group.map((client) => client.label || name[0]).join(", ");
+    tip.append(line);
+  }
+}
+
+function hidePresenceTip() {
+  presenceTipAnchor = null;
+  const tip = document.querySelector("#presence-tip");
+  if (tip) tip.hidden = true;
+}
+
+function placePresenceTip(icon) {
+  const tip = document.querySelector("#presence-tip");
+  if (!tip || !tip.childElementCount) return;
+  tip.hidden = false;
+  presenceTipAnchor = icon;
+  const rect = icon.getBoundingClientRect();
+  const box = tip.getBoundingClientRect();
+  let top = rect.bottom + 8;
+  let left = rect.left > window.innerWidth * 0.6 ? rect.right - box.width : rect.left;
+  if (top + box.height > window.innerHeight - 8) top = Math.max(8, rect.top - box.height - 8);
+  left = Math.max(8, Math.min(left, window.innerWidth - box.width - 8));
+  tip.style.top = top + "px";
+  tip.style.left = left + "px";
+}
+
+document.addEventListener("mouseover", (event) => {
+  const icon = event.target.closest && event.target.closest(".presence-icon");
+  if (!icon) return;
+  placePresenceTip(icon);
+});
+
+document.addEventListener("mouseout", (event) => {
+  const icon = event.target.closest && event.target.closest(".presence-icon");
+  if (!icon || icon.contains(event.relatedTarget)) return;
+  if (presenceTipAnchor === icon) hidePresenceTip();
+});
 
 function currentRunRange() {
   const selection = editor.state.selection.main;
