@@ -259,6 +259,8 @@ pub const LS: &str = r"
     Several matches print a list.
     When nothing matches exactly, ls lists tables with similar names and tables
     whose keys, indexes, or attributes are similar to the text.
+    Similar names come from the table list. A table is included even when its
+    definition has not been fetched. Related keys use definitions already saved.
     A glob that is still not similar prints an empty list.
     A two-letter pattern matches only names that start with it.
     The result says whether it is showing similar names, related keys, or both.
@@ -308,6 +310,8 @@ pub const SHOW: &str = r"
     character.
     When that matches nothing, the result lists tables with similar names and
     tables whose keys, indexes, or attributes are similar to the text.
+    Similar names come from the table list. A table is included even when its
+    definition has not been fetched. Related keys use definitions already saved.
     A two-letter pattern matches only names that start with it.
     The result says whether it is showing similar names, related keys, or both.
     A pattern that is still not similar stays an empty list.

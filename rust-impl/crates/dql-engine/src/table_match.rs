@@ -19,6 +19,16 @@ pub struct IntelligentHit {
 const MATCH_THRESHOLD: i32 = 85;
 
 impl MatchTable {
+    /// A table-list entry whose definition has not been fetched.
+    ///
+    /// Name matching still applies. There are no keys or indexes to compare.
+    pub fn name_only(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            fields: Vec::new(),
+        }
+    }
+
     pub fn from_meta(meta: &TableMeta) -> Self {
         let mut fields = Vec::new();
         fields.push(meta.hash_key.clone());

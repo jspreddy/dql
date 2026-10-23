@@ -1,7 +1,9 @@
 //! Title-bar search over table names, cached columns and indexes, and `.dql` queries.
 //!
-//! Column and index hits come only from definitions already saved. Search does
-//! not describe tables that have not been fetched.
+//! Table hits come from the table list. A saved definition is not required, and
+//! a definition that is not on that list is not a table hit. Column and index
+//! hits come only from definitions already saved. Search does not describe
+//! tables that have not been fetched.
 
 use std::path::Path;
 
@@ -71,26 +73,24 @@ fn rank(title: &str, needle: &str) -> u8 {
     }
 }
 
-fn take_matches(mut hits: Vec<SearchHit>, needle: &str) -> Vec<SearchHit> {
+fn sort_matches(mut hits: Vec<SearchHit>, needle: &str) -> Vec<SearchHit> {
     hits.sort_by(|left, right| {
         rank(&left.title, needle)
             .cmp(&rank(&right.title, needle))
             .then_with(|| left.title.to_lowercase().cmp(&right.title.to_lowercase()))
             .then_with(|| left.detail.to_lowercase().cmp(&right.detail.to_lowercase()))
     });
+    hits
+}
+
+fn take_matches(hits: Vec<SearchHit>, needle: &str) -> Vec<SearchHit> {
+    let mut hits = sort_matches(hits, needle);
     hits.truncate(PER_KIND);
     hits
 }
 
 fn table_hits(session: &mut Session, needle: &str) -> Vec<SearchHit> {
-    let mut names = session.engine.cached_table_names(false).unwrap_or_default();
-    if let Some(disk) = &session.table_disk {
-        for name in disk.definition_names() {
-            if !names.iter().any(|existing| existing == &name) {
-                names.push(name);
-            }
-        }
-    }
+    let names = session.engine.cached_table_names(false).unwrap_or_default();
     let hits = names
         .into_iter()
         .filter(|name| contains_ci(name, needle))
@@ -103,7 +103,7 @@ fn table_hits(session: &mut Session, needle: &str) -> Vec<SearchHit> {
             offset: None,
         })
         .collect();
-    take_matches(hits, needle)
+    sort_matches(hits, needle)
 }
 
 fn schema_hits(session: &Session, needle: &str) -> Vec<SearchHit> {
@@ -436,6 +436,109 @@ mod tests {
         );
         assert_eq!(hits[0].path.as_deref(), Some("queries/read.dql"));
         assert_eq!(hits[0].offset, Some(*offset));
+    }
+
+    #[test]
+    fn table_hits_follow_the_table_list_not_cached_definitions() {
+        let mut session = crate::session::Session::new_memory_headless("us-west-1");
+        let mut statements = Vec::new();
+        for suffix in 'a'..='j' {
+            statements.push(format!("CREATE TABLE shelf_{suffix} (id STRING HASH KEY);"));
+        }
+        statements.push("CREATE TABLE bookshelf (id STRING HASH KEY);".to_string());
+        statements.push("CREATE TABLE pre_shelf_post (id STRING HASH KEY);".to_string());
+        statements.push("CREATE TABLE orders (shelf_id STRING HASH KEY);".to_string());
+        statements.push("CREATE TABLE gamma (id STRING HASH KEY);".to_string());
+        statements.push("CREATE TABLE shelf_defined_only (id STRING HASH KEY);".to_string());
+        session
+            .engine
+            .execute_script(&statements.join("\n"))
+            .unwrap();
+
+        let orders = session.engine.cached_definition("orders").unwrap();
+        let defined_only = session
+            .engine
+            .cached_definition("shelf_defined_only")
+            .unwrap();
+        let mut names = session.engine.cached_table_names(false).unwrap();
+        names.retain(|name| name != "shelf_defined_only");
+
+        let dir = tempfile::tempdir().unwrap();
+        let cache = crate::table_cache::DiskTableCache::open_at(
+            dir.path().join("cache"),
+            crate::table_cache::CacheEndpoint {
+                region: "us-west-1".to_string(),
+                host: None,
+                port: 8000,
+                allow_select_scan: session.config.allow_select_scan,
+            },
+        );
+        cache.put_names(&names);
+        cache.put_definition(&orders);
+        cache.put_definition(&defined_only);
+        session.engine.set_table_cache(Some(cache.clone()));
+        session.table_disk = Some(cache);
+
+        assert!(session.engine.cached_definition("bookshelf").is_none());
+        assert!(session.engine.cached_definition("shelf_a").is_none());
+        assert!(session
+            .engine
+            .cached_definition("shelf_defined_only")
+            .is_some());
+
+        let found = search(&mut session, dir.path(), "shelf");
+        let tables: Vec<_> = found
+            .items
+            .iter()
+            .filter(|item| item.kind == "table")
+            .map(|item| item.title.as_str())
+            .collect();
+        let mut expected: Vec<String> = ('a'..='j')
+            .map(|suffix| format!("shelf_{suffix}"))
+            .collect();
+        expected.push("bookshelf".to_string());
+        expected.push("pre_shelf_post".to_string());
+        assert_eq!(
+            tables,
+            expected.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+
+        let listed = crate::meta::ls::web_table_list(&mut session, "shelf", false, false).unwrap();
+        let listed_names: Vec<_> = listed
+            .tables
+            .iter()
+            .map(|table| table.name.as_str())
+            .collect();
+        let mut web_expected: Vec<String> = ('a'..='j')
+            .map(|suffix| format!("shelf_{suffix}"))
+            .collect();
+        web_expected.push("pre_shelf_post".to_string());
+        web_expected.push("bookshelf".to_string());
+        web_expected.push("orders".to_string());
+        assert_eq!(
+            listed_names,
+            web_expected.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        assert!(listed
+            .tables
+            .iter()
+            .find(|table| table.name == "bookshelf")
+            .unwrap()
+            .keys
+            .is_empty());
+        assert_eq!(
+            listed
+                .tables
+                .iter()
+                .find(|table| table.name == "orders")
+                .unwrap()
+                .keys[0]
+                .name,
+            "shelf_id"
+        );
+        assert!(!listed_names.contains(&"shelf_defined_only"));
+        assert!(!listed_names.contains(&"gamma"));
+        assert!(listed.note.contains("similar names and related keys"));
     }
 
     #[test]

@@ -1066,12 +1066,7 @@ impl<B: DynamoBackend> Engine<B> {
         if !exact.is_empty() {
             return Ok((exact, None));
         }
-        let mut tables = Vec::new();
-        for name in &names {
-            if let Some(meta) = self.cached_definition(name) {
-                tables.push(crate::MatchTable::from_meta(&meta));
-            }
-        }
+        let tables = self.match_tables(&names);
         match crate::intelligent_matches(&tables, pattern) {
             Ok(hit) => Ok((hit.names, Some(hit.note))),
             Err(_) if is_glob(pattern) => Ok((Vec::new(), None)),
@@ -1132,6 +1127,20 @@ impl<B: DynamoBackend> Engine<B> {
         }
     }
 
+    /// Every name in the table list, with saved keys and indexes when a definition exists.
+    ///
+    /// A table that has never been described stays name-only so it can still match
+    /// by name. Definitions are not the list of tables.
+    fn match_tables(&mut self, names: &[String]) -> Vec<crate::MatchTable> {
+        names
+            .iter()
+            .map(|name| match self.cached_definition(name) {
+                Some(meta) if meta.has_definition() => crate::MatchTable::from_meta(&meta),
+                _ => crate::MatchTable::name_only(name),
+            })
+            .collect()
+    }
+
     fn show_tables(&mut self, like: Option<&str>) -> Result<StatementResult, EngineError> {
         self.record("list_tables", like.unwrap_or("*"));
         // Running the statement reloads the list and definitions already saved.
@@ -1158,11 +1167,7 @@ impl<B: DynamoBackend> Engine<B> {
             exact.sort();
             return Ok(StatementResult::Items(name_items(&exact)));
         }
-        let metas: Vec<TableMeta> = names
-            .iter()
-            .filter_map(|name| self.cached_definition(name))
-            .collect();
-        let tables: Vec<_> = metas.iter().map(crate::MatchTable::from_meta).collect();
+        let tables = self.match_tables(&names);
         match crate::intelligent_like_matches(&tables, pattern) {
             Ok(hit) => Ok(StatementResult::ItemsWithNote {
                 items: name_items(&hit.names),
@@ -2080,6 +2085,71 @@ mod tests {
             StatementResult::Items(items) => assert!(items.is_empty()),
             other => panic!("an unmatched pattern stays empty: {other:?}"),
         }
+    }
+
+    #[test]
+    fn pattern_matches_names_that_have_no_cached_definition() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        let mut statements = Vec::new();
+        for suffix in 'a'..='j' {
+            statements.push(format!("CREATE TABLE shelf_{suffix} (id STRING HASH KEY)"));
+        }
+        statements.push("CREATE TABLE bookshelf (id STRING HASH KEY)".to_string());
+        statements.push("CREATE TABLE pre_shelf_post (id STRING HASH KEY)".to_string());
+        statements.push("CREATE TABLE orders (shelf_id STRING HASH KEY)".to_string());
+        statements.push("CREATE TABLE gamma (id STRING HASH KEY)".to_string());
+        engine.execute(&statements.join("; ")).unwrap();
+
+        let orders = engine.cached_definition("orders").unwrap();
+        engine.cached_descriptions.clear();
+        engine
+            .cached_descriptions
+            .insert(orders.name.clone(), orders);
+        assert!(engine.cached_definition("shelf_a").is_none());
+        assert!(engine.cached_definition("bookshelf").is_none());
+        assert!(engine.cached_definition("pre_shelf_post").is_none());
+        assert!(engine.cached_definition("orders").unwrap().has_definition());
+
+        let mut expected: Vec<String> = ('a'..='j')
+            .map(|suffix| format!("shelf_{suffix}"))
+            .collect();
+        expected.push("pre_shelf_post".to_string());
+        expected.push("bookshelf".to_string());
+        expected.push("orders".to_string());
+
+        match engine.execute("SHOW TABLES LIKE 'shelf'").unwrap() {
+            StatementResult::ItemsWithNote { items, note } => {
+                assert_eq!(item_names(&items), expected);
+                assert_eq!(
+                    note,
+                    "No exact match for \"shelf\", so showing similar names and related keys."
+                );
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        match engine.execute("LS shelf").unwrap() {
+            StatementResult::Schema(text) => {
+                for name in &expected {
+                    assert!(text.contains(name), "{name} missing from {text}");
+                }
+                assert!(!text.contains("gamma"), "{text}");
+                assert!(text.contains("similar names and related keys"), "{text}");
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        match engine.execute("SHOW TABLES LIKE 'shelf%'").unwrap() {
+            StatementResult::Items(items) => {
+                let prefix: Vec<String> = ('a'..='j')
+                    .map(|suffix| format!("shelf_{suffix}"))
+                    .collect();
+                assert_eq!(item_names(&items), prefix);
+            }
+            other => panic!("exact LIKE should use the table list: {other:?}"),
+        }
+        assert!(
+            engine.cached_definition("bookshelf").is_none(),
+            "matching must not describe tables that were never cached"
+        );
     }
 
     fn item_names(items: &[Item]) -> Vec<String> {
