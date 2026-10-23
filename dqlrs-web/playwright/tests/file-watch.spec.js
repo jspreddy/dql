@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
+import { playwrightArtifact } from "../support/artifacts.js";
 import { openApp, replaceEditor } from "../support/helpers.js";
 
 test.beforeEach(async ({ page, app }) => {
@@ -18,7 +19,7 @@ test("refreshes a clean editor when the file changes on disk", async ({ page, ap
   expect(disk).not.toContain("local unsaved");
 });
 
-test("keeps unsaved edits as a patch when the file changes on disk", async ({ page, app }) => {
+test("keeps unsaved edits as a patch when the file changes on disk", async ({ page, app }, testInfo) => {
   await page.route("**/api/file", async (route) => {
     if (route.request().method() === "PUT") {
       await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -41,7 +42,7 @@ test("keeps unsaved edits as a patch when the file changes on disk", async ({ pa
   await expect(page.locator("#patch-pop")).toBeHidden();
   await page.locator("#patch-recall").click();
   await expect(page.locator("#patch-pop-body")).toContainText("local unsaved");
-  await page.screenshot({ path: "/opt/cursor/artifacts/file-patch-modal.png" });
+  await page.screenshot({ path: playwrightArtifact(`file-patch-modal-${testInfo.project.name}.png`) });
   await page.waitForTimeout(1800);
   expect(fs.readFileSync(file, "utf8")).not.toContain("local unsaved");
 });
@@ -76,7 +77,7 @@ test("a dirty window does not overwrite another window's save", async ({ page, a
   await other.close();
 });
 
-test("lists each open web window on the title bar", async ({ page, app }) => {
+test("lists each open web window on the title bar", async ({ page, app }, testInfo) => {
   await expect(page).toHaveTitle("dqlrs: W1");
   await expect(page.locator(".presence-icon")).toHaveCount(1);
   await expect(page.locator(".presence-icon.is-self")).toHaveText("W1");
@@ -120,17 +121,17 @@ test("lists each open web window on the title bar", async ({ page, app }) => {
   expect(slash.bottomKept).toBe(true);
   expect(slash.height * 0.75).toBeCloseTo(27, 0);
   expect(slash.paddingRight).toBeCloseTo(14 + 27 - 10, 0);
-  await page.screenshot({ path: "/opt/cursor/artifacts/presence-two-web.png" });
-  await other.screenshot({ path: "/opt/cursor/artifacts/presence-w2-titlebar.png" });
+  await page.screenshot({ path: playwrightArtifact(`presence-two-web-${testInfo.project.name}.png`) });
+  await other.screenshot({ path: playwrightArtifact(`presence-w2-titlebar-${testInfo.project.name}.png`) });
   const connected = ["2 clients connected", "This window is W1", "Web: W1, W2"];
   await page.locator(".presence-icon.is-self").hover();
   await expect(page.locator("#presence-tip")).toBeVisible();
   for (const line of connected) await expect(page.locator("#presence-tip")).toContainText(line);
-  await page.screenshot({ path: "/opt/cursor/artifacts/presence-tooltip.png" });
+  await page.screenshot({ path: playwrightArtifact(`presence-tooltip-${testInfo.project.name}.png`) });
   await page.locator("#presence .presence-icon").hover();
   await expect(page.locator("#presence-tip")).toBeVisible();
   for (const line of connected) await expect(page.locator("#presence-tip")).toContainText(line);
-  await page.screenshot({ path: "/opt/cursor/artifacts/presence-tooltip-other.png" });
+  await page.screenshot({ path: playwrightArtifact(`presence-tooltip-other-${testInfo.project.name}.png`) });
   await other.locator(".presence-icon.is-self").hover();
   await expect(other.locator("#presence-tip")).toContainText("This window is W2");
   await expect(other.locator("#presence-tip")).toContainText("2 clients connected");
@@ -141,7 +142,7 @@ test("lists each open web window on the title bar", async ({ page, app }) => {
   await expect(page).toHaveTitle("dqlrs: W1");
 });
 
-test("shows web and mcp clients as profile icons", async ({ page }) => {
+test("shows web and mcp clients as profile icons", async ({ page }, testInfo) => {
   await page.route("**/api/presence", async (route) => {
     await route.fulfill({
       status: 200,
@@ -166,5 +167,5 @@ test("shows web and mcp clients as profile icons", async ({ page }) => {
   await page.locator(".presence-icon").first().hover();
   await expect(page.locator("#presence-tip")).toContainText("3 clients connected");
   await expect(page.locator("#presence-tip")).toContainText("MCP: M1");
-  await page.screenshot({ path: "/opt/cursor/artifacts/presence-web-mcp.png" });
+  await page.screenshot({ path: playwrightArtifact(`presence-web-mcp-${testInfo.project.name}.png`) });
 });
