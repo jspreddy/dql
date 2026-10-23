@@ -361,36 +361,71 @@ impl TableMeta {
         throughput_number(self.throughput.as_ref(), read)
     }
 
+    /// One-line `CREATE TABLE`. Dump, the table cache, and MCP keep this form.
     pub fn schema_dql(&self) -> String {
+        let (fields, indexes) = self.schema_fragments();
+        let mut output = format!("CREATE TABLE {} ({})", self.name, fields.join(", "));
+        for schema in indexes {
+            output.push(' ');
+            output.push_str(&schema);
+        }
+        format!("{output};")
+    }
+
+    /// Multiline `CREATE TABLE` for describe output.
+    ///
+    /// The tokens match [`Self::schema_dql`], so the statement still parses.
+    pub fn schema_dql_formatted(&self) -> String {
+        let (fields, indexes) = self.schema_fragments();
+        let mut lines = vec![format!("CREATE TABLE {} (", self.name)];
+        let last_field = fields.len().saturating_sub(1);
+        for (index, field) in fields.iter().enumerate() {
+            let comma = if index == last_field { "" } else { "," };
+            lines.push(format!("  {field}{comma}"));
+        }
+        if indexes.is_empty() {
+            lines.push(");".to_string());
+        } else {
+            lines.push(")".to_string());
+            let last_index = indexes.len() - 1;
+            for (index, schema) in indexes.into_iter().enumerate() {
+                if index == last_index {
+                    lines.push(format!("{schema};"));
+                } else {
+                    lines.push(schema);
+                }
+            }
+        }
+        lines.join("\n")
+    }
+
+    fn schema_fragments(&self) -> (Vec<String>, Vec<String>) {
         let mut attrs = self.attrs.clone();
-        let mut field_parts = Vec::new();
-        field_parts.push(field_schema(attrs.get(&self.hash_key).expect("hash key")));
+        let mut fields = Vec::new();
+        fields.push(field_schema(attrs.get(&self.hash_key).expect("hash key")));
         attrs.remove(&self.hash_key);
         if let Some(range_key) = &self.range_key {
-            field_parts.push(field_schema(attrs.get(range_key).expect("range key")));
+            fields.push(field_schema(attrs.get(range_key).expect("range key")));
             attrs.remove(range_key);
         }
-        field_parts.extend(attrs.values().map(|field| {
+        fields.extend(attrs.values().map(|field| {
             local_index_schema(field, self.local_indexes.values())
                 .unwrap_or_else(|| field_schema(field))
         }));
-        let mut body = field_parts.join(", ");
         if let Some(throughput) = &self.throughput {
-            body.push_str(&format!(
-                ", THROUGHPUT ({}, {})",
+            fields.push(format!(
+                "THROUGHPUT ({}, {})",
                 throughput_literal(&throughput.read),
                 throughput_literal(&throughput.write)
             ));
         }
-        let mut output = format!("CREATE TABLE {} ({})", self.name, body);
-        for gsi in self.global_indexes.values() {
-            let schema = global_index_schema(gsi);
-            if !schema.is_empty() {
-                output.push(' ');
-                output.push_str(&schema);
-            }
-        }
-        format!("{output};")
+        let indexes = self
+            .global_indexes
+            .values()
+            .map(global_index_schema)
+            .filter(|schema| !schema.is_empty())
+            .collect();
+        (fields, indexes)
     }
 
     pub fn primary_key_attributes(&self) -> Vec<String> {
@@ -946,5 +981,72 @@ mod tests {
         })
         .unwrap();
         assert!(plan.follow_up_batch_get);
+    }
+
+    #[test]
+    fn describe_create_statement_is_formatted_and_still_parses() {
+        let simple = meta("CREATE TABLE t (id STRING HASH KEY)");
+        assert_eq!(simple.schema_dql(), "CREATE TABLE t (id STRING HASH KEY);");
+        assert_eq!(
+            simple.schema_dql_formatted(),
+            "CREATE TABLE t (\n  id STRING HASH KEY\n);"
+        );
+
+        let listed = meta(
+            "CREATE TABLE foobar_ls_test (id STRING HASH KEY, range NUMBER RANGE KEY, \
+             foo STRING INDEX('foo-index')) GLOBAL INDEX ('bar-index', bar STRING)",
+        );
+        let compact = "CREATE TABLE foobar_ls_test (id STRING HASH KEY, range NUMBER RANGE KEY, bar STRING HASH KEY, foo STRING INDEX('foo-index')) GLOBAL ALL INDEX ('bar-index', bar string);";
+        assert_eq!(listed.schema_dql(), compact);
+        assert_eq!(
+            listed.schema_dql_formatted(),
+            "CREATE TABLE foobar_ls_test (\n  \
+             id STRING HASH KEY,\n  \
+             range NUMBER RANGE KEY,\n  \
+             bar STRING HASH KEY,\n  \
+             foo STRING INDEX('foo-index')\n)\n\
+             GLOBAL ALL INDEX ('bar-index', bar string);"
+        );
+        assert_eq!(meta(&listed.schema_dql_formatted()).schema_dql(), compact);
+
+        let orders = meta(
+            "CREATE TABLE orders (id STRING HASH KEY, sk NUMBER RANGE KEY, apple STRING, \
+             ts NUMBER INDEX('ts-index'), THROUGHPUT (10, 5)) \
+             GLOBAL INDEX ('by-apple', apple string, id string, THROUGHPUT (1, 2)) \
+             GLOBAL KEYS INDEX ('by-id', id) \
+             GLOBAL INCLUDE INDEX ('by-note', note string, ['apple'])",
+        );
+        let orders_formatted = "CREATE TABLE orders (\n  \
+             id STRING HASH KEY,\n  \
+             sk NUMBER RANGE KEY,\n  \
+             apple STRING,\n  \
+             note STRING HASH KEY,\n  \
+             ts NUMBER INDEX('ts-index'),\n  \
+             THROUGHPUT (10, 5)\n)\n\
+             GLOBAL INDEX ('by-apple', apple string, id string, THROUGHPUT (1, 2))\n\
+             GLOBAL KEYS INDEX ('by-id', id string)\n\
+             GLOBAL INCLUDE INDEX ('by-note', note string, ['apple']);";
+        assert_eq!(orders.schema_dql_formatted(), orders_formatted);
+        assert_eq!(
+            orders.schema_dql(),
+            "CREATE TABLE orders (id STRING HASH KEY, sk NUMBER RANGE KEY, apple STRING, note STRING HASH KEY, ts NUMBER INDEX('ts-index'), THROUGHPUT (10, 5)) GLOBAL INDEX ('by-apple', apple string, id string, THROUGHPUT (1, 2)) GLOBAL KEYS INDEX ('by-id', id string) GLOBAL INCLUDE INDEX ('by-note', note string, ['apple']);"
+        );
+        assert_eq!(meta(&orders_formatted).schema_dql(), orders.schema_dql());
+        assert_eq!(
+            orders_formatted
+                .lines()
+                .filter(|line| line.contains(';'))
+                .count(),
+            1
+        );
+
+        let mut dropping = orders.clone();
+        dropping.global_indexes.get_mut("by-apple").unwrap().status = TableStatus::Deleting;
+        let dropped = dropping.schema_dql();
+        assert!(!dropped.contains("by-apple"));
+        let dropped_formatted = dropping.schema_dql_formatted();
+        assert!(!dropped_formatted.contains("by-apple"));
+        assert!(dropped_formatted.contains("GLOBAL KEYS INDEX"));
+        assert_eq!(meta(&dropped_formatted).schema_dql(), dropped);
     }
 }

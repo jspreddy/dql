@@ -87,7 +87,9 @@ mod tests {
             output.contains("0/2 (25%)"),
             "unexpected GSI read format:\n{output}"
         );
-        assert!(output.contains("CREATE TABLE foobar"));
+        assert!(output.contains(
+            "CREATE TABLE foobar (\n  id STRING HASH KEY,\n  baz STRING,\n  ts NUMBER INDEX('ts-index'),"
+        ));
         // Keep a stable golden fragment for layout regressions.
         let expected_prefix = "\
 Name: foobar

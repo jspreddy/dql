@@ -184,7 +184,11 @@ pub fn table_detail_to_lines(
         ));
     }
     lines.push(Line::from(""));
-    lines.push(Line::from(meta.schema_dql()));
+    lines.extend(
+        meta.schema_dql_formatted()
+            .lines()
+            .map(|line| Line::from(line.to_string())),
+    );
     lines
 }
 
@@ -747,6 +751,41 @@ mod tests {
         assert!(rendered.contains("Results"));
         assert!(rendered.contains("id"));
         assert!(rendered.contains("name"));
+    }
+
+    #[test]
+    fn table_detail_puts_each_create_line_on_its_own_row() {
+        use dql_parser::parse_statement;
+        let statement = parse_statement(
+            "CREATE TABLE orders (id STRING HASH KEY, sk NUMBER RANGE KEY) \
+             GLOBAL INDEX ('by-apple', apple string, id string)",
+        )
+        .unwrap();
+        let meta = TableMeta::from_create_statement(&statement).unwrap();
+        let lines = table_detail_to_lines(
+            &meta,
+            &TableStats {
+                item_count: 0,
+                size_bytes: 0,
+            },
+            80,
+        );
+        let create: Vec<String> = lines
+            .iter()
+            .skip_while(|line| !line.to_string().starts_with("CREATE TABLE"))
+            .map(|line| line.to_string())
+            .collect();
+        assert_eq!(
+            create,
+            vec![
+                "CREATE TABLE orders (",
+                "  id STRING HASH KEY,",
+                "  sk NUMBER RANGE KEY,",
+                "  apple STRING HASH KEY",
+                ")",
+                "GLOBAL INDEX ('by-apple', apple string, id string);",
+            ]
+        );
     }
 
     #[test]
