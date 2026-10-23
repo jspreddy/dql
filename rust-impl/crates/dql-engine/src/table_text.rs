@@ -157,7 +157,7 @@ pub fn format_table_description(meta: &TableMeta, item_count: usize, size_bytes:
     }
 
     lines.push(String::new());
-    lines.push(meta.schema_dql());
+    lines.push(meta.schema_dql_formatted());
     lines.join("\n")
 }
 

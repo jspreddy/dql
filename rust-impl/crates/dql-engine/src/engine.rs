@@ -2176,7 +2176,12 @@ mod tests {
                 assert!(text.contains("Name: alpha_desc"), "{text}");
                 assert!(text.contains("Hash Key: id (STRING)"), "{text}");
                 assert!(text.contains("Range Key: n (NUMBER)"), "{text}");
-                assert!(text.contains("CREATE TABLE alpha_desc"), "{text}");
+                assert!(
+                    text.contains(
+                        "CREATE TABLE alpha_desc (\n  id STRING HASH KEY,\n  n NUMBER RANGE KEY\n);"
+                    ),
+                    "{text}"
+                );
                 assert!(!text.contains("beta_desc"), "{text}");
             }
             other => panic!("unexpected result: {other:?}"),

@@ -19,4 +19,10 @@ Global Indexes:
   Name             Projection       Read    Write HashKey              RangeKey               Status
   bar-index        ALL               N/A      N/A bar (STRING)         -                      ACTIVE
 
-CREATE TABLE foobar_ls_test (id STRING HASH KEY, range NUMBER RANGE KEY, bar STRING HASH KEY, foo STRING INDEX('foo-index')) GLOBAL ALL INDEX ('bar-index', bar string);
+CREATE TABLE foobar_ls_test (
+  id STRING HASH KEY,
+  range NUMBER RANGE KEY,
+  bar STRING HASH KEY,
+  foo STRING INDEX('foo-index')
+)
+GLOBAL ALL INDEX ('bar-index', bar string);
