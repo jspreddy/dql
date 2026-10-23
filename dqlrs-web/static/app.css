@@ -1770,8 +1770,14 @@ body.results-resizing * {
 #result-body td.row-lead,
 #rows-body th.row-lead,
 #rows-body td.row-lead {
-  position: relative;
   padding-left: 30px;
+}
+
+/* Peek button anchors to the body cell. A relative header would leave
+   the hash-key title out of the sticky header row. */
+#result-body td.row-lead,
+#rows-body td.row-lead {
+  position: relative;
 }
 
 .result-body .row-peek-btn {
@@ -2297,7 +2303,7 @@ th, td {
   white-space: nowrap;
 }
 
-th { background: var(--gutter); position: sticky; top: 0; }
+th { background: var(--gutter); position: sticky; top: 0; z-index: 1; }
 
 .pager { flex: none; border-top: 1px solid var(--line); }
 

@@ -193,6 +193,49 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(50);
 });
 
+test("table column headers stay put while rows scroll", async ({ page, app }) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  const tuples = Array.from({ length: 40 }, (_, index) => `('r${String(index).padStart(2, "0")}', ${index}, 'note')`).join(", ");
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, n NUMBER, note STRING);`,
+      `INSERT INTO ${name} (id, n, note) VALUES ${tuples};`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "40 affected" })).toBeVisible();
+
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await expect(page.locator(`#table-${name}`)).toBeVisible();
+  await expect(page.locator("#rows-table thead th")).toHaveText(["id", "n", "note"]);
+  const hashHeader = page.locator("#rows-table thead th").nth(0);
+  await expect(hashHeader).toHaveClass(/row-lead/);
+  await expect(hashHeader).toHaveClass(/col-table/);
+  await expect(hashHeader).toHaveCSS("position", "sticky");
+
+  const scroller = page.locator("#rows-body");
+  const before = await headerTops(page);
+  const firstRow = await page.locator("#rows-table tbody tr").first().boundingBox();
+  await scroller.evaluate((node) => {
+    node.scrollTop = 160;
+  });
+  await expect.poll(async () => scroller.evaluate((node) => node.scrollTop)).toBeGreaterThan(100);
+  const after = await headerTops(page);
+  expect(after).toEqual(before);
+  const movedRow = await page.locator("#rows-table tbody tr").first().boundingBox();
+  expect(firstRow.y - movedRow.y).toBeGreaterThan(100);
+});
+
 test("orders table and result columns by keys, index, then selection or name", async ({ page, app }) => {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
@@ -629,6 +672,12 @@ test("scrolls a wide result table sideways inside the card", async ({ page, app 
 
 function uniqueTable() {
   return `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function headerTops(page) {
+  return page.locator("#rows-table thead th").evaluateAll((cells) =>
+    cells.map((cell) => Math.round(cell.getBoundingClientRect().top)),
+  );
 }
 
 async function dialogBox(pop) {
