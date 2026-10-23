@@ -1031,7 +1031,7 @@ mod tests {
             orders.schema_dql(),
             "CREATE TABLE orders (id STRING HASH KEY, sk NUMBER RANGE KEY, apple STRING, note STRING HASH KEY, ts NUMBER INDEX('ts-index'), THROUGHPUT (10, 5)) GLOBAL INDEX ('by-apple', apple string, id string, THROUGHPUT (1, 2)) GLOBAL KEYS INDEX ('by-id', id string) GLOBAL INCLUDE INDEX ('by-note', note string, ['apple']);"
         );
-        assert_eq!(meta(&orders_formatted).schema_dql(), orders.schema_dql());
+        assert_eq!(meta(orders_formatted).schema_dql(), orders.schema_dql());
         assert_eq!(
             orders_formatted
                 .lines()
