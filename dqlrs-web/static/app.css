@@ -50,8 +50,11 @@ input, textarea { background: var(--paper); }
 }
 
 .top[data-identity] .brand-mark {
+  --slash: calc(0.75 * 36px);
   background: var(--identity);
   color: #fff;
+  padding-right: calc(14px + var(--slash));
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--slash)) 100%, 0 100%);
 }
 
 .brand {

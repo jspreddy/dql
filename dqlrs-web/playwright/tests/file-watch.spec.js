@@ -102,6 +102,21 @@ test("lists each open web window on the title bar", async ({ page, app }) => {
   expect(bar).toBe(otherBar);
   expect(mark).not.toBe(bar);
   expect(mark).not.toBe(otherMark);
+  const slash = await page.locator(".brand-mark").evaluate((el) => {
+    const rect = el.getBoundingClientRect();
+    const shift = rect.height * 0.75;
+    const owns = (x, y) => el.contains(document.elementFromPoint(x, y));
+    return {
+      height: rect.height,
+      top: owns(rect.right - 2, rect.top + 2),
+      bottomCut: owns(rect.right - 2, rect.bottom - 2),
+      bottomKept: owns(rect.right - shift - 4, rect.bottom - 2),
+    };
+  });
+  expect(slash.top).toBe(true);
+  expect(slash.bottomCut).toBe(false);
+  expect(slash.bottomKept).toBe(true);
+  expect(slash.height * 0.75).toBeCloseTo(27, 0);
   await page.screenshot({ path: "/opt/cursor/artifacts/presence-two-web.png" });
   await other.screenshot({ path: "/opt/cursor/artifacts/presence-w2-titlebar.png" });
   await other.close();
