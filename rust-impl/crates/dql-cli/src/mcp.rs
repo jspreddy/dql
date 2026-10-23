@@ -109,7 +109,7 @@ fn initialize(initialized: &mut bool, params: &Value) -> Value {
         "protocolVersion": version,
         "capabilities": { "tools": { "listChanged": false } },
         "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") },
-        "instructions": "Tools read and write the .dql workspace passed to dqlrs --mcp --dir, the same folder dqlrs --web uses. global_search finds table names, cached columns and indexes, and queries in files. lint_query checks a script, and lint_query_file checks a workspace .dql file, for parse errors and for queries the engine would reject, without running them or fetching a missing definition. list_tables and describe_tables use the shared table cache for this connection. create_query_file, read_query_file, and update_query_file change query files on disk."
+        "instructions": "Call help before writing DQL you are unsure of. Omit topic for the command list, or pass a topic such as select. Tools read and write the .dql workspace passed to dqlrs --mcp --dir, the same folder dqlrs --web uses. global_search finds table names, cached columns and indexes, and queries in files. lint_query checks a script, and lint_query_file checks a workspace .dql file, for parse errors and for queries the engine would reject, without running them or fetching a missing definition. list_tables and describe_tables use the shared table cache for this connection. create_query_file, read_query_file, and update_query_file change query files on disk."
     })
 }
 
@@ -123,6 +123,7 @@ fn call_tool(session: &mut Session, root: &Path, params: &Value) -> Result<Value
         .cloned()
         .unwrap_or_else(|| json!({}));
     match name {
+        "help" => tool_value(help_tool(&arguments)),
         "global_search" => tool_value(global_search(session, root, &arguments)),
         "lint_query" => tool_value(lint_query(session, root, &arguments)),
         "lint_query_file" => tool_value(lint_query_file(session, root, &arguments)),
@@ -134,6 +135,25 @@ fn call_tool(session: &mut Session, root: &Path, params: &Value) -> Result<Value
         "update_query_file" => tool_value(update_query_file(root, &arguments)),
         _ => Err((-32602, format!("unknown tool {name}"))),
     }
+}
+
+fn help_tool(arguments: &Value) -> Result<Value, ToolError> {
+    let topic = match arguments.get("topic") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(text)) => {
+            let topic = text.trim().trim_end_matches(';').trim();
+            if topic.is_empty() {
+                None
+            } else {
+                Some(topic)
+            }
+        }
+        Some(_) => return Err(ToolError::new("topic must be a string")),
+    };
+    let page = dql_engine::help_page(topic).map_err(ToolError::new)?;
+    let mut value = page.to_value();
+    value["text"] = json!(page.plain());
+    Ok(value)
 }
 
 fn lint_query(session: &mut Session, root: &Path, arguments: &Value) -> Result<Value, ToolError> {
@@ -448,6 +468,17 @@ fn status_name(status: dql_models::TableStatus) -> &'static str {
 fn tool_definitions() -> Vec<Value> {
     vec![
         tool(
+            "help",
+            "Show DQL help. Omit topic for the command list. Pass a topic such as select, scan, insert, create, or opt for syntax and examples.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "topic": { "type": "string", "description": "Command name, such as select. Omit for the full list." }
+                },
+                "additionalProperties": false
+            }),
+        ),
+        tool(
             "global_search",
             "Search table names, cached columns and indexes, and queries in .dql files.",
             json!({
@@ -667,6 +698,7 @@ mod tests {
         assert_eq!(
             names,
             vec![
+                "help",
                 "global_search",
                 "lint_query",
                 "lint_query_file",
@@ -678,6 +710,55 @@ mod tests {
                 "update_query_file",
             ]
         );
+    }
+
+    #[test]
+    fn help_lists_commands_and_one_topic() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut server = server(dir.path());
+        init(&mut server);
+        let index = tool_body(&rpc(
+            &mut server,
+            2,
+            "tools/call",
+            json!({"name": "help", "arguments": {}}),
+        ));
+        assert_eq!(index["title"], "Available commands");
+        assert!(index["text"].as_str().unwrap().contains("select"));
+        let select = tool_body(&rpc(
+            &mut server,
+            3,
+            "tools/call",
+            json!({"name": "help", "arguments": {"topic": "SELECT;"}}),
+        ));
+        assert_eq!(select["topic"], "select");
+        assert_eq!(select["title"], "HELP select");
+        assert!(select["text"].as_str().unwrap().contains("SELECT"));
+        let blocks = select["blocks"].as_array().unwrap();
+        assert!(blocks.iter().any(|block| block["kind"] == "code"));
+        let alias = tool_body(&rpc(
+            &mut server,
+            4,
+            "tools/call",
+            json!({"name": "help", "arguments": {"topic": "options"}}),
+        ));
+        assert_eq!(alias["topic"], "opt");
+        let missing = rpc(
+            &mut server,
+            5,
+            "tools/call",
+            json!({"name": "help", "arguments": {"topic": "nope"}}),
+        );
+        assert_eq!(missing["result"]["isError"], true);
+        let text = missing["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("No help available for nope"), "{text}");
+        let bad = rpc(
+            &mut server,
+            6,
+            "tools/call",
+            json!({"name": "help", "arguments": {"topic": 1}}),
+        );
+        assert_eq!(bad["result"]["isError"], true);
     }
 
     #[test]
