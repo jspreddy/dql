@@ -12,8 +12,16 @@ Write: N/A
 Hash Key: id (STRING)
 Range Key: n (NUMBER)
 
+Local Indexes:
+  ts-index  hash=id  range=n  projection=ALL
+  views-index  hash=id  range=views  projection=INCLUDE(title,author)
+
 Global Indexes:
-  Name             Projection
+  Name             Projection       Read    Write HashKey              RangeKey               Status
+  by-author        ALL              10/20 (50%)        3 author (STRING)      n (STRING)             ACTIVE
+  by-id            KEYS                 N/A      7/∞ id (STRING)          -                      ACTIVE
+
+Note that is not an index
 
 CREATE TABLE posts (id STRING HASH KEY, n NUMBER RANGE KEY, THROUGHPUT (0, 0));`;
 
@@ -25,7 +33,31 @@ test("parseTableDescription splits keys, stats, and the CREATE query", () => {
   assert.equal(parsed.read, "N/A");
   assert.deepEqual(parsed.hashKey, { name: "id", type: "STRING" });
   assert.deepEqual(parsed.rangeKey, { name: "n", type: "NUMBER" });
-  assert.match(parsed.extra, /Global Indexes:/);
+  assert.deepEqual(parsed.localIndexes, [
+    { name: "ts-index", hash: "id", range: "n", projection: "ALL" },
+    { name: "views-index", hash: "id", range: "views", projection: "INCLUDE(title,author)" },
+  ]);
+  assert.deepEqual(parsed.globalIndexes, [
+    {
+      name: "by-author",
+      projection: "ALL",
+      read: "10/20 (50%)",
+      write: "3",
+      hashKey: { name: "author", type: "STRING" },
+      rangeKey: { name: "n", type: "STRING" },
+      status: "ACTIVE",
+    },
+    {
+      name: "by-id",
+      projection: "KEYS",
+      read: "N/A",
+      write: "7/∞",
+      hashKey: { name: "id", type: "STRING" },
+      rangeKey: null,
+      status: "ACTIVE",
+    },
+  ]);
+  assert.equal(parsed.extra, "Note that is not an index");
   assert.match(parsed.schema, /^CREATE TABLE posts /);
   assert.match(parsed.schema, /THROUGHPUT \(0, 0\)/);
 });
