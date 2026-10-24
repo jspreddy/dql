@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Block dqlrs/dql CLI and direct HTTP to the local dqlrs web server (query-writer workspace).
+# Examples workspace: block dqlrs/dql CLI, local web HTTP, and cache folder access.
 set -euo pipefail
 
 input=$(cat)
@@ -12,15 +12,15 @@ import sys
 DENY = {
     "permission": "deny",
     "user_message": (
-        "Blocked by cosmos query-writer policy: do not run the dqlrs or dql CLI from the shell, "
+        "Blocked in the examples workspace: do not run the dqlrs or dql CLI from the shell, "
         "and do not call the local dqlrs web server (127.0.0.1, localhost, or ::1 on any port, "
         "including /api/run, /mcp, and other routes) with curl, wget, or similar. "
-        "Write DQL under cosmos/ and use MCP tools (e.g. lint_query_file) when you need lint."
+        "Write DQL anywhere under this workspace and use MCP tools (e.g. lint_query_file) when you need lint."
     ),
     "agent_message": (
-        "Shell execution of dqlrs/dql is not allowed in this workspace. "
+        "Shell execution of dqlrs/dql is not allowed anywhere in the examples workspace. "
         "Direct HTTP to the local dqlrs web server is blocked, including /api/run and any other path or port. "
-        "Use MCP tools instead. Write queries only; infer data from 00-table.dql and 10-bodies.dql."
+        "Use MCP tools instead. Write queries only; infer data from the schema and load scripts in this workspace."
     ),
 }
 
@@ -75,8 +75,8 @@ def main() -> None:
                         "Those folders hold the table cache and saved web query results."
                     ),
                     "agent_message": (
-                        "Do not read or write .cache or .dqlrs-web-cache from the shell. "
-                        "Infer data from cosmos/00-table.dql and cosmos/10-bodies.dql."
+                        "Do not read or write .cache or .dqlrs-web-cache from the shell anywhere in the examples workspace. "
+                        "Infer data from the schema and load scripts checked in under this workspace."
                     ),
                 }
             )

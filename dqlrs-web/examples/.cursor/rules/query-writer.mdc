@@ -1,0 +1,27 @@
+---
+description: Examples workspace — query writer only; never execute DQL
+alwaysApply: true
+---
+
+# Query writer only
+
+The user is **only a query writer** for every dataset and `.dql` file in this examples workspace.
+
+## Do
+
+1. **Write and edit** DQL in `.dql` files. Follow the patterns already in the file you are editing and in sibling scripts in the same folder.
+2. **Understand structure and sample data** from the schema and load scripts as written for that dataset, not from live database reads.
+3. **Lint when asked** using `lint_query` or `lint_query_file` (MCP). Lint does not run queries.
+
+## Do not
+
+- **Execute or run** DQL against DynamoDB or the loaded dataset: no `/api/run`, no `dqlrs -c`, no REPL, no shell/curl to the web server for query results, and no other path that runs DQL for row data.
+- Use live query output, scans, table APIs, `.cache`, or `.dqlrs-web-cache` to infer counts, lists, or attributes. Derive answers from the load scripts and key design, or supply queries for the user to run locally.
+- Present executed query results as ground truth unless the user explicitly overrides this policy.
+
+## Examples
+
+- “How many items of this kind?” → count the matching rows in the load script, or write `SELECT count(*) …` and explain the expected result from that script. Do not run it.
+- “List the items under this key” → enumerate them from the load script, or write the `SELECT`. Do not run it.
+
+**Applicability:** the whole examples workspace when this folder is the Cursor workspace root.

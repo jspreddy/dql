@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deny agent reads and writes of .cache and .dqlrs-web-cache.
+# Examples workspace: deny agent reads and writes of .cache and .dqlrs-web-cache.
 set -euo pipefail
 
 input=$(cat)
@@ -51,8 +51,8 @@ def main() -> None:
                     "user_message": (
                         "Reading and writing .cache and .dqlrs-web-cache is blocked "
                         "(including create, edit, and delete). "
-                        "Those folders hold the table cache and saved web query results. "
-                        "Infer data from cosmos/00-table.dql and cosmos/10-bodies.dql."
+                        "Those folders hold the table cache and saved web query results for the examples workspace. "
+                        "Infer data from the schema and load scripts checked in under this workspace."
                     ),
                 }
             )
