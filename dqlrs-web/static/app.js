@@ -1,4 +1,4 @@
-import { Compartment, EditorState, Prec } from "@codemirror/state";
+import { Compartment, EditorState, Prec, Transaction } from "@codemirror/state";
 import {
   drawSelection,
   EditorView,
@@ -14,6 +14,7 @@ import { tags } from "@lezer/highlight";
 import { bandLayer, dqlLanguage, lintExtension, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setLintIssues, setRunRequest, setRunStatuses } from "./dql-mode.js";
 import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
 import { parseLsMessage } from "./describe-card.js";
+import { unifiedDiff } from "./file-patch.js";
 
 const dqlHighlight = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--tok-keyword)", fontWeight: "650" },
@@ -53,6 +54,17 @@ const state = {
   environment: null,
   catalog: null,
   booted: false,
+  disk: null,
+  fileEpoch: 0,
+  patches: [],
+  patchIndex: 0,
+  saveFlight: null,
+  saveChain: Promise.resolve(),
+  applyingDisk: false,
+  adopting: false,
+  adoptQueued: null,
+  watchTimer: 0,
+  clientId: loadClientId(),
 };
 
 const completeList = document.querySelector("#complete-list");
@@ -64,6 +76,19 @@ let catalogPromise = null;
 let catalogRequest = 0;
 let skipComplete = false;
 let editorReady = false;
+
+function loadClientId() {
+  const key = "dqlrs-web.client";
+  try {
+    const existing = sessionStorage.getItem(key);
+    if (existing) return existing;
+    const created = crypto.randomUUID();
+    sessionStorage.setItem(key, created);
+    return created;
+  } catch {
+    return crypto.randomUUID();
+  }
+}
 
 const HIGHLIGHT_KEY = "dqlrs-web.highlight";
 const THEME_KEY = "dqlrs-web.theme";
@@ -844,6 +869,7 @@ async function boot() {
   try {
     const config = await api("/api/config");
     applyEnvironment(config);
+    startFileWatch();
     await refreshTree();
     if (location.hash === "#tables") {
       setMode("tables");
@@ -1134,12 +1160,14 @@ async function openFile(path) {
   try {
     await flushSave();
     const file = await api("/api/file?path=" + encodeURIComponent(path));
+    state.fileEpoch += 1;
+    state.disk = { path: file.path || path, text: file.text, revision: file.revision };
     setEditorText(file.text);
-    showOpenFile(file.path);
+    showOpenFile(file.path || path);
     state.entries = [];
     showResults([]);
     setMode("query");
-    await Promise.all([refreshTree(), loadFileResults(file.path)]);
+    await Promise.all([refreshTree(), loadFileResults(file.path || path)]);
   } catch (error) {
     reportError(error);
   }
@@ -1206,8 +1234,11 @@ async function deleteEntry(path, kind) {
   const message = kind === "dir" ? "Delete folder " + label + " and the .dql files inside it?" : "Delete " + label + "?";
   if (!window.confirm(message)) return;
   clearTimeout(state.saveTimer);
+  state.fileEpoch += 1;
+  state.saveFlight = null;
   const removingOpen = state.path === path || (kind === "dir" && state.path.startsWith(path + "/"));
   if (removingOpen) {
+    state.disk = null;
     setEditorText("");
     showOpenFile("");
   }
@@ -1223,8 +1254,13 @@ async function deleteEntry(path, kind) {
 async function relocate(from, to) {
   await flushSave();
   const moved = await api("/api/move", { method: "POST", body: { from, to } });
-  if (state.path === from || state.path.startsWith(from + "/")) {
-    showOpenFile(moved.path + state.path.slice(from.length));
+  const openInside = state.path === from || (state.path && state.path.startsWith(from + "/"));
+  if (openInside) {
+    const nextPath = moved.path + state.path.slice(from.length);
+    if (state.disk && state.disk.path === state.path) {
+      state.disk = { ...state.disk, path: nextPath };
+    }
+    showOpenFile(nextPath);
   }
   remapExpanded(from, moved.path);
   expandParents(parentOf(moved.path));
@@ -1406,13 +1442,42 @@ treeEl.addEventListener("drop", (event) => {
 
 function scheduleSave() {
   clearTimeout(state.saveTimer);
-  state.saveTimer = setTimeout(flushSave, 400);
+  state.saveTimer = setTimeout(() => {
+    flushSave().catch((error) => reportError(error));
+  }, 400);
 }
 
-async function flushSave() {
+function flushSave() {
+  const run = state.saveChain.then(() => flushSaveNow());
+  state.saveChain = run.catch(() => {});
+  return run;
+}
+
+async function flushSaveNow() {
   clearTimeout(state.saveTimer);
-  if (!state.path) return;
-  await api("/api/file", { method: "PUT", body: { path: state.path, text: editorText() } });
+  if (!state.path || !state.disk || state.applyingDisk) return;
+  const text = editorText();
+  if (text === state.disk.text) return;
+  const path = state.path;
+  const base = state.disk.revision;
+  const epoch = state.fileEpoch;
+  state.saveFlight = { path, text };
+  try {
+    const saved = await api("/api/file", { method: "PUT", body: { path, text, base } });
+    if (state.fileEpoch !== epoch || state.disk?.path !== path) return;
+    state.disk = { path, text, revision: saved.revision || base };
+    if (editorText() !== text) scheduleSave();
+  } catch (error) {
+    if (error.payload?.conflict && state.fileEpoch === epoch && state.disk?.path === path) {
+      await adoptExternal(path, error.payload, epoch);
+      return;
+    }
+    if (state.fileEpoch === epoch) throw error;
+  } finally {
+    if (state.saveFlight && state.saveFlight.path === path && state.saveFlight.text === text) {
+      state.saveFlight = null;
+    }
+  }
 }
 
 function editorText() {
@@ -1763,14 +1828,277 @@ function renderActivePane() {
   if (resultPane === "history" && visible.length > 1) pinLatestResult();
 }
 
-function setEditorText(text) {
+function setEditorText(text, options = {}) {
+  const current = editorText();
+  if (current === text) return;
+  let anchor = 0;
+  if (options.keepCursor) {
+    const head = editor.state.selection.main.head;
+    const limit = Math.min(head, current.length, text.length);
+    let index = 0;
+    while (index < limit && current[index] === text[index]) index += 1;
+    anchor = index;
+  }
   state.suppressSave = true;
   editor.dispatch({
     changes: { from: 0, to: editor.state.doc.length, insert: text },
-    selection: { anchor: 0 },
+    selection: { anchor },
+    annotations: Transaction.addToHistory.of(false),
   });
   state.suppressSave = false;
 }
+
+function startFileWatch() {
+  if (state.watchTimer) return;
+  const tick = () => {
+    void watchOpenFile();
+    void beatPresence();
+  };
+  tick();
+  state.watchTimer = setInterval(tick, 1000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") tick();
+  });
+  window.addEventListener("focus", tick);
+}
+
+async function watchOpenFile() {
+  const path = state.disk?.path;
+  if (!path || state.applyingDisk || state.saveFlight || state.adopting) return;
+  const epoch = state.fileEpoch;
+  let file;
+  try {
+    file = await api("/api/file?path=" + encodeURIComponent(path));
+  } catch (error) {
+    if (error.payload?.missing && state.fileEpoch === epoch && state.disk?.path === path) {
+      await adoptExternal(path, { missing: true, text: "", revision: "missing", path }, epoch);
+    }
+    return;
+  }
+  if (state.fileEpoch !== epoch || state.disk?.path !== path || state.saveFlight || state.applyingDisk) return;
+  if (!file.revision || file.revision === state.disk.revision) return;
+  await adoptExternal(path, file, epoch);
+}
+
+async function adoptExternal(path, file, epoch) {
+  if (state.fileEpoch !== epoch || state.disk?.path !== path) return;
+  if (state.adopting) {
+    state.adoptQueued = { path, file, epoch };
+    return;
+  }
+  state.adopting = true;
+  state.applyingDisk = true;
+  try {
+    clearTimeout(state.saveTimer);
+    const edited = editorText();
+    const baseText = state.disk?.text ?? "";
+    const missing = Boolean(file.missing);
+    const diskText = missing ? "" : String(file.text ?? "");
+    if (!missing && diskText === edited) {
+      state.disk = { path, text: diskText, revision: file.revision };
+      return;
+    }
+    const unsaved = edited !== baseText;
+    if (unsaved) {
+      const patch = unifiedDiff(baseText, edited, path);
+      state.patches.push({
+        path,
+        patch: patch || "The unsaved editor text differed from the last copy on disk.\n",
+        missing,
+      });
+      if (state.patches.length > 20) state.patches.shift();
+      syncPatchRecall();
+    }
+    if (missing) {
+      state.fileEpoch += 1;
+      state.disk = null;
+      state.saveFlight = null;
+      setEditorText("");
+      showOpenFile("");
+      void refreshTree();
+    } else {
+      state.disk = { path, text: diskText, revision: file.revision };
+      setEditorText(diskText, { keepCursor: !unsaved });
+    }
+    if (unsaved) showPatchModal(state.patches.length - 1);
+  } finally {
+    state.applyingDisk = false;
+    state.adopting = false;
+    const queued = state.adoptQueued;
+    state.adoptQueued = null;
+    if (queued && queued.epoch === state.fileEpoch && state.disk?.path === queued.path) {
+      await adoptExternal(queued.path, queued.file, queued.epoch);
+    }
+  }
+}
+
+function syncPatchRecall() {
+  const button = document.querySelector("#patch-recall");
+  const count = state.patches.length;
+  button.classList.toggle("hidden", count === 0);
+  button.textContent = count === 1 ? "Unsaved patch" : count + " unsaved patches";
+}
+
+function showPatchModal(index) {
+  const entry = state.patches[index];
+  if (!entry) return;
+  state.patchIndex = index;
+  const title = document.querySelector("#patch-pop-title");
+  const note = document.querySelector("#patch-pop-note");
+  title.textContent = entry.missing ? "File removed on disk" : "File changed on disk";
+  note.textContent = entry.missing
+    ? entry.path + " was removed. The editor was closed. Your unsaved edits are this patch, kept in this tab."
+    : entry.path + " changed on disk. The editor now shows that copy. Your unsaved edits are this patch, kept in this tab.";
+  document.querySelector("#patch-pop-body").textContent = entry.patch;
+  const many = state.patches.length > 1;
+  document.querySelector(".patch-pop-nav").hidden = !many;
+  document.querySelector("#patch-prev").hidden = !many;
+  document.querySelector("#patch-next").hidden = !many;
+  document.querySelector("#patch-count").hidden = !many;
+  document.querySelector("#patch-count").textContent = (index + 1) + " of " + state.patches.length;
+  const dialog = document.querySelector("#patch-pop");
+  if (!dialog.open) dialog.showModal();
+}
+
+document.querySelector("#patch-pop-close").addEventListener("click", () => {
+  document.querySelector("#patch-pop").close();
+});
+document.querySelector("#patch-recall").addEventListener("click", () => {
+  showPatchModal(state.patches.length - 1);
+});
+document.querySelector("#patch-prev").addEventListener("click", () => {
+  showPatchModal(Math.max(0, state.patchIndex - 1));
+});
+document.querySelector("#patch-next").addEventListener("click", () => {
+  showPatchModal(Math.min(state.patches.length - 1, state.patchIndex + 1));
+});
+document.querySelector("#patch-copy").addEventListener("click", async () => {
+  const text = document.querySelector("#patch-pop-body").textContent || "";
+  const button = document.querySelector("#patch-copy");
+  try {
+    await navigator.clipboard.writeText(text);
+    button.textContent = "Copied";
+  } catch {
+    button.textContent = "Copy failed";
+  }
+  setTimeout(() => {
+    button.textContent = "Copy patch";
+  }, 1200);
+});
+
+async function beatPresence() {
+  try {
+    const payload = await api("/api/presence", {
+      method: "POST",
+      body: { id: state.clientId, kind: "web" },
+    });
+    renderPresence(payload.clients || []);
+  } catch (error) {
+    if (error && error.serverAway) return;
+  }
+}
+
+let presenceKey = "";
+let presenceTipAnchor = null;
+
+function renderPresence(clients) {
+  const host = document.querySelector("#presence");
+  const mark = document.querySelector(".brand-mark");
+  const bar = document.querySelector("header.top");
+  const key = state.clientId + "\n" + clients.map((client) => [client.id, client.kind, client.label, client.color].join("\t")).join("\n");
+  if (key === presenceKey) return;
+  presenceKey = key;
+  hidePresenceTip();
+  host.replaceChildren();
+  mark.querySelector(".presence-icon")?.remove();
+  const labels = [];
+  let selfClient = null;
+  for (const client of clients) {
+    const self = client.id === state.clientId && client.kind !== "mcp";
+    const label = client.label || (client.kind === "mcp" ? "M" : "W");
+    const name = self ? label + ", this window" : label;
+    labels.push(label);
+    const icon = document.createElement("span");
+    icon.className = "presence-icon" + (self ? " is-self" : "");
+    icon.role = "listitem";
+    icon.setAttribute("aria-label", name);
+    icon.setAttribute("aria-describedby", "presence-tip");
+    icon.style.background = client.color || "#64748b";
+    icon.textContent = label;
+    if (self) {
+      selfClient = client;
+      mark.prepend(icon);
+    } else {
+      host.append(icon);
+    }
+  }
+  host.setAttribute("aria-label", labels.length ? "Connected: " + labels.join(", ") : "Connected clients");
+  fillPresenceTip(clients, selfClient);
+  if (selfClient && selfClient.label) {
+    document.title = "dqlrs: " + selfClient.label;
+    bar.dataset.identity = selfClient.label;
+    bar.style.setProperty("--identity", selfClient.color || "#64748b");
+  }
+}
+
+function fillPresenceTip(clients, selfClient) {
+  const tip = document.querySelector("#presence-tip");
+  tip.replaceChildren();
+  const count = document.createElement("p");
+  count.className = "presence-tip-count";
+  count.textContent = clients.length === 1 ? "1 client connected" : clients.length + " clients connected";
+  tip.append(count);
+  if (selfClient && selfClient.label) {
+    const self = document.createElement("p");
+    self.className = "presence-tip-self";
+    self.textContent = "This window is " + selfClient.label;
+    tip.append(self);
+  }
+  const groups = [
+    ["Web", clients.filter((client) => client.kind !== "mcp")],
+    ["MCP", clients.filter((client) => client.kind === "mcp")],
+  ];
+  for (const [name, group] of groups) {
+    if (!group.length) continue;
+    const line = document.createElement("p");
+    line.className = "presence-tip-kind";
+    line.textContent = name + ": " + group.map((client) => client.label || name[0]).join(", ");
+    tip.append(line);
+  }
+}
+
+function hidePresenceTip() {
+  presenceTipAnchor = null;
+  const tip = document.querySelector("#presence-tip");
+  if (tip) tip.hidden = true;
+}
+
+function placePresenceTip(icon) {
+  const tip = document.querySelector("#presence-tip");
+  if (!tip || !tip.childElementCount) return;
+  tip.hidden = false;
+  presenceTipAnchor = icon;
+  const rect = icon.getBoundingClientRect();
+  const box = tip.getBoundingClientRect();
+  let top = rect.bottom + 8;
+  let left = rect.left > window.innerWidth * 0.6 ? rect.right - box.width : rect.left;
+  if (top + box.height > window.innerHeight - 8) top = Math.max(8, rect.top - box.height - 8);
+  left = Math.max(8, Math.min(left, window.innerWidth - box.width - 8));
+  tip.style.top = top + "px";
+  tip.style.left = left + "px";
+}
+
+document.addEventListener("mouseover", (event) => {
+  const icon = event.target.closest && event.target.closest(".presence-icon");
+  if (!icon) return;
+  placePresenceTip(icon);
+});
+
+document.addEventListener("mouseout", (event) => {
+  const icon = event.target.closest && event.target.closest(".presence-icon");
+  if (!icon || icon.contains(event.relatedTarget)) return;
+  if (presenceTipAnchor === icon) hidePresenceTip();
+});
 
 function currentRunRange() {
   const selection = editor.state.selection.main;
@@ -3891,6 +4219,11 @@ async function api(url, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || response.statusText);
+  if (!response.ok) {
+    const error = new Error(payload.error || response.statusText || "Request failed");
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
   return payload;
 }

@@ -2,8 +2,18 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
+
+/// One file at a time. Web saves compare the revision under this lock so two
+/// windows cannot both pass the check and then overwrite each other.
+static FILE_IO: Mutex<()> = Mutex::new(());
+
+fn file_io() -> std::sync::MutexGuard<'static, ()> {
+    FILE_IO.lock().unwrap_or_else(|err| err.into_inner())
+}
 
 const SKIP_DIRS: &[&str] = &[
     ".git",
@@ -170,6 +180,11 @@ pub fn delete_path(root: &Path, relative: &str) -> Result<(), PathError> {
 }
 
 pub fn read_text(root: &Path, relative: &str) -> Result<String, PathError> {
+    let _guard = file_io();
+    read_text_unlocked(root, relative)
+}
+
+fn read_text_unlocked(root: &Path, relative: &str) -> Result<String, PathError> {
     let path = resolve_inside(root, relative)?;
     if !path.is_file() {
         return Err(PathError(format!("{relative} is not a file")));
@@ -178,6 +193,88 @@ pub fn read_text(root: &Path, relative: &str) -> Result<String, PathError> {
         return Err(PathError("only .dql files can be opened".to_string()));
     }
     fs::read_to_string(path).map_err(|err| PathError(err.to_string()))
+}
+
+pub fn is_missing(err: &PathError) -> bool {
+    err.0.contains("is not a file")
+}
+
+/// SHA-256 of the file text. The web client sends this back as `base` on save.
+pub fn content_revision(text: &str) -> String {
+    let digest = Sha256::digest(text.as_bytes());
+    let mut out = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0xf) as usize] as char);
+    }
+    out
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiskFile {
+    pub path: String,
+    pub text: String,
+    pub revision: String,
+    pub missing: bool,
+}
+
+pub enum SaveFile {
+    Stored(DiskFile),
+    Conflict(DiskFile),
+}
+
+pub fn read_file(root: &Path, relative: &str) -> Result<DiskFile, PathError> {
+    let text = read_text(root, relative)?;
+    Ok(present(relative, &text))
+}
+
+/// Write `text` when `base` is the current revision.
+///
+/// `base == None` writes unconditionally, which is what MCP and older clients do.
+/// A present `base` that does not match leaves the file untouched.
+pub fn save_file(
+    root: &Path,
+    relative: &str,
+    text: &str,
+    base: Option<&str>,
+) -> Result<SaveFile, PathError> {
+    let _guard = file_io();
+    match read_text_unlocked(root, relative) {
+        Ok(current) => {
+            if let Some(expected) = base {
+                if content_revision(&current) != expected {
+                    return Ok(SaveFile::Conflict(present(relative, &current)));
+                }
+            }
+        }
+        Err(err) if is_missing(&err) => {
+            if base.is_some() {
+                return Ok(SaveFile::Conflict(absent(relative)));
+            }
+        }
+        Err(err) => return Err(err),
+    }
+    write_text_unlocked(root, relative, text)?;
+    Ok(SaveFile::Stored(present(relative, text)))
+}
+
+fn present(relative: &str, text: &str) -> DiskFile {
+    DiskFile {
+        path: relative.to_string(),
+        text: text.to_string(),
+        revision: content_revision(text),
+        missing: false,
+    }
+}
+
+fn absent(relative: &str) -> DiskFile {
+    DiskFile {
+        path: relative.to_string(),
+        text: String::new(),
+        revision: "missing".to_string(),
+        missing: true,
+    }
 }
 
 pub fn normalized_dql(root: &Path, relative: &str) -> Result<String, PathError> {
@@ -190,6 +287,11 @@ pub fn normalized_dql(root: &Path, relative: &str) -> Result<String, PathError> 
 }
 
 pub fn write_text(root: &Path, relative: &str, text: &str) -> Result<(), PathError> {
+    let _guard = file_io();
+    write_text_unlocked(root, relative, text)
+}
+
+fn write_text_unlocked(root: &Path, relative: &str, text: &str) -> Result<(), PathError> {
     let path = dql_path(root, relative)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| PathError(err.to_string()))?;
@@ -524,5 +626,37 @@ mod tests {
         assert_eq!(path, "queries/new.dql");
         write_text(root.path(), &path, "ls;\n").unwrap();
         assert_eq!(read_text(root.path(), &path).unwrap(), "ls;\n");
+    }
+
+    #[test]
+    fn save_file_keeps_a_newer_disk_copy() {
+        let root = tempfile::tempdir().unwrap();
+        let path = create_file(root.path(), "notes.dql").unwrap();
+        let stored = save_file(root.path(), &path, "SELECT 1;\n", None).unwrap();
+        let SaveFile::Stored(first) = stored else {
+            panic!("first write should store");
+        };
+        write_text(root.path(), &path, "SELECT 2;\n").unwrap();
+        let stale = save_file(root.path(), &path, "SELECT 3;\n", Some(&first.revision)).unwrap();
+        let SaveFile::Conflict(current) = stale else {
+            panic!("stale base should conflict");
+        };
+        assert_eq!(current.text, "SELECT 2;\n");
+        assert!(!current.missing);
+        assert_eq!(read_text(root.path(), &path).unwrap(), "SELECT 2;\n");
+        let saved = save_file(root.path(), &path, "SELECT 3;\n", Some(&current.revision)).unwrap();
+        let SaveFile::Stored(next) = saved else {
+            panic!("current base should store");
+        };
+        assert_eq!(next.text, "SELECT 3;\n");
+        assert_eq!(read_text(root.path(), &path).unwrap(), "SELECT 3;\n");
+
+        fs::remove_file(root.path().join(&path)).unwrap();
+        let gone = save_file(root.path(), &path, "SELECT 3;\n", Some(&next.revision)).unwrap();
+        let SaveFile::Conflict(missing) = gone else {
+            panic!("deleted file should conflict");
+        };
+        assert!(missing.missing);
+        assert!(!root.path().join(&path).exists());
     }
 }
