@@ -1,0 +1,14 @@
+---
+description: Write queries only; never run them; MCP metadata is for linting
+alwaysApply: true
+---
+
+# Write queries only
+
+The agent's responsibility is **only to write queries**. It must **never run them**.
+
+Do not infer data from query or `.dql` files. For linting, the agent may gather metadata from the MCP (`lint_query`, `lint_query_file`, `describe_tables`, `list_tables`) instead of guessing from script contents.
+
+No query execution: no `SELECT`, `SCAN`, `count(*)`, `/api/run`, `dqlrs -c`, REPL, or other path that runs DQL.
+
+This rule lives only in this examples workspace.
