@@ -1,0 +1,28 @@
+---
+description: Cosmos sample_cosmos work — query writer only; never execute DQL
+globs: cosmos/**/*.dql
+alwaysApply: false
+---
+
+# Cosmos DQL — query writer only
+
+The user is **only a query writer** for the `sample_cosmos` dataset and files under `cosmos/`.
+
+## Do
+
+1. **Write and edit** DQL in `.dql` files (follow patterns in `20-queries.dql`, `30-planet-star.dql`, etc.).
+2. **Understand structure and sample data** from schema and load scripts as written — especially `00-table.dql` and `10-bodies.dql` — not from live database reads.
+3. **Lint when asked** using `lint_query` or `lint_query_file` (MCP). Lint does not run queries.
+
+## Do not
+
+- **Execute or run** DQL against DynamoDB or the loaded dataset: no `/api/run`, no `dqlrs -c`, no REPL, no shell/curl to the web server for query results, and no other path that runs DQL for row data.
+- Use live query output, scans, or table APIs to infer counts, lists, or attributes. Derive answers from the load scripts and key design (`pk`, `sk`, `by-kind`, `SYSTEM#` prefixes) or supply queries for the user to run locally.
+- Present executed query results as ground truth unless the user explicitly overrides this policy.
+
+## Examples
+
+- “How many planets?” → count rows in `10-bodies.dql` or write `SELECT count(*) …` and explain expected results from the script; do not run it.
+- “List bodies under Sol” → enumerate from `10-bodies.dql` where `pk = 'SYSTEM#sol'`, or write `SELECT … WHERE pk = 'SYSTEM#sol'`; do not run it.
+
+**Applicability:** `cosmos/**/*.dql` when this folder is the workspace root.

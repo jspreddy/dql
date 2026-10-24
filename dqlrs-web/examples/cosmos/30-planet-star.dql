@@ -1,0 +1,24 @@
+-- Planet and its parent star(s). Planets hang under a system (pk); stars share that pk.
+-- Load 10-bodies.dql first.
+
+-- By planet name (GSI), then stars in the same system (use pk from the first result).
+SELECT pk, sk, kind, name, class, radius_km FROM sample_cosmos
+WHERE kind = 'planet' AND name = 'Earth'
+USING by-kind;
+
+SELECT pk, sk, kind, name, spectral, mass_solar FROM sample_cosmos
+WHERE pk = 'SYSTEM#sol' AND begins_with(sk, 'STAR#');
+
+-- One round trip when you already know the keys (planet + its star).
+SELECT pk, sk, kind, name, class, radius_km, spectral, mass_solar FROM sample_cosmos
+KEYS IN ('SYSTEM#sol', 'PLANET#earth'), ('SYSTEM#sol', 'STAR#sun');
+
+-- How many planets: nine bodies under Sol's PLANET# prefix (includes Pluto).
+SELECT count(*) FROM sample_cosmos
+WHERE pk = 'SYSTEM#sol' AND begins_with(sk, 'PLANET#');
+
+-- Eight rows on the kind index (Pluto is kind dwarf-planet, not planet).
+SELECT count(*) FROM sample_cosmos
+WHERE kind = 'planet'
+USING by-kind;
+
