@@ -88,6 +88,18 @@ front end, not a parity gap:
 
 Related: [`todo_unify_cli_pipelines.md`](todo_unify_cli_pipelines.md) (`-c` / REPL / serve should share one `execute_input`).
 
+## Security
+
+Plans for locking the on-disk caches and the local API. The query-result cache stays in the workspace. These are plans only.
+
+| Plan | Focus |
+| --- | --- |
+| [`security/prd.md`](security/prd.md) | Product requirements, threat model, phases |
+| [`security/disk-caches.md`](security/disk-caches.md) | Table cache and workspace query-result cache |
+| [`security/encryption-and-keys.md`](security/encryption-and-keys.md) | AES-256-GCM and where the key lives |
+| [`security/local-api.md`](security/local-api.md) | Web API, MCP, and `--serve` on loopback |
+| [`security/agents.md`](security/agents.md) | What an agent can still read |
+
 ## Non-goals for the first rewrite pass
 
 - Changing DQL syntax.
