@@ -4,6 +4,17 @@ import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
 import { lineByText, lineOverlaps, mod, node, openApp, openResultPane, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
 
+// dragTo jumps in one move. Chrome sometimes delivers that move after mouseup,
+// so the gesture collapses to a cursor. Step the pointer while the button is down.
+async function dragAcrossLines(page, fromText, toText) {
+  const from = await page.locator(".cm-line", { hasText: fromText }).boundingBox();
+  const to = await page.locator(".cm-line", { hasText: toText }).boundingBox();
+  await page.mouse.move(from.x + 28, from.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(to.x + 28, to.y + 8, { steps: 8 });
+  await page.mouse.up();
+}
+
 function cachedResults(workspace) {
   const root = path.join(workspace, ".dqlrs-web-cache");
   if (!fs.existsSync(root)) return [];
@@ -234,9 +245,7 @@ test("colors SELECT and outlines the current query without covering the next one
   expect(nextHeader.overlap).toBeLessThan(12);
   expect(lineByText(cursor, "SCAN * FROM pw_missing_table").overlap).toBeLessThan(2);
 
-  await page.locator(".cm-line", { hasText: "SELECT * FROM pw_missing_table" }).dragTo(
-    page.locator(".cm-line", { hasText: "WHERE id = 'a'" }),
-  );
+  await dragAcrossLines(page, "SELECT * FROM pw_missing_table", "WHERE id = 'a'");
   const selected = await lineOverlaps(page);
   expect(lineByText(selected, "SELECT * FROM pw_missing_table").overlap).toBeGreaterThan(
     lineByText(selected, "SELECT * FROM pw_missing_table").height * 0.8,
