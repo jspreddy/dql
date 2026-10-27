@@ -23,6 +23,8 @@ pub fn run(
     root: PathBuf,
     listen: SocketAddr,
     mcp: bool,
+    load_tables: bool,
 ) -> color_eyre::Result<()> {
-    server::serve(session, root, listen, mcp).map_err(|err| color_eyre::eyre::eyre!("{err}"))
+    server::serve(session, root, listen, mcp, load_tables)
+        .map_err(|err| color_eyre::eyre::eyre!("{err}"))
 }

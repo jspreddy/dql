@@ -71,6 +71,7 @@ pub fn serve(
     root: PathBuf,
     listen: SocketAddr,
     mcp: bool,
+    load_tables: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     fs::create_dir_all(&root)?;
     let root = root.canonicalize()?;
@@ -78,6 +79,10 @@ pub fn serve(
     let listener = TcpListener::bind(listen)?;
     let bound = listener.local_addr().unwrap_or(listen);
     println!("DQLRS Web  http://{bound}");
+    if load_tables {
+        begin_table_load(&app);
+        println!("tables     loading in the background");
+    }
     if mcp {
         let url = format!("http://{bound}/mcp");
         println!("MCP        {url}");
@@ -93,6 +98,39 @@ pub fn serve(
     let _ = io::stdout().flush();
     accept(app, listener, Arc::new(AtomicBool::new(false)));
     Ok(())
+}
+
+fn begin_table_load(app: &Arc<App>) {
+    let disk = {
+        let state = lock_state(app);
+        state.session.table_disk.clone()
+    };
+    if let Some(cache) = disk {
+        cache.start_load();
+        return;
+    }
+    let app = Arc::clone(app);
+    thread::spawn(move || load_session_tables(app));
+}
+
+fn load_session_tables(app: Arc<App>) {
+    let names = {
+        let mut state = lock_state(&app);
+        match state.session.engine.cached_table_names(true) {
+            Ok(names) => names,
+            Err(err) => {
+                eprintln!("dqlrs: load tables: {err}");
+                return;
+            }
+        }
+    };
+    for name in names {
+        let mut state = lock_state(&app);
+        match state.session.engine.describe(&name, false) {
+            Ok(_) => {}
+            Err(err) => eprintln!("dqlrs: load tables: {name}: {err}"),
+        }
+    }
 }
 
 fn accept(app: Arc<App>, listener: TcpListener, stop: Arc<AtomicBool>) {
@@ -1390,6 +1428,38 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
                 let _ = thread.join();
             }
         }
+    }
+
+    #[test]
+    fn load_tables_describes_every_memory_table() {
+        let root = tempfile::tempdir().unwrap();
+        let app = Arc::new(App::new(
+            crate::session::Session::new_memory_headless("memory"),
+            root.path().to_path_buf(),
+            false,
+        ));
+        {
+            let mut state = lock_state(&app);
+            let created = state
+                .session
+                .execute_for_serve("CREATE TABLE posts (id STRING HASH KEY, sk NUMBER RANGE KEY);");
+            assert!(created.ok, "{created:?}");
+            let created = state
+                .session
+                .execute_for_serve("CREATE TABLE comments (id STRING HASH KEY);");
+            assert!(created.ok, "{created:?}");
+            state.session.engine.set_table_cache(None);
+        }
+        load_session_tables(Arc::clone(&app));
+        let mut state = lock_state(&app);
+        let posts = state
+            .session
+            .engine
+            .cached_definition("posts")
+            .expect("posts");
+        assert_eq!(posts.hash_key, "id");
+        assert_eq!(posts.range_key.as_deref(), Some("sk"));
+        assert!(state.session.engine.cached_definition("comments").is_some());
     }
 
     fn spawn_server(root: PathBuf) -> (SocketAddr, ServerGuard) {
