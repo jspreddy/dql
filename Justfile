@@ -400,8 +400,11 @@ version *args: (_title "version")
 
 # Root recipes.
 
+# Report Python and Rust lint without editing source. Syncs the Python env first.
+check: (_title "check") py-sync py-lint rust-fmt rust-clippy
+
 # Format Python and Rust and apply Clippy suggestions. Syncs the Python env first.
-check: (_title "check") py-sync py-fix rust-fix
+fix: (_title "fix") py-sync py-fix rust-fix
 
 # Every test suite. Starts DynamoDB Local, syncs Python, and builds release dqlrs first.
 test: (_title "test") dynamo py-sync rust-build web-unit py-test rust-test rust-local rust-smoke black-box notebook-test web-test mcp-test
