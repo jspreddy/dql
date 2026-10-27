@@ -152,7 +152,10 @@ const editor = new EditorView({
         { key: "Tab", run: acceptComplete },
         { key: "Escape", run: dismissComplete },
       ])),
-      Prec.high(keymap.of([{ key: "Mod-Enter", run: runFromEditor }])),
+      Prec.high(keymap.of([
+        { key: "Mod-Enter", run: runFromEditor },
+        { key: "Mod-\\", run: runFromEditor },
+      ])),
       dqlLanguage,
       highlightCompartment.of(queryHighlight(highlightOptions)),
       runFrame,
@@ -489,12 +492,14 @@ document.querySelector("#mode-tables").addEventListener("click", () => setMode("
 document.querySelector("#new-file").addEventListener("click", createFile);
 const runButton = document.querySelector("#run");
 const stopButton = document.querySelector("#stop");
-const runShortcut = document.querySelector("#run-shortcut");
-const runMod = runShortcut.querySelector(".run-mod");
 const runTip = document.querySelector("#run-tip");
 const macShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
-runMod.textContent = macShortcut ? "⌘" : "Ctrl";
-runButton.setAttribute("aria-keyshortcuts", macShortcut ? "Meta+Enter" : "Control+Enter");
+const modLabel = macShortcut ? "⌘" : "Ctrl";
+for (const mod of document.querySelectorAll(".key-mod")) mod.textContent = modLabel;
+runButton.setAttribute(
+  "aria-keyshortcuts",
+  macShortcut ? "Meta+Enter Meta+\\" : "Control+Enter Control+\\",
+);
 let runTipTimer = 0;
 function hideRunTip() {
   clearTimeout(runTipTimer);

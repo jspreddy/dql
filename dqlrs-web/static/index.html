@@ -78,6 +78,21 @@
       </div>
       <button type="button" id="clear-table-cache">Clear table cache</button>
       <p id="cache-clear-note" class="settings-note" hidden></p>
+      <hr class="settings-rule" />
+      <span class="settings-label" id="settings-keys-label">Keyboard</span>
+      <div class="settings-keys" role="list" aria-labelledby="settings-keys-label">
+        <div role="listitem" data-action="run">
+          <span>Run selection</span>
+          <span class="settings-keychords">
+            <kbd><span class="key-mod">Ctrl</span> + Enter</kbd>
+            <kbd><span class="key-mod">Ctrl</span> + \</kbd>
+          </span>
+        </div>
+        <div role="listitem" data-action="stop">
+          <span>Stop query</span>
+          <kbd>Esc</kbd>
+        </div>
+      </div>
     </div>
     <div id="env-pop" class="env-pop" popover="auto" aria-labelledby="env-pop-title"></div>
   </header>
@@ -130,7 +145,7 @@
               <svg class="run-play" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
                 <path fill="currentColor" d="M5.2 3.1 12.4 8 5.2 12.9Z"/>
               </svg>
-              <span id="run-shortcut" class="run-shortcut"><span class="run-mod">Ctrl</span> + Enter</span>
+              <span id="run-shortcut" class="run-shortcut"><span class="key-mod">Ctrl</span> + Enter</span>
             </button>
             <button type="button" id="stop" class="stop hidden">Stop</button>
           </div>
