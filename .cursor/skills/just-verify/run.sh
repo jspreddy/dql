@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run `just verify` and print only recipe headings and the exit code.
+# Run `just verify` and print recipe headings, the exit code, and success or the failure.
 set -u
 
 root=$(git rev-parse --show-toplevel)
@@ -18,24 +18,14 @@ exit_code() {
   strip "$1" | awk -F: '/^EXIT:/ { code = $2 } END { if (code == "") code = "missing"; print code }'
 }
 
-summarize() {
-  headings "$1"
-  printf 'exit: %s\n' "$(exit_code "$1")"
-  printf 'log: %s\n' "$1"
-}
-
-failed() {
-  if [[ ! -f $log ]]; then
-    printf 'exit: missing\nlog: %s\n' "$log"
-    exit 1
-  fi
-  strip "$log" | awk '
+failure_lines() {
+  strip "$1" | awk '
     /^\[## .+ ##\]$/ { start = NR }
     { line[NR] = $0 }
     /^error: recipe / { err = NR; err_heading = start }
     END {
       if (!err) {
-        print "no recipe error in log"
+        print "The log has no recipe error."
         exit 0
       }
       print line[err_heading]
@@ -54,14 +44,39 @@ failed() {
       for (i = startn; i <= n; i++) print keep[i]
     }
   '
-  printf 'exit: %s\n' "$(exit_code "$log")"
-  printf 'log: %s\n' "$log"
+}
+
+summarize() {
+  headings "$1"
+  code=$(exit_code "$1")
+  printf 'exit: %s\n' "$code"
+  printf 'log: %s\n' "$1"
+  if [[ $code == 0 ]]; then
+    printf 'The verify suite was successful.\n'
+  else
+    printf 'The verify suite failed.\n'
+    failure_lines "$1"
+  fi
+}
+
+failed() {
+  if [[ ! -f $log ]]; then
+    printf 'exit: missing\nlog: %s\nThe verify suite failed.\nThe log is missing.\n' "$log"
+    exit 1
+  fi
+  code=$(exit_code "$log")
+  if [[ $code == 0 ]]; then
+    printf 'exit: 0\nlog: %s\nThe verify suite was successful.\n' "$log"
+    return 0
+  fi
+  printf 'exit: %s\nlog: %s\nThe verify suite failed.\n' "$code" "$log"
+  failure_lines "$log"
 }
 
 case ${1:-} in
   --from-log)
     if [[ ! -f $log ]]; then
-      printf 'exit: missing\nlog: %s\n' "$log"
+      printf 'exit: missing\nlog: %s\nThe verify suite failed.\nThe log is missing.\n' "$log"
       exit 1
     fi
     summarize "$log"
