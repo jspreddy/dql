@@ -77,6 +77,12 @@ pub struct CliArgs {
     )]
     pub dir: Option<String>,
 
+    #[arg(
+        long = "load-tables",
+        help = "With --web, load every table and its definition in the background"
+    )]
+    pub load_tables: bool,
+
     #[arg(long = "version", help = "Print the version and exit")]
     pub version: bool,
 
@@ -102,6 +108,7 @@ pub fn help_text() -> String {
            --mcp                MCP tools. Alone, stdio. With --web, HTTP at /mcp\n\
            --listen <ADDR>      With --web, listen on loopback HOST:PORT (default 127.0.0.1:8765)\n\
            --dir <DIR>          With --web or --mcp, folder of .dql files (default: current directory)\n\
+           --load-tables        With --web, load every table and its definition in the background\n\
            notebook, --notebook Start JupyterLab with a DQL (Rust) kernel (this binary)\n\
            --version            Print the version and exit\n\n\
      Environment:\n\
@@ -210,5 +217,14 @@ mod tests {
         assert!(args.mcp);
         assert_eq!(args.listen.as_deref(), Some("127.0.0.1:8765"));
         assert_eq!(args.dir.as_deref(), Some("/tmp/queries"));
+        assert!(!args.load_tables);
+    }
+
+    #[test]
+    fn parses_web_load_tables() {
+        let args = CliArgs::try_parse_from(["dqlrs", "--web", "--load-tables"]).unwrap();
+        assert!(args.web);
+        assert!(args.load_tables);
+        assert!(help_text().contains("--load-tables"));
     }
 }

@@ -510,6 +510,16 @@ impl Session {
         self.table_disk = Some(cache);
     }
 
+    /// Fetch the full table list and a definition for every table.
+    ///
+    /// Returns false when this session has no disk cache. The web server then
+    /// loads tables on this session instead.
+    pub fn start_background_load(&self) -> bool {
+        self.table_disk
+            .as_ref()
+            .is_some_and(|cache| cache.start_load())
+    }
+
     /// Refresh the cached list and cached definitions on a background thread.
     ///
     /// Returns false when this session has no disk cache or nothing is cached yet.

@@ -1,7 +1,8 @@
 //! Disk cache for the table name list and definitions that have already been fetched.
 //!
 //! A refresh reloads those entries. It does not describe tables that have never
-//! been fetched.
+//! been fetched. `--load-tables` is the startup load: it fetches the full list
+//! and a definition for every table, in the background.
 
 use std::cell::Cell;
 use std::fs;
@@ -97,6 +98,84 @@ impl DiskTableCache {
         let job = self.job_id.load(Ordering::Acquire);
         std::thread::spawn(move || cache.refresh_job(job));
         true
+    }
+
+    /// Fetch the full table list and a definition for every table.
+    ///
+    /// Returns true when a load or refresh is already running. A saved
+    /// definition is kept. A table that is no longer listed is dropped.
+    pub fn start_load(self: &Arc<Self>) -> bool {
+        if self
+            .refreshing
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return true;
+        }
+        let cache = Arc::clone(self);
+        let job = self.job_id.load(Ordering::Acquire);
+        std::thread::spawn(move || cache.load_job(job));
+        true
+    }
+
+    fn load_job(self: Arc<Self>, job: u64) {
+        REFRESH_JOB.with(|slot| slot.set(job));
+        let result = self.load_from_endpoint();
+        REFRESH_JOB.with(|slot| slot.set(0));
+        if self.job_id.load(Ordering::Acquire) != job {
+            return;
+        }
+        if let Ok(mut error) = self.last_error.lock() {
+            *error = result.err();
+        }
+        self.refreshing.store(false, Ordering::Release);
+    }
+
+    fn load_from_endpoint(self: &Arc<Self>) -> Result<(), String> {
+        let mut engine = RuntimeEngine::build(
+            &self.endpoint.region,
+            self.endpoint.host.as_deref(),
+            self.endpoint.port,
+            self.endpoint.allow_select_scan,
+        )
+        .map_err(|err| err.to_string())?;
+        let store: SharedTableCache = Arc::clone(self) as SharedTableCache;
+        engine.set_table_cache(Some(store));
+        self.load_catalog(&mut engine)
+    }
+
+    fn load_catalog(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
+        if !self.writes_allowed() {
+            return Ok(());
+        }
+        let names = engine
+            .cached_table_names(true)
+            .map_err(|err| err.to_string())?;
+        let mut failed = Vec::new();
+        for name in &names {
+            if !self.writes_allowed() {
+                return Ok(());
+            }
+            match engine.describe(name, false) {
+                Ok(Some(_)) => {}
+                Ok(None) => self.remove_definition(name),
+                Err(err) => failed.push(format!("{name}: {err}")),
+            }
+        }
+        if self.writes_allowed() {
+            for name in self.definition_names() {
+                if !names.iter().any(|listed| listed == &name) {
+                    self.remove_definition(&name);
+                }
+            }
+        }
+        if let Some(first) = failed.first() {
+            return Err(format!(
+                "failed to describe {} table(s): {first}",
+                failed.len()
+            ));
+        }
+        Ok(())
     }
 
     fn has_entries(&self) -> bool {
@@ -435,5 +514,40 @@ mod tests {
         assert!(cache.get_definition("posts").is_none());
         assert!(cache.definition_names().is_empty());
         assert!(!cache.start_refresh());
+    }
+
+    #[test]
+    fn load_catalog_saves_every_definition_and_drops_stale_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskTableCache::open_at(dir.path().join("cache"), endpoint());
+        let mut engine = RuntimeEngine::in_memory(true);
+        engine
+            .execute_fragment("CREATE TABLE posts (id STRING HASH KEY, sk NUMBER RANGE KEY);")
+            .unwrap();
+        engine
+            .execute_fragment("CREATE TABLE comments (id STRING HASH KEY);")
+            .unwrap();
+        engine.set_table_cache(Some(Arc::clone(&cache) as SharedTableCache));
+        let gone = parse_statement("CREATE TABLE gone (id STRING HASH KEY);").unwrap();
+        cache.put_definition(&TableMeta::from_create_statement(&gone).unwrap());
+
+        cache.load_catalog(&mut engine).unwrap();
+
+        let names = cache.get_names().unwrap().names;
+        assert_eq!(names, vec!["comments".to_string(), "posts".to_string()]);
+        let posts = cache.get_definition("posts").unwrap();
+        assert_eq!(posts.meta.hash_key, "id");
+        assert_eq!(posts.meta.range_key.as_deref(), Some("sk"));
+        assert!(cache.get_definition("comments").is_some());
+        assert!(cache.get_definition("gone").is_none());
+    }
+
+    #[test]
+    fn start_load_reports_a_job_already_running() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskTableCache::open_at(dir.path().join("cache"), endpoint());
+        cache.refreshing.store(true, Ordering::Release);
+        assert!(cache.start_load());
+        assert!(cache.refreshing());
     }
 }

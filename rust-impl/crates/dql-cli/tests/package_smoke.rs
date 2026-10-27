@@ -124,6 +124,22 @@ fn smoke_help_mentions_serve_and_bind() {
         stderr.contains("notebook"),
         "help should mention notebook: {stderr}"
     );
+    assert!(
+        stderr.contains("--load-tables"),
+        "help should mention --load-tables: {stderr}"
+    );
+}
+
+#[test]
+fn smoke_load_tables_requires_web() {
+    let output = run_raw(&["--load-tables"]);
+    assert!(
+        !output.status.success(),
+        "dqlrs --load-tables should fail without --web\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--load-tables requires --web"), "{stderr}");
 }
 
 #[test]

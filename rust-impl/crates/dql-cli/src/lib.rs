@@ -43,6 +43,7 @@ const KNOWN_FLAGS: &[&str] = &[
     "--mcp",
     "--listen",
     "--dir",
+    "--load-tables",
     "--version",
     "-h",
     "--help",
@@ -100,6 +101,9 @@ pub fn run() -> color_eyre::Result<()> {
     if args.dir.is_some() && !args.web && !args.mcp {
         bail!("--dir requires --web or --mcp");
     }
+    if args.load_tables && !args.web {
+        bail!("--load-tables requires --web");
+    }
     if args.serve && args.command.is_some() {
         bail!("--serve cannot be used with -c/--command");
     }
@@ -133,7 +137,7 @@ pub fn run() -> color_eyre::Result<()> {
             None => std::env::current_dir().wrap_err("current directory")?,
         };
         let session = Session::new_for_serve(&args).wrap_err("failed to start session")?;
-        web::run(session, dir, listen, args.mcp)?;
+        web::run(session, dir, listen, args.mcp, args.load_tables)?;
         return Ok(());
     }
 
