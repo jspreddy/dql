@@ -47,6 +47,7 @@ struct App {
     identity: Mutex<Option<dql_engine::CallerIdentity>>,
     presence: presence::Book,
     mcp: bool,
+    token: String,
 }
 
 struct Incoming {
@@ -56,6 +57,7 @@ struct Incoming {
     body: Vec<u8>,
     origin: Option<String>,
     mcp_session: Option<String>,
+    authorization: Option<String>,
     keep_alive: bool,
     overflow: bool,
 }
@@ -75,7 +77,8 @@ pub fn serve(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     fs::create_dir_all(&root)?;
     let root = root.canonicalize()?;
-    let app = Arc::new(App::new(session, root, mcp));
+    let token = crate::api_token::mint()?;
+    let app = Arc::new(App::new(session, root, mcp, token));
     let listener = TcpListener::bind(listen)?;
     let bound = listener.local_addr().unwrap_or(listen);
     println!("DQLRS Web  http://{bound}");
@@ -89,13 +92,15 @@ pub fn serve(
         println!("workspace  {}", app.root.display());
         println!("endpoint   {}", app.endpoint);
         println!();
-        println!("{}", crate::mcp::http_client_config(&url));
+        println!("{}", crate::mcp::http_client_config(&url, &app.token));
     } else {
         println!("{}", crate::mcp::web_mcp_hint(&bound.to_string()));
         println!("workspace  {}", app.root.display());
         println!("endpoint   {}", app.endpoint);
     }
     let _ = io::stdout().flush();
+    eprintln!("{}", crate::api_token::stderr_line(&app.token));
+    let _ = io::stderr().flush();
     accept(app, listener, Arc::new(AtomicBool::new(false)));
     Ok(())
 }
@@ -157,7 +162,7 @@ fn accept(app: Arc<App>, listener: TcpListener, stop: Arc<AtomicBool>) {
 }
 
 impl App {
-    fn new(session: Session, root: PathBuf, mcp: bool) -> Self {
+    fn new(session: Session, root: PathBuf, mcp: bool, token: String) -> Self {
         let endpoint = match &session.local_endpoint {
             Some((host, port)) => format!("{host}:{port}"),
             None => session.region.clone(),
@@ -176,6 +181,7 @@ impl App {
             identity: Mutex::new(None),
             presence: presence::Book::new(),
             mcp,
+            token,
         }
     }
 }
@@ -253,6 +259,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
     let mut connection = String::new();
     let mut origin = None;
     let mut mcp_session = None;
+    let mut authorization = None;
     let mut length_invalid = false;
     for line in lines {
         if line.is_empty() {
@@ -272,6 +279,8 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
             origin = Some(value.trim().to_string());
         } else if name.eq_ignore_ascii_case("mcp-session-id") {
             mcp_session = Some(value.trim().to_string());
+        } else if name.eq_ignore_ascii_case("authorization") {
+            authorization = Some(value.trim().to_string());
         }
     }
     let keep_alive = if connection.contains("close") {
@@ -289,6 +298,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
             body: Vec::new(),
             origin,
             mcp_session,
+            authorization: authorization.clone(),
             keep_alive: false,
             overflow: true,
         }));
@@ -302,6 +312,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
             body: Vec::new(),
             origin,
             mcp_session,
+            authorization: authorization.clone(),
             keep_alive: false,
             overflow: true,
         }));
@@ -317,6 +328,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
         body,
         origin,
         mcp_session,
+        authorization,
         keep_alive,
         overflow: false,
     }))
@@ -378,9 +390,18 @@ fn identity_reply(app: &App) -> Value {
 
 fn dispatch(app: &Arc<App>, request: &Incoming) -> Reply {
     if request.path == "/mcp" || request.path == "/mcp/" {
+        if !app.mcp {
+            return Reply::Json(404, json!({"ok": false, "error": "not found"}));
+        }
+        if !authorized(app, request) {
+            return unauthorized_reply(true);
+        }
         return dispatch_mcp(app, request);
     }
     let path = request.path.as_str();
+    if (path == "/api" || path.starts_with("/api/")) && !authorized(app, request) {
+        return unauthorized_reply(false);
+    }
     let query = request.query.as_str();
     match request.method.as_str() {
         "GET" => dispatch_get(app, path, query),
@@ -388,6 +409,40 @@ fn dispatch(app: &Arc<App>, request: &Incoming) -> Reply {
         "PUT" => dispatch_put(app, path, &request.body),
         _ => Reply::Json(404, json!({"ok": false, "error": "not found"})),
     }
+}
+
+fn authorized(app: &App, request: &Incoming) -> bool {
+    let Some(header) = request.authorization.as_deref() else {
+        return false;
+    };
+    let Some(presented) = bearer_token(header) else {
+        return false;
+    };
+    crate::api_token::matches(&app.token, presented)
+}
+
+fn bearer_token(header: &str) -> Option<&str> {
+    let mut parts = header.split_whitespace();
+    let scheme = parts.next()?;
+    let token = parts.next()?;
+    if parts.next().is_some() || !scheme.eq_ignore_ascii_case("bearer") {
+        return None;
+    }
+    Some(token)
+}
+
+fn unauthorized_reply(mcp: bool) -> Reply {
+    if mcp {
+        return Reply::Json(
+            401,
+            json!({
+                "jsonrpc": "2.0",
+                "id": null,
+                "error": { "code": -32001, "message": "unauthorized" }
+            }),
+        );
+    }
+    Reply::Json(401, json!({"ok": false, "error": "unauthorized"}))
 }
 
 fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
@@ -459,14 +514,11 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
                 Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
             }
         }
-        _ => serve_static(path),
+        _ => serve_static(app, path),
     }
 }
 
 fn dispatch_mcp(app: &App, request: &Incoming) -> Reply {
-    if !app.mcp {
-        return Reply::Json(404, json!({"ok": false, "error": "not found"}));
-    }
     if let Some(origin) = &request.origin {
         if !loopback_origin(origin) {
             return Reply::Json(
@@ -808,14 +860,36 @@ fn table_rows(state: &mut WebState, name: &str, page: usize) -> Result<Value, St
     }))
 }
 
-fn serve_static(path: &str) -> Reply {
+fn serve_static(app: &App, path: &str) -> Reply {
     let Some(relative) = static_relative(path) else {
         return Reply::Json(404, json!({"ok": false, "error": "not found"}));
     };
     match load_static(&relative) {
-        Some((bytes, content_type)) => Reply::Bytes(200, content_type, bytes),
+        Some((bytes, content_type)) => {
+            let bytes = if relative == "index.html" {
+                inject_page_token(&bytes, &app.token)
+            } else {
+                bytes
+            };
+            Reply::Bytes(200, content_type, bytes)
+        }
         None => Reply::Json(404, json!({"ok": false, "error": "not found"})),
     }
+}
+
+fn inject_page_token(html: &[u8], token: &str) -> Vec<u8> {
+    let Ok(text) = std::str::from_utf8(html) else {
+        return html.to_vec();
+    };
+    let tag = format!(r#"<meta name="dqlrs-token" content="{token}">"#);
+    let Some(index) = text.find("</head>") else {
+        return (tag + text).into_bytes();
+    };
+    let mut out = String::with_capacity(text.len() + tag.len());
+    out.push_str(&text[..index]);
+    out.push_str(&tag);
+    out.push_str(&text[index..]);
+    out.into_bytes()
 }
 
 fn load_static(relative: &str) -> Option<(Vec<u8>, &'static str)> {
@@ -958,6 +1032,7 @@ fn reason(status: u16) -> &'static str {
         200 => "OK",
         202 => "Accepted",
         400 => "Bad Request",
+        401 => "Unauthorized",
         403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
@@ -1115,6 +1190,75 @@ mod tests {
         assert!(ran.contains("\"elapsed_ms\":"), "{ran}");
         assert!(ran.contains("\"read_units\":"), "{ran}");
         assert!(ran.contains("\"write_units\":"), "{ran}");
+        drop(guard);
+    }
+
+    #[test]
+    fn api_and_mcp_require_the_startup_token() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server_mcp(root.path().to_path_buf(), true);
+        let token = server_token(addr);
+
+        let page = http(addr, "GET", "/", "");
+        assert!(
+            page.contains(&format!(r#"name="dqlrs-token" content="{token}""#)),
+            "{page}"
+        );
+        let script = http_anon(addr, "GET", "/app.js", "");
+        assert!(script.contains("HTTP/1.1 200"), "{script}");
+        assert!(!script.contains(&token), "{script}");
+        let index = disk_static().unwrap().join("index.html");
+        let disk = fs::read_to_string(&index).unwrap();
+        assert!(!disk.contains("dqlrs-token"), "{disk}");
+        assert!(!disk.contains(&token));
+
+        let config = http(addr, "GET", "/api/config", "");
+        assert!(config.contains("\"endpoint\":\"memory\""), "{config}");
+        assert!(!config.contains(&token), "{config}");
+        assert!(!config.contains("session_token"), "{config}");
+        assert!(!config.contains("cache_key"), "{config}");
+        let config_json: Value =
+            serde_json::from_str(config.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert!(config_json.get("secret").is_none());
+        assert!(config_json["environment"].get("secret").is_none());
+
+        let script = "CREATE TABLE hidden (id STRING HASH KEY);";
+        let body = format!("{{\"dql\":{}}}", serde_json::to_string(script).unwrap());
+        let denied = http_anon(addr, "POST", "/api/run", &body);
+        assert!(denied.contains("401"), "{denied}");
+        assert!(denied.contains("unauthorized"), "{denied}");
+        assert!(!denied.contains("\"event\":\"result\""), "{denied}");
+        let wrong = http_bearer(addr, "POST", "/api/run", &body, "", Some("not-the-token"));
+        assert!(wrong.contains("401"), "{wrong}");
+        let probe = "SELECT * FROM hidden WHERE id = 'a';";
+        let probe_body = format!("{{\"dql\":{}}}", serde_json::to_string(probe).unwrap());
+        let probed = http_body(addr, "POST", "/api/run", &probe_body);
+        assert!(probed.contains("not found"), "{probed}");
+
+        let init = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}"#,
+        );
+        assert!(init.contains("serverInfo"), "{init}");
+        let created = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"create_query_file","arguments":{"path":"leaked.dql","text":"SELECT 1;\n"}}}"#,
+        );
+        assert!(created.contains("leaked.dql"), "{created}");
+        let sneaky = http_anon(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"create_query_file","arguments":{"path":"secret.dql","text":"SELECT 1;\n"}}}"#,
+        );
+        assert!(sneaky.contains("401"), "{sneaky}");
+        assert!(sneaky.contains("unauthorized"), "{sneaky}");
+        assert!(!root.path().join("secret.dql").exists());
+        assert!(root.path().join("leaked.dql").is_file());
         drop(guard);
     }
 
@@ -1422,6 +1566,10 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
 
     impl Drop for ServerGuard {
         fn drop(&mut self) {
+            test_tokens()
+                .lock()
+                .unwrap_or_else(|err| err.into_inner())
+                .remove(&self.addr);
             self.stop.store(true, Ordering::SeqCst);
             let _ = TcpStream::connect(self.addr);
             if let Some(thread) = self.thread.take() {
@@ -1437,6 +1585,7 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             crate::session::Session::new_memory_headless("memory"),
             root.path().to_path_buf(),
             false,
+            crate::api_token::mint().unwrap(),
         ));
         {
             let mut state = lock_state(&app);
@@ -1467,9 +1616,19 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
     }
 
     fn spawn_server_mcp(root: PathBuf, mcp: bool) -> (SocketAddr, ServerGuard) {
-        let app = Arc::new(App::new(Session::new_memory_headless("memory"), root, mcp));
+        let token = crate::api_token::mint().unwrap();
+        let app = Arc::new(App::new(
+            Session::new_memory_headless("memory"),
+            root,
+            mcp,
+            token.clone(),
+        ));
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
+        test_tokens()
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .insert(addr, token);
         let stop = Arc::new(AtomicBool::new(false));
         let stop_thread = Arc::clone(&stop);
         let thread = thread::spawn(move || accept(app, listener, stop_thread));
@@ -1483,11 +1642,44 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         )
     }
 
+    fn test_tokens() -> &'static Mutex<std::collections::HashMap<SocketAddr, String>> {
+        use std::sync::OnceLock;
+        static TOKENS: OnceLock<Mutex<std::collections::HashMap<SocketAddr, String>>> =
+            OnceLock::new();
+        TOKENS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+    }
+
+    fn server_token(addr: SocketAddr) -> String {
+        test_tokens()
+            .lock()
+            .unwrap_or_else(|err| err.into_inner())
+            .get(&addr)
+            .cloned()
+            .expect("server token")
+    }
+
     fn http(addr: SocketAddr, method: &str, path: &str, body: &str) -> String {
-        http_origin(addr, method, path, body, "")
+        let token = server_token(addr);
+        http_bearer(addr, method, path, body, "", Some(&token))
+    }
+
+    fn http_anon(addr: SocketAddr, method: &str, path: &str, body: &str) -> String {
+        http_bearer(addr, method, path, body, "", None)
     }
 
     fn http_origin(addr: SocketAddr, method: &str, path: &str, body: &str, origin: &str) -> String {
+        let token = server_token(addr);
+        http_bearer(addr, method, path, body, origin, Some(&token))
+    }
+
+    fn http_bearer(
+        addr: SocketAddr,
+        method: &str,
+        path: &str,
+        body: &str,
+        origin: &str,
+        bearer: Option<&str>,
+    ) -> String {
         let mut stream = TcpStream::connect(addr).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(8)))
@@ -1497,9 +1689,13 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         } else {
             format!("Origin: {origin}\r\n")
         };
+        let authorization = match bearer {
+            Some(token) => format!("Authorization: Bearer {token}\r\n"),
+            None => String::new(),
+        };
         write!(
             stream,
-            "{method} {path} HTTP/1.0\r\nHost: 127.0.0.1\r\n{origin}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            "{method} {path} HTTP/1.0\r\nHost: 127.0.0.1\r\n{origin}{authorization}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
             body.len()
         )
         .unwrap();

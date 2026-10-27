@@ -9,6 +9,9 @@ pub struct ClientRequest {
     pub op: Option<String>,
     #[serde(default)]
     pub dql: Option<String>,
+    /// TCP `--serve` only. Stdio ignores this field.
+    #[serde(default)]
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]

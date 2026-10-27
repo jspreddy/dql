@@ -1,8 +1,8 @@
 # Plan: local API
 
-**Group:** API. **Status:** plan.
+**Group:** API. **Status:** implemented.
 
-Loopback is already required. This plan adds a token so another user, or a page on another origin, cannot call the server just by knowing the port.
+Loopback is already required. Each web server and each TCP `--serve` listener mints a token so a client that does not have it, including a page on another origin, cannot call the server just by knowing the port.
 
 ## Surfaces
 
@@ -18,13 +18,15 @@ Sensitive HTTP routes include `/api/run`, `/api/rows`, `/api/file`, `/api/query-
 
 ## Token
 
-Mint a fresh token each time the web server or a TCP `--serve` listener starts. Print it on stderr once, next to the listen line. Do not write it into the workspace or the cache.
+Mint a fresh 256-bit token each time the web server or a TCP `--serve` listener starts. Print one stderr line, `dqlrs token <hex>`, next to the listen line. Do not write it into the workspace or the cache.
 
-The web page is served by this process. Its script sends the token on later calls, in a header, not in a cookie. A cookie would be attached to cross-site posts. A missing or wrong token is HTTP 401 and does not run the query.
+The web page is served by this process. The HTML response for `/` carries `<meta name="dqlrs-token" content="<hex>">`. That tag is added in memory. `index.html` on disk stays unchanged. The page script sends `Authorization: Bearer <hex>` on `/api/*` and `/mcp`. It does not use a cookie. A cookie would be attached to cross-site posts. A missing or wrong token is HTTP 401 and does not run the query. Reloading the page picks up the new process's token.
 
-TCP `--serve` requires the token on each JSON line, or in a first auth line, using one format for both. Stdio `--serve` does not, because the client is the parent of the process.
+TCP `--serve` uses the same token in a JSON field named `token`. A client may send it on every line, or once. `{"op":"auth","token":"<hex>"}` only marks that connection; later lines on that connection may omit the field. A line that includes a wrong token is rejected. Stdio `--serve` does not check the field, because the client is the parent of the process. An unauthenticated TCP line, including `shutdown`, does not run.
 
 Hold the token in memory for the life of the process. A new process gets a new token. Old pages from a previous process fail until reload.
+
+The printed MCP snippet includes the same bearer value in `headers.Authorization`. Anyone who can read that stderr line, or the HTML response, can call the API. The token is not a secret from the operator.
 
 ## What this does not stop
 

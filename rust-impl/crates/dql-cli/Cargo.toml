@@ -25,6 +25,7 @@ dql-expr = { path = "../dql-expr" }
 dql-models = { path = "../dql-models" }
 dql-output = { path = "../dql-output" }
 dql-parser = { path = "../dql-parser" }
+getrandom = "0.2.17"
 glob.workspace = true
 human-panic = "2.0.8"
 humansize.workspace = true

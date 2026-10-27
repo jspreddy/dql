@@ -16,6 +16,42 @@ import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
 import { parseLsMessage } from "./describe-card.js";
 import { unifiedDiff } from "./file-patch.js";
 
+const apiToken = document.querySelector('meta[name="dqlrs-token"]')?.content || "";
+const nativeFetch = window.fetch.bind(window);
+
+function requestPath(input) {
+  const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  try {
+    return new URL(raw, location.origin).pathname;
+  } catch {
+    return raw;
+  }
+}
+
+function apiPath(path) {
+  return path === "/api" || path.startsWith("/api/") || path === "/mcp" || path.startsWith("/mcp/");
+}
+
+window.fetch = (input, init = {}) => {
+  if (!apiToken || !apiPath(requestPath(input))) return nativeFetch(input, init);
+  const headers = new Headers(init.headers || undefined);
+  headers.set("Authorization", `Bearer ${apiToken}`);
+  return nativeFetch(input, { ...init, headers });
+};
+
+function tokenError(response, payload) {
+  if (response.status === 401) {
+    const error = new Error("This page does not have the current server token. Reload it.");
+    error.status = 401;
+    error.payload = payload;
+    return error;
+  }
+  const error = new Error(payload.error || response.statusText || "Request failed");
+  error.status = response.status;
+  error.payload = payload;
+  return error;
+}
+
 const dqlHighlight = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--tok-keyword)", fontWeight: "650" },
   { tag: tags.deleted, color: "var(--tok-deleted)", fontWeight: "700" },
@@ -2406,7 +2442,7 @@ function hideProgress() {
 async function readNdjson(response, onEvent) {
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.error || response.statusText);
+    throw tokenError(response, payload);
   }
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -4224,11 +4260,6 @@ async function api(url, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(payload.error || response.statusText || "Request failed");
-    error.status = response.status;
-    error.payload = payload;
-    throw error;
-  }
+  if (!response.ok) throw tokenError(response, payload);
   return payload;
 }
