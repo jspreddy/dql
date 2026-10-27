@@ -4,7 +4,11 @@ alwaysApply: true
 
 # Pre-commit
 
-run `just check` and stage any changes it makes.
+Before committing, run `just fix`, then `just check`.
+
+`just fix` applies the automatic fixes. Stage those edits.
+
+`just check` only reports. When it fails, fix what it reports, then run `just fix` and `just check` again. Commit only after `just check` succeeds.
 
 
 # Commit message
