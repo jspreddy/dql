@@ -123,7 +123,7 @@ test("shows the endpoint and the editor shortcut", async ({ page }) => {
   await expect(page.locator("#run")).not.toHaveAttribute("title");
   await expect(page.locator("#run")).toHaveAttribute(
     "aria-keyshortcuts",
-    mac ? "Meta+Enter" : "Control+Enter",
+    mac ? "Meta+Enter Meta+\\" : "Control+Enter Control+\\",
   );
   const tip = page.locator("#run-tip");
   await page.locator("#run").hover();
@@ -353,6 +353,32 @@ test("runs the query at the cursor with Ctrl+Enter and marks a failure", async (
   await expect(page.locator('[data-testid="run-status-error"]')).toBeVisible();
   await expect(page.locator("#run-progress")).toBeHidden();
   await expect(page.locator("#run")).toBeEnabled();
+});
+
+test("runs the query at the cursor with Ctrl+backslash", async ({ page }) => {
+  await node(page, "queries/read.dql").click();
+  await page.locator(".cm-line", { hasText: "SELECT * FROM pw_missing_table" }).click();
+  await pressMod(page, "Backslash");
+  const error = page.locator('[data-testid="result-note"].error');
+  await expect(error).toBeVisible();
+  await expect(error).not.toHaveText("");
+  await expect(page.locator('[data-testid="run-status-error"]')).toBeVisible();
+  await expect(page.locator("#run")).toBeEnabled();
+});
+
+test("lists keyboard shortcuts in settings", async ({ page }, testInfo) => {
+  const mac = mod === "Meta";
+  const modLabel = mac ? "⌘" : "Ctrl";
+  await expect(page.locator("#run-shortcut")).toHaveText(mac ? "⌘ + Enter" : "Ctrl + Enter");
+  await page.locator("#settings-toggle").click();
+  const menu = page.locator("#settings-pop");
+  await expect(menu).toBeVisible();
+  await expect(menu.locator("[data-action='run'] kbd")).toHaveText([
+    `${modLabel} + Enter`,
+    `${modLabel} + \\`,
+  ]);
+  await expect(menu.locator("[data-action='stop'] kbd")).toHaveText("Esc");
+  await menu.screenshot({ path: playwrightArtifact(`settings-shortcuts-${testInfo.project.name}.png`) });
 });
 
 test("runs the whole file from the button beside the filename", async ({ page, app }, testInfo) => {
