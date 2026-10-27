@@ -1272,11 +1272,11 @@ test("places a play button on the left of the run box and runs that range", asyn
       `SCAN * FROM pw_missing_table;`,
     ].join("\n"),
   );
-  await dragAcrossLines(page, "DROP TABLE", "VALUES");
+  await page.locator(".cm-line", { hasText: "DROP TABLE" }).dragTo(page.locator(".cm-line", { hasText: "VALUES" }));
   await page.locator("#run").click();
   await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "1 affected" })).toBeVisible();
 
-  await dragAcrossLines(page, "INSERT INTO", "SELECT * FROM");
+  await page.locator(".cm-line", { hasText: "INSERT INTO" }).dragTo(page.locator(".cm-line", { hasText: "SELECT * FROM" }));
   await page.locator(".run-float").click();
   await expect(page.locator("#result-table")).toContainText("alpha");
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
