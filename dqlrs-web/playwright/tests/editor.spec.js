@@ -28,11 +28,21 @@ function cachedResults(workspace) {
       const file = path.join(folder, name);
       files.push({
         stamp: Number(stamp[1]),
-        body: JSON.parse(fs.readFileSync(file, "utf8")),
+        bytes: fs.readFileSync(file),
+        mode: fs.statSync(file).mode & 0o777,
       });
     }
   }
   return files.sort((left, right) => left.stamp - right.stamp);
+}
+
+function expectSealed(file, secrets) {
+  expect(file.bytes.length).toBeGreaterThanOrEqual(29);
+  expect(file.bytes[0]).toBe(1);
+  expect(file.mode).toBe(0o600);
+  for (const secret of secrets) {
+    expect(file.bytes.includes(Buffer.from(secret))).toBe(false);
+  }
 }
 
 test.beforeEach(async ({ page, app }) => {
@@ -528,13 +538,14 @@ test("clears stored results for each file under a right-clicked folder", async (
   await expect(page.locator("#menu-clear-cache")).toHaveCount(0);
   await page.locator("#menu-run-folder").click();
 
-  const mentions = (needle) =>
-    cachedResults(app.workspace).some((file) => String(file.body.query).includes(needle));
-  await expect.poll(() => mentions(one)).toBe(true);
-  await expect.poll(() => mentions(two)).toBe(true);
-  expect(mentions(kept)).toBe(true);
+  const results = () => cachedResults(app.workspace);
+  await expect.poll(() => results().length).toBe(3);
+  for (const file of results()) {
+    expectSealed(file, [one, two, kept, "CREATE"]);
+  }
   expect(fs.existsSync(path.join(app.workspace, ".cache"))).toBe(false);
   expect(fs.existsSync(path.join(app.workspace, ".dqlrs-web-cache"))).toBe(true);
+  expect(fs.statSync(path.join(app.workspace, ".dqlrs-web-cache")).mode & 0o777).toBe(0o700);
 
   await node(page, folder).click({ button: "right" });
   await expect(page.locator("#menu-clear-results")).toBeVisible();
@@ -544,9 +555,8 @@ test("clears stored results for each file under a right-clicked folder", async (
   });
   await page.locator("#menu-clear-results").click();
   await expect(page.locator("#file-menu")).toBeHidden();
-  await expect.poll(() => mentions(one)).toBe(false);
-  await expect.poll(() => mentions(two)).toBe(false);
-  expect(mentions(kept)).toBe(true);
+  await expect.poll(() => results().length).toBe(1);
+  expectSealed(results()[0], [kept, "CREATE"]);
 
   await node(page, `${folder}/one.dql`).click();
   await expect(page.locator("#file-name")).toHaveText("one.dql");
@@ -626,20 +636,17 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   await expect(page.locator(".query-result").nth(3)).toContainText("alpha");
   await expect(page.locator(".query-result").nth(3).locator("table")).toContainText("alpha");
 
-  const cached = cachedResults(app.workspace).filter((file) => file.body.query.includes(name));
+  const cached = cachedResults(app.workspace);
   expect(cached).toHaveLength(5);
-  expect(cached[0].body.query).toMatch(/^DROP TABLE/i);
-  expect(cached[2].body.query).toContain("INSERT");
-  expect(cached[2].body.success).toBe(true);
-  expect(Array.isArray(cached[2].body.result)).toBe(false);
-  expect(cached[2].body.result.ok).toBe(true);
-  expect(cached[4].body.query).toContain(`${name}_missing`);
-  expect(cached[4].body.success).toBe(false);
+  for (const file of cached) {
+    expectSealed(file, [name, "alpha", "INSERT", "DROP"]);
+  }
+  expect(fs.statSync(path.join(app.workspace, ".dqlrs-web-cache")).mode & 0o777).toBe(0o700);
 
   await page.locator("#clear-results").click();
   await expect(page.locator(".query-result")).toHaveCount(0);
   await expect(page.locator("#result-count")).toHaveText("0 results");
-  expect(cachedResults(app.workspace).filter((file) => file.body.query.includes(name))).toHaveLength(0);
+  expect(cachedResults(app.workspace)).toHaveLength(0);
 
   await replaceEditor(page, `SELECT * FROM ${name} WHERE id = 'a';`);
   await pressMod(page, "A");

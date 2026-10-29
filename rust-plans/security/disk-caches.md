@@ -1,6 +1,6 @@
 # Plan: disk caches
 
-**Group:** disk. **Status:** plan.
+**Group:** disk. **Status:** done.
 
 The product has two caches. This plan changes how they are written. It does not move the query-result cache.
 

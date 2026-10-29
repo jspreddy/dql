@@ -1,6 +1,6 @@
 # Plan: encryption and keys
 
-**Group:** keys. **Status:** plan.
+**Group:** keys. **Status:** done.
 
 Encrypt both caches from [`disk-caches.md`](disk-caches.md). The query-result files stay in the workspace, so this cipher is what keeps a workspace reader from seeing rows.
 

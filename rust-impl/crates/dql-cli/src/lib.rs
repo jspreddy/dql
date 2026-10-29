@@ -1,5 +1,6 @@
 mod api_token;
 pub mod args;
+mod cache_seal;
 pub mod config;
 pub mod error;
 pub mod help;

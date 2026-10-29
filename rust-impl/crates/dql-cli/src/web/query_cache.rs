@@ -1,6 +1,6 @@
 //! One directory per query file: `workspace/.dqlrs-web-cache/<sha256 of the workspace-relative path>/`.
-//! Each `query_result_<unix-ms>.json` is a single statement:
-//! `{ "query": "<one statement>", "result": { ... }, "success": bool }`.
+//! Each `query_result_<unix-ms>.json` is one statement, sealed with AES-256-GCM.
+//! The plaintext JSON is `{ "query": "<one statement>", "result": { ... }, "success": bool }`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -11,6 +11,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use super::files::{self, PathError};
+use crate::cache_seal;
 
 const MAX_RESULTS: usize = 50;
 const CACHE_DIR: &str = ".dqlrs-web-cache";
@@ -27,9 +28,15 @@ pub fn list(root: &Path, relative: &str) -> Result<Vec<StoredQuery>, PathError> 
     let dir = cache_dir(root, relative)?;
     let mut files = result_files(&dir)?;
     files.sort_by_key(|(stamp, _)| *stamp);
+    restrict_query_dirs(&dir);
     let mut stored = Vec::with_capacity(files.len());
     for (_, path) in files {
-        let text = fs::read_to_string(&path).map_err(|err| PathError(err.to_string()))?;
+        let Some(bytes) = cache_seal::read_bytes(&path) else {
+            continue;
+        };
+        let Ok(text) = String::from_utf8(bytes) else {
+            continue;
+        };
         let Ok(entry) = serde_json::from_str::<StoredQuery>(&text) else {
             continue;
         };
@@ -46,7 +53,7 @@ pub fn save(
     success: bool,
 ) -> Result<StoredQuery, PathError> {
     let dir = cache_dir(root, relative)?;
-    fs::create_dir_all(&dir).map_err(|err| PathError(err.to_string()))?;
+    ensure_query_dirs(&dir)?;
     let stored = StoredQuery {
         query: query.to_string(),
         result,
@@ -61,9 +68,27 @@ pub fn save(
         }
         stamp += 1;
     };
-    fs::write(&path, body).map_err(|err| PathError(err.to_string()))?;
+    cache_seal::write_sealed(&path, body.as_bytes()).map_err(PathError)?;
     prune(&dir)?;
     Ok(stored)
+}
+
+fn ensure_query_dirs(dir: &Path) -> Result<(), PathError> {
+    if let Some(parent) = dir.parent() {
+        if parent.file_name().and_then(|name| name.to_str()) == Some(CACHE_DIR) {
+            cache_seal::ensure_owner_dir(parent).map_err(|err| PathError(err.to_string()))?;
+        }
+    }
+    cache_seal::ensure_owner_dir(dir).map_err(|err| PathError(err.to_string()))
+}
+
+fn restrict_query_dirs(dir: &Path) {
+    if let Some(parent) = dir.parent() {
+        if parent.file_name().and_then(|name| name.to_str()) == Some(CACHE_DIR) {
+            let _ = cache_seal::restrict_dir(parent);
+        }
+    }
+    let _ = cache_seal::restrict_dir(dir);
 }
 
 pub fn clear(root: &Path, relative: &str) -> Result<(), PathError> {
@@ -278,5 +303,91 @@ mod tests {
         let one = clear_at(root.path(), "keep.dql").unwrap();
         assert_eq!(one, vec!["keep.dql".to_string()]);
         assert!(list(root.path(), "keep.dql").unwrap().is_empty());
+    }
+
+    #[test]
+    fn seals_results_without_leaving_the_query_in_the_file() {
+        let root = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        let before = crate::cache_seal::mode_bits(root.path());
+        fs::write(root.path().join("notes.dql"), "").unwrap();
+        let query = "SELECT marker_row FROM posts;";
+        save(
+            root.path(),
+            "notes.dql",
+            query,
+            json!({"ok": true, "label": "alpha"}),
+            true,
+        )
+        .unwrap();
+        let listed = list(root.path(), "notes.dql").unwrap();
+        assert_eq!(listed[0].query, query);
+        assert_eq!(listed[0].result["label"], json!("alpha"));
+        assert!(listed[0].success);
+        let dir = cache_dir(root.path(), "notes.dql").unwrap();
+        assert_eq!(
+            dir.parent().and_then(|path| path.file_name()),
+            Some(std::ffi::OsStr::new(CACHE_DIR))
+        );
+        let file = fs::read_dir(&dir).unwrap().next().unwrap().unwrap().path();
+        let bytes = fs::read(&file).unwrap();
+        assert_eq!(bytes[0], 1);
+        assert!(bytes.len() >= 29);
+        assert!(hides(&bytes, b"marker_row"));
+        assert!(hides(&bytes, b"alpha"));
+        assert!(hides(&bytes, b"SELECT"));
+        #[cfg(unix)]
+        {
+            assert_eq!(crate::cache_seal::mode_bits(&file), 0o600);
+            assert_eq!(crate::cache_seal::mode_bits(&dir), 0o700);
+            assert_eq!(crate::cache_seal::mode_bits(dir.parent().unwrap()), 0o700);
+            assert_eq!(crate::cache_seal::mode_bits(root.path()), before);
+        }
+    }
+
+    #[test]
+    fn plaintext_result_is_rewritten_in_place() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("notes.dql"), "").unwrap();
+        let dir = cache_dir(root.path(), "notes.dql").unwrap();
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("query_result_1.json");
+        let body = r#"{"query":"SELECT marker_row;","result":{"ok":true},"success":true}"#;
+        fs::write(&path, body).unwrap();
+        let listed = list(root.path(), "notes.dql").unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].query, "SELECT marker_row;");
+        assert!(listed[0].success);
+        let bytes = fs::read(&path).unwrap();
+        assert_eq!(bytes[0], 1);
+        assert!(hides(&bytes, b"marker_row"));
+        let names: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["query_result_1.json".to_string()]);
+    }
+
+    #[test]
+    fn bad_ciphertext_is_skipped() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("notes.dql"), "").unwrap();
+        save(
+            root.path(),
+            "notes.dql",
+            "SELECT kept;",
+            json!({"ok": true}),
+            true,
+        )
+        .unwrap();
+        let dir = cache_dir(root.path(), "notes.dql").unwrap();
+        fs::write(dir.join("query_result_1.json"), vec![1u8; 40]).unwrap();
+        let listed = list(root.path(), "notes.dql").unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].query, "SELECT kept;");
+    }
+
+    fn hides(bytes: &[u8], secret: &[u8]) -> bool {
+        !bytes.windows(secret.len()).any(|window| window == secret)
     }
 }
