@@ -38,6 +38,7 @@ serde_json.workspace = true
 sha2 = "0.10.9"
 shell-words.workspace = true
 strip-ansi-escapes = "0.2.1"
+zeroize = "1.9"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

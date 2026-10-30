@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
+use zeroize::Zeroizing;
 
 const VERSION: u8 = 1;
 const NONCE_LEN: usize = 12;
@@ -151,7 +152,7 @@ fn key_file_from(xdg: Option<&str>, home: Option<&str>) -> PathBuf {
 pub(crate) fn load_or_create_file(path: &Path) -> Result<[u8; KEY_LEN], String> {
     let _guard = lock(&FILE_KEY);
     if path.is_file() {
-        let bytes = fs::read(path).map_err(|err| err.to_string())?;
+        let bytes = Zeroizing::new(fs::read(path).map_err(|err| err.to_string())?);
         return key_from_exact(&bytes, &path.display().to_string());
     }
     let key = random_key()?;
@@ -395,7 +396,7 @@ fn secret_lookup(kind: &str) -> Result<Option<[u8; KEY_LEN]>, String> {
 }
 
 fn secret_store(kind: &str, key: &[u8; KEY_LEN]) -> Result<(), String> {
-    let hex = encode_hex(key);
+    let hex = Zeroizing::new(encode_hex(key));
     let mut cmd = Command::new("secret-tool");
     cmd.args([
         "store",
@@ -454,7 +455,7 @@ fn keychain_lookup() -> Result<Option<[u8; KEY_LEN]>, String> {
 }
 
 fn keychain_store(key: &[u8; KEY_LEN]) -> Result<(), String> {
-    let hex = encode_hex(key);
+    let hex = Zeroizing::new(encode_hex(key));
     let mut cmd = Command::new("security");
     cmd.args([
         "add-generic-password",
@@ -549,7 +550,7 @@ fn load_dpapi_key_windows() -> Result<[u8; KEY_LEN], String> {
     let path = dpapi_key_path();
     if path.is_file() {
         let blob = fs::read(&path).map_err(|err| err.to_string())?;
-        let raw = dpapi_unprotect(&blob)?;
+        let raw = Zeroizing::new(dpapi_unprotect(&blob)?);
         return key_from_exact(&raw, &path.display().to_string());
     }
     let key = random_key()?;
@@ -799,9 +800,10 @@ mod tests {
     #[test]
     fn hex_round_trip_rejects_a_short_secret() {
         let key = [0xabu8; KEY_LEN];
-        assert_eq!(decode_hex(&encode_hex(&key)).unwrap(), key);
+        let hex = Zeroizing::new(encode_hex(&key));
+        assert_eq!(decode_hex(&hex).unwrap(), key);
         assert!(decode_hex("abcd").is_err());
-        assert!(decode_hex(&format!("{}\n", encode_hex(&key))).is_ok());
+        assert!(decode_hex(&format!("{}\n", *hex)).is_ok());
     }
 
     #[cfg(target_os = "linux")]
