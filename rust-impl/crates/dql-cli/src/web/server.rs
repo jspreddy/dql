@@ -53,7 +53,6 @@ struct App {
 struct Incoming {
     method: String,
     path: String,
-    query: String,
     body: Vec<u8>,
     origin: Option<String>,
     mcp_session: Option<String>,
@@ -254,7 +253,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
     let method = parts.next().unwrap_or("").to_string();
     let target = parts.next().unwrap_or("/");
     let version = parts.next().unwrap_or("HTTP/1.0");
-    let (path, query) = split_url(target);
+    let path = target.split('?').next().unwrap_or("/");
     let mut content_length = None;
     let mut connection = String::new();
     let mut origin = None;
@@ -294,7 +293,6 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
         return Ok(Some(Incoming {
             method,
             path: path.to_string(),
-            query: query.to_string(),
             body: Vec::new(),
             origin,
             mcp_session,
@@ -308,7 +306,6 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
         return Ok(Some(Incoming {
             method,
             path: path.to_string(),
-            query: query.to_string(),
             body: Vec::new(),
             origin,
             mcp_session,
@@ -324,7 +321,6 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
     Ok(Some(Incoming {
         method,
         path: path.to_string(),
-        query: query.to_string(),
         body,
         origin,
         mcp_session,
@@ -402,9 +398,8 @@ fn dispatch(app: &Arc<App>, request: &Incoming) -> Reply {
     if (path == "/api" || path.starts_with("/api/")) && !authorized(app, request) {
         return unauthorized_reply(false);
     }
-    let query = request.query.as_str();
     match request.method.as_str() {
-        "GET" => dispatch_get(app, path, query),
+        "GET" => dispatch_get(app, path),
         "POST" => dispatch_post(app, path, &request.body),
         "PUT" => dispatch_put(app, path, &request.body),
         _ => Reply::Json(404, json!({"ok": false, "error": "not found"})),
@@ -445,7 +440,7 @@ fn unauthorized_reply(mcp: bool) -> Reply {
     Reply::Json(401, json!({"ok": false, "error": "unauthorized"}))
 }
 
-fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
+fn dispatch_get(app: &App, path: &str) -> Reply {
     match path {
         "/api/config" => Reply::Json(200, config_payload(app)),
         "/api/identity" => Reply::Json(200, identity_reply(app)),
@@ -453,66 +448,11 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
             Ok(node) => Reply::Json(200, serde_json::to_value(node).unwrap_or(Value::Null)),
             Err(err) => json_error(400, &err),
         },
-        "/api/file" => {
-            let relative = query_value(query, "path");
-            match files::read_file(&app.root, &relative) {
-                Ok(file) => Reply::Json(
-                    200,
-                    json!({
-                        "path": file.path,
-                        "text": file.text,
-                        "revision": file.revision,
-                    }),
-                ),
-                Err(err) if files::is_missing(&err) => Reply::Json(
-                    404,
-                    json!({"ok": false, "error": err.to_string(), "missing": true}),
-                ),
-                Err(err) => json_error(400, &err),
-            }
-        }
         "/api/presence" => Reply::Json(200, app.presence.snapshot()),
-        "/api/query-results" => {
-            let relative = query_value(query, "path");
-            match query_cache::list(&app.root, &relative) {
-                Ok(results) => Reply::Json(200, json!({ "results": results })),
-                Err(err) => json_error(400, &err),
-            }
-        }
-        "/api/search" => {
-            let q = query_value(query, "q");
-            let mut state = lock_state(app);
-            let results = super::search::search(&mut state.session, &app.root, &q);
-            Reply::Json(200, serde_json::to_value(results).unwrap_or(Value::Null))
-        }
         "/api/table-cache" => {
             let state = lock_state(app);
             let hint = crate::meta::ls::web_table_cache_status(&state.session);
             Reply::Json(200, serde_json::to_value(hint).unwrap_or(Value::Null))
-        }
-        "/api/tables" => {
-            let pattern = query_value(query, "pattern");
-            let refresh = query_flag(query, "refresh");
-            let background = query_flag(query, "async");
-            let mut state = lock_state(app);
-            let listed =
-                crate::meta::ls::web_table_list(&mut state.session, &pattern, refresh, background);
-            match listed {
-                Ok(listed) => Reply::Json(200, serde_json::to_value(listed).unwrap_or(Value::Null)),
-                Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
-            }
-        }
-        "/api/rows" => {
-            let name = query_value(query, "table");
-            let page = query_value(query, "page")
-                .parse::<i64>()
-                .unwrap_or(0)
-                .max(0) as usize;
-            let mut state = lock_state(app);
-            match table_rows(&mut state, &name, page) {
-                Ok(payload) => Reply::Json(200, payload),
-                Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
-            }
         }
         _ => serve_static(app, path),
     }
@@ -616,6 +556,16 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
             Ok(path) => Reply::Json(200, json!({"path": path, "text": ""})),
             Err(err) => json_error(400, &err),
         },
+        "/api/file/read" => read_file_reply(app, json_str(&body, "path")),
+        "/api/query-results/list" => list_query_results_reply(app, json_str(&body, "path")),
+        "/api/search" => search_reply(app, json_str(&body, "q")),
+        "/api/tables" => tables_reply(
+            app,
+            json_str(&body, "pattern"),
+            json_bool(&body, "refresh"),
+            json_bool(&body, "async"),
+        ),
+        "/api/rows" => rows_reply(app, json_str(&body, "table"), json_page(&body)),
         "/api/mkdir" => match files::make_dir(&app.root, relative) {
             Ok(path) => Reply::Json(200, json!({"path": path, "kind": "dir"})),
             Err(err) => json_error(400, &err),
@@ -684,6 +634,68 @@ fn dispatch_put(app: &App, path: &str, raw: &[u8]) -> Reply {
             }),
         ),
         Err(err) => json_error(400, &err),
+    }
+}
+
+fn json_str<'a>(body: &'a Value, key: &str) -> &'a str {
+    body.get(key).and_then(Value::as_str).unwrap_or("")
+}
+
+fn json_bool(body: &Value, key: &str) -> bool {
+    body.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+
+fn json_page(body: &Value) -> usize {
+    body.get("page")
+        .and_then(Value::as_i64)
+        .unwrap_or(0)
+        .max(0) as usize
+}
+
+fn read_file_reply(app: &App, relative: &str) -> Reply {
+    match files::read_file(&app.root, relative) {
+        Ok(file) => Reply::Json(
+            200,
+            json!({
+                "path": file.path,
+                "text": file.text,
+                "revision": file.revision,
+            }),
+        ),
+        Err(err) if files::is_missing(&err) => Reply::Json(
+            404,
+            json!({"ok": false, "error": err.to_string(), "missing": true}),
+        ),
+        Err(err) => json_error(400, &err),
+    }
+}
+
+fn list_query_results_reply(app: &App, relative: &str) -> Reply {
+    match query_cache::list(&app.root, relative) {
+        Ok(results) => Reply::Json(200, json!({ "results": results })),
+        Err(err) => json_error(400, &err),
+    }
+}
+
+fn search_reply(app: &App, query: &str) -> Reply {
+    let mut state = lock_state(app);
+    let results = super::search::search(&mut state.session, &app.root, query);
+    Reply::Json(200, serde_json::to_value(results).unwrap_or(Value::Null))
+}
+
+fn tables_reply(app: &App, pattern: &str, refresh: bool, background: bool) -> Reply {
+    let mut state = lock_state(app);
+    match crate::meta::ls::web_table_list(&mut state.session, pattern, refresh, background) {
+        Ok(listed) => Reply::Json(200, serde_json::to_value(listed).unwrap_or(Value::Null)),
+        Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
+    }
+}
+
+fn rows_reply(app: &App, name: &str, page: usize) -> Reply {
+    let mut state = lock_state(app);
+    match table_rows(&mut state, name, page) {
+        Ok(payload) => Reply::Json(200, payload),
+        Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
     }
 }
 
@@ -1056,52 +1068,6 @@ fn lock_writer<T>(writer: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     writer.lock().unwrap_or_else(|err| err.into_inner())
 }
 
-fn split_url(url: &str) -> (&str, &str) {
-    url.split_once('?').unwrap_or((url, ""))
-}
-
-fn query_value(query: &str, key: &str) -> String {
-    for pair in query.split('&') {
-        if pair.is_empty() {
-            continue;
-        }
-        let (name, value) = pair.split_once('=').unwrap_or((pair, ""));
-        if percent_decode(name) == key {
-            return percent_decode(value);
-        }
-    }
-    String::new()
-}
-
-fn query_flag(query: &str, key: &str) -> bool {
-    matches!(
-        query_value(query, key).trim().to_ascii_lowercase().as_str(),
-        "1" | "true" | "yes"
-    )
-}
-
-fn percent_decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        match bytes[index] {
-            b'+' => out.push(b' '),
-            b'%' if index + 2 < bytes.len() => {
-                if let Ok(value) = u8::from_str_radix(&text[index + 1..index + 3], 16) {
-                    out.push(value);
-                    index += 3;
-                    continue;
-                }
-                out.push(b'%');
-            }
-            byte => out.push(byte),
-        }
-        index += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
 fn is_disconnect(err: &io::Error) -> bool {
     matches!(
         err.kind(),
@@ -1301,7 +1267,12 @@ mod tests {
         );
         assert!(created.contains("queries/from-mcp.dql"), "{created}");
         assert!(created.contains("\"isError\":false"), "{created}");
-        let file = http(addr, "GET", "/api/file?path=queries/from-mcp.dql", "");
+        let file = http(
+            addr,
+            "POST",
+            "/api/file/read",
+            r#"{"path":"queries/from-mcp.dql"}"#,
+        );
         assert!(file.contains("SELECT 1"), "{file}");
 
         let script = "CREATE TABLE shelf (id STRING HASH KEY);";
@@ -1482,7 +1453,7 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         let created = http(addr, "POST", "/api/file", r#"{"path":"notes.dql"}"#);
         assert!(created.contains("notes.dql"), "{created}");
 
-        let read = http(addr, "GET", "/api/file?path=notes.dql", "");
+        let read = http(addr, "POST", "/api/file/read", r#"{"path":"notes.dql"}"#);
         let revision = json_string_field(&read, "revision");
         let wrote = http(
             addr,
@@ -1491,7 +1462,7 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             &format!(r#"{{"path":"notes.dql","text":"from-mcp\n","base":"{revision}"}}"#),
         );
         assert!(wrote.contains("HTTP/1.1 200"), "{wrote}");
-        let again = http(addr, "GET", "/api/file?path=notes.dql", "");
+        let again = http(addr, "POST", "/api/file/read", r#"{"path":"notes.dql"}"#);
         assert!(again.contains("from-mcp"), "{again}");
         let current = json_string_field(&again, "revision");
 
@@ -1504,7 +1475,7 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         assert!(stale.contains("HTTP/1.1 409"), "{stale}");
         assert!(stale.contains("from-mcp"), "{stale}");
         assert!(stale.contains("\"conflict\":true"), "{stale}");
-        let still = http(addr, "GET", "/api/file?path=notes.dql", "");
+        let still = http(addr, "POST", "/api/file/read", r#"{"path":"notes.dql"}"#);
         assert!(still.contains("from-mcp"), "{still}");
         assert!(!still.contains("web-old"), "{still}");
         assert_eq!(json_string_field(&still, "revision"), current);

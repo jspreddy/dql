@@ -18,7 +18,7 @@ These stay unchanged. No work items.
 
 ## To-do: deviation 7 uses POST JSON
 
-Status: not started. This is the only change to make.
+Status: done. The five reads are HTTP POST with a JSON body. The other seven deviations stay accepted and unchanged.
 
 Five reads put filters in the URL as form-encoded query strings. Each one becomes an HTTP POST. The body is one JSON object, `Content-Type: application/json`, sent through the existing `api()` helper as `{ method: "POST", body: { ... } }`. They do not stay GET. The response stays the JSON document the GET handler already returns. No query string. `refresh` and `async` become booleans (`true` only where the URL used to send `1`). `page` becomes a number. The other fields stay strings.
 
