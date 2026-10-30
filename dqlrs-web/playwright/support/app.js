@@ -60,7 +60,7 @@ async function waitForServer(baseURL, child, log) {
       throw new Error(`server exited ${child.exitCode}\n${log()}`);
     }
     try {
-      const response = await fetch(`${baseURL}/api/config`);
+      const response = await fetch(`${baseURL}/`);
       if (response.ok) return;
     } catch {
       /* retry until the port accepts connections */

@@ -60,16 +60,19 @@ pub fn parse_bind(spec: &str) -> Result<SocketAddr, BindError> {
 
 pub fn run(session: &mut Session, addr: SocketAddr) -> io::Result<()> {
     let listener = TcpListener::bind(addr)?;
-    serve_listener(session, listener)
-}
-
-fn serve_listener(session: &mut Session, listener: TcpListener) -> io::Result<()> {
     let local = listener.local_addr()?;
+    let token = crate::api_token::mint()?;
     {
         let mut stderr = io::stderr();
         writeln!(stderr, "dqlrs serve listen {local}")?;
+        writeln!(stderr, "{}", crate::api_token::stderr_line(&token))?;
         stderr.flush()?;
     }
+    serve_listener(session, listener, &token)
+}
+
+fn serve_listener(session: &mut Session, listener: TcpListener, token: &str) -> io::Result<()> {
+    let local = listener.local_addr()?;
 
     let busy = Arc::new(AtomicBool::new(false));
     let shutdown = Arc::new(AtomicBool::new(false));
@@ -106,7 +109,7 @@ fn serve_listener(session: &mut Session, listener: TcpListener) -> io::Result<()
         let Ok(stream) = rx.recv() else {
             break;
         };
-        let control = serve_client(session, stream).unwrap_or(Control::Disconnect);
+        let control = serve_client(session, stream, token).unwrap_or(Control::Disconnect);
         busy.store(false, Ordering::SeqCst);
         if matches!(control, Control::Shutdown) {
             break;
@@ -119,10 +122,10 @@ fn serve_listener(session: &mut Session, listener: TcpListener) -> io::Result<()
     Ok(())
 }
 
-fn serve_client(session: &mut Session, stream: TcpStream) -> io::Result<Control> {
+fn serve_client(session: &mut Session, stream: TcpStream, token: &str) -> io::Result<Control> {
     let _ = stream.set_nodelay(true);
     let reader = BufReader::new(stream.try_clone()?);
-    run_framed(reader, stream, session)
+    run_framed(reader, stream, session, Some(token))
 }
 
 #[cfg(test)]
@@ -225,13 +228,13 @@ mod tests {
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
     }
 
-    fn reconnect(addr: SocketAddr) -> TcpStream {
+    fn reconnect(addr: SocketAddr, token: &str) -> TcpStream {
         use std::io::Write;
         use std::time::Duration;
         for _ in 0..50 {
             let mut stream = wait_connect(addr);
             let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-            if writeln!(stream, r#"{{"op":"ping"}}"#).is_err() {
+            if writeln!(stream, r#"{{"op":"ping","token":"{token}"}}"#).is_err() {
                 continue;
             }
             if stream.flush().is_err() {
@@ -255,13 +258,15 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
 
+        let token = crate::api_token::mint().unwrap();
+        let server_token = token.clone();
         let handle = thread::spawn(move || {
             let mut session = crate::session::Session::new_memory_headless("us-west-1");
-            serve_listener(&mut session, listener).unwrap();
+            serve_listener(&mut session, listener, &server_token).unwrap();
         });
 
         let mut client = wait_connect(addr);
-        writeln!(client, r#"{{"id":"1","op":"ping"}}"#).unwrap();
+        writeln!(client, r#"{{"id":"1","op":"ping","token":"{token}"}}"#).unwrap();
         client.flush().unwrap();
         let ping = read_json_line(&mut client);
         assert_eq!(ping["ok"], true);
@@ -297,9 +302,11 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
 
+        let token = crate::api_token::mint().unwrap();
+        let server_token = token.clone();
         let handle = thread::spawn(move || {
             let mut session = crate::session::Session::new_memory_headless("us-west-1");
-            serve_listener(&mut session, listener).unwrap();
+            serve_listener(&mut session, listener, &server_token).unwrap();
         });
 
         let mut client = wait_connect(addr);
@@ -308,7 +315,7 @@ mod tests {
             .unwrap();
         writeln!(
             client,
-            r#"{{"op":"exec","dql":"CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a');"}}"#
+            r#"{{"op":"exec","token":"{token}","dql":"CREATE TABLE t (id STRING HASH KEY); INSERT INTO t (id) VALUES ('a');"}}"#
         )
         .unwrap();
         client.flush().unwrap();
@@ -316,7 +323,7 @@ mod tests {
         assert_eq!(created["ok"], true);
         drop(client);
 
-        let mut client = reconnect(addr);
+        let mut client = reconnect(addr, &token);
         writeln!(
             client,
             r#"{{"op":"exec","dql":"SELECT * FROM t WHERE id = 'a';"}}"#

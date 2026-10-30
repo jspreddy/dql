@@ -17,6 +17,7 @@ use dql_parser::parse_statement;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::cache_seal;
 use crate::session::RuntimeEngine;
 
 #[derive(Clone)]
@@ -53,7 +54,9 @@ struct DefinitionFile {
 
 impl DiskTableCache {
     pub fn open(key: &str, endpoint: CacheEndpoint) -> Arc<Self> {
-        Self::open_at(cache_root().join(sha256_hex(key)), endpoint)
+        let root = cache_root();
+        let _ = cache_seal::ensure_owner_dir(&root);
+        Self::open_at(root.join(sha256_hex(key)), endpoint)
     }
 
     pub fn open_at(dir: PathBuf, endpoint: CacheEndpoint) -> Arc<Self> {
@@ -236,7 +239,8 @@ impl TableCacheStore for DiskTableCache {
 
     fn get_names(&self) -> Option<CachedNameList> {
         let _guard = self.lock.lock().ok()?;
-        let text = fs::read_to_string(self.dir.join("list.json")).ok()?;
+        self.restrict_cache_dirs();
+        let text = read_cache_text(&self.dir.join("list.json"))?;
         let file: NameFile = serde_json::from_str(&text).ok()?;
         Some(CachedNameList {
             saved_at_ms: file.saved_at_ms,
@@ -250,13 +254,13 @@ impl TableCacheStore for DiskTableCache {
         if !self.writes_allowed() {
             return saved_at_ms;
         }
-        if fs::create_dir_all(&self.dir).is_ok() {
+        if cache_seal::ensure_owner_dir(&self.dir).is_ok() {
             let file = NameFile {
                 saved_at_ms,
                 names: names.to_vec(),
             };
             if let Ok(text) = serde_json::to_string(&file) {
-                let _ = fs::write(self.dir.join("list.json"), text);
+                let _ = cache_seal::write_sealed(&self.dir.join("list.json"), text.as_bytes());
             }
         }
         self.bump();
@@ -271,7 +275,8 @@ impl TableCacheStore for DiskTableCache {
 
     fn get_definition(&self, name: &str) -> Option<CachedDefinition> {
         let _guard = self.lock.lock().ok()?;
-        let text = fs::read_to_string(self.definition_path(name)).ok()?;
+        self.restrict_cache_dirs();
+        let text = read_cache_text(&self.definition_path(name))?;
         let file: DefinitionFile = serde_json::from_str(&text).ok()?;
         let mut meta = meta_from_schema(&file.schema)?;
         meta.status = status_from_label(&file.status);
@@ -288,14 +293,17 @@ impl TableCacheStore for DiskTableCache {
             return saved_at_ms;
         }
         let dir = self.dir.join("definitions");
-        if fs::create_dir_all(&dir).is_ok() {
+        if cache_seal::ensure_owner_dir(&self.dir).is_ok()
+            && cache_seal::ensure_owner_dir(&dir).is_ok()
+        {
             let file = DefinitionFile {
                 saved_at_ms,
                 status: status_label(meta.status).to_string(),
                 schema: meta.schema_dql(),
             };
             if let Ok(text) = serde_json::to_string(&file) {
-                let _ = fs::write(self.definition_path(name_of(meta)), text);
+                let _ =
+                    cache_seal::write_sealed(&self.definition_path(name_of(meta)), text.as_bytes());
             }
         }
         self.bump();
@@ -339,6 +347,7 @@ impl TableCacheStore for DiskTableCache {
         let Ok(_guard) = self.lock.lock() else {
             return Vec::new();
         };
+        self.restrict_cache_dirs();
         let dir = self.dir.join("definitions");
         let Ok(entries) = fs::read_dir(&dir) else {
             return Vec::new();
@@ -349,7 +358,7 @@ impl TableCacheStore for DiskTableCache {
             if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
                 continue;
             }
-            let Ok(text) = fs::read_to_string(&path) else {
+            let Some(text) = read_cache_text(&path) else {
                 continue;
             };
             let Ok(file) = serde_json::from_str::<DefinitionFile>(&text) else {
@@ -383,13 +392,33 @@ impl DiskTableCache {
             .join("definitions")
             .join(format!("{}.json", sha256_hex(name)))
     }
+
+    fn restrict_cache_dirs(&self) {
+        let _ = cache_seal::restrict_dir(&self.dir);
+        let _ = cache_seal::restrict_dir(&self.dir.join("definitions"));
+    }
+}
+
+fn read_cache_text(path: &std::path::Path) -> Option<String> {
+    let bytes = cache_seal::read_bytes(path)?;
+    String::from_utf8(bytes).ok()
 }
 
 fn name_of(meta: &TableMeta) -> &str {
     meta.name.as_str()
 }
 
+fn cache_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.lock().unwrap_or_else(|err| err.into_inner())
+}
+
 fn cache_root() -> PathBuf {
+    let _guard = cache_env_lock();
+    cache_root_from_env()
+}
+
+fn cache_root_from_env() -> PathBuf {
     if let Some(dir) = std::env::var_os("DQLRS_TABLE_CACHE") {
         return PathBuf::from(dir);
     }
@@ -549,5 +578,90 @@ mod tests {
         cache.refreshing.store(true, Ordering::Release);
         assert!(cache.start_load());
         assert!(cache.refreshing());
+    }
+
+    #[test]
+    fn dqlrs_table_cache_files_are_sealed_and_owner_only() {
+        let dir = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        let before = crate::cache_seal::mode_bits(dir.path());
+        let root = {
+            let _guard = cache_env_lock();
+            let previous = std::env::var_os("DQLRS_TABLE_CACHE");
+            std::env::set_var("DQLRS_TABLE_CACHE", dir.path());
+            let root = cache_root_from_env();
+            match previous {
+                Some(value) => std::env::set_var("DQLRS_TABLE_CACHE", value),
+                None => std::env::remove_var("DQLRS_TABLE_CACHE"),
+            }
+            root
+        };
+        assert_eq!(root, dir.path());
+        let cache = DiskTableCache::open_at(root.join("endpoint"), endpoint());
+        cache.put_names(&["posts".to_string()]);
+        cache.put_definition(&posts());
+        let list = root.join("endpoint").join("list.json");
+        let list_bytes = fs::read(&list).unwrap();
+        assert_eq!(list_bytes[0], 1);
+        assert!(hides(&list_bytes, b"posts"));
+        let def = cache.definition_path("posts");
+        let def_bytes = fs::read(&def).unwrap();
+        assert_eq!(def_bytes[0], 1);
+        assert!(hides(&def_bytes, b"posts"));
+        assert_eq!(cache.get_names().unwrap().names, vec!["posts".to_string()]);
+        assert_eq!(cache.get_definition("posts").unwrap().meta.hash_key, "id");
+        #[cfg(unix)]
+        {
+            assert_eq!(crate::cache_seal::mode_bits(&list), 0o600);
+            assert_eq!(crate::cache_seal::mode_bits(&def), 0o600);
+            assert_eq!(crate::cache_seal::mode_bits(list.parent().unwrap()), 0o700);
+            assert_eq!(crate::cache_seal::mode_bits(def.parent().unwrap()), 0o700);
+            assert_eq!(crate::cache_seal::mode_bits(dir.path()), before);
+        }
+    }
+
+    #[test]
+    fn plaintext_cache_files_are_rewritten_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskTableCache::open_at(dir.path().join("cache"), endpoint());
+        let list = dir.path().join("cache").join("list.json");
+        fs::create_dir_all(list.parent().unwrap()).unwrap();
+        fs::write(&list, r#"{"saved_at_ms":9,"names":["posts"]}"#).unwrap();
+        let def = cache.definition_path("posts");
+        fs::create_dir_all(def.parent().unwrap()).unwrap();
+        let body = serde_json::json!({
+            "saved_at_ms": 9,
+            "status": "UPDATING",
+            "schema": posts().schema_dql(),
+        });
+        fs::write(&def, serde_json::to_vec(&body).unwrap()).unwrap();
+
+        assert_eq!(cache.get_names().unwrap().names, vec!["posts".to_string()]);
+        assert_eq!(cache.definition_names(), vec!["posts".to_string()]);
+        assert_eq!(
+            cache.get_definition("posts").unwrap().meta.status,
+            TableStatus::Updating
+        );
+        for path in [list, def] {
+            let bytes = fs::read(&path).unwrap();
+            assert_eq!(bytes[0], 1);
+            assert!(hides(&bytes, b"posts"));
+        }
+    }
+
+    #[test]
+    fn unreadable_ciphertext_is_a_cache_miss() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = DiskTableCache::open_at(dir.path().join("cache"), endpoint());
+        cache.put_names(&["posts".to_string()]);
+        let list = dir.path().join("cache").join("list.json");
+        let mut bytes = fs::read(&list).unwrap();
+        bytes[20] ^= 0xff;
+        fs::write(&list, bytes).unwrap();
+        assert!(cache.get_names().is_none());
+    }
+
+    fn hides(bytes: &[u8], secret: &[u8]) -> bool {
+        !bytes.windows(secret.len()).any(|window| window == secret)
     }
 }

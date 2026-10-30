@@ -24,13 +24,23 @@ pub fn run(session: &mut Session, bind: Option<SocketAddr>) -> io::Result<()> {
 }
 
 /// Shared JSON-lines loop for stdio and TCP. One request at a time.
-pub fn run_framed<R, W>(mut reader: R, writer: W, session: &mut Session) -> io::Result<Control>
+///
+/// `token` is `None` for stdio, where the parent process owns the pipes.
+/// TCP passes the listener's token. The first accepted line marks the
+/// connection; later lines may omit `token`.
+pub fn run_framed<R, W>(
+    mut reader: R,
+    writer: W,
+    session: &mut Session,
+    token: Option<&str>,
+) -> io::Result<Control>
 where
     R: BufRead,
     W: Write + Send + 'static,
 {
     let writer = Arc::new(Mutex::new(writer));
     let mut line = String::new();
+    let mut authed = false;
     loop {
         line.clear();
         match reader.read_line(&mut line) {
@@ -50,7 +60,7 @@ where
             continue;
         }
 
-        match handle_line(session, line.trim_end(), &writer)? {
+        match handle_line(session, line.trim_end(), &writer, token, &mut authed)? {
             LineResult::Reply => {}
             LineResult::Shutdown => return Ok(Control::Shutdown),
         }
@@ -66,24 +76,42 @@ fn handle_line<W: Write + Send + 'static>(
     session: &mut Session,
     line: &str,
     writer: &Arc<Mutex<W>>,
+    token: Option<&str>,
+    authed: &mut bool,
 ) -> io::Result<LineResult> {
     let request = match parse_request_line(line) {
         Ok(request) => request,
         Err(message) => {
-            write_envelope(
-                &mut *lock_writer(writer)?,
-                &ServeEnvelope::err("protocol", message),
-            )?;
+            let envelope = if token.is_some() && !*authed {
+                ServeEnvelope::err("unauthorized", "unauthorized")
+            } else {
+                ServeEnvelope::err("protocol", message)
+            };
+            write_envelope(&mut *lock_writer(writer)?, &envelope)?;
             return Ok(LineResult::Reply);
         }
     };
     let id = request.id.clone();
+    if !accept_token(token, authed, request.token.as_deref()) {
+        write_envelope(
+            &mut *lock_writer(writer)?,
+            &ServeEnvelope::err("unauthorized", "unauthorized").with_id(id),
+        )?;
+        return Ok(LineResult::Reply);
+    }
     let op = request
         .op
         .as_deref()
         .unwrap_or("")
         .trim()
         .to_ascii_lowercase();
+    if token.is_some() && op == "auth" {
+        write_envelope(
+            &mut *lock_writer(writer)?,
+            &ServeEnvelope::success("none").with_id(id),
+        )?;
+        return Ok(LineResult::Reply);
+    }
     match op.as_str() {
         "ping" => {
             write_envelope(
@@ -139,6 +167,22 @@ fn handle_line<W: Write + Send + 'static>(
     }
 }
 
+/// `None` means stdio: every line is accepted. A presented token must match.
+/// Once a line has matched, later lines may omit the field.
+fn accept_token(expected: Option<&str>, authed: &mut bool, presented: Option<&str>) -> bool {
+    let Some(expected) = expected else {
+        return true;
+    };
+    if let Some(presented) = presented {
+        if crate::api_token::matches(expected, presented) {
+            *authed = true;
+            return true;
+        }
+        return false;
+    }
+    *authed
+}
+
 fn lock_writer<W: Write>(writer: &Arc<Mutex<W>>) -> io::Result<std::sync::MutexGuard<'_, W>> {
     writer
         .lock()
@@ -172,9 +216,17 @@ mod tests {
     use std::io::Cursor;
 
     fn exchange(session: &mut Session, lines: &[&str]) -> (Vec<serde_json::Value>, Control) {
+        exchange_token(session, lines, None)
+    }
+
+    fn exchange_token(
+        session: &mut Session,
+        lines: &[&str],
+        token: Option<&str>,
+    ) -> (Vec<serde_json::Value>, Control) {
         let input = lines.join("\n") + "\n";
         let buf = Capture::default();
-        let control = run_framed(Cursor::new(input), buf.clone(), session).unwrap();
+        let control = run_framed(Cursor::new(input), buf.clone(), session, token).unwrap();
         let replies = buf
             .text()
             .lines()
@@ -309,7 +361,7 @@ mod tests {
             serde_json::json!({"id":"bulk","op":"exec","dql":sql})
         );
         let buf = Capture::default();
-        run_framed(Cursor::new(input), buf.clone(), &mut session).unwrap();
+        run_framed(Cursor::new(input), buf.clone(), &mut session, None).unwrap();
         let lines: Vec<serde_json::Value> = buf
             .text()
             .lines()
@@ -332,5 +384,76 @@ mod tests {
             .unwrap();
         assert_eq!(envelope["kind"], "affected");
         assert_eq!(envelope["affected"], 30);
+    }
+
+    #[test]
+    fn stdio_still_runs_without_a_token() {
+        let mut session = Session::new_memory_headless("us-west-1");
+        let (replies, _) = exchange(
+            &mut session,
+            &[r#"{"op":"exec","dql":"CREATE TABLE t (id STRING HASH KEY);"}"#],
+        );
+        assert_eq!(replies[0]["ok"], true);
+        assert_eq!(replies[0]["kind"], "status");
+    }
+
+    #[test]
+    fn tcp_token_blocks_exec_and_shutdown_until_it_matches() {
+        let token = crate::api_token::mint().unwrap();
+        let mut session = Session::new_memory_headless("us-west-1");
+        let create = serde_json::json!({
+            "op": "exec",
+            "dql": "CREATE TABLE t (id STRING HASH KEY);",
+            "token": token,
+        })
+        .to_string();
+        let (replies, control) = exchange_token(
+            &mut session,
+            &[
+                r#"{"op":"exec","dql":"CREATE TABLE nope (id STRING HASH KEY);"}"#,
+                r#"{"op":"shutdown","token":"wrong"}"#,
+                "not json",
+                &create,
+                r#"{"op":"exec","dql":"INSERT INTO t (id) VALUES ('a');"}"#,
+            ],
+            Some(&token),
+        );
+        assert_eq!(control, Control::Disconnect);
+        assert_eq!(replies[0]["error"]["code"], "unauthorized");
+        assert_eq!(replies[1]["error"]["code"], "unauthorized");
+        assert_eq!(replies[2]["error"]["code"], "unauthorized");
+        assert_eq!(replies[3]["ok"], true);
+        assert_eq!(replies[3]["kind"], "status");
+        assert_eq!(replies[4]["ok"], true);
+        assert_eq!(replies[4]["kind"], "affected");
+        let (listed, _) = exchange_token(
+            &mut session,
+            &[r#"{"op":"exec","dql":"SELECT * FROM t WHERE id = 'a';"}"#],
+            Some(&token),
+        );
+        assert_eq!(listed[0]["error"]["code"], "unauthorized");
+    }
+
+    #[test]
+    fn tcp_auth_line_covers_the_rest_of_the_connection() {
+        let token = crate::api_token::mint().unwrap();
+        let mut session = Session::new_memory_headless("us-west-1");
+        let auth = serde_json::json!({"op": "auth", "token": token}).to_string();
+        let (replies, control) = exchange_token(
+            &mut session,
+            &[
+                &auth,
+                r#"{"id":"p","op":"ping"}"#,
+                r#"{"op":"exec","dql":"CREATE TABLE t (id STRING HASH KEY);"}"#,
+                r#"{"op":"shutdown"}"#,
+            ],
+            Some(&token),
+        );
+        assert_eq!(control, Control::Shutdown);
+        assert_eq!(replies[0]["ok"], true);
+        assert_eq!(replies[0]["kind"], "none");
+        assert_eq!(replies[1]["id"], "p");
+        assert_eq!(replies[2]["ok"], true);
+        assert_eq!(replies[3]["ok"], true);
     }
 }

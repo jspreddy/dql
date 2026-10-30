@@ -195,8 +195,18 @@ def spawn_env(home: Path) -> dict[str, str]:
     env["COLUMNS"] = "120"
     env["LINES"] = "40"
     env.pop("DQL_BACKEND", None)
-    (home / ".config").mkdir(parents=True, exist_ok=True)
+    config = home / ".config"
+    config.mkdir(parents=True, exist_ok=True)
     (home / ".dql").mkdir(parents=True, exist_ok=True)
+    # Isolated HOME has no login keychain. A file key keeps `security` from
+    # opening the "keychain cannot be found" dialog.
+    key_dir = config / "dqlrs"
+    key_dir.mkdir(parents=True, exist_ok=True)
+    key_path = key_dir / "cache.key"
+    if not key_path.is_file():
+        key_path.write_bytes(os.urandom(32))
+        key_path.chmod(0o600)
+    env["DQLRS_CACHE_KEY_FILE"] = str(key_path)
     return env
 
 

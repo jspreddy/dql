@@ -305,9 +305,10 @@ pub fn web_mcp_hint(listen: &str) -> String {
 }
 
 /// Cursor and Claude snippets for the HTTP MCP endpoint.
-pub fn http_client_config(url: &str) -> String {
-    let cursor = pretty_servers(json!({ "url": url }));
-    let claude = pretty_servers(json!({ "type": "http", "url": url }));
+pub fn http_client_config(url: &str, token: &str) -> String {
+    let headers = json!({ "Authorization": format!("Bearer {token}") });
+    let cursor = pretty_servers(json!({ "url": url, "headers": headers.clone() }));
+    let claude = pretty_servers(json!({ "type": "http", "url": url, "headers": headers }));
     format!("Cursor (.cursor/mcp.json):\n{cursor}\n\nClaude (.mcp.json):\n{claude}")
 }
 
@@ -1087,10 +1088,11 @@ DROP TABLE other;
 
     #[test]
     fn http_config_is_ready_for_cursor_and_claude() {
-        let text = http_client_config("http://127.0.0.1:9000/mcp");
+        let text = http_client_config("http://127.0.0.1:9000/mcp", "abc123");
         assert!(text.contains("Cursor (.cursor/mcp.json)"));
         assert!(text.contains("Claude (.mcp.json)"));
         assert!(text.contains("\"url\": \"http://127.0.0.1:9000/mcp\""));
+        assert!(text.contains("\"Authorization\": \"Bearer abc123\""));
         assert!(text.contains("\"type\": \"http\""));
         let cursor = text.split("Claude").next().unwrap();
         assert!(!cursor.contains("\"type\""));
