@@ -98,7 +98,7 @@ Eight interactions are not one JSON document.
   - `GET /api/rows?table=&page=`
 - Actual format: request targets use `application/x-www-form-urlencoded` query encoding (`encodeURIComponent` / `URLSearchParams`). Responses for these routes are JSON. `+` and `%HH` are decoded in `query_value` / `percent_decode`.
 - Why: the handlers are GET and take filters in the URL. POST and PUT bodies on the other routes are JSON objects.
-- Suggested fix: accept the same fields as a JSON body so the interaction is JSON on both sides. Either switch these reads to POST (`{"path":"..."}`, `{"q":"..."}`, `{"pattern":"...","refresh":true,"async":true}`, `{"table":"...","page":0}`) or accept a single query parameter `?json=` whose value is a JSON object. Prefer POST bodies matching the existing `api()` helper. Keep returning one JSON document.
+- Suggested fix: see [To-do: deviation 7 uses POST JSON](#to-do-deviation-7-uses-post-json). Each of these reads becomes an HTTP POST with a JSON body. They do not stay GET.
 
 ### 8. Non-JSON request bodies are treated as `{}`
 
@@ -106,6 +106,47 @@ Eight interactions are not one JSON document.
 - Actual format: an empty body, a body over the limit, a JSON array or string, or invalid JSON becomes an empty object. The handler then runs with missing fields (`dql` becomes `""`, `path` becomes `""`, and so on) and often responds with a normal JSON success or a later JSON error. The failure is not reported as invalid JSON.
 - Why: `parse_json` matches only `Value::Object` and maps everything else to `Value::Object(Default::default())`.
 - Suggested fix: on a non-empty body that is not a JSON object, return 400 `{"ok":false,"error":"invalid json"}` with `Content-Type: application/json`. Do not run the handler. Empty body may stay `{}` only for routes that allow it.
+
+## To-do: deviation 7 uses POST JSON
+
+Status: not started. Do not leave these reads as GET with a query string.
+
+Each converted call uses the HTTP POST method. The body is one JSON object, `Content-Type: application/json`, sent through the existing `api()` helper as `{ method: "POST", body: { ... } }`. The response stays the JSON document the GET handler already returns. No query string. `refresh` and `async` become booleans (`true` only where the URL used to send `1`). `page` becomes a number. The other fields stay strings.
+
+`POST /api/file` already creates a file, and `POST /api/query-results` already saves a result. Those write calls stay as they are. The two reads that share those paths move to a new POST path so a read cannot create or save.
+
+| Read | Method and path | JSON body | Replaces |
+| --- | --- | --- | --- |
+| File contents | `POST /api/file/read` | `{"path":"<workspace-relative path>"}` | `GET /api/file?path=` |
+| Saved results | `POST /api/query-results/list` | `{"path":"<workspace-relative path>"}` | `GET /api/query-results?path=` |
+| Title search | `POST /api/search` | `{"q":"<trimmed search text>"}` | `GET /api/search?q=` |
+| Table list | `POST /api/tables` | `{"pattern":"<trimmed filter or empty string>","refresh":false,"async":false}` | `GET /api/tables?pattern=&refresh=&async=` |
+| Table rows | `POST /api/rows` | `{"table":"<table name>","page":0}` | `GET /api/rows?table=&page=` |
+
+`pattern`, `refresh`, and `async` are always present on the table-list body. `refresh` is `true` only for a forced refresh. `async` is `true` only for a background load. The catalog load that currently calls `GET /api/tables` with no query posts `{"pattern":"","refresh":false,"async":false}`.
+
+Server work in `rust-impl/crates/dql-cli/src/web/server.rs`:
+
+- Handle the five POSTs in `dispatch_post` by reading the JSON fields above and calling the same helpers the GET branches use now (`files::read_file`, `query_cache::list`, `search::search`, `web_table_list`, `table_rows`).
+- Remove those five reads from `dispatch_get`. A leftover GET falls through as it does today (static 404 JSON for unknown `/api` paths, or the static file handler). Do not keep a GET query form beside the POST.
+- Leave `POST /api/file` (create), `PUT /api/file` (save), `POST /api/query-results` (save one result), and `POST /api/query-results/clear` unchanged.
+
+Front-end call sites in `dqlrs-web/static/app.js` to switch to POST:
+
+- `openFile` reads a file with `path`.
+- `watchOpenFile` re-reads the open file with `state.disk.path` about once a second.
+- `folderDocuments` reads each file under a folder with `file.path`.
+- `loadFileResults` loads history with `path`.
+- `runTitleSearch` sends `q`.
+- `loadTables` sends `pattern`, `refresh`, and `async`.
+- `ensureCatalog` loads tables with an empty pattern and both flags false.
+- `loadRows` sends `table` and `page`.
+
+Tests that still assume GET query strings, to update in the same change:
+
+- `dqlrs-web/playwright/tests/tables.spec.js` waits on `/api/tables` and reads `refresh`, `async`, and `pattern` from the URL. Assert POST and the JSON body instead.
+- `rust-impl/crates/dql-cli/src/web/server.rs` GETs `/api/file?path=...` in the file-read tests. POST `/api/file/read` with `{"path":"..."}`.
+- `dqlrs-web/playwright/tests/file-watch.spec.js` intercepts `/api/file` and delays PUT. Point reads at `/api/file/read` so that intercept still only delays saves.
 
 ## Not counted
 
