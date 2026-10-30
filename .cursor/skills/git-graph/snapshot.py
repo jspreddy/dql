@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import shutil
 import subprocess
@@ -83,23 +82,9 @@ def has_recent_commits(repo: Path, name: str, since: str) -> bool:
     return proc.returncode == 0 and bool(proc.stdout.strip())
 
 
-def open_branch_refs(repo: Path) -> set[str]:
-    proc = subprocess.run(
-        ["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "headRefName"],
-        cwd=repo,
-        text=True,
-        capture_output=True,
-    )
-    if proc.returncode != 0:
-        sys.exit(proc.stderr.strip() or proc.stdout.strip() or "gh pr list failed")
-    names = {item.get("headRefName", "") for item in json.loads(proc.stdout)}
-    return {f"origin/{name}" for name in names if name}
-
-
 def branches_on_top(repo: Path, since: str) -> list[str]:
     if git(repo, "rev-parse", "--verify", "--quiet", BASE, check=False).returncode != 0:
         sys.exit(f"{BASE} does not exist after fetch")
-    open_refs = open_branch_refs(repo)
     listed = git(
         repo,
         "for-each-ref",
@@ -109,12 +94,7 @@ def branches_on_top(repo: Path, since: str) -> list[str]:
     ).stdout.splitlines()
     selected = [BASE]
     for name in listed:
-        if (
-            name
-            and name in open_refs
-            and branch_on_top(repo, name)
-            and has_recent_commits(repo, name, since)
-        ):
+        if name and branch_on_top(repo, name) and has_recent_commits(repo, name, since):
             selected.append(name)
     return selected
 
@@ -137,17 +117,58 @@ def filter_svg_by_commits(svg: str, allowed: set[str]) -> str:
     return _COMMIT_BLOCK.sub(repl, svg)
 
 
+# git-graph draws 12px monospace. Branch labels sit in a translated group.
+_CHAR_WIDTH = 7.8
+_SVG_TOKEN = re.compile(
+    r'<g\b(?P<gattrs>[^>]*)>|</g>|<text\b(?P<tattrs>[^>]*)>\s*(?P<body>.*?)\s*</text>|<circle\b(?P<cattrs>[^>]*?)/?>',
+    re.S,
+)
+
+
 def fit_viewbox(svg: str) -> str:
-    ys = [float(value) for value in re.findall(r'\bcy="([0-9.]+)"', svg)]
-    ys.extend(float(value) for value in re.findall(r'<text[^>]*\sy="([0-9.]+)"', svg))
-    xs = [float(value) for value in re.findall(r'\bcx="([0-9.]+)"', svg)]
-    xs.extend(float(value) for value in re.findall(r'<text[^>]*\sx="([0-9.]+)"', svg))
-    if not ys or not xs:
+    xs: list[float] = []
+    ys: list[float] = []
+    stack = [(0.0, 0.0)]
+    for match in _SVG_TOKEN.finditer(svg):
+        if match.group(0) == "</g>":
+            if len(stack) > 1:
+                stack.pop()
+            continue
+        if match.group("gattrs") is not None:
+            found = re.search(
+                r'transform="translate\(([-\d.]+),\s*([-\d.]+)\)"',
+                match.group("gattrs"),
+            )
+            parent_x, parent_y = stack[-1]
+            if found:
+                stack.append((parent_x + float(found.group(1)), parent_y + float(found.group(2))))
+            else:
+                stack.append((parent_x, parent_y))
+            continue
+        origin_x, origin_y = stack[-1]
+        if match.group("cattrs") is not None:
+            cx = re.search(r'\bcx="(-?[0-9.]+)"', match.group("cattrs"))
+            cy = re.search(r'\bcy="(-?[0-9.]+)"', match.group("cattrs"))
+            if cx and cy:
+                xs.append(origin_x + float(cx.group(1)))
+                ys.append(origin_y + float(cy.group(1)))
+            continue
+        attrs = match.group("tattrs") or ""
+        body = " ".join((match.group("body") or "").split())
+        x_match = re.search(r'\bx="(-?[0-9.]+)"', attrs)
+        y_match = re.search(r'\by="(-?[0-9.]+)"', attrs)
+        if x_match is None or y_match is None or not body:
+            continue
+        x = origin_x + float(x_match.group(1))
+        y = origin_y + float(y_match.group(1))
+        xs.extend((x, x + len(body) * _CHAR_WIDTH))
+        ys.extend((y - 12.0, y + 4.0))
+    if not xs or not ys:
         return svg
-    min_x = min(xs) - 240.0
-    max_x = max(xs) + 420.0
-    min_y = min(ys) - 20.0
-    max_y = max(ys) + 20.0
+    min_x = min(xs) - 16.0
+    max_x = max(xs) + 16.0
+    min_y = min(ys) - 12.0
+    max_y = max(ys) + 12.0
     width = max_x - min_x
     height = max_y - min_y
     svg = re.sub(
