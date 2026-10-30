@@ -188,15 +188,42 @@ fn load_secret_service_key() -> Result<[u8; KEY_LEN], String> {
 }
 
 fn load_keychain_key() -> Result<[u8; KEY_LEN], String> {
-    match keychain_lookup()? {
-        Some(key) => Ok(key),
-        None => {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    if !login_keychain_present(home.as_deref()) {
+        return load_or_create_file(&default_key_file());
+    }
+    match keychain_lookup() {
+        Ok(Some(key)) => Ok(key),
+        Ok(None) => {
             let key = random_key()?;
-            keychain_store(&key)?;
+            if let Err(err) = keychain_store(&key) {
+                eprintln!(
+                    "dqlrs cache key: keychain store failed ({err}); using the file fallback"
+                );
+                return load_or_create_file(&default_key_file());
+            }
             announce("the login keychain");
             Ok(key)
         }
+        Err(err) if keychain_unavailable(&err) => {
+            eprintln!("dqlrs cache key: keychain lookup failed ({err}); using the file fallback");
+            load_or_create_file(&default_key_file())
+        }
+        Err(err) => Err(err),
     }
+}
+
+/// The login keychain is a file under `$HOME`. A test home, or any home
+/// without one, must not call `security`: that dialog blocks until timeout.
+fn login_keychain_present(home: Option<&Path>) -> bool {
+    let Some(home) = home else {
+        return false;
+    };
+    if home.as_os_str().is_empty() {
+        return false;
+    }
+    let dir = home.join("Library").join("Keychains");
+    dir.join("login.keychain-db").is_file() || dir.join("login.keychain").is_file()
 }
 
 fn load_dpapi_key() -> Result<[u8; KEY_LEN], String> {
@@ -414,7 +441,7 @@ fn secret_store(kind: &str, key: &[u8; KEY_LEN]) -> Result<(), String> {
     Err(format!("secret-tool store failed: {}", err.trim()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 fn secret_clear(kind: &str) -> Result<(), String> {
     let mut cmd = Command::new("secret-tool");
     cmd.args(["clear", "service", SECRET_SERVICE, "kind", kind]);
@@ -429,6 +456,19 @@ fn secret_clear(kind: &str) -> Result<(), String> {
 fn not_found_message(err: &str) -> bool {
     let lower = err.to_ascii_lowercase();
     lower.contains("not found") || lower.contains("no such") || lower.contains("could not be found")
+}
+
+/// A missing login keychain, not a missing password item.
+///
+/// "could not be found" is also what `security` prints for a missing item
+/// ("item could not be found in the keychain"). Treating that as an empty
+/// store makes `add-generic-password` open the keychain dialog.
+fn keychain_unavailable(err: &str) -> bool {
+    let lower = err.to_ascii_lowercase();
+    lower.contains("timed out")
+        || lower.contains("keychain could not be found")
+        || lower.contains("no such keychain")
+        || lower.contains("default keychain")
 }
 
 fn keychain_lookup() -> Result<Option<[u8; KEY_LEN]>, String> {
@@ -448,6 +488,9 @@ fn keychain_lookup() -> Result<Option<[u8; KEY_LEN]>, String> {
     }
     let err = String::from_utf8_lossy(&output.stderr);
     let err = err.trim();
+    if keychain_unavailable(err) {
+        return Err(format!("keychain lookup failed: {err}"));
+    }
     if output.status.code() == Some(44) || not_found_message(err) {
         return Ok(None);
     }
@@ -779,6 +822,29 @@ mod tests {
             key_file_from(None, None),
             PathBuf::from(".config/dqlrs/cache.key")
         );
+    }
+
+    #[test]
+    fn a_home_without_a_login_keychain_is_not_the_keychain_store() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!login_keychain_present(None));
+        assert!(!login_keychain_present(Some(dir.path())));
+        assert!(!login_keychain_present(Some(Path::new(""))));
+        let keychain = dir.path().join("Library").join("Keychains");
+        fs::create_dir_all(&keychain).unwrap();
+        fs::write(keychain.join("login.keychain-db"), b"").unwrap();
+        assert!(login_keychain_present(Some(dir.path())));
+    }
+
+    #[test]
+    fn a_missing_keychain_is_not_a_missing_password_item() {
+        assert!(keychain_unavailable(
+            "keychain lookup failed: The specified keychain could not be found."
+        ));
+        assert!(keychain_unavailable("cache key store timed out"));
+        let item = "The specified item could not be found in the keychain.";
+        assert!(!keychain_unavailable(item));
+        assert!(not_found_message(item));
     }
 
     #[test]
