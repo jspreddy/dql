@@ -646,10 +646,7 @@ fn json_bool(body: &Value, key: &str) -> bool {
 }
 
 fn json_page(body: &Value) -> usize {
-    body.get("page")
-        .and_then(Value::as_i64)
-        .unwrap_or(0)
-        .max(0) as usize
+    body.get("page").and_then(Value::as_i64).unwrap_or(0).max(0) as usize
 }
 
 fn read_file_reply(app: &App, relative: &str) -> Reply {
