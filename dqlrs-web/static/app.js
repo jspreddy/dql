@@ -718,7 +718,7 @@ document.addEventListener("pointerdown", (event) => {
 async function runTitleSearch(query) {
   const request = ++titleSearchRequest;
   try {
-    const payload = await api("/api/search?q=" + encodeURIComponent(query));
+    const payload = await api("/api/search", { method: "POST", body: { q: query } });
     if (request !== titleSearchRequest || titleSearch.value.trim() !== query) return;
     renderTitleSearch(payload.items || []);
   } catch (error) {
@@ -1200,7 +1200,7 @@ function nodeButton(twist, label, selected) {
 async function openFile(path) {
   try {
     await flushSave();
-    const file = await api("/api/file?path=" + encodeURIComponent(path));
+    const file = await api("/api/file/read", { method: "POST", body: { path } });
     state.fileEpoch += 1;
     state.disk = { path: file.path || path, text: file.text, revision: file.revision };
     setEditorText(file.text);
@@ -1700,7 +1700,7 @@ async function loadFileResults(path) {
     showResults([]);
     return;
   }
-  const payload = await api("/api/query-results?path=" + encodeURIComponent(path));
+  const payload = await api("/api/query-results/list", { method: "POST", body: { path } });
   if (request !== resultsRequest || path !== state.path) return;
   state.entries = payload.results || [];
   showResults(state.entries);
@@ -1909,7 +1909,7 @@ async function watchOpenFile() {
   const epoch = state.fileEpoch;
   let file;
   try {
-    file = await api("/api/file?path=" + encodeURIComponent(path));
+    file = await api("/api/file/read", { method: "POST", body: { path } });
   } catch (error) {
     if (error.payload?.missing && state.fileEpoch === epoch && state.disk?.path === path) {
       await adoptExternal(path, { missing: true, text: "", revision: "missing", path }, epoch);
@@ -2214,7 +2214,10 @@ async function ensureCatalog() {
   if (state.catalog) return state.catalog;
   if (catalogPromise) return catalogPromise;
   const request = ++catalogRequest;
-  catalogPromise = api("/api/tables")
+  catalogPromise = api("/api/tables", {
+    method: "POST",
+    body: { pattern: "", refresh: false, async: false },
+  })
     .then((payload) => {
       if (request !== catalogRequest) return state.catalog || [];
       state.catalog = payload.tables || [];
@@ -2491,7 +2494,7 @@ async function folderDocuments(path) {
   for (const file of dqlFilesUnder(folder)) {
     const text = file.path === state.path
       ? editorText()
-      : (await api("/api/file?path=" + encodeURIComponent(file.path))).text;
+      : (await api("/api/file/read", { method: "POST", body: { path: file.path } })).text;
     documents.push({
       text,
       path: file.path,
@@ -3856,10 +3859,10 @@ async function loadTables(options = {}) {
     list.replaceChildren(note("Loading…", false));
   }
   try {
-    const query = new URLSearchParams({ pattern });
-    if (refresh) query.set("refresh", "1");
-    if (background) query.set("async", "1");
-    const payload = await api("/api/tables?" + query.toString());
+    const payload = await api("/api/tables", {
+      method: "POST",
+      body: { pattern, refresh, async: background },
+    });
     if (request !== state.tablesRequest) return;
     renderCacheHint(payload.cache);
     watchCacheRefresh(payload.cache);
@@ -4153,9 +4156,10 @@ async function loadRows() {
   body.replaceChildren(note("Loading…", false));
   setBrowserSchema(null);
   try {
-    const payload = await api(
-      "/api/rows?table=" + encodeURIComponent(state.table) + "&page=" + state.page
-    );
+    const payload = await api("/api/rows", {
+      method: "POST",
+      body: { table: state.table, page: state.page },
+    });
     state.hasMore = Boolean(payload.has_more);
     const start = payload.page * payload.page_size + (payload.items.length ? 1 : 0);
     const end = payload.page * payload.page_size + payload.items.length;

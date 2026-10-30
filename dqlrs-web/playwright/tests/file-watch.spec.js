@@ -20,7 +20,12 @@ test("refreshes a clean editor when the file changes on disk", async ({ page, ap
 });
 
 test("keeps unsaved edits as a patch when the file changes on disk", async ({ page, app }, testInfo) => {
-  await page.route("**/api/file", async (route) => {
+  await page.route("**/api/file**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname.endsWith("/api/file/read")) {
+      await route.continue();
+      return;
+    }
     if (route.request().method() === "PUT") {
       await new Promise((resolve) => setTimeout(resolve, 1500));
     }
@@ -59,7 +64,12 @@ test("a second window picks up a saved edit without a patch", async ({ page, app
 test("a dirty window does not overwrite another window's save", async ({ page, app }) => {
   const other = await page.context().newPage();
   await openApp(other, app);
-  await other.route("**/api/file", async (route) => {
+  await other.route("**/api/file**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname.endsWith("/api/file/read")) {
+      await route.continue();
+      return;
+    }
     if (route.request().method() === "PUT") {
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
