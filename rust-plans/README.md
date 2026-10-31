@@ -88,6 +88,15 @@ front end, not a parity gap:
 
 Related: [`todo_unify_cli_pipelines.md`](todo_unify_cli_pipelines.md) (`-c` / REPL / serve should share one `execute_input`).
 
+## Web client
+
+Proposals for making the browser UI faster. Neither one is the recommended performance work. The page stays plain scripts served by `dqlrs --web`.
+
+| Plan | Focus |
+| --- | --- |
+| [`web-client/prd-framework.md`](web-client/prd-framework.md) | Do not rewrite `app.js` onto React, Vue, or Svelte for speed |
+| [`web-client/prd-workers.md`](web-client/prd-workers.md) | Do not move client work onto a web worker for speed |
+
 ## Security
 
 Plans for locking the on-disk caches and the local API. The query-result cache stays in the workspace. These are plans only.
