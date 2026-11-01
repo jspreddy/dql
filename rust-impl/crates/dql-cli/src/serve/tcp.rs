@@ -61,7 +61,7 @@ pub fn parse_bind(spec: &str) -> Result<SocketAddr, BindError> {
 pub fn run(session: &mut Session, addr: SocketAddr) -> io::Result<()> {
     let listener = TcpListener::bind(addr)?;
     let local = listener.local_addr()?;
-    let token = crate::api_token::mint()?;
+    let token = crate::api_token::load()?;
     {
         let mut stderr = io::stderr();
         writeln!(stderr, "dqlrs serve listen {local}")?;
@@ -258,7 +258,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
 
-        let token = crate::api_token::mint().unwrap();
+        let token = crate::api_token::load().unwrap();
         let server_token = token.clone();
         let handle = thread::spawn(move || {
             let mut session = crate::session::Session::new_memory_headless("us-west-1");
@@ -302,7 +302,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
 
-        let token = crate::api_token::mint().unwrap();
+        let token = crate::api_token::load().unwrap();
         let server_token = token.clone();
         let handle = thread::spawn(move || {
             let mut session = crate::session::Session::new_memory_headless("us-west-1");

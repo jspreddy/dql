@@ -399,7 +399,7 @@ mod tests {
 
     #[test]
     fn tcp_token_blocks_exec_and_shutdown_until_it_matches() {
-        let token = crate::api_token::mint().unwrap();
+        let token = crate::api_token::load().unwrap();
         let mut session = Session::new_memory_headless("us-west-1");
         let create = serde_json::json!({
             "op": "exec",
@@ -436,7 +436,7 @@ mod tests {
 
     #[test]
     fn tcp_auth_line_covers_the_rest_of_the_connection() {
-        let token = crate::api_token::mint().unwrap();
+        let token = crate::api_token::load().unwrap();
         let mut session = Session::new_memory_headless("us-west-1");
         let auth = serde_json::json!({"op": "auth", "token": token}).to_string();
         let (replies, control) = exchange_token(

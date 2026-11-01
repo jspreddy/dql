@@ -77,7 +77,7 @@ pub fn serve(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     fs::create_dir_all(&root)?;
     let root = root.canonicalize()?;
-    let token = crate::api_token::mint()?;
+    let token = crate::api_token::load()?;
     let app = Arc::new(App::new(session, root, mcp, token));
     let listener = TcpListener::bind(listen)?;
     let bound = listener.local_addr().unwrap_or(listen);
@@ -1585,7 +1585,7 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             crate::session::Session::new_memory_headless("memory"),
             root.path().to_path_buf(),
             false,
-            crate::api_token::mint().unwrap(),
+            crate::api_token::load().unwrap(),
         ));
         {
             let mut state = lock_state(&app);
@@ -1616,7 +1616,7 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
     }
 
     fn spawn_server_mcp(root: PathBuf, mcp: bool) -> (SocketAddr, ServerGuard) {
-        let token = crate::api_token::mint().unwrap();
+        let token = crate::api_token::load().unwrap();
         let app = Arc::new(App::new(
             Session::new_memory_headless("memory"),
             root,
