@@ -9,14 +9,35 @@ _title name:
     @if [ -n "${NO_COLOR:-}" ]; then printf '\n[## %s ##]\n' "{{name}}"; else printf '\n\033[1;36m[## %s ##]\033[0m\n' "{{name}}"; fi
 
 # Start DynamoDB Local in the background when port 8000 is down
-[group('local')]
+[group('dynamo')]
 dynamo: (_title "dynamo")
     cd "{{justfile_directory()}}" && ./scripts/install_dynamodb_local.sh background
 
+# Alias for dynamo
+alias dd := dynamo
+
 # List running DynamoDB Local processes and stop the ones you choose
-[group('local')]
+[group('dynamo')]
 dynamo-stop: (_title "dynamo-stop")
     "{{justfile_directory()}}/scripts/stop_dynamodb_local.sh"
+
+# Alias for dynamo-stop
+alias dd-stop := dynamo-stop
+
+# Remove DynamoDB Local on-disk data. The downloaded jar stays in place.
+[group('dynamo')]
+dynamo-clean: (_title "dynamo-clean")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{justfile_directory()}}/.dynamo-local"
+    if [[ ! -d "$root" ]]; then
+        exit 0
+    fi
+    rm -rf "$root/data"
+    find "$root" -maxdepth 1 \( -name '*.db' -o -name '*.db-*' \) -delete
+
+# Alias for dynamo-stop
+alias dd-clean := dynamo-clean
 
 # Install Java 22 with sdkman for DynamoDB Local
 [group('local')]
