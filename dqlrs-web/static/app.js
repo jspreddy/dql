@@ -614,6 +614,14 @@ async function runFile() {
   await runDocuments([{ text: editorText(), path: state.path, base: 0 }]);
 }
 
+async function runFileAt(path) {
+  if (runButton.disabled || !path) return;
+  if (path !== state.path) await openFile(path);
+  if (state.path !== path) return;
+  armRunPane();
+  await runFile();
+}
+
 setRunRequest(runFromEditor);
 const minimalWriteInput = document.querySelector("#opt-minimal-write");
 const evenOddInput = document.querySelector("#opt-even-odd");
@@ -1380,6 +1388,9 @@ function beginRename(path) {
 function menuItems(target) {
   const dir = target.type === "dir" ? target.path : parentOf(target.path || ".");
   const items = [];
+  if (target.type === "file") {
+    items.push({ label: "Run file", icon: "forward", danger: true, run: () => runFileAt(target.path) }, "-");
+  }
   if (target.type === "dir") {
     items.push({ label: "Run folder", icon: "forward", danger: true, run: () => runFolder(target.path) }, "-");
   }
@@ -1407,6 +1418,7 @@ function menuItems(target) {
 }
 
 const menuIds = {
+  "Run file": "menu-run-file",
   "Run folder": "menu-run-folder",
   "New file": "menu-new-file",
   "New folder": "menu-new-folder",

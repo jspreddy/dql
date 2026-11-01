@@ -71,6 +71,9 @@ test("context menu on a file offers the file actions", async ({ page }) => {
   await expect(page.locator("#menu-clear-results")).toBeVisible();
   await expect(page.locator("#menu-clear-cache")).toHaveCount(0);
   await expect(page.locator("#menu-run-folder")).toHaveCount(0);
+  await expect(page.locator("#menu-run-file")).toBeVisible();
+  await expect(page.locator("#menu-run-file .ff-icon")).toBeVisible();
+  await expect(page.locator("#menu-run-file")).toHaveCSS("color", await themeColor(page, "--danger"));
   await page.locator("#file-name").click();
   await expect(page.locator("#file-menu")).toBeHidden();
 });
@@ -96,15 +99,56 @@ test("sidebar background menu creates a file and a folder at the workspace root"
   await expect(page.locator("#menu-clear-cache")).toHaveCount(0);
   await expect(page.locator("#menu-clear-results")).toHaveCount(0);
   await expect(page.locator("#menu-run-folder")).toHaveCount(0);
+  await expect(page.locator("#menu-run-file")).toHaveCount(0);
   await expect(page.locator("#menu-duplicate")).toHaveCount(0);
   await page.locator("#menu-new-folder").click();
   await expect(node(page, "extra")).toBeVisible();
   await dialogs.stop();
 });
 
+test("runs the selected file from the context menu", async ({ page, app }, testInfo) => {
+  const name = `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  app.trackTable(name);
+  const file = `run-${name}.dql`;
+  const text = [
+    `DROP TABLE IF EXISTS ${name};`,
+    `CREATE TABLE ${name} (id STRING HASH KEY);`,
+    `INSERT INTO ${name} (id) VALUES ('a');`,
+    `SELECT * FROM ${name} WHERE id = 'a';`,
+  ].join("\n");
+  const error = await page.evaluate(async ({ path, text }) => {
+    const headers = { "Content-Type": "application/json" };
+    const created = await fetch("/api/file", { method: "POST", headers, body: JSON.stringify({ path }) });
+    if (!created.ok) return await created.text();
+    const saved = await fetch("/api/file", { method: "PUT", headers, body: JSON.stringify({ path, text }) });
+    return saved.ok ? "" : await saved.text();
+  }, { path: file, text });
+  if (error) throw new Error(error);
+  await page.reload();
+  await node(page, "queries/read.dql").click();
+  await expect(page.locator("#file-name")).toHaveText("read.dql");
+  await node(page, file).click({ button: "right" });
+  await expect(page.locator("#menu-run-file")).toBeVisible();
+  if (testInfo.project.name === "light") {
+    await page.screenshot({ path: "/opt/cursor/artifacts/run-file-menu.png" });
+  }
+  await page.locator("#menu-run-file").click();
+  await expect(page.locator("#file-menu")).toBeHidden();
+  await expect(page.locator("#file-name")).toHaveText(`run-${name}.dql`);
+  await expect(node(page, file)).toHaveClass(/selected/);
+  await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(4);
+  await expect(page.locator(".query-result").last()).toContainText("a");
+
+  await node(page, file).click({ button: "right" });
+  await page.locator("#menu-run-file").click();
+  await expect(page.locator("#file-name")).toHaveText(`run-${name}.dql`);
+  await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(4);
+});
+
 test("runs an empty folder from the context menu", async ({ page }) => {
   await node(page, "empty").click({ button: "right" });
   await expect(page.locator("#menu-run-folder")).toBeVisible();
+  await expect(page.locator("#menu-run-file")).toHaveCount(0);
   await expect(page.locator("#menu-run-folder .ff-icon")).toBeVisible();
   await expect(page.locator("#menu-run-folder")).toHaveCSS("color", await themeColor(page, "--danger"));
   await page.locator("#menu-run-folder").click();
