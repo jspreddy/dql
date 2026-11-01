@@ -24,7 +24,7 @@ The person running `dqlrs` on their own machine, including under WSL, with a bro
 4. Both caches are encrypted at rest with AES-256-GCM. A reader without the key sees ciphertext.
 5. One 256-bit key per OS user, created once, loaded at process start. It is not stored beside the cache files.
 6. Mac, Windows, Linux, and WSL each have a key location defined in [`encryption-and-keys.md`](encryption-and-keys.md).
-7. Web `/api/*` and `/mcp` require a per-process token. `--serve` on loopback requires the same kind of token. Stdio `--serve` stays a child process with no TCP token.
+7. Web `/api/*` and `/mcp` require a token stored per OS user, in the same key stores as the cache key and under a different item. `--serve` on loopback requires that same token. Stdio `--serve` stays a child process with no TCP token.
 8. Listen addresses stay loopback-only.
 9. AWS secret keys and session tokens stay out of the UI, the caches, and the API. The header already masks the access key id and does not read the secret.
 

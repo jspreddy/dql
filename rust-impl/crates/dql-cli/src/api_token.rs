@@ -1,15 +1,30 @@
-//! Per-process token for the loopback web API and TCP `--serve`.
+//! Per-OS-user token for the loopback web API and TCP `--serve`.
 //!
-//! The token is printed once on stderr and held in memory. It is not written
-//! into the workspace or the cache.
+//! The token is loaded from the same key stores as the cache key, as its own
+//! item. It is printed on stderr when a server starts and held in memory. It
+//! is not written into the workspace or the cache, and it is not the cache key.
 
 use std::io;
+use std::sync::{Mutex, MutexGuard};
 
-/// 256 bits, hex-encoded. Safe to drop into an HTML attribute and a header.
-pub fn mint() -> io::Result<String> {
-    let mut bytes = [0u8; 32];
-    getrandom::getrandom(&mut bytes).map_err(io::Error::other)?;
-    Ok(hex_encode(&bytes))
+use zeroize::Zeroizing;
+
+static TOKEN: Mutex<Option<String>> = Mutex::new(None);
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|err| err.into_inner())
+}
+
+/// The process token. The first call loads or creates it. Later calls reuse it.
+pub fn load() -> io::Result<String> {
+    let mut slot = lock(&TOKEN);
+    if let Some(token) = slot.clone() {
+        return Ok(token);
+    }
+    let bytes = Zeroizing::new(crate::cache_seal::load_api_token().map_err(io::Error::other)?);
+    let token = hex_encode(&*bytes);
+    *slot = Some(token.clone());
+    Ok(token)
 }
 
 pub fn stderr_line(token: &str) -> String {
@@ -45,11 +60,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn minted_token_is_64_hex_chars() {
-        let token = mint().unwrap();
+    fn stored_token_is_64_hex_chars_and_stable() {
+        let token = load().unwrap();
         assert_eq!(token.len(), 64);
         assert!(token.chars().all(|ch| ch.is_ascii_hexdigit()));
-        assert_ne!(mint().unwrap(), token);
+        assert_eq!(load().unwrap(), token);
         assert!(stderr_line(&token).starts_with("dqlrs token "));
     }
 

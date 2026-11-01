@@ -24,13 +24,15 @@ One random 256-bit key per OS user. The process loads it at startup and keeps it
 
 | System | Store |
 | --- | --- |
-| Mac | Login keychain. One item for dqlrs. Not iCloud-synced. Readable after the user is logged in. |
+| Mac | Login keychain. The cache key and the API token are separate items. Not iCloud-synced. Readable after the user is logged in. |
 | Windows | DPAPI bound to that Windows user. The wrapped blob sits in `%LOCALAPPDATA%\dqlrs\`. No extra prompt. |
 | Linux, desktop session | Secret Service (GNOME Keyring or KWallet). |
-| Linux, no keyring | `$XDG_CONFIG_HOME/dqlrs/cache.key`, or `~/.config/dqlrs/cache.key`, mode `0600`. |
+| Linux, no keyring | `$XDG_CONFIG_HOME/dqlrs/cache.key`, or `~/.config/dqlrs/cache.key`, mode `0600`. The API token file in that directory is `api-token`. |
 | WSL | The Linux path above, inside the WSL home. Not on `/mnt/c`. Do not call the Windows credential store from WSL. |
 
 If the platform store is empty, generate the key, store it, and use it. Do not generate a new key on every start once a key exists. A second key would make the existing ciphertext unreadable.
+
+The API and MCP token is a second 256-bit value for the same OS user. It uses this table: the same keychain, DPAPI directory, secret service, and config directory, as its own item. Mac keychain service `dqlrs-api-token`, account `dqlrs`. Secret Service kind `api-token` on service `dqlrs`. Windows blob `%LOCALAPPDATA%\dqlrs\api-token`. File fallback `api-token` beside `cache.key`. `DQLRS_API_TOKEN_FILE` overrides that path the same way `DQLRS_CACHE_KEY_FILE` does for the cache key. An empty store creates the token once. Later processes reuse it. Losing it does not make the caches unreadable. Clients need the replacement printed on stderr.
 
 Losing the key means the caches cannot be decrypted. The server then behaves as if the cache were empty and refetches definitions on demand. Query history for that workspace is gone. Document that on first run. Do not upload the key.
 
