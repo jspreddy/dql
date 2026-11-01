@@ -532,6 +532,8 @@ body.side-resizing * {
   user-select: none !important;
 }
 
+.pane-head { position: relative; z-index: 1; }
+
 .side-head, .pane-head, .rows-head, .pager, .search-row {
   flex: none;
   display: flex;
@@ -547,17 +549,36 @@ body.side-resizing * {
 .file-name-row {
   display: flex;
   align-items: center;
+  align-self: stretch;
   gap: 8px;
   min-width: 0;
 }
 
 #file-name {
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  position: relative;
+  min-width: 0;
+}
+
+.file-name-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
-#file-name.is-open { border-bottom: 2px solid var(--teal); }
+#file-name.is-open::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--teal);
+  pointer-events: none;
+}
 
 .patch-recall {
   flex: none;

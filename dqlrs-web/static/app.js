@@ -1715,7 +1715,13 @@ function fastForwardIcon() {
 function showOpenFile(path) {
   state.path = path || "";
   const name = document.querySelector("#file-name");
-  name.textContent = state.path ? state.path.split("/").pop() : "No file open";
+  let text = name.querySelector(".file-name-text");
+  if (!text) {
+    text = document.createElement("span");
+    text.className = "file-name-text";
+    name.replaceChildren(text);
+  }
+  text.textContent = state.path ? state.path.split("/").pop() : "No file open";
   name.classList.toggle("is-open", Boolean(state.path));
   runFileButton.classList.toggle("hidden", !state.path);
   runFileButton.disabled = !state.path || runButton.disabled;
