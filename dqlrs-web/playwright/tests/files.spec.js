@@ -63,10 +63,14 @@ test("shows nested files, an empty folder, and opens a file", async ({ page }) =
 test("marks the file open in the editor", async ({ page }, testInfo) => {
   const edit = node(page, "queries/edit.dql");
   const primary = await themeColor(page, "--teal");
+  const tab = page.locator("#file-name");
   await expect(edit).toHaveClass(/is-open/);
   await expect(edit).toHaveAttribute("aria-current", "true");
   await expect(edit).toHaveCSS("border-right-width", "2px");
   await expect(edit).toHaveCSS("border-right-color", primary);
+  await expect(tab).toHaveClass(/is-open/);
+  await expect(tab).toHaveCSS("border-bottom-width", "2px");
+  await expect(tab).toHaveCSS("border-bottom-color", primary);
   await expect(page.locator(".node.is-open")).toHaveCount(1);
   await expect(page.locator(".node-running")).toHaveCount(0);
   if (testInfo.project.name === "light") {
@@ -76,6 +80,9 @@ test("marks the file open in the editor", async ({ page }, testInfo) => {
   await node(page, "queries/read.dql").click();
   const read = node(page, "queries/read.dql");
   await expect(page.locator("#file-name")).toHaveText("read.dql");
+  await expect(tab).toHaveClass(/is-open/);
+  await expect(tab).toHaveCSS("border-bottom-width", "2px");
+  await expect(tab).toHaveCSS("border-bottom-color", primary);
   await expect(read).toHaveClass(/is-open/);
   await expect(read).toHaveAttribute("aria-current", "true");
   await expect(read).toHaveCSS("border-right-width", "2px");

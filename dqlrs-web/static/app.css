@@ -557,6 +557,8 @@ body.side-resizing * {
   white-space: nowrap;
 }
 
+#file-name.is-open { border-bottom: 2px solid var(--teal); }
+
 .patch-recall {
   flex: none;
   height: 22px;
