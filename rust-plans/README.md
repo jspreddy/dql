@@ -88,6 +88,15 @@ front end, not a parity gap:
 
 Related: [`todo_unify_cli_pipelines.md`](todo_unify_cli_pipelines.md) (`-c` / REPL / serve should share one `execute_input`).
 
+## Native UI
+
+A desktop window in Rust can replace the browser app and call the engine in process. Investigation only.
+
+| Plan | Focus |
+| --- | --- |
+| [`native-ui/prd.md`](native-ui/prd.md) | Feature parity, dropping `/api/*`, egui plus a Rust editor, tests |
+| [`native-ui/plan.md`](native-ui/plan.md) | `Studio` core first, then the window, then delete the JS app |
+
 ## Security
 
 Plans for locking the on-disk caches and the local API. The query-result cache stays in the workspace. These are plans only.
