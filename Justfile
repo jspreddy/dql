@@ -9,17 +9,23 @@ _title name:
     @if [ -n "${NO_COLOR:-}" ]; then printf '\n[## %s ##]\n' "{{name}}"; else printf '\n\033[1;36m[## %s ##]\033[0m\n' "{{name}}"; fi
 
 # Start DynamoDB Local in the background when port 8000 is down
-[group('local')]
+[group('dynamo')]
 dynamo: (_title "dynamo")
     cd "{{justfile_directory()}}" && ./scripts/install_dynamodb_local.sh background
 
+# Alias for dynamo
+alias dd := dynamo
+
 # List running DynamoDB Local processes and stop the ones you choose
-[group('local')]
+[group('dynamo')]
 dynamo-stop: (_title "dynamo-stop")
     "{{justfile_directory()}}/scripts/stop_dynamodb_local.sh"
 
+# Alias for dynamo-stop
+alias dd-stop := dynamo-stop
+
 # Remove DynamoDB Local on-disk data. The downloaded jar stays in place.
-[group('local')]
+[group('dynamo')]
 dd-clean: (_title "dd-clean")
     #!/usr/bin/env bash
     set -euo pipefail
