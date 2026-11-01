@@ -1,0 +1,17 @@
+---
+alwaysApply: true
+---
+
+# Playwright screenshots
+
+Save Playwright screenshots with `playwrightArtifact` from `dqlrs-web/playwright/support/artifacts.js`.
+
+```js
+import { playwrightArtifact } from "../support/artifacts.js";
+
+await page.screenshot({
+  path: playwrightArtifact(`name-${testInfo.project.name}.png`),
+});
+```
+
+Do not write a screenshot path under `/opt` or any other machine-specific directory. `playwrightArtifact` puts the file in `.playwright-artifacts` at the repository root.

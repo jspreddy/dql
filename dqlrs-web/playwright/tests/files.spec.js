@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
+import { playwrightArtifact } from "../support/artifacts.js";
 import { handleDialogs, node, openApp, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
 
 test.beforeEach(async ({ page, app }) => {
@@ -83,9 +84,7 @@ test("marks the file open in the editor", async ({ page }, testInfo) => {
   await expectUnderline(tab, primary);
   await expect(page.locator(".node.is-open")).toHaveCount(1);
   await expect(page.locator(".node-running")).toHaveCount(0);
-  if (testInfo.project.name === "light") {
-    await page.screenshot({ path: "/opt/cursor/artifacts/open-file-mark.png" });
-  }
+  await page.screenshot({ path: playwrightArtifact(`open-file-mark-${testInfo.project.name}.png`) });
 
   await node(page, "queries/read.dql").click();
   const read = node(page, "queries/read.dql");
@@ -127,9 +126,7 @@ test("pulses a blue dot on the running file and clears it", async ({ page, app }
   await expect(dot).toHaveCSS("background-color", await themeColor(page, "--blue"));
   await expect(dot).toHaveCSS("animation-name", "node-running-pulse");
   await expect(file).toHaveCSS("border-right-width", "2px");
-  if (testInfo.project.name === "light") {
-    await page.screenshot({ path: "/opt/cursor/artifacts/running-file-dot.png" });
-  }
+  await page.screenshot({ path: playwrightArtifact(`running-file-dot-${testInfo.project.name}.png`) });
   release();
   await expect(page.locator(".node-running")).toHaveCount(0);
   await expect(page.locator('[data-testid="run-status-ok"]')).toBeVisible();
@@ -205,9 +202,7 @@ test("runs the selected file from the context menu", async ({ page, app }, testI
   await expect(page.locator("#file-name")).toHaveText("read.dql");
   await node(page, file).click({ button: "right" });
   await expect(page.locator("#menu-run-file")).toBeVisible();
-  if (testInfo.project.name === "light") {
-    await page.screenshot({ path: "/opt/cursor/artifacts/run-file-menu.png" });
-  }
+  await page.screenshot({ path: playwrightArtifact(`run-file-menu-${testInfo.project.name}.png`) });
   await page.locator("#menu-run-file").click();
   await expect(page.locator("#file-menu")).toBeHidden();
   await expect(page.locator("#file-name")).toHaveText(`run-${name}.dql`);
