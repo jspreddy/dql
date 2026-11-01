@@ -66,6 +66,7 @@ const dqlHighlight = HighlightStyle.define([
 ]);
 
 let runMarks = [];
+let runningPath = "";
 
 const state = {
   mode: "query",
@@ -1075,7 +1076,13 @@ function renderDir(node, isRoot) {
   for (const child of node.children || []) {
     const item = document.createElement("li");
     const open = child.type === "dir" && state.expanded.has(child.path);
+    const editorFile = child.type === "file" && child.path === state.path;
     const button = nodeButton(child.type === "dir" ? (open ? "▾" : "▸") : "", child.name, child.path === state.path);
+    if (editorFile) {
+      button.classList.add("is-open");
+      button.setAttribute("aria-current", "true");
+    }
+    if (child.type === "file" && child.path === runningPath) button.append(runningFileMark());
     button.dataset.kind = child.type;
     button.dataset.path = child.path;
     button.id = nodeDomId(child.path);
@@ -1192,6 +1199,26 @@ async function dropOnto(from, destDir) {
 
 function nodeDomId(path) {
   return "node-" + String(path).replaceAll("/", "__");
+}
+
+function runningFileMark() {
+  const mark = document.createElement("span");
+  mark.className = "node-running";
+  mark.title = "Running";
+  mark.setAttribute("aria-label", "Running");
+  return mark;
+}
+
+function setRunningFile(path) {
+  runningPath = path || "";
+  for (const button of treeEl.querySelectorAll(".node")) {
+    const mark = button.querySelector(".node-running");
+    if (button.dataset.kind === "file" && button.dataset.path === runningPath) {
+      if (!mark) button.append(runningFileMark());
+    } else if (mark) {
+      mark.remove();
+    }
+  }
 }
 
 function nodeButton(twist, label, selected) {
@@ -2536,6 +2563,7 @@ async function runDocuments(documents) {
     hideProgress();
     runMarks = [];
     paintRunMarks();
+    setRunningFile("");
     if (!state.entries.length) {
       resultMeta.textContent = "Nothing to run";
       releaseResultPin();
@@ -2554,6 +2582,7 @@ async function runDocuments(documents) {
   let active = null;
   try {
     for (const doc of runnable) {
+      setRunningFile(doc.path || "");
       const marked = typeof doc.base === "number";
       const origins = marked ? statementSpans(doc.text).map((span) => doc.base + span.from) : [];
       if (marked) {
@@ -2629,6 +2658,7 @@ async function runDocuments(documents) {
       resultBody.append(note(error.message, true));
     }
   } finally {
+    setRunningFile("");
     hideProgress();
     setRunBusy(false);
     if (state.path && !touchedShown) {

@@ -896,6 +896,23 @@ body.side-resizing * {
 
 .tree .node.selected { background: var(--selected); }
 
+.tree .node.is-open { border-right: 2px solid var(--teal); }
+
+.tree .node .node-running {
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  flex: none;
+  border-radius: 50%;
+  background: var(--blue);
+  animation: node-running-pulse 1s ease-in-out infinite;
+}
+
+@keyframes node-running-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.72); }
+}
+
 .tree .node.drop-target,
 .tree.drop-target { background: var(--hover-teal); outline: 1px solid var(--outline-drop); outline-offset: -1px; }
 
@@ -2500,6 +2517,7 @@ body.results-resizing * {
 
 @media (prefers-reduced-motion: reduce) {
   .run-status-running { animation: none; border-right-color: var(--blue); }
+  .tree .node .node-running { animation: none; opacity: 1; }
   .results-grip, .side-grip { transition: none; }
   #refresh-tables.is-busy svg { animation: none; }
 }

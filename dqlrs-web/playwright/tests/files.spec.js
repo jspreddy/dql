@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
-import { handleDialogs, node, openApp, pressMod, themeColor } from "../support/helpers.js";
+import { handleDialogs, node, openApp, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
 
 test.beforeEach(async ({ page, app }) => {
   await openApp(page, app);
@@ -58,6 +58,66 @@ test("shows nested files, an empty folder, and opens a file", async ({ page }) =
   await node(page, "queries/read.dql").click();
   await expect(page.locator("#file-name")).toHaveText("read.dql");
   await expect(node(page, "queries/read.dql")).toHaveClass(/selected/);
+});
+
+test("marks the file open in the editor", async ({ page }, testInfo) => {
+  const edit = node(page, "queries/edit.dql");
+  const primary = await themeColor(page, "--teal");
+  await expect(edit).toHaveClass(/is-open/);
+  await expect(edit).toHaveAttribute("aria-current", "true");
+  await expect(edit).toHaveCSS("border-right-width", "2px");
+  await expect(edit).toHaveCSS("border-right-color", primary);
+  await expect(page.locator(".node.is-open")).toHaveCount(1);
+  await expect(page.locator(".node-running")).toHaveCount(0);
+  if (testInfo.project.name === "light") {
+    await page.screenshot({ path: "/opt/cursor/artifacts/open-file-mark.png" });
+  }
+
+  await node(page, "queries/read.dql").click();
+  const read = node(page, "queries/read.dql");
+  await expect(page.locator("#file-name")).toHaveText("read.dql");
+  await expect(read).toHaveClass(/is-open/);
+  await expect(read).toHaveAttribute("aria-current", "true");
+  await expect(read).toHaveCSS("border-right-width", "2px");
+  await expect(read).toHaveCSS("border-right-color", primary);
+  await expect(edit).not.toHaveClass(/is-open/);
+  await expect(edit).toHaveCSS("border-right-width", "0px");
+  await expect(edit).not.toHaveAttribute("aria-current", /.+/);
+  await expect(page.locator(".node.is-open")).toHaveCount(1);
+});
+
+test("pulses a blue dot on the running file and clears it", async ({ page, app }, testInfo) => {
+  const name = `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  app.trackTable(name);
+  let release = () => {};
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  let heldRun = false;
+  await page.route("**/api/run", async (route) => {
+    if (!heldRun) {
+      heldRun = true;
+      await held;
+    }
+    await route.continue();
+  });
+  await replaceEditor(page, `CREATE TABLE ${name} (id STRING HASH KEY);`);
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  const file = node(page, "queries/edit.dql");
+  const dot = file.locator(".node-running");
+  await expect(dot).toBeVisible();
+  await expect(page.locator(".node-running")).toHaveCount(1);
+  await expect(dot).toHaveCSS("background-color", await themeColor(page, "--blue"));
+  await expect(dot).toHaveCSS("animation-name", "node-running-pulse");
+  await expect(file).toHaveCSS("border-right-width", "2px");
+  if (testInfo.project.name === "light") {
+    await page.screenshot({ path: "/opt/cursor/artifacts/running-file-dot.png" });
+  }
+  release();
+  await expect(page.locator(".node-running")).toHaveCount(0);
+  await expect(page.locator('[data-testid="run-status-ok"]')).toBeVisible();
+  await expect(file).toHaveClass(/is-open/);
 });
 
 test("context menu on a file offers the file actions", async ({ page }) => {
@@ -154,6 +214,7 @@ test("runs an empty folder from the context menu", async ({ page }) => {
   await page.locator("#menu-run-folder").click();
   await expect(page.locator("#file-menu")).toBeHidden();
   await expect(page.locator("#result-meta")).toHaveText("Nothing to run");
+  await expect(page.locator(".node-running")).toHaveCount(0);
 });
 
 test("creates a file inside a folder from the context menu", async ({ page }) => {
