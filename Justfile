@@ -26,7 +26,7 @@ alias dd-stop := dynamo-stop
 
 # Remove DynamoDB Local on-disk data. The downloaded jar stays in place.
 [group('dynamo')]
-dd-clean: (_title "dd-clean")
+dynamo-clean: (_title "dynamo-clean")
     #!/usr/bin/env bash
     set -euo pipefail
     root="{{justfile_directory()}}/.dynamo-local"
@@ -35,6 +35,9 @@ dd-clean: (_title "dd-clean")
     fi
     rm -rf "$root/data"
     find "$root" -maxdepth 1 \( -name '*.db' -o -name '*.db-*' \) -delete
+
+# Alias for dynamo-stop
+alias dd-clean := dynamo-clean
 
 # Install Java 22 with sdkman for DynamoDB Local
 [group('local')]
