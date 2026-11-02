@@ -66,6 +66,7 @@ const dqlHighlight = HighlightStyle.define([
 ]);
 
 let runMarks = [];
+let runningPath = "";
 
 const state = {
   mode: "query",
@@ -614,6 +615,14 @@ async function runFile() {
   await runDocuments([{ text: editorText(), path: state.path, base: 0 }]);
 }
 
+async function runFileAt(path) {
+  if (runButton.disabled || !path) return;
+  if (path !== state.path) await openFile(path);
+  if (state.path !== path) return;
+  armRunPane();
+  await runFile();
+}
+
 setRunRequest(runFromEditor);
 const minimalWriteInput = document.querySelector("#opt-minimal-write");
 const evenOddInput = document.querySelector("#opt-even-odd");
@@ -1067,7 +1076,13 @@ function renderDir(node, isRoot) {
   for (const child of node.children || []) {
     const item = document.createElement("li");
     const open = child.type === "dir" && state.expanded.has(child.path);
+    const editorFile = child.type === "file" && child.path === state.path;
     const button = nodeButton(child.type === "dir" ? (open ? "▾" : "▸") : "", child.name, child.path === state.path);
+    if (editorFile) {
+      button.classList.add("is-open");
+      button.setAttribute("aria-current", "true");
+    }
+    if (child.type === "file" && child.path === runningPath) button.append(runningFileMark());
     button.dataset.kind = child.type;
     button.dataset.path = child.path;
     button.id = nodeDomId(child.path);
@@ -1184,6 +1199,26 @@ async function dropOnto(from, destDir) {
 
 function nodeDomId(path) {
   return "node-" + String(path).replaceAll("/", "__");
+}
+
+function runningFileMark() {
+  const mark = document.createElement("span");
+  mark.className = "node-running";
+  mark.title = "Running";
+  mark.setAttribute("aria-label", "Running");
+  return mark;
+}
+
+function setRunningFile(path) {
+  runningPath = path || "";
+  for (const button of treeEl.querySelectorAll(".node")) {
+    const mark = button.querySelector(".node-running");
+    if (button.dataset.kind === "file" && button.dataset.path === runningPath) {
+      if (!mark) button.append(runningFileMark());
+    } else if (mark) {
+      mark.remove();
+    }
+  }
 }
 
 function nodeButton(twist, label, selected) {
@@ -1380,6 +1415,9 @@ function beginRename(path) {
 function menuItems(target) {
   const dir = target.type === "dir" ? target.path : parentOf(target.path || ".");
   const items = [];
+  if (target.type === "file") {
+    items.push({ label: "Run file", icon: "forward", danger: true, run: () => runFileAt(target.path) }, "-");
+  }
   if (target.type === "dir") {
     items.push({ label: "Run folder", icon: "forward", danger: true, run: () => runFolder(target.path) }, "-");
   }
@@ -1407,6 +1445,7 @@ function menuItems(target) {
 }
 
 const menuIds = {
+  "Run file": "menu-run-file",
   "Run folder": "menu-run-folder",
   "New file": "menu-new-file",
   "New folder": "menu-new-folder",
@@ -1675,7 +1714,15 @@ function fastForwardIcon() {
 
 function showOpenFile(path) {
   state.path = path || "";
-  document.querySelector("#file-name").textContent = state.path ? state.path.split("/").pop() : "No file open";
+  const name = document.querySelector("#file-name");
+  let text = name.querySelector(".file-name-text");
+  if (!text) {
+    text = document.createElement("span");
+    text.className = "file-name-text";
+    name.replaceChildren(text);
+  }
+  text.textContent = state.path ? state.path.split("/").pop() : "No file open";
+  name.classList.toggle("is-open", Boolean(state.path));
   runFileButton.classList.toggle("hidden", !state.path);
   runFileButton.disabled = !state.path || runButton.disabled;
   if (!state.path) {
@@ -2524,6 +2571,7 @@ async function runDocuments(documents) {
     hideProgress();
     runMarks = [];
     paintRunMarks();
+    setRunningFile("");
     if (!state.entries.length) {
       resultMeta.textContent = "Nothing to run";
       releaseResultPin();
@@ -2542,6 +2590,7 @@ async function runDocuments(documents) {
   let active = null;
   try {
     for (const doc of runnable) {
+      setRunningFile(doc.path || "");
       const marked = typeof doc.base === "number";
       const origins = marked ? statementSpans(doc.text).map((span) => doc.base + span.from) : [];
       if (marked) {
@@ -2617,6 +2666,7 @@ async function runDocuments(documents) {
       resultBody.append(note(error.message, true));
     }
   } finally {
+    setRunningFile("");
     hideProgress();
     setRunBusy(false);
     if (state.path && !touchedShown) {
