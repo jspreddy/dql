@@ -1,10 +1,13 @@
 //! Layout for the native window. It follows the web UI: header, file tree,
 //! editor, results, and a table browser.
 
+use std::time::Duration;
+
 use iced::widget::{
-    button, column, container, mouse_area, row, scrollable, stack, text, text_input,
+    button, column, container, float, keyed, mouse_area, opaque, pane_grid, progress_bar, row,
+    rule, scrollable, stack, text, text_editor, text_input, tooltip,
 };
-use iced::{Color, Element, Fill, Length};
+use iced::{Color, Element, Fill, Length, Point, Rectangle, Vector};
 
 use crate::web::files::Node;
 use crate::web::studio::{menu_labels, StatementCard};
@@ -20,9 +23,23 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Mode::Tables => tables(app, colors),
     };
     let window = column![header(app), body, status_bar(app)].spacing(0);
-    match popup(app) {
-        Some(layer) => stack![window, layer].into(),
-        None => window.into(),
+    let mut layers: Vec<Element<'_, Message>> = vec![window.into()];
+    if let Some(menu) = floating_menu(app) {
+        layers.push(menu);
+    }
+    if !app.hits.is_empty() {
+        layers.push(floating_search(app));
+    }
+    if let Some(layer) = popup(app) {
+        layers.push(layer);
+    }
+    if !app.notices.is_empty() {
+        layers.push(notices(app));
+    }
+    if layers.len() == 1 {
+        layers.pop().unwrap_or_else(|| text("").into())
+    } else {
+        stack(layers).into()
     }
 }
 
@@ -62,14 +79,22 @@ fn header(app: &App) -> Element<'_, Message> {
         .on_press(Message::ToggleEnv)
         .padding([1, 8])
         .style(style::paint(p, style::Look::Pill));
-    let theme = button(text(if app.prefs.dark { "☀" } else { "☾" }).size(13))
-        .on_press(Message::ToggleTheme)
-        .padding([2, 8])
-        .style(style::paint(p, style::Look::Bar));
-    let settings = button(text("☰").size(14))
-        .on_press(Message::ToggleSettings)
-        .padding([2, 8])
-        .style(style::paint(p, style::Look::Bar));
+    let theme = tip(
+        button(text(if app.prefs.dark { "☀" } else { "☾" }).size(13))
+            .on_press(Message::ToggleTheme)
+            .padding([2, 8])
+            .style(style::paint(p, style::Look::Bar)),
+        "Theme",
+        p,
+    );
+    let settings = tip(
+        button(text("☰").size(14))
+            .on_press(Message::ToggleSettings)
+            .padding([2, 8])
+            .style(style::paint(p, style::Look::Bar)),
+        "Settings",
+        p,
+    );
     let bar = container(
         row![
             text("dqlrs").size(13).color(p.header_fg),
@@ -87,7 +112,7 @@ fn header(app: &App) -> Element<'_, Message> {
     .width(Fill)
     .style(style::fill(p.bar));
     let mut col = column![bar].spacing(0);
-    if !app.hits.is_empty() || app.show_env || app.show_settings {
+    if app.show_env || app.show_settings {
         col = col.push(header_pop(app, p));
     }
     col.into()
@@ -95,9 +120,6 @@ fn header(app: &App) -> Element<'_, Message> {
 
 fn header_pop(app: &App, p: Palette) -> Element<'_, Message> {
     let mut body = column![].spacing(8).padding([8, 12]);
-    if !app.hits.is_empty() {
-        body = body.push(search_list(app, p));
-    }
     if app.show_env {
         let mut env = column![].spacing(2);
         for (key, value) in &app.env_lines {
@@ -176,7 +198,7 @@ fn search_list(app: &App, p: Palette) -> Element<'_, Message> {
         list = list.push(text("No matches").size(12).color(p.muted));
     }
     container(list)
-        .width(Fill)
+        .width(Length::Fixed(480.0))
         .style(style::menu_card(p))
         .into()
 }
@@ -244,19 +266,26 @@ fn mode_button(
 
 fn query(app: &App) -> Element<'_, Message> {
     let p = style::palette(app.prefs.dark);
-    row![
-        tree_pane(app, p),
-        column![
-            editor_head(app, p),
-            dialog(app, p),
-            editor_body(app, p),
-            results(app, p)
-        ]
-        .spacing(0)
-        .width(Fill)
-    ]
-    .spacing(0)
+    pane_grid::PaneGrid::new(&app.query_panes, |_pane, slot, _maximized| {
+        let body: Element<'_, Message> = match slot {
+            super::Slot::Side => tree_pane(app, p),
+            super::Slot::Editor => {
+                column![editor_head(app, p), dialog(app, p), editor_body(app, p)]
+                    .spacing(0)
+                    .width(Fill)
+                    .height(Fill)
+                    .into()
+            }
+            super::Slot::Results => results(app, p),
+            super::Slot::Tables => text("").into(),
+        };
+        pane_grid::Content::new(body)
+    })
+    .width(Fill)
     .height(Fill)
+    .spacing(1)
+    .min_size(140)
+    .on_resize(8, |event| Message::PaneRatio(event.split, event.ratio))
     .into()
 }
 
@@ -268,18 +297,14 @@ fn tree_pane(app: &App, p: Palette) -> Element<'_, Message> {
                 .padding([2, 0])
                 .style(style::paint(p, style::Look::Quiet)),
             iced::widget::Space::new().width(Fill),
-            button(text("‹").size(12).color(p.muted))
-                .on_press(Message::Nav(-24.0))
-                .padding([0, 6])
-                .style(style::paint(p, style::Look::Control)),
-            button(text("›").size(12).color(p.muted))
-                .on_press(Message::Nav(24.0))
-                .padding([0, 6])
-                .style(style::paint(p, style::Look::Control)),
-            button(text("+").size(14).color(p.text))
-                .on_press(Message::MenuAct("New file"))
-                .padding([0, 7])
-                .style(style::paint(p, style::Look::Control)),
+            tip(
+                button(text("+").size(14).color(p.text))
+                    .on_press(Message::MenuAct("New file"))
+                    .padding([0, 7])
+                    .style(style::paint(p, style::Look::Control)),
+                "New file",
+                p,
+            ),
         ]
         .spacing(4)
         .align_y(iced::alignment::Vertical::Center),
@@ -300,7 +325,7 @@ fn tree_pane(app: &App, p: Palette) -> Element<'_, Message> {
         }
     }
     container(scrollable(tree).height(Fill))
-        .width(Length::Fixed(app.prefs.nav))
+        .width(Fill)
         .height(Fill)
         .style(style::fill(p.side))
         .into()
@@ -313,12 +338,7 @@ fn context_menu(kind: &str, p: Palette) -> Element<'static, Message> {
         let rule = label == "Delete"
             || (index == 1 && matches!(labels.first().copied(), Some("Run file" | "Run folder")));
         if rule {
-            items = items.push(
-                container(text(""))
-                    .height(1)
-                    .width(Fill)
-                    .style(style::fill(p.line)),
-            );
+            items = items.push(separator(p));
         }
         let danger = matches!(label, "Delete" | "Run file" | "Run folder");
         items = items.push(
@@ -345,13 +365,6 @@ fn context_menu(kind: &str, p: Palette) -> Element<'static, Message> {
 fn node_view<'a>(app: &'a App, node: &'a Node, depth: usize, p: Palette) -> Element<'a, Message> {
     let pad = Length::Fixed(depth as f32 * 14.0);
     let mut col = column![tree_row(app, node, pad, p)].spacing(0);
-    if app
-        .menu
-        .as_ref()
-        .is_some_and(|menu| menu.path == node.path && menu.kind == node.kind)
-    {
-        col = col.push(context_menu(node.kind, p));
-    }
     if node.kind == "dir" {
         if let Some(children) = &node.children {
             for child in children {
@@ -619,6 +632,7 @@ fn editor_body(app: &App, p: Palette) -> Element<'_, Message> {
     }
     let editor = highlight::editor(&app.editor)
         .on_action(Message::Editor)
+        .key_binding(editor_keys)
         .size(13)
         .line_height(iced::widget::text::LineHeight::Absolute(18.0.into()))
         .height(Fill)
@@ -626,15 +640,33 @@ fn editor_body(app: &App, p: Palette) -> Element<'_, Message> {
     let mut below = column![].spacing(4);
     if !app.running_path.is_empty() {
         let total = app.live.total.unwrap_or(0);
-        let bar = progress_bar(app.live.done, total);
-        below = below.push(
-            text(format!(
-                "Running {}  {} {}/{} {bar}",
-                app.running_path, app.live.phase, app.live.done, total
-            ))
-            .size(12)
-            .color(p.blue),
-        );
+        let mut line = row![text(format!(
+            "Running {}  {} {}/{}",
+            app.running_path, app.live.phase, app.live.done, total
+        ))
+        .size(12)
+        .color(p.blue)]
+        .spacing(8)
+        .align_y(iced::alignment::Vertical::Center);
+        if total > 0 {
+            let done = app.live.done as f32;
+            let goal = total as f32;
+            line = line.push(
+                progress_bar(0.0..=goal, done.min(goal))
+                    .length(Length::Fixed(120.0))
+                    .girth(Length::Fixed(6.0))
+                    .style(move |_theme| progress_bar::Style {
+                        background: p.line.into(),
+                        bar: p.teal.into(),
+                        border: iced::Border {
+                            color: Color::TRANSPARENT,
+                            width: 0.0,
+                            radius: 3.0.into(),
+                        },
+                    }),
+            );
+        }
+        below = below.push(line);
     }
     if !app.suggest.is_empty() {
         let mut suggestions = column![].spacing(0).padding(4);
@@ -713,28 +745,24 @@ fn line_is_write(line: &str) -> bool {
 }
 
 fn results(app: &App, p: Palette) -> Element<'_, Message> {
-    let grip = row![
-        text("Results").size(12).color(p.muted),
-        button(text("–").size(14).color(p.muted))
-            .on_press(Message::Results(-40.0))
-            .padding([0, 6])
-            .style(style::paint(p, style::Look::Quiet)),
-        button(text("+").size(14).color(p.muted))
-            .on_press(Message::Results(40.0))
-            .padding([0, 6])
-            .style(style::paint(p, style::Look::Quiet)),
-    ]
-    .spacing(4)
-    .align_y(iced::alignment::Vertical::Center);
-    let mut cards = column![grip].spacing(8).padding(8);
+    let mut cards = keyed::Column::new().spacing(8).padding(8).width(Fill);
     for (index, card) in app.results.iter().take(20).enumerate() {
-        cards = cards.push(card_view(app, index, card, p));
+        cards = cards.push(index, card_view(app, index, card, p));
     }
-    container(scrollable(cards).height(Fill))
-        .height(Length::Fixed(app.prefs.results))
-        .width(Fill)
-        .style(style::fill(p.canvas))
-        .into()
+    container(
+        column![
+            text("Results").size(12).color(p.muted),
+            scrollable(cards).height(Fill).width(Fill),
+        ]
+        .spacing(4)
+        .padding([8, 0])
+        .height(Fill)
+        .width(Fill),
+    )
+    .height(Fill)
+    .width(Fill)
+    .style(style::fill(p.canvas))
+    .into()
 }
 
 fn card_view<'a>(
@@ -818,13 +846,15 @@ fn item_card<'a>(
     }
     head = head.push(stat_chip(elapsed_label(card.elapsed_ms), p));
     if !card.columns.is_empty() || !card.items.is_empty() {
-        head = head.push(
+        head = head.push(tip(
             button(text("schema").size(12))
                 .on_press(Message::ShowResultSchema(index))
                 .padding([0, 7])
                 .height(22)
                 .style(style::paint(p, style::Look::Control)),
-        );
+            "Result structure",
+            p,
+        ));
     }
     let head = container(head)
         .width(Fill)
@@ -859,7 +889,14 @@ fn item_card<'a>(
         );
         body = body.push(hairline(p.line_strong));
     }
-    body = body.push(items_table(&card.columns, &card.items, true, true, p));
+    body = body.push(items_table(
+        &card.columns,
+        &card.items,
+        true,
+        true,
+        p,
+        &format!("result-{index}"),
+    ));
     let card_face = container(body).width(Fill).style(style::card(p));
     row![query_dot(open, index, p), card_face]
         .spacing(6)
@@ -901,22 +938,13 @@ fn stat_chip(label: String, p: Palette) -> Element<'static, Message> {
         .into()
 }
 
-fn progress_bar(done: u64, total: u64) -> String {
-    if total == 0 {
-        return String::new();
-    }
-    let width = 16usize;
-    let filled = ((done as f64 / total as f64) * width as f64).round() as usize;
-    let filled = filled.min(width);
-    format!("[{}{}]", "#".repeat(filled), ".".repeat(width - filled))
-}
-
 fn items_table<'a>(
     columns: &'a [crate::web::shape::Column],
     items: &'a [serde_json::Value],
     clickable: bool,
     result_card: bool,
     p: Palette,
+    scope: &str,
 ) -> Element<'a, Message> {
     let columns = ordered_columns(columns, items);
     let shown: Vec<_> = items.iter().take(50).collect();
@@ -947,8 +975,8 @@ fn items_table<'a>(
         p.gutter,
     );
     let last = shown.len().saturating_sub(1);
-    let mut rows = column![header].spacing(0);
-    for (index, item) in shown.into_iter().enumerate() {
+    let mut rows = column![].spacing(0);
+    for (index, item) in shown.iter().copied().enumerate() {
         let json = serde_json::to_string_pretty(item).unwrap_or_default();
         let stripe = index % 2 == 1;
         let rule = index != last;
@@ -978,7 +1006,26 @@ fn items_table<'a>(
             if stripe { row_stripe(p) } else { p.paper },
         ));
     }
-    rows.into()
+    let head_id = format!("{scope}-head");
+    let body_height = (shown.len().max(1) as f32 * 32.0).min(240.0);
+    let head = scrollable(header)
+        .id(iced::widget::Id::from(head_id.clone()))
+        .direction(scrollable::Direction::Horizontal(
+            scrollable::Scrollbar::default(),
+        ))
+        .width(Fill)
+        .height(Length::Fixed(32.0));
+    let body = scrollable(rows)
+        .direction(scrollable::Direction::Both {
+            vertical: scrollable::Scrollbar::default(),
+            horizontal: scrollable::Scrollbar::default(),
+        })
+        .width(Fill)
+        .height(Length::Fixed(body_height))
+        .on_scroll(move |viewport| {
+            Message::SyncGrid(head_id.clone(), viewport.absolute_offset().x)
+        });
+    column![head, body].spacing(0).width(Fill).into()
 }
 
 fn grid_row<'a>(
@@ -1042,12 +1089,15 @@ fn peek_cell(
     if !clickable {
         return cell.into();
     }
-    button(cell)
-        .on_press(Message::ShowRow(json))
-        .padding(0)
-        .width(28)
-        .style(style::paint(p, style::Look::Quiet))
-        .into()
+    tip(
+        button(cell)
+            .on_press(Message::ShowRow(json))
+            .padding(0)
+            .width(28)
+            .style(style::paint(p, style::Look::Quiet)),
+        "Row",
+        p,
+    )
 }
 
 fn ruled(
@@ -1104,6 +1154,23 @@ fn header_label(
 }
 
 fn tables(app: &App, p: Palette) -> Element<'_, Message> {
+    pane_grid::PaneGrid::new(&app.table_panes, |_pane, slot, _maximized| {
+        let body = match slot {
+            super::Slot::Side => table_side(app, p),
+            super::Slot::Tables => table_page(app, p),
+            _ => text("").into(),
+        };
+        pane_grid::Content::new(body)
+    })
+    .width(Fill)
+    .height(Fill)
+    .spacing(1)
+    .min_size(140)
+    .on_resize(8, |event| Message::PaneRatio(event.split, event.ratio))
+    .into()
+}
+
+fn table_side(app: &App, p: Palette) -> Element<'_, Message> {
     let head = container(
         row![
             text_input("catalog", &app.table_filter)
@@ -1128,8 +1195,13 @@ fn tables(app: &App, p: Palette) -> Element<'_, Message> {
     )
     .width(Fill)
     .padding([4, 8]);
-    let mut list = column![
-        head,
+    let mut list = keyed::Column::<u64, _, _, _>::new()
+        .spacing(2)
+        .padding(6)
+        .width(Fill);
+    list = list.push(0, head);
+    list = list.push(
+        1,
         text(if app.cache_text.is_empty() {
             app.table_note.clone()
         } else {
@@ -1137,9 +1209,7 @@ fn tables(app: &App, p: Palette) -> Element<'_, Message> {
         })
         .size(11)
         .color(p.muted),
-    ]
-    .spacing(2)
-    .padding(6);
+    );
     for table in &app.tables {
         let selected = table.name == app.open_table;
         let mut keys = row![].spacing(6);
@@ -1173,6 +1243,7 @@ fn tables(app: &App, p: Palette) -> Element<'_, Message> {
         ]
         .spacing(1);
         list = list.push(
+            name_key(&table.name),
             button(label)
                 .on_press(Message::OpenTable(table.name.clone()))
                 .width(Fill)
@@ -1187,6 +1258,14 @@ fn tables(app: &App, p: Palette) -> Element<'_, Message> {
                 )),
         );
     }
+    container(scrollable(list).height(Fill))
+        .width(Fill)
+        .height(Fill)
+        .style(style::fill(p.side))
+        .into()
+}
+
+fn table_page(app: &App, p: Palette) -> Element<'_, Message> {
     let count = app.table_items.len();
     let start = if count == 0 {
         0
@@ -1226,11 +1305,15 @@ fn tables(app: &App, p: Palette) -> Element<'_, Message> {
             }),
             text("50 rows at a time").size(12).color(p.muted),
             iced::widget::Space::new().width(Fill),
-            button(text("schema").size(12))
-                .on_press(Message::ShowTableSchema)
-                .padding([0, 7])
-                .height(22)
-                .style(style::paint(p, style::Look::Control)),
+            tip(
+                button(text("schema").size(12))
+                    .on_press(Message::ShowTableSchema)
+                    .padding([0, 7])
+                    .height(22)
+                    .style(style::paint(p, style::Look::Control)),
+                "Table structure",
+                p,
+            ),
         ]
         .spacing(8)
         .align_y(iced::alignment::Vertical::Center),
@@ -1245,6 +1328,7 @@ fn tables(app: &App, p: Palette) -> Element<'_, Message> {
             true,
             false,
             p,
+            "table",
         ));
     }
     page = page.push(
@@ -1256,19 +1340,11 @@ fn tables(app: &App, p: Palette) -> Element<'_, Message> {
         .width(Fill)
         .padding([8, 14]),
     );
-    row![
-        container(scrollable(list).height(Fill))
-            .width(Length::Fixed(app.prefs.nav))
-            .height(Fill)
-            .style(style::fill(p.side)),
-        container(scrollable(page).height(Fill))
-            .width(Fill)
-            .height(Fill)
-            .style(style::fill(p.paper)),
-    ]
-    .spacing(0)
-    .height(Fill)
-    .into()
+    container(scrollable(page).height(Fill))
+        .width(Fill)
+        .height(Fill)
+        .style(style::fill(p.paper))
+        .into()
 }
 
 fn status_bar(app: &App) -> Element<'_, Message> {
@@ -1435,19 +1511,23 @@ fn popup(app: &App) -> Option<Element<'_, Message>> {
 }
 
 fn modal(card: Element<'static, Message>, close: Message, p: Palette) -> Element<'static, Message> {
-    let scrim = mouse_area(
-        container(text(""))
+    let scrim = opaque(
+        mouse_area(
+            container(text(""))
+                .width(Fill)
+                .height(Fill)
+                .style(style::fill(style::scrim(p.dark))),
+        )
+        .on_press(close),
+    );
+    let sheet = opaque(
+        container(card)
             .width(Fill)
             .height(Fill)
-            .style(style::fill(style::scrim(p.dark))),
-    )
-    .on_press(close);
-    let sheet = container(mouse_area(card).on_press(Message::Keep))
-        .width(Fill)
-        .height(Fill)
-        .align_x(iced::alignment::Horizontal::Center)
-        .align_y(iced::alignment::Vertical::Center)
-        .padding(28);
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center)
+            .padding(28),
+    );
     stack![scrim, sheet].into()
 }
 
@@ -1850,7 +1930,7 @@ fn dialog_shell(
     container(
         column![
             container(head).width(Fill).padding([14, 16]),
-            hairline(p.line),
+            separator(p),
             container(scrollable(body).height(Length::Fixed(420.0)))
                 .width(Fill)
                 .padding([12, 16]),
@@ -1860,4 +1940,134 @@ fn dialog_shell(
     )
     .style(style::pop_card(p))
     .into()
+}
+
+fn separator(p: Palette) -> Element<'static, Message> {
+    rule::horizontal(1)
+        .style(move |_theme| rule::Style {
+            color: p.line,
+            radius: 0.0.into(),
+            fill_mode: rule::FillMode::Full,
+            snap: true,
+        })
+        .into()
+}
+
+fn tip<'a>(
+    target: impl Into<Element<'a, Message>>,
+    label: &'static str,
+    p: Palette,
+) -> Element<'a, Message> {
+    tooltip(
+        target,
+        container(text(label).size(12).color(p.text))
+            .padding([4, 8])
+            .style(style::menu_card(p)),
+        tooltip::Position::Bottom,
+    )
+    .delay(Duration::from_millis(400))
+    .into()
+}
+
+fn floating_menu(app: &App) -> Option<Element<'_, Message>> {
+    let menu = app.menu.as_ref()?;
+    if menu.kind == "root" {
+        return None;
+    }
+    let p = style::palette(app.prefs.dark);
+    let card = context_menu(&menu.kind, p);
+    let at = app.pointer;
+    Some(
+        float(card)
+            .translate(move |bounds, viewport| place(at, bounds, viewport))
+            .into(),
+    )
+}
+
+fn floating_search(app: &App) -> Element<'_, Message> {
+    let p = style::palette(app.prefs.dark);
+    let card = search_list(app, p);
+    float(card)
+        .translate(|bounds, viewport| place(Point::new(220.0, 42.0), bounds, viewport))
+        .into()
+}
+
+fn notices(app: &App) -> Element<'_, Message> {
+    let p = style::palette(app.prefs.dark);
+    let mut cards = column![].spacing(8);
+    for notice in &app.notices {
+        let tone = match notice.title.as_str() {
+            "Conflict" | "Run failed" => p.danger,
+            "Saved" | "Created" | "Duplicated" => p.ok,
+            _ => p.text,
+        };
+        cards = cards.push(
+            container(
+                column![
+                    text(notice.title.clone()).size(12).color(tone),
+                    text(notice.body.clone()).size(12).color(p.text),
+                ]
+                .spacing(2),
+            )
+            .width(Length::Fixed(280.0))
+            .padding(10)
+            .style(style::menu_card(p)),
+        );
+    }
+    float(cards)
+        .translate(|bounds, viewport| {
+            Vector::new(
+                viewport.width - bounds.width - 16.0 - bounds.x,
+                viewport.height - bounds.height - 28.0 - bounds.y,
+            )
+        })
+        .into()
+}
+
+fn place(at: Point, bounds: Rectangle, viewport: Rectangle) -> Vector {
+    let mut x = at.x - bounds.x;
+    let mut y = at.y - bounds.y;
+    let right = bounds.x + x + bounds.width;
+    let bottom = bounds.y + y + bounds.height;
+    if right > viewport.width - 8.0 {
+        x -= right - (viewport.width - 8.0);
+    }
+    if bottom > viewport.height - 8.0 {
+        y -= bottom - (viewport.height - 8.0);
+    }
+    if bounds.x + x < 8.0 {
+        x = 8.0 - bounds.x;
+    }
+    if bounds.y + y < 8.0 {
+        y = 8.0 - bounds.y;
+    }
+    Vector::new(x, y)
+}
+
+fn name_key(name: &str) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in name.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash | 0xff00
+}
+
+fn editor_keys(press: text_editor::KeyPress) -> Option<text_editor::Binding<Message>> {
+    let focused = matches!(press.status, text_editor::Status::Focused { .. });
+    let command = press.modifiers.command() || press.modifiers.control();
+    if focused && command {
+        if press.key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Enter) {
+            return Some(text_editor::Binding::Custom(Message::RunCursor));
+        }
+        if let iced::keyboard::Key::Character(ch) = &press.key {
+            if ch.as_str() == "\\" || ch.as_str() == "|" {
+                return Some(text_editor::Binding::Custom(Message::RunCursor));
+            }
+            if ch.as_str().eq_ignore_ascii_case("s") {
+                return Some(text_editor::Binding::Custom(Message::Save));
+            }
+        }
+    }
+    text_editor::Binding::from_key_press(press)
 }

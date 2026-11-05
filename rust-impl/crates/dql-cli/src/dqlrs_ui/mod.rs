@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use iced::widget::text_editor;
+use iced::widget::{pane_grid, text_editor};
 use iced::{Element, Subscription, Task, Theme};
 use serde::{Deserialize, Serialize};
 
@@ -150,6 +150,21 @@ enum SchemaKind {
     Table,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Slot {
+    Side,
+    Editor,
+    Results,
+    Tables,
+}
+
+#[derive(Clone, Debug)]
+struct Notice {
+    title: String,
+    body: String,
+    seconds: u8,
+}
+
 struct App {
     studio: Arc<Mutex<Studio>>,
     progress: Arc<Mutex<LiveProgress>>,
@@ -190,6 +205,12 @@ struct App {
     row_json: Option<String>,
     schema: Option<SchemaKind>,
     status: String,
+    query_panes: pane_grid::State<Slot>,
+    table_panes: pane_grid::State<Slot>,
+    window_width: f32,
+    window_height: f32,
+    pointer: iced::Point,
+    notices: Vec<Notice>,
 }
 
 #[derive(Debug, Clone)]
@@ -224,16 +245,19 @@ enum Message {
     ToggleEnv,
     ToggleTheme,
     ToggleBands,
-    Nav(f32),
-    Results(f32),
     ToggleCard(usize),
     ShowRow(String),
     CloseRow,
     ShowResultSchema(usize),
     ShowTableSchema,
     CloseSchema,
-    Keep,
     UseSuggest(usize),
+    PaneRatio(pane_grid::Split, f32),
+    SyncGrid(String, f32),
+    WindowSized(iced::Size),
+    Pointer(iced::Point),
+    NoticeTick,
+    FocusShift(bool),
 }
 
 impl App {
@@ -246,6 +270,8 @@ impl App {
                 studio.cancel_flag(),
             )
         };
+        let query_panes = query_layout(&prefs, 1280.0, 800.0);
+        let table_panes = table_layout(&prefs, 1280.0);
         let mut app = Self {
             studio,
             progress,
@@ -286,26 +312,49 @@ impl App {
             row_json: None,
             schema: None,
             status: String::new(),
+            query_panes,
+            table_panes,
+            window_width: 1280.0,
+            window_height: 800.0,
+            pointer: iced::Point::new(16.0, 48.0),
+            notices: Vec::new(),
         };
         app.refresh_tree();
         app
     }
 
     fn theme(&self) -> Theme {
-        if self.prefs.dark {
-            Theme::Dark
-        } else {
-            Theme::Light
-        }
+        let colors = style::palette(self.prefs.dark);
+        Theme::custom(
+            if self.prefs.dark {
+                "dqlrs-dark"
+            } else {
+                "dqlrs-light"
+            },
+            iced::theme::Palette {
+                background: colors.paper,
+                text: colors.text,
+                primary: colors.teal,
+                success: colors.ok,
+                warning: colors.amber,
+                danger: colors.danger,
+            },
+        )
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        let mut subs = vec![keyboard_subscription()];
+        let mut subs = vec![
+            keyboard_subscription(),
+            iced::window::resize_events().map(|(_id, size)| Message::WindowSized(size)),
+        ];
         if !self.running_path.is_empty() {
             subs.push(iced::time::every(Duration::from_millis(180)).map(|_| Message::Pulse));
             subs.push(iced::time::every(Duration::from_millis(120)).map(|_| Message::Tick));
         }
         subs.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::Watch));
+        if !self.notices.is_empty() {
+            subs.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::NoticeTick));
+        }
         Subscription::batch(subs)
     }
 
@@ -374,7 +423,12 @@ impl App {
                     self.refresh_suggest();
                 }
             }
-            Message::Save => self.save_editor(),
+            Message::Save => {
+                self.save_editor();
+                if self.conflict_text.is_none() && !self.open_path.is_empty() {
+                    self.toast("Saved", format!("Saved {}", self.open_path));
+                }
+            }
             Message::ReloadDisk => {
                 if let Some(text) = self.conflict_text.clone() {
                     self.editor = text_editor::Content::with_text(&text);
@@ -408,7 +462,7 @@ impl App {
                     self.save_editor();
                     return self.start_run(vec![(self.open_path.clone(), statement)]);
                 }
-                self.status = "No statement at the cursor.".to_string();
+                self.toast("Nothing to run", "No statement at the cursor.".to_string());
             }
             Message::Stop => {
                 if self.schema.is_some() || self.row_json.is_some() || self.menu.is_some() {
@@ -432,17 +486,17 @@ impl App {
                 self.running_path.clear();
                 self.live = LiveProgress::default();
                 if cards.is_empty() {
-                    self.status = "Nothing to run.".to_string();
+                    self.toast("Nothing to run", "Nothing to run.".to_string());
                 } else {
                     let failed = cards
                         .iter()
                         .find(|card| !card.ok)
                         .map(|card| card.failure_text());
-                    self.status = if let Some(err) = failed {
-                        format!("A statement failed. {err}")
+                    if let Some(err) = failed {
+                        self.toast("Run failed", format!("A statement failed. {err}"));
                     } else {
-                        format!("{} statement(s) finished.", cards.len())
-                    };
+                        self.status = format!("{} statement(s) finished.", cards.len());
+                    }
                     for card in cards.into_iter().rev() {
                         self.open_cards.insert(0, false);
                         self.results.insert(0, card);
@@ -508,14 +562,6 @@ impl App {
                 self.prefs.write_bands = !self.prefs.write_bands;
                 self.prefs.store();
             }
-            Message::Nav(delta) => {
-                self.prefs.nav = (self.prefs.nav + delta).clamp(160.0, 520.0);
-                self.prefs.store();
-            }
-            Message::Results(delta) => {
-                self.prefs.results = (self.prefs.results + delta).clamp(120.0, 640.0);
-                self.prefs.store();
-            }
             Message::ToggleCard(index) => {
                 if let Some(open) = self.open_cards.get_mut(index) {
                     *open = !*open;
@@ -535,10 +581,45 @@ impl App {
                 self.schema = Some(SchemaKind::Table);
             }
             Message::CloseSchema => self.schema = None,
-            Message::Keep => {}
             Message::UseSuggest(index) => {
                 if let Some(hit) = self.suggest.get(index).cloned() {
                     self.use_suggest(hit);
+                }
+            }
+            Message::PaneRatio(split, ratio) => self.resize_panes(split, ratio),
+            Message::SyncGrid(id, x) => {
+                return iced::widget::operation::scroll_to(
+                    iced::widget::Id::from(id),
+                    iced::widget::operation::AbsoluteOffset {
+                        x: Some(x),
+                        y: None,
+                    },
+                );
+            }
+            Message::WindowSized(size) => {
+                self.window_width = size.width;
+                self.window_height = size.height;
+            }
+            Message::Pointer(point) => self.pointer = point,
+            Message::NoticeTick => {
+                for notice in &mut self.notices {
+                    notice.seconds = notice.seconds.saturating_sub(1);
+                }
+                self.notices.retain(|notice| notice.seconds > 0);
+            }
+            Message::FocusShift(back) => {
+                let open = !matches!(self.dialog, Dialog::None)
+                    || self.menu.is_some()
+                    || self.schema.is_some()
+                    || self.row_json.is_some()
+                    || self.show_settings
+                    || self.show_env;
+                if open {
+                    return if back {
+                        iced::widget::operation::focus_previous()
+                    } else {
+                        iced::widget::operation::focus_next()
+                    };
                 }
             }
         }
@@ -570,7 +651,10 @@ impl App {
                     .dql_files_under(&menu.path)
                     .unwrap_or_default();
                 if files.is_empty() {
-                    self.status = "That folder has no .dql files.".to_string();
+                    self.toast(
+                        "Nothing to run",
+                        "That folder has no .dql files.".to_string(),
+                    );
                     self.running_path.clear();
                     return Task::none();
                 }
@@ -596,6 +680,7 @@ impl App {
                     previous: None,
                 };
                 self.dialog_text = "new.dql".to_string();
+                return iced::widget::operation::focus_next();
             }
             "New folder" => {
                 self.dialog = Dialog::Name {
@@ -605,6 +690,7 @@ impl App {
                     previous: None,
                 };
                 self.dialog_text = "folder".to_string();
+                return iced::widget::operation::focus_next();
             }
             "Duplicate" => {
                 let duplicated = {
@@ -614,12 +700,12 @@ impl App {
                 match duplicated {
                     Ok((path, kind)) => {
                         self.refresh_tree();
-                        self.status = format!("Duplicated to {path}");
+                        self.toast("Duplicated", format!("Duplicated to {path}"));
                         if kind == "file" {
                             self.open_file(path);
                         }
                     }
-                    Err(err) => self.status = err,
+                    Err(err) => self.toast("Duplicate failed", err),
                 }
             }
             "Rename" => {
@@ -636,12 +722,14 @@ impl App {
                     previous: Some(menu.path.clone()),
                 };
                 self.dialog_text = name;
+                return iced::widget::operation::focus_next();
             }
             "Move" => {
                 self.dialog = Dialog::Move {
                     path: menu.path.clone(),
                 };
                 self.dialog_text = parent_dir(&menu.path, "file");
+                return iced::widget::operation::focus_next();
             }
             "Delete" => {
                 let deleted = {
@@ -656,9 +744,9 @@ impl App {
                             self.results.clear();
                         }
                         self.refresh_tree();
-                        self.status = "Deleted.".to_string();
+                        self.toast("Deleted", "Deleted.".to_string());
                     }
-                    Err(err) => self.status = err,
+                    Err(err) => self.toast("Delete failed", err),
                 }
             }
             "Clear results" => {
@@ -672,9 +760,12 @@ impl App {
                             self.results.clear();
                             self.open_cards.clear();
                         }
-                        self.status = format!("Cleared results for {} file(s).", paths.len());
+                        self.toast(
+                            "Results cleared",
+                            format!("Cleared results for {} file(s).", paths.len()),
+                        );
                     }
-                    Err(err) => self.status = err,
+                    Err(err) => self.toast("Clear failed", err),
                 }
             }
             _ => {}
@@ -687,7 +778,7 @@ impl App {
         let name = self.dialog_text.trim().to_string();
         self.dialog = Dialog::None;
         if name.is_empty() {
-            self.status = "A name is required.".to_string();
+            self.toast("Name required", "A name is required.".to_string());
             return Task::none();
         }
         match dialog {
@@ -709,9 +800,9 @@ impl App {
                                 self.open_path = path.clone();
                             }
                             self.refresh_tree();
-                            self.status = format!("Renamed to {path}");
+                            self.toast("Renamed", format!("Renamed to {path}"));
                         }
-                        Err(err) => self.status = err,
+                        Err(err) => self.toast("Rename failed", err),
                     }
                 } else if dir {
                     let created = {
@@ -721,9 +812,9 @@ impl App {
                     match created {
                         Ok(path) => {
                             self.refresh_tree();
-                            self.status = format!("Created {path}");
+                            self.toast("Created", format!("Created {path}"));
                         }
-                        Err(err) => self.status = err,
+                        Err(err) => self.toast("Create failed", err),
                     }
                 } else {
                     let relative = if relative.ends_with(".dql") {
@@ -738,9 +829,10 @@ impl App {
                     match created {
                         Ok(path) => {
                             self.refresh_tree();
-                            self.open_file(path);
+                            self.open_file(path.clone());
+                            self.toast("Created", format!("Created {path}"));
                         }
-                        Err(err) => self.status = err,
+                        Err(err) => self.toast("Create failed", err),
                     }
                 }
             }
@@ -761,9 +853,9 @@ impl App {
                             self.open_path = moved.clone();
                         }
                         self.refresh_tree();
-                        self.status = format!("Moved to {moved}");
+                        self.toast("Moved", format!("Moved to {moved}"));
                     }
-                    Err(err) => self.status = err,
+                    Err(err) => self.toast("Move failed", err),
                 }
             }
             Dialog::Conflict | Dialog::None => {}
@@ -779,7 +871,7 @@ impl App {
             .collect();
         if jobs.is_empty() || jobs.iter().all(|(_, text)| text.trim().is_empty()) {
             self.running_path.clear();
-            self.status = "Nothing to run.".to_string();
+            self.toast("Nothing to run", "Nothing to run.".to_string());
             return Task::none();
         }
         self.cancel.clear();
@@ -857,7 +949,11 @@ impl App {
         } else {
             Some(self.revision.as_str())
         };
-        match lock(&self.studio).save_file(&self.open_path, &text, base) {
+        let saved = {
+            let studio = lock(&self.studio);
+            studio.save_file(&self.open_path, &text, base)
+        };
+        match saved {
             Ok(SaveFile::Stored(file)) => {
                 self.revision = file.revision;
                 self.dirty = false;
@@ -865,7 +961,7 @@ impl App {
             Ok(SaveFile::Conflict(file)) => {
                 self.conflict_text = Some(file.text);
                 self.dialog = Dialog::Conflict;
-                self.status = "The file changed on disk.".to_string();
+                self.toast("Conflict", "The file changed on disk.".to_string());
             }
             Err(err) => self.status = err,
         }
@@ -908,6 +1004,56 @@ impl App {
         }
     }
 
+    fn toast(&mut self, title: &str, body: String) {
+        if self.notices.len() >= 3 {
+            self.notices.remove(0);
+        }
+        self.notices.push(Notice {
+            title: title.to_string(),
+            body: body.clone(),
+            seconds: 6,
+        });
+        self.status = body;
+    }
+
+    fn resize_panes(&mut self, split: pane_grid::Split, ratio: f32) {
+        let width = self.window_width.max(640.0);
+        let height = self.window_height.max(480.0);
+        let axis = match self.mode {
+            Mode::Query => split_axis(self.query_panes.layout(), split),
+            Mode::Tables => split_axis(self.table_panes.layout(), split),
+        };
+        match self.mode {
+            Mode::Query => {
+                self.query_panes.resize(split, ratio);
+            }
+            Mode::Tables => {
+                self.table_panes.resize(split, ratio);
+            }
+        }
+        match axis {
+            Some(pane_grid::Axis::Vertical) => {
+                self.prefs.nav = (ratio * width).clamp(160.0, 520.0);
+                let nav_ratio = (self.prefs.nav / width).clamp(0.16, 0.45);
+                if let Some(other) = match self.mode {
+                    Mode::Query => vertical_split(self.table_panes.layout()),
+                    Mode::Tables => vertical_split(self.query_panes.layout()),
+                } {
+                    match self.mode {
+                        Mode::Query => self.table_panes.resize(other, nav_ratio),
+                        Mode::Tables => self.query_panes.resize(other, nav_ratio),
+                    };
+                }
+            }
+            Some(pane_grid::Axis::Horizontal) => {
+                let usable = (height - 72.0).max(320.0);
+                self.prefs.results = ((1.0 - ratio) * usable).clamp(120.0, 640.0);
+            }
+            None => {}
+        }
+        self.prefs.store();
+    }
+
     fn refresh_tree(&mut self) {
         self.tree = lock(&self.studio).tree().ok();
     }
@@ -925,7 +1071,7 @@ impl App {
         if self.dirty {
             self.conflict_text = Some(file.text);
             self.dialog = Dialog::Conflict;
-            self.status = "The file changed on disk.".to_string();
+            self.toast("Conflict", "The file changed on disk.".to_string());
             return;
         }
         self.editor = text_editor::Content::with_text(&file.text);
@@ -988,16 +1134,13 @@ fn join_rel(parent: &str, name: &str) -> String {
 }
 
 fn editor_text(content: &text_editor::Content) -> String {
-    let mut lines = Vec::new();
-    for line in content.lines() {
-        lines.push(line.text.to_string());
-    }
-    lines.join("\n")
+    content.text()
 }
 
 fn cursor_byte(content: &text_editor::Content, text: &str) -> usize {
     let cursor = content.cursor();
-    let (line, column) = cursor_line_column(&cursor);
+    let line = cursor.position.line;
+    let column = cursor.position.column;
     let mut byte = 0usize;
     for (index, row) in text.split_inclusive('\n').enumerate() {
         if index == line {
@@ -1011,17 +1154,6 @@ fn cursor_byte(content: &text_editor::Content, text: &str) -> usize {
         byte += row.len();
     }
     text.len()
-}
-
-fn cursor_line_column(cursor: &impl std::fmt::Debug) -> (usize, usize) {
-    let rendered = format!("{cursor:?}");
-    parse_line_column(&rendered).unwrap_or((0, 0))
-}
-
-fn parse_line_column(rendered: &str) -> Option<(usize, usize)> {
-    let line = number_after(rendered, "line:")?;
-    let column = number_after(rendered, "column:").or_else(|| number_after(rendered, "index:"))?;
-    Some((line, column))
 }
 
 fn token_at(text: &str, byte: usize) -> String {
@@ -1042,20 +1174,75 @@ fn is_name_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
-fn number_after(text: &str, label: &str) -> Option<usize> {
-    let rest = text.split(label).nth(1)?;
-    let digits: String = rest
-        .trim_start()
-        .chars()
-        .skip_while(|ch| !ch.is_ascii_digit())
-        .take_while(|ch| ch.is_ascii_digit())
-        .collect();
-    digits.parse().ok()
+fn query_layout(prefs: &Prefs, width: f32, height: f32) -> pane_grid::State<Slot> {
+    let width = width.max(640.0);
+    let usable = (height - 72.0).max(320.0);
+    let nav = (prefs.nav / width).clamp(0.16, 0.45);
+    let results = (prefs.results / usable).clamp(0.18, 0.55);
+    pane_grid::State::with_configuration(pane_grid::Configuration::Split {
+        axis: pane_grid::Axis::Vertical,
+        ratio: nav,
+        a: Box::new(pane_grid::Configuration::Pane(Slot::Side)),
+        b: Box::new(pane_grid::Configuration::Split {
+            axis: pane_grid::Axis::Horizontal,
+            ratio: 1.0 - results,
+            a: Box::new(pane_grid::Configuration::Pane(Slot::Editor)),
+            b: Box::new(pane_grid::Configuration::Pane(Slot::Results)),
+        }),
+    })
+}
+
+fn table_layout(prefs: &Prefs, width: f32) -> pane_grid::State<Slot> {
+    let width = width.max(640.0);
+    let nav = (prefs.nav / width).clamp(0.16, 0.45);
+    pane_grid::State::with_configuration(pane_grid::Configuration::Split {
+        axis: pane_grid::Axis::Vertical,
+        ratio: nav,
+        a: Box::new(pane_grid::Configuration::Pane(Slot::Side)),
+        b: Box::new(pane_grid::Configuration::Pane(Slot::Tables)),
+    })
+}
+
+fn split_axis(node: &pane_grid::Node, split: pane_grid::Split) -> Option<pane_grid::Axis> {
+    match node {
+        pane_grid::Node::Split { id, axis, a, b, .. } => {
+            if *id == split {
+                Some(*axis)
+            } else {
+                split_axis(a, split).or_else(|| split_axis(b, split))
+            }
+        }
+        pane_grid::Node::Pane(_) => None,
+    }
+}
+
+fn vertical_split(node: &pane_grid::Node) -> Option<pane_grid::Split> {
+    match node {
+        pane_grid::Node::Split { id, axis, a, b, .. } => {
+            if *axis == pane_grid::Axis::Vertical {
+                Some(*id)
+            } else {
+                vertical_split(a).or_else(|| vertical_split(b))
+            }
+        }
+        pane_grid::Node::Pane(_) => None,
+    }
 }
 
 fn keyboard_subscription() -> Subscription<Message> {
-    iced::event::listen_with(|event, _status, _id| match event {
+    iced::event::listen_with(|event, status, _id| match event {
         iced::Event::Keyboard(iced::keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+            if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) {
+                return Some(Message::Stop);
+            }
+            if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Tab)
+                && status == iced::event::Status::Ignored
+            {
+                return Some(Message::FocusShift(modifiers.shift()));
+            }
+            if status == iced::event::Status::Captured {
+                return None;
+            }
             let command = modifiers.control() || modifiers.command();
             if command && key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Enter) {
                 return Some(Message::RunCursor);
@@ -1068,10 +1255,10 @@ fn keyboard_subscription() -> Subscription<Message> {
                     return Some(Message::Save);
                 }
             }
-            if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) {
-                return Some(Message::Stop);
-            }
             None
+        }
+        iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+            Some(Message::Pointer(position))
         }
         _ => None,
     })
@@ -1176,10 +1363,8 @@ SELECT * FROM demo WHERE id = 'a';
         assert_eq!(app.mode, Mode::Tables);
 
         assert_eq!(token_at("SELECT widgets", 13), "widgets");
-        assert_eq!(
-            parse_line_column("Cursor { line: 2, column: 4 }"),
-            Some((2, 4))
-        );
+        assert_eq!(app.editor.cursor().position.line, 0);
+        assert_eq!(app.editor.cursor().position.column, 0);
     }
 
     struct Scratch {
