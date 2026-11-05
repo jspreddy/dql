@@ -27,7 +27,14 @@ impl Tone {
             Self::Comment => Some(Color::from_rgb8(0x6b, 0x72, 0x80)),
             Self::Write => Some(Color::from_rgb8(0xb9, 0x1c, 0x1c)),
         };
-        Format { color, font: None }
+        let font = match *tone {
+            Self::Keyword | Self::Write => Some(Font {
+                weight: iced::font::Weight::Bold,
+                ..Font::MONOSPACE
+            }),
+            _ => None,
+        };
+        Format { color, font }
     }
 }
 
@@ -203,5 +210,23 @@ mod tests {
             text.contains('a') && *tone == Tone::String
         }));
         assert_eq!(spans("  -- hidden").len(), 1);
+        let keyword = Tone::format(&Tone::Keyword, &iced::Theme::Light);
+        let face = keyword.font.expect("keywords are bold");
+        assert_eq!(face.weight, iced::font::Weight::Bold);
+        assert_eq!(face.family, iced::font::Family::Monospace);
+        let write = Tone::format(&Tone::Write, &iced::Theme::Light);
+        assert_eq!(
+            write.font.expect("write keywords are bold").weight,
+            iced::font::Weight::Bold
+        );
+        assert!(Tone::format(&Tone::Plain, &iced::Theme::Light)
+            .font
+            .is_none());
+        assert!(Tone::format(&Tone::String, &iced::Theme::Light)
+            .font
+            .is_none());
+        assert!(Tone::format(&Tone::Comment, &iced::Theme::Light)
+            .font
+            .is_none());
     }
 }
