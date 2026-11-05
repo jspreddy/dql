@@ -5,6 +5,7 @@
 
 mod highlight;
 mod icons;
+mod query;
 mod style;
 mod view;
 
@@ -212,6 +213,12 @@ struct App {
     window_height: f32,
     pointer: iced::Point,
     notices: Vec<Notice>,
+    editor_scroll: iced::widget::Id,
+    editor_offset_x: f32,
+    editor_offset_y: f32,
+    editor_view_w: f32,
+    editor_view_h: f32,
+    editor_jump_top: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -259,6 +266,7 @@ enum Message {
     Pointer(iced::Point),
     NoticeTick,
     FocusShift(bool),
+    EditorScrolled(iced::widget::scrollable::Viewport),
 }
 
 impl App {
@@ -319,6 +327,12 @@ impl App {
             window_height: 800.0,
             pointer: iced::Point::new(16.0, 48.0),
             notices: Vec::new(),
+            editor_scroll: iced::widget::Id::unique(),
+            editor_offset_x: 0.0,
+            editor_offset_y: 0.0,
+            editor_view_w: 0.0,
+            editor_view_h: 0.0,
+            editor_jump_top: false,
         };
         app.refresh_tree();
         app
@@ -360,6 +374,30 @@ impl App {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
+        let task = self.dispatch(message);
+        self.with_editor_jump(task)
+    }
+
+    fn with_editor_jump(&mut self, task: Task<Message>) -> Task<Message> {
+        if !self.editor_jump_top {
+            return task;
+        }
+        self.editor_jump_top = false;
+        self.editor_offset_x = 0.0;
+        self.editor_offset_y = 0.0;
+        Task::batch([
+            task,
+            iced::widget::operation::scroll_to(
+                self.editor_scroll.clone(),
+                iced::widget::operation::AbsoluteOffset {
+                    x: Some(0.0),
+                    y: Some(0.0),
+                },
+            ),
+        ])
+    }
+
+    fn dispatch(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Mode(mode) => {
                 self.mode = mode;
@@ -413,6 +451,9 @@ impl App {
                 return self.menu_act(&menu, label);
             }
             Message::Editor(action) => {
+                if let text_editor::Action::Scroll { lines } = action {
+                    return self.scroll_editor(lines);
+                }
                 let is_edit = matches!(action, text_editor::Action::Edit(_));
                 self.editor.perform(action);
                 if is_edit && !self.open_path.is_empty() {
@@ -423,6 +464,14 @@ impl App {
                 if is_edit {
                     self.refresh_suggest();
                 }
+                return self.follow_cursor();
+            }
+            Message::EditorScrolled(viewport) => {
+                let offset = viewport.absolute_offset();
+                self.editor_offset_x = offset.x;
+                self.editor_offset_y = offset.y;
+                self.editor_view_w = viewport.bounds().width;
+                self.editor_view_h = viewport.bounds().height;
             }
             Message::Save => {
                 self.save_editor();
@@ -433,6 +482,7 @@ impl App {
             Message::ReloadDisk => {
                 if let Some(text) = self.conflict_text.clone() {
                     self.editor = text_editor::Content::with_text(&text);
+                    self.editor_jump_top = true;
                     self.revision = crate::web::files::content_revision(&text);
                     self.dirty = false;
                     self.conflict_text = None;
@@ -458,10 +508,11 @@ impl App {
             }
             Message::RunCursor => {
                 let text = editor_text(&self.editor);
-                let at = cursor_byte(&self.editor, &text);
-                if let Some(statement) = studio::statement_at(&text, at) {
+                let (head, anchor) = caret_bytes(&self.editor, &text);
+                if let Some(target) = query::run_target(&text, head, anchor) {
+                    let slice = text.get(target.from..target.to).unwrap_or("").to_string();
                     self.save_editor();
-                    return self.start_run(vec![(self.open_path.clone(), statement)]);
+                    return self.start_run(vec![(self.open_path.clone(), slice)]);
                 }
                 self.toast("Nothing to run", "No statement at the cursor.".to_string());
             }
@@ -920,6 +971,7 @@ impl App {
         match read {
             Ok(file) => {
                 self.editor = text_editor::Content::with_text(&file.text);
+                self.editor_jump_top = true;
                 self.open_path = file.path;
                 self.revision = file.revision;
                 self.dirty = false;
@@ -1138,10 +1190,21 @@ fn editor_text(content: &text_editor::Content) -> String {
     content.text()
 }
 
-fn cursor_byte(content: &text_editor::Content, text: &str) -> usize {
+fn caret_bytes(content: &text_editor::Content, text: &str) -> (usize, usize) {
     let cursor = content.cursor();
-    let line = cursor.position.line;
-    let column = cursor.position.column;
+    let head = position_byte(text, cursor.position.line, cursor.position.column);
+    let anchor = match cursor.selection {
+        Some(position) => position_byte(text, position.line, position.column),
+        None => head,
+    };
+    (head, anchor)
+}
+
+fn cursor_byte(content: &text_editor::Content, text: &str) -> usize {
+    caret_bytes(content, text).0
+}
+
+fn position_byte(text: &str, line: usize, column: usize) -> usize {
     let mut byte = 0usize;
     for (index, row) in text.split_inclusive('\n').enumerate() {
         if index == line {
@@ -1155,6 +1218,48 @@ fn cursor_byte(content: &text_editor::Content, text: &str) -> usize {
         byte += row.len();
     }
     text.len()
+}
+
+impl App {
+    fn scroll_editor(&self, lines: i32) -> Task<Message> {
+        if lines == 0 {
+            return Task::none();
+        }
+        iced::widget::operation::scroll_by(
+            self.editor_scroll.clone(),
+            iced::widget::operation::AbsoluteOffset {
+                x: 0.0,
+                y: lines as f32 * query::LINE_H,
+            },
+        )
+    }
+
+    fn follow_cursor(&self) -> Task<Message> {
+        if self.editor_view_h <= 0.0 {
+            return Task::none();
+        }
+        let line = self.editor.cursor().position.line as f32;
+        let top = query::PAD_TOP + line * query::LINE_H;
+        let bottom = top + query::LINE_H;
+        let offset = self.editor_offset_y;
+        let y = if top < offset {
+            Some(top)
+        } else if bottom > offset + self.editor_view_h {
+            Some((bottom - self.editor_view_h).max(0.0))
+        } else {
+            None
+        };
+        let Some(y) = y else {
+            return Task::none();
+        };
+        iced::widget::operation::scroll_to(
+            self.editor_scroll.clone(),
+            iced::widget::operation::AbsoluteOffset {
+                x: None,
+                y: Some(y),
+            },
+        )
+    }
 }
 
 fn token_at(text: &str, byte: usize) -> String {
@@ -1293,6 +1398,27 @@ mod tests {
         for message in messages {
             let _ = app.update(message);
         }
+    }
+
+    #[test]
+    fn run_cursor_includes_attributed_comments_and_keeps_a_selection() {
+        let (_dir, mut app) = workspace();
+        let text = "-- note\nSELECT 1;\n\nSELECT 2;\n";
+        app.open_path = "widgets.dql".to_string();
+        app.editor = text_editor::Content::with_text(text);
+        let (head, anchor) = caret_bytes(&app.editor, text);
+        let target = query::run_target(text, head, anchor).unwrap();
+        assert_eq!(target.kind, query::RunKind::Query);
+        assert_eq!(&text[target.from..target.to], "-- note\nSELECT 1;\n\n");
+
+        app.editor.move_to(text_editor::Cursor {
+            position: text_editor::Position { line: 3, column: 7 },
+            selection: Some(text_editor::Position { line: 3, column: 0 }),
+        });
+        let (head, anchor) = caret_bytes(&app.editor, text);
+        let target = query::run_target(text, head, anchor).unwrap();
+        assert_eq!(target.kind, query::RunKind::Selection);
+        assert_eq!(&text[target.from..target.to], "SELECT ");
     }
 
     #[test]

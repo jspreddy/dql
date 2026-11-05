@@ -14,8 +14,9 @@ use crate::web::studio::{menu_labels, StatementCard};
 
 use super::highlight;
 use super::icons::{self, Mark};
+use super::query;
 use super::style::{self, Palette};
-use super::{App, Dialog, Message, Mode};
+use super::{caret_bytes, App, Dialog, Message, Mode};
 
 pub fn view(app: &App) -> Element<'_, Message> {
     let colors = style::palette(app.prefs.dark);
@@ -669,8 +670,13 @@ fn editor_body(app: &App, p: Palette) -> Element<'_, Message> {
     };
     let mut gutter = column![]
         .spacing(0)
-        .width(Length::Fixed(42.0))
-        .padding([8.0, 0.0]);
+        .width(Length::Fixed(query::GUTTER_W))
+        .padding(iced::Padding {
+            top: query::PAD_TOP,
+            right: 0.0,
+            bottom: query::PAD_TOP,
+            left: 0.0,
+        });
     for (index, line) in lines.iter().enumerate() {
         let number = index + 1;
         let issue = app.lint.iter().find(|issue| issue.line == number);
@@ -691,7 +697,7 @@ fn editor_body(app: &App, p: Palette) -> Element<'_, Message> {
                 .spacing(2)
                 .align_y(iced::alignment::Vertical::Center),
             )
-            .height(18)
+            .height(Length::Fixed(query::LINE_H))
             .width(Fill)
             .padding([0.0, 4.0])
             .style(style::fill(if write {
@@ -708,9 +714,13 @@ fn editor_body(app: &App, p: Palette) -> Element<'_, Message> {
         .on_action(Message::Editor)
         .key_binding(editor_keys)
         .size(13)
-        .line_height(iced::widget::text::LineHeight::Absolute(18.0.into()))
-        .height(Fill)
-        .padding([8.0, 10.0]);
+        .wrapping(iced::widget::text::Wrapping::None)
+        .line_height(iced::widget::text::LineHeight::Absolute(
+            query::LINE_H.into(),
+        ))
+        .height(Length::Shrink)
+        .padding([query::PAD_TOP, query::PAD_LEFT])
+        .style(style::editor_surface(p));
     let mut below = column![].spacing(4);
     if !app.running_path.is_empty() {
         let total = app.live.total.unwrap_or(0);
@@ -785,25 +795,83 @@ fn editor_body(app: &App, p: Palette) -> Element<'_, Message> {
                 .color(color),
         );
     }
-    container(
-        column![
-            row![
-                container(gutter)
-                    .height(Fill)
-                    .clip(true)
-                    .style(style::fill(p.gutter)),
-                editor
-            ]
-            .spacing(0)
-            .height(Fill),
-            below.padding([4, 10])
-        ]
-        .height(Fill),
+    let document = row![container(gutter).style(style::fill(p.gutter)), editor]
+        .spacing(0)
+        .width(Fill);
+    let mut document = iced::widget::Stack::new().push(document);
+    if let Some(frame) = run_frame(app, p, &source) {
+        document = document.push_under(frame);
+    }
+    let scroller = scrollable(document)
+        .id(app.editor_scroll.clone())
+        .on_scroll(Message::EditorScrolled)
+        .width(Fill)
+        .height(Fill);
+    let mut editor_stack = iced::widget::Stack::new()
+        .width(Fill)
+        .height(Fill)
+        .push(scroller);
+    if let Some(button) = run_button(app, p, &source) {
+        editor_stack = editor_stack.push(button);
+    }
+    container(column![editor_stack, below.padding([4, 10])].height(Fill))
+        .width(Fill)
+        .height(Fill)
+        .style(style::fill(p.paper))
+        .into()
+}
+
+fn run_frame(app: &App, p: Palette, source: &str) -> Option<Element<'static, Message>> {
+    let (head, anchor) = caret_bytes(&app.editor, source);
+    let target = query::run_target(source, head, anchor)?;
+    let frame = query::frame(source, target)?;
+    Some(
+        container(
+            container(iced::widget::Space::new())
+                .width(Length::Fixed(frame.width))
+                .height(Length::Fixed(frame.height))
+                .style(style::run_window(p)),
+        )
+        .padding(iced::Padding {
+            top: frame.y.max(0.0),
+            right: 0.0,
+            bottom: 0.0,
+            left: frame.x.max(0.0),
+        })
+        .into(),
     )
-    .width(Fill)
-    .height(Fill)
-    .style(style::fill(p.paper))
-    .into()
+}
+
+fn run_button(app: &App, p: Palette, source: &str) -> Option<Element<'static, Message>> {
+    let (head, anchor) = caret_bytes(&app.editor, source);
+    let target = query::run_target(source, head, anchor)?;
+    let frame = query::frame(source, target)?;
+    let (left, top) = query::button_origin(
+        frame,
+        app.editor_offset_x,
+        app.editor_offset_y,
+        app.editor_view_w,
+        app.editor_view_h,
+    )?;
+    let busy = !app.running_path.is_empty();
+    let ink = if busy {
+        Color::from_rgba(1.0, 1.0, 1.0, 0.55)
+    } else {
+        Color::WHITE
+    };
+    let mut control = button(icon_only(Mark::Play, ink, 11.0))
+        .padding(0)
+        .width(query::BUTTON)
+        .height(query::BUTTON)
+        .style(style::run_float(p, !busy));
+    if !busy {
+        control = control.on_press(Message::RunCursor);
+    }
+    Some(
+        float(tip(control, "Run selection", p))
+            .translate(move |_bounds, _viewport| Vector::new(left, top))
+            .into(),
+    )
 }
 
 fn editor_text_view(app: &App) -> String {

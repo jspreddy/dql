@@ -3,7 +3,7 @@
 //! The header stays the dark slate bar in both themes. The page under it
 //! follows the light or dark paper tokens.
 
-use iced::widget::{button, container, text_input};
+use iced::widget::{button, container, text_editor, text_input};
 use iced::{Background, Border, Color, Shadow, Theme, Vector};
 
 #[derive(Clone, Copy)]
@@ -240,6 +240,107 @@ pub fn column_paint(p: Palette, table_key: Option<&str>, index_key: Option<&str>
         cell_line: rgb(cell_line.0, cell_line.1, cell_line.2),
         mark: rgb(mark.0, mark.1, mark.2),
         keyed: true,
+    }
+}
+
+pub fn editor_surface(
+    p: Palette,
+) -> impl Fn(&Theme, text_editor::Status) -> text_editor::Style + Copy {
+    move |_, _| text_editor::Style {
+        background: Background::Color(Color::TRANSPARENT),
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: 0.0.into(),
+        },
+        placeholder: p.muted,
+        value: p.text,
+        selection: Color {
+            r: p.blue.r,
+            g: p.blue.g,
+            b: p.blue.b,
+            a: 0.28,
+        },
+    }
+}
+
+/// Light blue fill and 1px blue border, matching `.cm-run-fill`.
+pub fn run_window(p: Palette) -> impl Fn(&Theme) -> container::Style {
+    let fill = if p.dark {
+        Color {
+            r: 96.0 / 255.0,
+            g: 165.0 / 255.0,
+            b: 250.0 / 255.0,
+            a: 0.14,
+        }
+    } else {
+        Color {
+            r: 16.0 / 255.0,
+            g: 42.0 / 255.0,
+            b: 96.0 / 255.0,
+            a: 0.05,
+        }
+    };
+    move |_| {
+        container::Style::default().background(fill).border(Border {
+            color: p.blue,
+            width: 1.0,
+            radius: 2.0.into(),
+        })
+    }
+}
+
+/// Circular play button matching `.run-float`.
+pub fn run_float(
+    p: Palette,
+    enabled: bool,
+) -> impl Fn(&Theme, button::Status) -> button::Style + Copy {
+    move |_, status| {
+        let (fill, hover, active) = if p.dark {
+            (
+                rgb(0x25, 0x63, 0xeb),
+                rgb(0x3b, 0x82, 0xf6),
+                rgb(0x1d, 0x4e, 0xd8),
+            )
+        } else {
+            (
+                rgb(0x25, 0x63, 0xeb),
+                rgb(0x1d, 0x4e, 0xd8),
+                rgb(0x1e, 0x40, 0xaf),
+            )
+        };
+        let mut color = if enabled {
+            match status {
+                button::Status::Pressed => active,
+                button::Status::Hovered => hover,
+                _ => fill,
+            }
+        } else {
+            fill
+        };
+        if !enabled {
+            color.a = 0.5;
+        }
+        button::Style {
+            background: Some(Background::Color(color)),
+            text_color: Color::WHITE,
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 11.0.into(),
+            },
+            shadow: Shadow {
+                color: Color {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.18,
+                },
+                offset: Vector::new(0.0, 1.0),
+                blur_radius: 4.0,
+            },
+            snap: true,
+        }
     }
 }
 
