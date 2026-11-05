@@ -4,7 +4,7 @@
 //! follows the light or dark paper tokens.
 
 use iced::widget::{button, container, text_input};
-use iced::{Background, Border, Color, Shadow, Theme};
+use iced::{Background, Border, Color, Shadow, Theme, Vector};
 
 #[derive(Clone, Copy)]
 pub struct Palette {
@@ -30,6 +30,7 @@ pub struct Palette {
     pub status: Color,
     pub gutter: Color,
     pub chip: Color,
+    pub selected: Color,
 }
 
 pub fn palette(dark: bool) -> Palette {
@@ -57,6 +58,7 @@ pub fn palette(dark: bool) -> Palette {
             status: rgb(0x14, 0x1c, 0x26),
             gutter: rgb(0x14, 0x1c, 0x26),
             chip: rgb(0x2a, 0x3a, 0x4e),
+            selected: rgb(0x1c, 0x3d, 0x5c),
         }
     } else {
         Palette {
@@ -82,6 +84,7 @@ pub fn palette(dark: bool) -> Palette {
             status: rgb(0xf1, 0xf5, 0xf9),
             gutter: rgb(0xfa, 0xfb, 0xfc),
             chip: rgb(0xe8, 0xee, 0xf5),
+            selected: rgb(0xd9, 0xe6, 0xf6),
         }
     }
 }
@@ -115,8 +118,50 @@ pub fn menu_card(p: Palette) -> impl Fn(&Theme) -> container::Style {
             .border(Border {
                 color: p.line,
                 width: 1.0,
+                radius: 6.0.into(),
+            })
+            .shadow(Shadow {
+                color: Color {
+                    r: 0.08,
+                    g: 0.12,
+                    b: 0.16,
+                    a: if p.dark { 0.45 } else { 0.16 },
+                },
+                offset: Vector::new(0.0, 8.0),
+                blur_radius: 24.0,
+            })
+    }
+}
+
+pub fn pop_card(p: Palette) -> impl Fn(&Theme) -> container::Style {
+    move |_| {
+        container::Style::default()
+            .background(p.paper)
+            .color(p.text)
+            .border(Border {
+                color: p.line,
+                width: 1.0,
                 radius: 8.0.into(),
             })
+            .shadow(Shadow {
+                color: Color {
+                    r: 0.06,
+                    g: 0.09,
+                    b: 0.15,
+                    a: if p.dark { 0.55 } else { 0.28 },
+                },
+                offset: Vector::new(0.0, 18.0),
+                blur_radius: 48.0,
+            })
+    }
+}
+
+pub fn scrim(dark: bool) -> Color {
+    Color {
+        r: if dark { 0.0 } else { 0.06 },
+        g: if dark { 0.0 } else { 0.09 },
+        b: if dark { 0.0 } else { 0.15 },
+        a: if dark { 0.62 } else { 0.38 },
     }
 }
 
@@ -218,6 +263,9 @@ pub enum Look {
     Quiet,
     Danger,
     Stop,
+    Control,
+    Selected,
+    Outline,
 }
 
 pub fn paint(p: Palette, look: Look) -> impl Fn(&Theme, button::Status) -> button::Style + Copy {
@@ -229,8 +277,11 @@ pub fn paint(p: Palette, look: Look) -> impl Fn(&Theme, button::Status) -> butto
             Look::Pill => (None, p.header_fg, p.header_line, 1.0, 999.0),
             Look::Primary => (Some(p.blue), Color::WHITE, Color::TRANSPARENT, 0.0, 6.0),
             Look::Quiet => (None, p.text, Color::TRANSPARENT, 0.0, 6.0),
-            Look::Danger => (None, p.danger, Color::TRANSPARENT, 0.0, 6.0),
-            Look::Stop => (Some(p.danger), Color::WHITE, Color::TRANSPARENT, 0.0, 6.0),
+            Look::Danger => (None, p.danger, Color::TRANSPARENT, 0.0, 4.0),
+            Look::Stop => (Some(p.danger), Color::WHITE, Color::TRANSPARENT, 0.0, 4.0),
+            Look::Control => (Some(p.paper), p.text, p.line_strong, 1.0, 4.0),
+            Look::Selected => (Some(p.selected), p.text, Color::TRANSPARENT, 0.0, 0.0),
+            Look::Outline => (Some(p.paper), p.danger, p.danger, 1.0, 4.0),
         };
         let background = background.map(|color| {
             let color = match status {
