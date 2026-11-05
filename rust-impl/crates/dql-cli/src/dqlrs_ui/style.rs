@@ -8,6 +8,7 @@ use iced::{Background, Border, Color, Shadow, Theme};
 
 #[derive(Clone, Copy)]
 pub struct Palette {
+    pub dark: bool,
     pub bar: Color,
     pub header_fg: Color,
     pub header_text: Color,
@@ -34,6 +35,7 @@ pub struct Palette {
 pub fn palette(dark: bool) -> Palette {
     if dark {
         Palette {
+            dark: true,
             bar: rgb(0x0c, 0x11, 0x17),
             header_fg: rgb(0xe8, 0xee, 0xf5),
             header_text: rgb(0xc9, 0xd4, 0xe0),
@@ -58,6 +60,7 @@ pub fn palette(dark: bool) -> Palette {
         }
     } else {
         Palette {
+            dark: false,
             bar: rgb(0x1b, 0x28, 0x38),
             header_fg: rgb(0xe8, 0xee, 0xf5),
             header_text: rgb(0xd5, 0xdd, 0xe6),
@@ -114,6 +117,84 @@ pub fn menu_card(p: Palette) -> impl Fn(&Theme) -> container::Style {
                 width: 1.0,
                 radius: 8.0.into(),
             })
+    }
+}
+
+pub struct ColumnPaint {
+    pub head: Color,
+    pub head_line: Color,
+    pub cell: Color,
+    pub cell_line: Color,
+    pub mark: Color,
+    pub keyed: bool,
+}
+
+/// Header and body colors for one result column, matching `.col-table`,
+/// `.col-index`, and `.col-both`. Plain columns use the gutter and paper.
+pub fn column_paint(p: Palette, table_key: Option<&str>, index_key: Option<&str>) -> ColumnPaint {
+    let table_key = table_key.filter(|key| !key.is_empty());
+    let index_key = index_key.filter(|key| !key.is_empty());
+    let (head, head_line, cell, cell_line, mark) = match (table_key, index_key, p.dark) {
+        (Some(_), Some(_), true) => (
+            (0x16, 0x30, 0x34),
+            (0x2a, 0x48, 0x4e),
+            (0x12, 0x24, 0x28),
+            (0x23, 0x40, 0x44),
+            (0x5e, 0xea, 0xd4),
+        ),
+        (Some(_), Some(_), false) => (
+            (0xe7, 0xf3, 0xf4),
+            (0xd7, 0xe2, 0xe3),
+            (0xf5, 0xfa, 0xfb),
+            (0xe7, 0xec, 0xed),
+            (0x3d, 0x74, 0x80),
+        ),
+        (Some(_), None, true) => (
+            (0x17, 0x35, 0x28),
+            (0x2c, 0x4a, 0x3a),
+            (0x12, 0x24, 0x1c),
+            (0x23, 0x40, 0x33),
+            (0x86, 0xef, 0xac),
+        ),
+        (Some(_), None, false) => (
+            (0xe7, 0xf6, 0xec),
+            (0xd7, 0xe5, 0xdc),
+            (0xf5, 0xfb, 0xf7),
+            (0xe7, 0xed, 0xe9),
+            (0x3f, 0x6f, 0x57),
+        ),
+        (None, Some(_), true) => (
+            (0x17, 0x28, 0x3c),
+            (0x2a, 0x40, 0x60),
+            (0x12, 0x1e, 0x2c),
+            (0x22, 0x32, 0x48),
+            (0x93, 0xc5, 0xfd),
+        ),
+        (None, Some(_), false) => (
+            (0xe7, 0xf1, 0xfc),
+            (0xd7, 0xe0, 0xea),
+            (0xf5, 0xf9, 0xfe),
+            (0xe7, 0xeb, 0xf0),
+            (0x3c, 0x63, 0x99),
+        ),
+        (None, None, _) => {
+            return ColumnPaint {
+                head: p.gutter,
+                head_line: p.line,
+                cell: p.paper,
+                cell_line: p.line,
+                mark: p.muted,
+                keyed: false,
+            };
+        }
+    };
+    ColumnPaint {
+        head: rgb(head.0, head.1, head.2),
+        head_line: rgb(head_line.0, head_line.1, head_line.2),
+        cell: rgb(cell.0, cell.1, cell.2),
+        cell_line: rgb(cell_line.0, cell_line.1, cell_line.2),
+        mark: rgb(mark.0, mark.1, mark.2),
+        keyed: true,
     }
 }
 

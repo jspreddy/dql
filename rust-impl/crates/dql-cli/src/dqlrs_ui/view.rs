@@ -2,7 +2,7 @@
 //! editor, results, and a table browser.
 
 use iced::widget::{button, column, container, mouse_area, row, scrollable, text, text_input};
-use iced::{Element, Fill, Length};
+use iced::{Color, Element, Fill, Length};
 
 use crate::web::files::Node;
 use crate::web::shape::split_statements;
@@ -583,86 +583,152 @@ fn card_view<'a>(
     card: &'a StatementCard,
     p: Palette,
 ) -> Element<'a, Message> {
-    let (flag, flag_color, flag_bg) = if card.ok {
-        ("ok", p.ok, p.ok_bg)
-    } else {
-        ("failed", p.danger, p.amber_bg)
-    };
-    let mut head = row![
-        button(
-            text(if app.open_cards.get(index).copied().unwrap_or(false) {
-                "●"
-            } else {
-                "○"
-            })
-            .size(10)
-            .color(p.muted)
-        )
-        .on_press(Message::ToggleCard(index))
-        .padding(2)
-        .style(style::paint(p, style::Look::Quiet)),
-        container(text(flag).size(11).color(flag_color))
-            .padding([1, 6])
-            .style(style::chip(flag_bg, flag_color)),
-        text(card.kind.clone()).size(12).color(p.muted),
-        text(format!("{} ms", card.elapsed_ms))
-            .size(12)
-            .color(p.muted),
-    ]
-    .spacing(8)
-    .align_y(iced::alignment::Vertical::Center);
-    if card.read_units > 0.0 {
-        head = head.push(
-            container(
-                text(format!("RCU {:.1}", card.read_units))
-                    .size(11)
-                    .color(p.text),
-            )
-            .padding([1, 6])
-            .style(style::chip(p.chip, p.text)),
-        );
-    }
-    if card.write_units > 0.0 {
-        head = head.push(
-            container(
-                text(format!("WCU {:.1}", card.write_units))
-                    .size(11)
-                    .color(p.text),
-            )
-            .padding([1, 6])
-            .style(style::chip(p.chip, p.text)),
-        );
-    }
-    let mut body = column![head].spacing(4);
-    if app.open_cards.get(index).copied().unwrap_or(false) {
-        body = body.push(
-            text(card.statement.clone())
-                .font(iced::Font::MONOSPACE)
-                .size(12)
-                .color(p.text),
-        );
-    }
-    if !card.ok {
-        body = body.push(text(card.failure_text()).size(12).color(p.danger));
-    } else if !card.message.is_empty() && card.items.is_empty() {
-        body = body.push(text(card.message.clone()).size(12).color(p.text));
-    }
-    if let Some(help) = &card.help {
-        let pretty = serde_json::to_string_pretty(help).unwrap_or_else(|_| help.to_string());
-        body = body.push(
-            text(pretty)
-                .font(iced::Font::MONOSPACE)
-                .size(12)
-                .color(p.text),
-        );
-    }
     if !card.items.is_empty() {
-        body = body.push(items_table(&card.columns, &card.items, true, false, p));
+        return item_card(app, index, card, p);
     }
-    container(body)
-        .padding(8)
+    let (bg, fg) = if card.ok {
+        (p.ok_bg, p.ok)
+    } else {
+        (p.amber_bg, p.danger)
+    };
+    let message = if !card.ok {
+        card.failure_text()
+    } else if !card.message.is_empty() {
+        card.message.clone()
+    } else {
+        card.kind.clone()
+    };
+    let note = container(text(message).size(13).color(fg))
+        .padding([8, 10])
         .width(Fill)
-        .style(style::card(p))
+        .style(move |_| {
+            iced::widget::container::Style::default()
+                .background(bg)
+                .border(iced::Border {
+                    color: bg,
+                    width: 1.0,
+                    radius: 8.0.into(),
+                })
+        });
+    let Some(help) = &card.help else {
+        return note.into();
+    };
+    let pretty = serde_json::to_string_pretty(help).unwrap_or_else(|_| help.to_string());
+    column![
+        note,
+        text(pretty)
+            .font(iced::Font::MONOSPACE)
+            .size(12)
+            .color(p.text),
+    ]
+    .spacing(6)
+    .into()
+}
+
+fn item_card<'a>(
+    app: &'a App,
+    index: usize,
+    card: &'a StatementCard,
+    p: Palette,
+) -> Element<'a, Message> {
+    let title = table_name(&card.statement).unwrap_or_else(|| "Result".to_string());
+    let rows = card.items.len();
+    let open = app.open_cards.get(index).copied().unwrap_or(false);
+    let mut head = row![
+        text(title)
+            .size(13.5)
+            .font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..iced::Font::MONOSPACE
+            })
+            .color(if app.prefs.dark {
+                style::rgb(0xe7, 0xee, 0xf6)
+            } else {
+                style::rgb(0x12, 0x20, 0x2b)
+            }),
+        stat_chip(
+            format!("{rows} {}", if rows == 1 { "row" } else { "rows" }),
+            p,
+        ),
+    ]
+    .spacing(6)
+    .align_y(iced::alignment::Vertical::Center);
+    if let Some(capacity) = capacity_label(card.read_units, card.write_units) {
+        head = head.push(stat_chip(capacity, p));
+    }
+    head = head.push(stat_chip(elapsed_label(card.elapsed_ms), p));
+    let head = container(head)
+        .width(Fill)
+        .padding([8, 12])
+        .style(style::fill(if app.prefs.dark {
+            style::rgb(0x15, 0x24, 0x2a)
+        } else {
+            style::rgb(0xf6, 0xfb, 0xf9)
+        }));
+    let mut body = column![head, hairline(p.line_strong)]
+        .width(Fill)
+        .spacing(0);
+    if open {
+        body = body.push(
+            container(
+                text(card.statement.clone())
+                    .font(iced::Font::MONOSPACE)
+                    .size(12.5)
+                    .color(if app.prefs.dark {
+                        style::rgb(0xc5, 0xd2, 0xe0)
+                    } else {
+                        style::rgb(0x33, 0x41, 0x55)
+                    }),
+            )
+            .width(Fill)
+            .padding([10, 12])
+            .style(style::fill(if app.prefs.dark {
+                style::rgb(0x14, 0x1c, 0x26)
+            } else {
+                style::rgb(0xf8, 0xfa, 0xfc)
+            })),
+        );
+        body = body.push(hairline(p.line_strong));
+    }
+    body = body.push(items_table(&card.columns, &card.items, true, true, p));
+    let card_face = container(body).width(Fill).style(style::card(p));
+    row![query_dot(open, index, p), card_face]
+        .spacing(6)
+        .align_y(iced::alignment::Vertical::Top)
+        .into()
+}
+
+fn query_dot(open: bool, index: usize, p: Palette) -> Element<'static, Message> {
+    let color = if open {
+        p.teal
+    } else {
+        style::rgb(0x9a, 0xa3, 0xad)
+    };
+    button(container(text("")).width(8).height(8).style(move |_| {
+        iced::widget::container::Style::default()
+            .background(color)
+            .border(iced::Border {
+                color,
+                width: 0.0,
+                radius: 4.0.into(),
+            })
+    }))
+    .on_press(Message::ToggleCard(index))
+    .padding([13, 0])
+    .style(style::paint(p, style::Look::Quiet))
+    .into()
+}
+
+fn stat_chip(label: String, p: Palette) -> Element<'static, Message> {
+    let fg = if p.dark {
+        style::rgb(0xc5, 0xd2, 0xe0)
+    } else {
+        style::rgb(0x33, 0x41, 0x55)
+    };
+    container(text(label).size(12).color(fg))
+        .height(22)
+        .padding([0, 8])
+        .style(style::chip(p.chip, fg))
         .into()
 }
 
@@ -680,60 +746,192 @@ fn items_table<'a>(
     columns: &'a [crate::web::shape::Column],
     items: &'a [serde_json::Value],
     clickable: bool,
-    pin_header: bool,
+    result_card: bool,
     p: Palette,
 ) -> Element<'a, Message> {
-    let names: Vec<String> = if columns.is_empty() {
-        items
-            .first()
-            .and_then(|item| item.as_object())
-            .map(|map| map.keys().cloned().collect())
-            .unwrap_or_default()
-    } else {
-        columns.iter().map(|column| column.name.clone()).collect()
-    };
-    let mut header = row![].spacing(8);
-    for name in &names {
-        header = header.push(text(name.clone()).size(12).color(p.muted));
+    let columns = ordered_columns(columns, items);
+    let shown: Vec<_> = items.iter().take(50).collect();
+    let widths: Vec<f32> = columns
+        .iter()
+        .map(|column| {
+            let header = cell_width(&column.name) + key_extra(column);
+            shown
+                .iter()
+                .map(|item| cell_text(item.get(&column.name)))
+                .map(|value| cell_width(&value))
+                .fold(header, f32::max)
+                .clamp(72.0, 420.0)
+        })
+        .collect();
+    let header = grid_row(
+        peek_cell(false, String::new(), true, result_card, p),
+        columns.iter().zip(&widths).map(|(column, width)| {
+            let paint = style::column_paint(p, column.table.as_deref(), column.index.as_deref());
+            ruled(
+                header_label(column, p.text, paint.mark),
+                *width,
+                paint.head,
+                paint.head_line,
+                true,
+            )
+        }),
+        p.gutter,
+    );
+    let last = shown.len().saturating_sub(1);
+    let mut rows = column![header].spacing(0);
+    for (index, item) in shown.into_iter().enumerate() {
+        let json = serde_json::to_string_pretty(item).unwrap_or_default();
+        let stripe = index % 2 == 1;
+        let rule = index != last;
+        rows = rows.push(grid_row(
+            peek_cell(clickable, json, false, result_card, p),
+            columns.iter().zip(&widths).map(|(column, width)| {
+                let paint =
+                    style::column_paint(p, column.table.as_deref(), column.index.as_deref());
+                let bg = if paint.keyed {
+                    paint.cell
+                } else if stripe {
+                    row_stripe(p)
+                } else {
+                    paint.cell
+                };
+                ruled(
+                    text(cell_text(item.get(&column.name)))
+                        .size(12)
+                        .color(p.text)
+                        .into(),
+                    *width,
+                    bg,
+                    paint.cell_line,
+                    rule,
+                )
+            }),
+            if stripe { row_stripe(p) } else { p.paper },
+        ));
     }
-    let mut rows = column![].spacing(2);
-    for (row_index, item) in items.iter().take(50).enumerate() {
-        let mut line = row![].spacing(8);
-        for name in &names {
-            let cell = item.get(name).map(value_text).unwrap_or_default();
-            line = line.push(
-                text(cell)
-                    .size(12)
-                    .font(iced::Font::MONOSPACE)
-                    .color(p.text),
-            );
-        }
-        if clickable {
-            let json = serde_json::to_string_pretty(item).unwrap_or_default();
-            rows = rows.push(
-                button(line)
-                    .on_press(Message::ShowRow(json))
-                    .padding(2)
-                    .style(style::paint(p, style::Look::Quiet)),
-            );
+    rows.into()
+}
+
+fn grid_row<'a>(
+    peek: Element<'a, Message>,
+    cells: impl Iterator<Item = Element<'a, Message>>,
+    band: Color,
+) -> Element<'a, Message> {
+    let mut line = row![peek]
+        .spacing(0)
+        .align_y(iced::alignment::Vertical::Center);
+    for cell in cells {
+        line = line.push(cell);
+    }
+    container(line).style(style::fill(band)).into()
+}
+
+fn hairline(color: Color) -> Element<'static, Message> {
+    container(text(""))
+        .height(1)
+        .width(Fill)
+        .style(style::fill(color))
+        .into()
+}
+
+fn peek_cell(
+    clickable: bool,
+    json: String,
+    header: bool,
+    result_card: bool,
+    p: Palette,
+) -> Element<'static, Message> {
+    let bg = if header && result_card {
+        if p.dark {
+            style::rgb(0x1e, 0x29, 0x36)
         } else {
-            let _ = row_index;
-            rows = rows.push(line);
+            style::rgb(0xf4, 0xf7, 0xf8)
         }
-    }
-    let both = scrollable::Direction::Both {
-        vertical: scrollable::Scrollbar::default(),
-        horizontal: scrollable::Scrollbar::default(),
-    };
-    if pin_header {
-        column![header, scrollable(rows).direction(both)]
-            .spacing(4)
-            .into()
+    } else if header {
+        p.gutter
     } else {
-        scrollable(column![header, rows].spacing(2))
-            .direction(both)
-            .into()
+        p.paper
+    };
+    let eye: Element<'static, Message> = if clickable {
+        text("◉").size(11).color(p.teal).into()
+    } else {
+        text("").size(11).into()
+    };
+    let cell = container(eye)
+        .width(28)
+        .align_x(iced::alignment::Horizontal::Center)
+        .padding([3.0, 0.0])
+        .style(move |_| {
+            iced::widget::container::Style::default()
+                .background(bg)
+                .border(iced::Border {
+                    color: p.line,
+                    width: 1.0,
+                    radius: 0.0.into(),
+                })
+        });
+    if !clickable {
+        return cell.into();
     }
+    button(cell)
+        .on_press(Message::ShowRow(json))
+        .padding(0)
+        .width(28)
+        .style(style::paint(p, style::Look::Quiet))
+        .into()
+}
+
+fn ruled(
+    label: Element<'static, Message>,
+    width: f32,
+    bg: Color,
+    line: Color,
+    rule: bool,
+) -> Element<'static, Message> {
+    let body = container(label)
+        .width(Length::Fixed(width))
+        .padding([3.0, 8.0]);
+    let mut cell = column![body].spacing(0).width(Length::Fixed(width));
+    if rule {
+        cell = cell.push(hairline_fixed(line, width));
+    }
+    container(cell)
+        .width(Length::Fixed(width))
+        .style(style::fill(bg))
+        .into()
+}
+
+fn hairline_fixed(color: Color, width: f32) -> Element<'static, Message> {
+    container(text(""))
+        .height(1)
+        .width(Length::Fixed(width))
+        .style(style::fill(color))
+        .into()
+}
+
+fn row_stripe(p: Palette) -> Color {
+    if p.dark {
+        style::rgb(0x1a, 0x24, 0x30)
+    } else {
+        style::rgb(0xf8, 0xfa, 0xfb)
+    }
+}
+
+fn header_label(
+    column: &crate::web::shape::Column,
+    fg: Color,
+    mark: Color,
+) -> Element<'static, Message> {
+    let mut line = row![text(column.name.clone()).size(12).color(fg)]
+        .spacing(4)
+        .align_y(iced::alignment::Vertical::Center);
+    if column.table.as_deref() == Some("hash") || column.index.as_deref() == Some("hash") {
+        line = line.push(text("#").size(11).color(mark));
+    }
+    if column.table.as_deref() == Some("range") || column.index.as_deref() == Some("range") {
+        line = line.push(text("↕").size(11).color(mark));
+    }
+    line.into()
 }
 
 fn tables(app: &App, p: Palette) -> Element<'_, Message> {
@@ -825,7 +1023,7 @@ fn tables(app: &App, p: Palette) -> Element<'_, Message> {
             &app.table_columns,
             &app.table_items,
             true,
-            true,
+            false,
             p,
         ));
     }
@@ -869,9 +1067,138 @@ fn display_path(path: &str) -> &str {
     }
 }
 
-fn value_text(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(text) => text.clone(),
-        other => other.to_string(),
+fn table_name(statement: &str) -> Option<String> {
+    let text = statement.split("--").next().unwrap_or(statement);
+    let mut words = text.split_whitespace();
+    let mut first = words.next()?.to_ascii_lowercase();
+    if first == "analyze" {
+        first = words.next()?.to_ascii_lowercase();
     }
+    if first != "select" && first != "scan" {
+        return None;
+    }
+    let mut from = false;
+    for word in words {
+        if from {
+            let name: String = word
+                .chars()
+                .take_while(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '-'))
+                .collect();
+            return if name.is_empty() { None } else { Some(name) };
+        }
+        if word.eq_ignore_ascii_case("from") {
+            from = true;
+        }
+    }
+    None
+}
+
+fn capacity_label(read_units: f64, write_units: f64) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(read) = unit_text(read_units) {
+        parts.push(format!("{read} RCU"));
+    }
+    if let Some(write) = unit_text(write_units) {
+        parts.push(format!("{write} WCU"));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" · "))
+    }
+}
+
+fn unit_text(value: f64) -> Option<String> {
+    if !value.is_finite() || value <= 0.0 {
+        return None;
+    }
+    let rounded = (value * 100.0).round() / 100.0;
+    if rounded == 0.0 {
+        None
+    } else if rounded.fract() == 0.0 {
+        Some(format!("{rounded:.0}"))
+    } else {
+        Some(rounded.to_string())
+    }
+}
+
+fn elapsed_label(elapsed_ms: u64) -> String {
+    if elapsed_ms < 1000 {
+        return format!("{elapsed_ms} ms");
+    }
+    let seconds = elapsed_ms as f64 / 1000.0;
+    let text = if seconds < 10.0 {
+        format!("{seconds:.1}")
+    } else {
+        format!("{seconds:.0}")
+    };
+    format!("{} s", text.trim_end_matches(".0"))
+}
+
+fn ordered_columns(
+    columns: &[crate::web::shape::Column],
+    items: &[serde_json::Value],
+) -> Vec<crate::web::shape::Column> {
+    let mut present = Vec::new();
+    for item in items {
+        let Some(map) = item.as_object() else {
+            continue;
+        };
+        for key in map.keys() {
+            if !present.iter().any(|name| name == key) {
+                present.push(key.clone());
+            }
+        }
+    }
+    let described = |name: String| crate::web::shape::Column {
+        name,
+        table: None,
+        index: None,
+    };
+    if columns.is_empty() {
+        return present.into_iter().map(described).collect();
+    }
+    let mut ordered = Vec::new();
+    for column in columns {
+        if present.iter().any(|name| name == &column.name)
+            && !ordered
+                .iter()
+                .any(|kept: &crate::web::shape::Column| kept.name == column.name)
+        {
+            ordered.push(column.clone());
+        }
+    }
+    if ordered.is_empty() {
+        return present.into_iter().map(described).collect();
+    }
+    let mut extra: Vec<_> = present
+        .into_iter()
+        .filter(|name| !ordered.iter().any(|column| column.name == *name))
+        .collect();
+    extra.sort();
+    ordered.extend(extra.into_iter().map(described));
+    ordered
+}
+
+fn key_extra(column: &crate::web::shape::Column) -> f32 {
+    let hash = column.table.as_deref() == Some("hash") || column.index.as_deref() == Some("hash");
+    let range =
+        column.table.as_deref() == Some("range") || column.index.as_deref() == Some("range");
+    match (hash, range) {
+        (true, true) => 32.0,
+        (true, false) | (false, true) => 16.0,
+        (false, false) => 0.0,
+    }
+}
+
+fn cell_text(value: Option<&serde_json::Value>) -> String {
+    match value {
+        None | Some(serde_json::Value::Null) => String::new(),
+        Some(serde_json::Value::String(text)) => text.clone(),
+        Some(other) => other.to_string(),
+    }
+}
+
+fn cell_width(text: &str) -> f32 {
+    text.chars().count() as f32 * 7.2 + 16.0
 }

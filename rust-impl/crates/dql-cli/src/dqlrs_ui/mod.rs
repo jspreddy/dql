@@ -1113,6 +1113,16 @@ SELECT * FROM demo WHERE id = 'a';
         let _ = app.update(Message::RunDone(cards));
         assert!(app.results.iter().any(|card| card.ok));
         assert!(app.status.contains("finished"));
+        {
+            std::env::set_var("ICED_TEST_BACKEND", "tiny-skia");
+            let mut simulator = iced_test::Simulator::new(app.view());
+            simulator
+                .click("id")
+                .unwrap_or_else(|err| panic!("header id: {err:?}"));
+            simulator
+                .click("a")
+                .unwrap_or_else(|err| panic!("cell a: {err:?}"));
+        }
 
         std::fs::write(dir.path.join("widgets.dql"), "SELECT 2;\n").unwrap();
         app.dirty = true;
