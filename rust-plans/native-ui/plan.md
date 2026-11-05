@@ -55,11 +55,9 @@ Keep `text_editor`. Add a DQL `Highlighter`.
 
 `Simulator` tests: type a statement, see a lint span in the fixture, run it, see the gutter id, stop a throttled insert by injecting `RunStarted` and then clicking Stop. Core tests from step 1 still own the engine results. One light and one dark snapshot for the open-file mark and the running dot.
 
-## Step 4: Cut over
+## Step 4: Keep the web UI
 
-When step 1 and step 3 tests cover the Playwright list in the PRD, remove `dqlrs-web/static` from the binary, remove `just web-test` from `just verify`, and delete `/api/*`. Keep `/mcp` and `--serve` on their own protocols. They do not grow a dependency on iced. `just native-ui-test` stays.
-
-`dqlrs --web` goes away in this step, or prints that the desktop app replaced it. Do not leave the JSON API up for the window.
+The window is a feature of the `dqlrs` binary (`dqlrs --ui`), not a replacement and not a second install. Leave `dqlrs-web`, `just web-test`, `/api/*`, `/mcp`, and `--serve` in place. The window does not talk to them. It calls `web::studio` with ordinary Rust calls.
 
 ## Step 5: Screen tests that core tests cannot see
 

@@ -1,6 +1,6 @@
 # PRD: native Rust app instead of the web UI
 
-**Status:** investigation. Do not start the window from this document until the core in [`plan.md`](plan.md) is accepted.
+**Status:** the window ships as `dqlrs --ui` in the `dqlrs` binary. The web UI stays.
 
 ## Problem
 
@@ -41,7 +41,7 @@ Presence icons exist so several browser tabs and an MCP client can see each othe
 
 The handlers in `rust-impl/crates/dql-cli/src/web/server.rs` already sit on top of plain Rust: `files`, `query_cache`, `web::lint`, `web::search`, `meta::ls::web_table_list`, and `Session::execute_for_serve`. The native UI should call a `Studio` facade with those operations and typed values. HTTP handlers, while they still exist, call the same facade and then encode JSON.
 
-When the window is the only screen, delete `/api/*` and the static file server. Keep `/mcp` and stdio or TCP `--serve` until something else replaces them. Those are other programs, not this window.
+The window does not use `/api/*`. The web server, `/mcp`, and `--serve` stay. They are other programs, not this window.
 
 ## Toolkit
 

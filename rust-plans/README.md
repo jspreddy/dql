@@ -90,12 +90,12 @@ Related: [`todo_unify_cli_pipelines.md`](todo_unify_cli_pipelines.md) (`-c` / RE
 
 ## Native UI
 
-A desktop window in Rust can replace the browser app and call the engine in process. Investigation only.
+`dqlrs --ui` is the iced window inside the `dqlrs` binary. It calls the engine in process. The web UI stays.
 
 | Plan | Focus |
 | --- | --- |
 | [`native-ui/prd.md`](native-ui/prd.md) | Feature parity, dropping `/api/*`, an iced 0.14 window |
-| [`native-ui/plan.md`](native-ui/plan.md) | `Studio` core first, then the window, then delete the JS app |
+| [`native-ui/plan.md`](native-ui/plan.md) | `Studio` in process, then the window. The web UI stays. |
 | [`native-ui/testing.md`](native-ui/testing.md) | `iced_test` in place of Playwright |
 
 ## Security
