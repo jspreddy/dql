@@ -75,22 +75,25 @@ fn header(app: &App) -> Element<'_, Message> {
         .padding([2, 10])
         .width(Fill)
         .style(style::header_field(p));
-    let endpoint = button(text(app.endpoint.clone()).size(12))
+    let endpoint = button(button_label(app.endpoint.clone(), 12.0))
         .on_press(Message::ToggleEnv)
-        .padding([1, 8])
+        .padding([0, 8])
+        .height(22)
         .style(style::paint(p, style::Look::Pill));
     let theme = tip(
-        button(text(if app.prefs.dark { "☀" } else { "☾" }).size(13))
+        button(button_label(if app.prefs.dark { "☀" } else { "☾" }, 14.0))
             .on_press(Message::ToggleTheme)
-            .padding([2, 8])
+            .padding([0, 8])
+            .height(26)
             .style(style::paint(p, style::Look::Bar)),
         "Theme",
         p,
     );
     let settings = tip(
-        button(text("☰").size(14))
+        button(button_label("☰", 14.0))
             .on_press(Message::ToggleSettings)
-            .padding([2, 8])
+            .padding([0, 8])
+            .height(26)
             .style(style::paint(p, style::Look::Bar)),
         "Settings",
         p,
@@ -243,6 +246,15 @@ fn settings_panel(app: &App, p: Palette) -> Element<'_, Message> {
     .into()
 }
 
+fn button_label(label: impl Into<String>, size: f32) -> Element<'static, Message> {
+    text(label.into())
+        .size(size)
+        .line_height(1.0)
+        .height(Fill)
+        .align_y(iced::alignment::Vertical::Center)
+        .into()
+}
+
 fn mode_button(
     label: &'static str,
     active: bool,
@@ -257,9 +269,10 @@ fn mode_button(
             style::Look::ModeOff
         },
     );
-    button(text(label).size(13))
+    button(button_label(label, 13.0))
         .on_press(message)
-        .padding([3, 14])
+        .padding([0, 14])
+        .height(26)
         .style(style)
         .into()
 }
@@ -292,15 +305,17 @@ fn query(app: &App) -> Element<'_, Message> {
 fn tree_pane(app: &App, p: Palette) -> Element<'_, Message> {
     let head = container(
         row![
-            button(text("Files").size(13).color(p.text))
+            button(button_label("Files", 13.0))
                 .on_press(Message::MenuRoot)
-                .padding([2, 0])
+                .padding([0, 2])
+                .height(22)
                 .style(style::paint(p, style::Look::Quiet)),
             iced::widget::Space::new().width(Fill),
             tip(
-                button(text("+").size(14).color(p.text))
+                button(button_label("+", 14.0))
                     .on_press(Message::MenuAct("New file"))
                     .padding([0, 7])
+                    .height(22)
                     .style(style::paint(p, style::Look::Control)),
                 "New file",
                 p,
@@ -342,10 +357,11 @@ fn context_menu(kind: &str, p: Palette) -> Element<'static, Message> {
         }
         let danger = matches!(label, "Delete" | "Run file" | "Run folder");
         items = items.push(
-            button(text(label).size(13))
+            button(button_label(label, 13.0))
                 .on_press(Message::MenuAct(label))
                 .width(Fill)
-                .padding([4, 8])
+                .padding([0, 8])
+                .height(26)
                 .style(style::paint(
                     p,
                     if danger {
@@ -460,10 +476,13 @@ fn editor_head(app: &App, p: Palette) -> Element<'_, Message> {
             container(
                 text(label)
                     .size(12)
+                    .line_height(1.0)
+                    .height(Fill)
+                    .align_y(iced::alignment::Vertical::Center)
                     .color(if errors > 0 { p.danger } else { p.amber }),
             )
             .height(22)
-            .padding([2, 7])
+            .padding([0, 7])
             .style(style::fill(if errors > 0 {
                 if p.dark {
                     style::rgb(0x3f, 0x1d, 0x1d)
@@ -477,14 +496,14 @@ fn editor_head(app: &App, p: Palette) -> Element<'_, Message> {
     }
     if !app.open_path.is_empty() {
         buttons = buttons.push(
-            button(text("Run file").size(12))
+            button(button_label("Run file", 12.0))
                 .on_press(Message::RunFile)
-                .padding([0, 7])
+                .padding([0, 8])
                 .height(22)
                 .style(style::paint(p, style::Look::Outline)),
         );
         buttons = buttons.push(
-            button(text("Run").size(12))
+            button(button_label("Run", 12.0))
                 .on_press(Message::RunCursor)
                 .padding([0, 8])
                 .height(22)
@@ -493,9 +512,10 @@ fn editor_head(app: &App, p: Palette) -> Element<'_, Message> {
     }
     if !app.running_path.is_empty() {
         buttons = buttons.push(
-            button(text("Stop").size(12))
+            button(button_label("Stop", 12.0))
                 .on_press(Message::Stop)
-                .padding([3, 10])
+                .padding([0, 10])
+                .height(22)
                 .style(style::paint(p, style::Look::Stop)),
         );
     }
@@ -519,13 +539,15 @@ fn dialog(app: &App, p: Palette) -> Element<'_, Message> {
                 text("This file changed on disk. Your edits were kept.")
                     .size(12)
                     .color(p.amber),
-                button(text("Load disk").size(12))
+                button(button_label("Load disk", 12.0))
                     .on_press(Message::ReloadDisk)
-                    .padding([3, 8])
+                    .padding([0, 8])
+                    .height(22)
                     .style(style::paint(p, style::Look::Primary)),
-                button(text("Keep mine").size(12))
+                button(button_label("Keep mine", 12.0))
                     .on_press(Message::KeepEdits)
-                    .padding([3, 8])
+                    .padding([0, 8])
+                    .height(22)
                     .style(style::paint(p, style::Look::Quiet)),
             ]
             .spacing(8)
@@ -543,13 +565,15 @@ fn dialog(app: &App, p: Palette) -> Element<'_, Message> {
                     .size(13)
                     .padding([4, 8])
                     .style(style::field(p)),
-                button(text("OK").size(12))
+                button(button_label("OK", 12.0))
                     .on_press(Message::DialogOk)
-                    .padding([3, 10])
+                    .padding([0, 10])
+                    .height(22)
                     .style(style::paint(p, style::Look::Primary)),
-                button(text("Cancel").size(12))
+                button(button_label("Cancel", 12.0))
                     .on_press(Message::DialogCancel)
-                    .padding([3, 8])
+                    .padding([0, 8])
+                    .height(22)
                     .style(style::paint(p, style::Look::Quiet)),
             ]
             .spacing(8)
@@ -567,13 +591,15 @@ fn dialog(app: &App, p: Palette) -> Element<'_, Message> {
                     .size(13)
                     .padding([4, 8])
                     .style(style::field(p)),
-                button(text("Move").size(12))
+                button(button_label("Move", 12.0))
                     .on_press(Message::DialogOk)
-                    .padding([3, 10])
+                    .padding([0, 10])
+                    .height(22)
                     .style(style::paint(p, style::Look::Primary)),
-                button(text("Cancel").size(12))
+                button(button_label("Cancel", 12.0))
                     .on_press(Message::DialogCancel)
-                    .padding([3, 8])
+                    .padding([0, 8])
+                    .height(22)
                     .style(style::paint(p, style::Look::Quiet)),
             ]
             .spacing(8)
@@ -676,10 +702,14 @@ fn editor_body(app: &App, p: Palette) -> Element<'_, Message> {
                     row![
                         text(hit.title.clone())
                             .size(12)
+                            .line_height(1.0)
                             .font(iced::Font::MONOSPACE)
                             .color(p.text),
                         iced::widget::Space::new().width(Fill),
-                        text(hit.kind.clone()).size(11).color(p.muted),
+                        text(hit.kind.clone())
+                            .size(11)
+                            .line_height(1.0)
+                            .color(p.muted),
                     ]
                     .spacing(8),
                 )
@@ -847,9 +877,9 @@ fn item_card<'a>(
     head = head.push(stat_chip(elapsed_label(card.elapsed_ms), p));
     if !card.columns.is_empty() || !card.items.is_empty() {
         head = head.push(tip(
-            button(text("schema").size(12))
+            button(button_label("schema", 12.0))
                 .on_press(Message::ShowResultSchema(index))
-                .padding([0, 7])
+                .padding([0, 8])
                 .height(22)
                 .style(style::paint(p, style::Look::Control)),
             "Result structure",
@@ -931,11 +961,18 @@ fn stat_chip(label: String, p: Palette) -> Element<'static, Message> {
     } else {
         style::rgb(0x33, 0x41, 0x55)
     };
-    container(text(label).size(12).color(fg))
-        .height(22)
-        .padding([0, 8])
-        .style(style::chip(p.chip, fg))
-        .into()
+    container(
+        text(label)
+            .size(12)
+            .line_height(1.0)
+            .height(Fill)
+            .align_y(iced::alignment::Vertical::Center)
+            .color(fg),
+    )
+    .height(22)
+    .padding([0, 8])
+    .style(style::chip(p.chip, fg))
+    .into()
 }
 
 fn items_table<'a>(
@@ -1179,14 +1216,14 @@ fn table_side(app: &App, p: Palette) -> Element<'_, Message> {
                 .padding([2, 6])
                 .width(Fill)
                 .style(style::field(p)),
-            button(text("Refresh").size(12))
+            button(button_label("Refresh", 12.0))
                 .on_press(Message::RefreshTables(true))
-                .padding([0, 6])
+                .padding([0, 8])
                 .height(22)
                 .style(style::paint(p, style::Look::Control)),
-            button(text("Clear").size(12))
+            button(button_label("Clear", 12.0))
                 .on_press(Message::ClearCache)
-                .padding([0, 6])
+                .padding([0, 8])
                 .height(22)
                 .style(style::paint(p, style::Look::Control)),
         ]
@@ -1283,14 +1320,14 @@ fn table_page(app: &App, p: Palette) -> Element<'_, Message> {
     } else {
         app.open_table.clone()
     };
-    let mut previous = button(text("Previous").size(12))
+    let mut previous = button(button_label("Previous", 12.0))
         .padding([0, 8])
         .height(22)
         .style(style::paint(p, style::Look::Control));
     if app.table_page > 0 {
         previous = previous.on_press(Message::TablePage(-1));
     }
-    let mut next = button(text("Next").size(12))
+    let mut next = button(button_label("Next", 12.0))
         .padding([0, 8])
         .height(22)
         .style(style::paint(p, style::Look::Control));
@@ -1306,9 +1343,9 @@ fn table_page(app: &App, p: Palette) -> Element<'_, Message> {
             text("50 rows at a time").size(12).color(p.muted),
             iced::widget::Space::new().width(Fill),
             tip(
-                button(text("schema").size(12))
+                button(button_label("schema", 12.0))
                     .on_press(Message::ShowTableSchema)
-                    .padding([0, 7])
+                    .padding([0, 8])
                     .height(22)
                     .style(style::paint(p, style::Look::Control)),
                 "Table structure",
@@ -1574,9 +1611,10 @@ fn row_dialog(app: &App, json: &str, p: Palette) -> Element<'static, Message> {
         ]
         .spacing(4),
         iced::widget::Space::new().width(Fill),
-        button(text("×").size(16))
+        button(button_label("×", 16.0))
             .on_press(Message::CloseRow)
-            .padding([2, 8])
+            .padding([0, 8])
+            .height(28)
             .style(style::paint(p, style::Look::Quiet)),
     ]
     .spacing(8)
@@ -1755,9 +1793,10 @@ fn schema_dialog(app: &App, kind: &super::SchemaKind, p: Palette) -> Element<'st
         ]
         .spacing(2),
         iced::widget::Space::new().width(Fill),
-        button(text("×").size(16))
+        button(button_label("×", 16.0))
             .on_press(Message::CloseSchema)
-            .padding([2, 8])
+            .padding([0, 8])
+            .height(28)
             .style(style::paint(p, style::Look::Quiet)),
     ]
     .align_y(iced::alignment::Vertical::Center);
