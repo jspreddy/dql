@@ -4,6 +4,7 @@
 //! process. There is no HTTP hop and no second install.
 
 mod highlight;
+mod icons;
 mod style;
 mod view;
 

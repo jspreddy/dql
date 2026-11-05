@@ -13,6 +13,7 @@ use crate::web::files::Node;
 use crate::web::studio::{menu_labels, StatementCard};
 
 use super::highlight;
+use super::icons::{self, Mark};
 use super::style::{self, Palette};
 use super::{App, Dialog, Message, Mode};
 
@@ -81,20 +82,30 @@ fn header(app: &App) -> Element<'_, Message> {
         .height(22)
         .style(style::paint(p, style::Look::Pill));
     let theme = tip(
-        button(button_label(if app.prefs.dark { "☀" } else { "☾" }, 14.0))
-            .on_press(Message::ToggleTheme)
-            .padding([0, 8])
-            .height(26)
-            .style(style::paint(p, style::Look::Bar)),
+        button(icon_only(
+            if app.prefs.dark {
+                Mark::Sun
+            } else {
+                Mark::Moon
+            },
+            p.header_text,
+            14.0,
+        ))
+        .on_press(Message::ToggleTheme)
+        .padding(0)
+        .width(26)
+        .height(22)
+        .style(style::paint(p, style::Look::Pill)),
         "Theme",
         p,
     );
     let settings = tip(
-        button(button_label("☰", 14.0))
+        button(icon_only(Mark::Settings, p.header_text, 14.0))
             .on_press(Message::ToggleSettings)
-            .padding([0, 8])
-            .height(26)
-            .style(style::paint(p, style::Look::Bar)),
+            .padding(0)
+            .width(26)
+            .height(22)
+            .style(style::paint(p, style::Look::Pill)),
         "Settings",
         p,
     );
@@ -255,6 +266,38 @@ fn button_label(label: impl Into<String>, size: f32) -> Element<'static, Message
         .into()
 }
 
+fn icon_only(mark: Mark, color: Color, px: f32) -> Element<'static, Message> {
+    container(icons::mark(mark, color, px))
+        .width(Fill)
+        .height(Fill)
+        .align_x(iced::alignment::Horizontal::Center)
+        .align_y(iced::alignment::Vertical::Center)
+        .into()
+}
+
+fn labeled_icon(
+    mark: Mark,
+    color: Color,
+    label: &'static str,
+    size: f32,
+) -> Element<'static, Message> {
+    container(
+        row![
+            icons::mark(mark, color, 14.0),
+            text(label).size(size).line_height(1.0),
+        ]
+        .spacing(6)
+        .align_y(iced::alignment::Vertical::Center),
+    )
+    .height(Fill)
+    .align_y(iced::alignment::Vertical::Center)
+    .into()
+}
+
+fn key_icon(hash: bool, color: Color) -> Element<'static, Message> {
+    icons::mark(if hash { Mark::Hash } else { Mark::Range }, color, 12.0)
+}
+
 fn mode_button(
     label: &'static str,
     active: bool,
@@ -356,8 +399,13 @@ fn context_menu(kind: &str, p: Palette) -> Element<'static, Message> {
             items = items.push(separator(p));
         }
         let danger = matches!(label, "Delete" | "Run file" | "Run folder");
+        let content = if matches!(label, "Run file" | "Run folder") {
+            labeled_icon(Mark::Forward, p.danger, label, 13.0)
+        } else {
+            button_label(label, 13.0)
+        };
         items = items.push(
-            button(button_label(label, 13.0))
+            button(content)
                 .on_press(Message::MenuAct(label))
                 .width(Fill)
                 .padding([0, 8])
@@ -496,14 +544,14 @@ fn editor_head(app: &App, p: Palette) -> Element<'_, Message> {
     }
     if !app.open_path.is_empty() {
         buttons = buttons.push(
-            button(button_label("Run file", 12.0))
+            button(labeled_icon(Mark::Forward, p.danger, "Run file", 12.0))
                 .on_press(Message::RunFile)
                 .padding([0, 8])
                 .height(22)
                 .style(style::paint(p, style::Look::Outline)),
         );
         buttons = buttons.push(
-            button(button_label("Run", 12.0))
+            button(labeled_icon(Mark::Play, Color::WHITE, "Run", 12.0))
                 .on_press(Message::RunCursor)
                 .padding([0, 8])
                 .height(22)
@@ -877,11 +925,12 @@ fn item_card<'a>(
     head = head.push(stat_chip(elapsed_label(card.elapsed_ms), p));
     if !card.columns.is_empty() || !card.items.is_empty() {
         head = head.push(tip(
-            button(button_label("schema", 12.0))
+            button(icon_only(Mark::Schema, p.muted, 14.0))
                 .on_press(Message::ShowResultSchema(index))
-                .padding([0, 8])
+                .padding(0)
+                .width(22)
                 .height(22)
-                .style(style::paint(p, style::Look::Control)),
+                .style(style::paint(p, style::Look::Quiet)),
             "Result structure",
             p,
         ));
@@ -1106,7 +1155,7 @@ fn peek_cell(
         p.paper
     };
     let eye: Element<'static, Message> = if clickable {
-        text("◉").size(11).color(p.teal).into()
+        icons::mark(Mark::Eye, p.teal, 14.0)
     } else {
         text("").size(11).into()
     };
@@ -1182,10 +1231,10 @@ fn header_label(
         .spacing(4)
         .align_y(iced::alignment::Vertical::Center);
     if column.table.as_deref() == Some("hash") || column.index.as_deref() == Some("hash") {
-        line = line.push(text("#").size(11).color(mark));
+        line = line.push(key_icon(true, mark));
     }
     if column.table.as_deref() == Some("range") || column.index.as_deref() == Some("range") {
-        line = line.push(text("↕").size(11).color(mark));
+        line = line.push(key_icon(false, mark));
     }
     line.into()
 }
@@ -1216,11 +1265,16 @@ fn table_side(app: &App, p: Palette) -> Element<'_, Message> {
                 .padding([2, 6])
                 .width(Fill)
                 .style(style::field(p)),
-            button(button_label("Refresh", 12.0))
-                .on_press(Message::RefreshTables(true))
-                .padding([0, 8])
-                .height(22)
-                .style(style::paint(p, style::Look::Control)),
+            tip(
+                button(icon_only(Mark::Refresh, p.muted, 14.0))
+                    .on_press(Message::RefreshTables(true))
+                    .padding(0)
+                    .width(22)
+                    .height(22)
+                    .style(style::paint(p, style::Look::Control)),
+                "Refresh",
+                p,
+            ),
             button(button_label("Clear", 12.0))
                 .on_press(Message::ClearCache)
                 .padding([0, 8])
@@ -1262,13 +1316,13 @@ fn table_side(app: &App, p: Palette) -> Element<'_, Message> {
             } else {
                 style::rgb(0x3c, 0x63, 0x99)
             };
-            let mark = if key.role == "hash" { "#" } else { "↕" };
             keys = keys.push(
                 row![
-                    text(mark).size(11).color(color),
+                    key_icon(key.role == "hash", color),
                     text(key.name.clone()).size(12).color(p.muted),
                 ]
-                .spacing(3),
+                .spacing(3)
+                .align_y(iced::alignment::Vertical::Center),
             );
         }
         let label = column![
@@ -1343,11 +1397,12 @@ fn table_page(app: &App, p: Palette) -> Element<'_, Message> {
             text("50 rows at a time").size(12).color(p.muted),
             iced::widget::Space::new().width(Fill),
             tip(
-                button(button_label("schema", 12.0))
+                button(icon_only(Mark::Schema, p.muted, 14.0))
                     .on_press(Message::ShowTableSchema)
-                    .padding([0, 8])
+                    .padding(0)
+                    .width(22)
                     .height(22)
-                    .style(style::paint(p, style::Look::Control)),
+                    .style(style::paint(p, style::Look::Quiet)),
                 "Table structure",
                 p,
             ),
@@ -1586,12 +1641,11 @@ fn row_dialog(app: &App, json: &str, p: Palette) -> Element<'static, Message> {
         chips = chips.push(
             container(
                 row![
-                    text(if hash { "#" } else { "↕" })
-                        .size(11)
-                        .color(paint.mark),
+                    key_icon(hash, paint.mark),
                     text(column.name.clone()).size(12).color(paint.mark),
                 ]
-                .spacing(3),
+                .spacing(3)
+                .align_y(iced::alignment::Vertical::Center),
             )
             .padding([2, 6])
             .style(style::chip(paint.head, paint.head_line)),
@@ -1611,9 +1665,10 @@ fn row_dialog(app: &App, json: &str, p: Palette) -> Element<'static, Message> {
         ]
         .spacing(4),
         iced::widget::Space::new().width(Fill),
-        button(button_label("×", 16.0))
+        button(icon_only(Mark::Close, p.muted, 12.0))
             .on_press(Message::CloseRow)
-            .padding([0, 8])
+            .padding(0)
+            .width(28)
             .height(28)
             .style(style::paint(p, style::Look::Quiet)),
     ]
@@ -1793,9 +1848,10 @@ fn schema_dialog(app: &App, kind: &super::SchemaKind, p: Palette) -> Element<'st
         ]
         .spacing(2),
         iced::widget::Space::new().width(Fill),
-        button(button_label("×", 16.0))
+        button(icon_only(Mark::Close, p.muted, 12.0))
             .on_press(Message::CloseSchema)
-            .padding([0, 8])
+            .padding(0)
+            .width(28)
             .height(28)
             .style(style::paint(p, style::Look::Quiet)),
     ]

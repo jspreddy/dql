@@ -255,7 +255,6 @@ pub fn chip(bg: Color, _fg: Color) -> impl Fn(&Theme) -> container::Style {
 
 #[derive(Clone, Copy)]
 pub enum Look {
-    Bar,
     ModeOn,
     ModeOff,
     Pill,
@@ -271,7 +270,6 @@ pub enum Look {
 pub fn paint(p: Palette, look: Look) -> impl Fn(&Theme, button::Status) -> button::Style + Copy {
     move |_, status| {
         let (background, text_color, border, width, radius) = match look {
-            Look::Bar => (None, p.header_text, Color::TRANSPARENT, 0.0, 4.0),
             Look::ModeOn => (Some(p.teal), Color::WHITE, Color::TRANSPARENT, 0.0, 0.0),
             Look::ModeOff => (None, p.header_text, Color::TRANSPARENT, 0.0, 0.0),
             Look::Pill => (None, p.header_fg, p.header_line, 1.0, 999.0),
