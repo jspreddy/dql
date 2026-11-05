@@ -15,6 +15,7 @@ use crate::web::studio::{menu_labels, StatementCard};
 use super::highlight;
 use super::icons::{self, Mark};
 use super::query;
+use super::slot::row_slot;
 use super::style::{self, Palette};
 use super::{caret_bytes, App, Dialog, Message, Mode};
 
@@ -1358,16 +1359,18 @@ fn table_side(app: &App, p: Palette) -> Element<'_, Message> {
         .spacing(2)
         .padding(6)
         .width(Fill);
-    list = list.push(0, head);
+    list = list.push(0, row_slot(head));
     list = list.push(
         1,
-        text(if app.cache_text.is_empty() {
-            app.table_note.clone()
-        } else {
-            format!("{}  {}", app.table_note, app.cache_text)
-        })
-        .size(11)
-        .color(p.muted),
+        row_slot(
+            text(if app.cache_text.is_empty() {
+                app.table_note.clone()
+            } else {
+                format!("{}  {}", app.table_note, app.cache_text)
+            })
+            .size(11)
+            .color(p.muted),
+        ),
     );
     for table in &app.tables {
         let selected = table.name == app.open_table;
@@ -1403,18 +1406,20 @@ fn table_side(app: &App, p: Palette) -> Element<'_, Message> {
         .spacing(1);
         list = list.push(
             name_key(&table.name),
-            button(label)
-                .on_press(Message::OpenTable(table.name.clone()))
-                .width(Fill)
-                .padding([3, 8])
-                .style(style::paint(
-                    p,
-                    if selected {
-                        style::Look::Selected
-                    } else {
-                        style::Look::Quiet
-                    },
-                )),
+            row_slot(
+                button(label)
+                    .on_press(Message::OpenTable(table.name.clone()))
+                    .width(Fill)
+                    .padding([3, 8])
+                    .style(style::paint(
+                        p,
+                        if selected {
+                            style::Look::Selected
+                        } else {
+                            style::Look::Quiet
+                        },
+                    )),
+            ),
         );
     }
     container(scrollable(list).height(Fill))

@@ -6,6 +6,7 @@
 mod highlight;
 mod icons;
 mod query;
+mod slot;
 mod style;
 mod view;
 
@@ -1492,6 +1493,85 @@ SELECT * FROM demo WHERE id = 'a';
         assert_eq!(token_at("SELECT widgets", 13), "widgets");
         assert_eq!(app.editor.cursor().position.line, 0);
         assert_eq!(app.editor.cursor().position.column, 0);
+    }
+
+    #[test]
+    fn growing_table_list_keeps_each_row_state() {
+        let (_dir, mut app) = workspace();
+        let _ = app.update(Message::Mode(Mode::Tables));
+        app.tables.clear();
+        let mut cache = show_frame(&app);
+        app.tables = vec![
+            crate::web::shape::ListedTable {
+                name: "alpha".to_string(),
+                keys: vec![crate::web::shape::KeyRole {
+                    name: "id".to_string(),
+                    role: "hash".to_string(),
+                }],
+            },
+            crate::web::shape::ListedTable {
+                name: "beta".to_string(),
+                keys: Vec::new(),
+            },
+        ];
+        cache = show_frame_with(&app, cache);
+        app.tables.push(crate::web::shape::ListedTable {
+            name: "gamma".to_string(),
+            keys: Vec::new(),
+        });
+        let _ = show_frame_with(&app, cache);
+    }
+
+    fn show_frame(app: &App) -> iced_test::runtime::user_interface::Cache {
+        show_frame_with(app, iced_test::runtime::user_interface::Cache::new())
+    }
+
+    fn show_frame_with(
+        app: &App,
+        cache: iced_test::runtime::user_interface::Cache,
+    ) -> iced_test::runtime::user_interface::Cache {
+        use iced::advanced::renderer::Headless;
+        use iced::theme::Base;
+        use iced::Renderer;
+        use iced_test::core::clipboard;
+        use iced_test::core::mouse;
+        use iced_test::core::renderer;
+        use iced_test::core::window;
+        use iced_test::core::{Event, Point, Size};
+        use iced_test::runtime::user_interface::UserInterface;
+
+        std::env::set_var("ICED_TEST_BACKEND", "tiny-skia");
+        let settings = iced::Settings::default();
+        let mut renderer = iced_test::futures::futures::executor::block_on(Renderer::new(
+            iced::Font::with_name("Fira Sans"),
+            settings.default_text_size,
+            Some("tiny-skia"),
+        ))
+        .expect("headless renderer");
+        let mut ui =
+            UserInterface::build(app.view(), Size::new(1280.0, 800.0), cache, &mut renderer);
+        let cursor = mouse::Cursor::Available(Point::new(48.0, 640.0));
+        let mut messages = Vec::new();
+        let _ = ui.update(
+            &[Event::Window(window::Event::RedrawRequested(
+                iced_test::core::time::Instant::now(),
+            ))],
+            cursor,
+            &mut renderer,
+            &mut clipboard::Null,
+            &mut messages,
+        );
+        let theme = app.theme();
+        let base = theme.base();
+        ui.draw(
+            &mut renderer,
+            &theme,
+            &renderer::Style {
+                text_color: base.text_color,
+            },
+            cursor,
+        );
+        ui.into_cache()
     }
 
     struct Scratch {
