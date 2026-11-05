@@ -4,6 +4,7 @@
 //! process. There is no HTTP hop and no second install.
 
 mod highlight;
+mod style;
 mod view;
 
 use std::path::PathBuf;
@@ -36,6 +37,13 @@ pub fn run(session: Session, root: PathBuf, load_tables: bool) -> color_eyre::Re
     )
     .title("dqlrs")
     .theme(App::theme)
+    .style(|state, _theme| {
+        let colors = style::palette(state.prefs.dark);
+        iced::theme::Style {
+            background_color: colors.canvas,
+            text_color: colors.text,
+        }
+    })
     .subscription(App::subscription)
     .window_size(iced::Size::new(1280.0, 800.0))
     .run()
