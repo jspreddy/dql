@@ -59,6 +59,10 @@ struct Prefs {
     nav: f32,
     results: f32,
     write_bands: bool,
+    /// File this value was loaded from. Later saves use it so a changed
+    /// `DQLRS_UI_PREFS` cannot redirect the write.
+    #[serde(skip)]
+    path: PathBuf,
 }
 
 impl Default for Prefs {
@@ -68,6 +72,7 @@ impl Default for Prefs {
             nav: 260.0,
             results: 280.0,
             write_bands: true,
+            path: PathBuf::new(),
         }
     }
 }
@@ -75,14 +80,20 @@ impl Default for Prefs {
 impl Prefs {
     fn load() -> Self {
         let path = prefs_path();
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            return Self::default();
-        };
-        serde_json::from_str(&text).unwrap_or_default()
+        let mut prefs: Self = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default();
+        prefs.path = path;
+        prefs
     }
 
     fn store(&self) {
-        let path = prefs_path();
+        let path = if self.path.as_os_str().is_empty() {
+            prefs_path()
+        } else {
+            self.path.clone()
+        };
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
@@ -1375,7 +1386,15 @@ fn keyboard_subscription() -> Subscription<Message> {
 mod tests {
     use super::*;
 
+    fn prefs_env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static PREFS_ENV: Mutex<()> = Mutex::new(());
+        PREFS_ENV.lock().unwrap_or_else(|err| err.into_inner())
+    }
+
     fn workspace() -> (Scratch, App) {
+        // `DQLRS_UI_PREFS` is process-wide. Hold it only long enough to snapshot
+        // the path into this window; later tests may replace the variable.
+        let _guard = prefs_env_lock();
         let dir = Scratch::new();
         std::fs::write(dir.path.join("widgets.dql"), "SELECT 1;\n").unwrap();
         std::env::set_var("DQLRS_UI_PREFS", dir.path.join("ui.json"));
@@ -1383,7 +1402,7 @@ mod tests {
         let app = App::new(
             Arc::new(Mutex::new(studio)),
             Arc::new(Mutex::new(LiveProgress::default())),
-            Prefs::default(),
+            Prefs::load(),
         );
         (dir, app)
     }
@@ -1595,6 +1614,7 @@ SELECT * FROM demo WHERE id = 'a';
 
     impl Drop for Scratch {
         fn drop(&mut self) {
+            let _guard = prefs_env_lock();
             let _ = std::fs::remove_dir_all(&self.path);
             if std::env::var_os("DQLRS_UI_PREFS")
                 .is_some_and(|path| std::path::PathBuf::from(path).starts_with(&self.path))
