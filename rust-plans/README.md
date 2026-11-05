@@ -94,8 +94,9 @@ A desktop window in Rust can replace the browser app and call the engine in proc
 
 | Plan | Focus |
 | --- | --- |
-| [`native-ui/prd.md`](native-ui/prd.md) | Feature parity, dropping `/api/*`, egui plus a Rust editor, tests |
+| [`native-ui/prd.md`](native-ui/prd.md) | Feature parity, dropping `/api/*`, an iced 0.14 window |
 | [`native-ui/plan.md`](native-ui/plan.md) | `Studio` core first, then the window, then delete the JS app |
+| [`native-ui/testing.md`](native-ui/testing.md) | `iced_test` in place of Playwright |
 
 ## Security
 

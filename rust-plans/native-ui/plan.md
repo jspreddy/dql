@@ -2,7 +2,7 @@
 
 **Status:** not started. Follow [`prd.md`](prd.md). Do not open the window until step 1 has tests.
 
-The web server's match arms are the behavior list. `Studio` is those operations without `Reply::Json`. The window is a caller of `Studio`. Playwright stays until step 4.
+The web server's match arms are the behavior list. `Studio` is those operations without `Reply::Json`. The window is an iced `Program` that calls `Studio`. Playwright stays until step 4. How the clicks move from Playwright to `iced_test` is [`testing.md`](testing.md).
 
 ## Step 1: Studio, still behind HTTP
 
@@ -33,35 +33,37 @@ These tests do not open a socket.
 
 ## Step 2: Window chrome
 
-New binary, or a `dqlrs --app` flag, in `dql-cli`. One egui window. It calls `Studio` on the UI thread for short work and on a worker thread for run and for table refresh. Run progress arrives on a channel. Cancel uses the flag the web server already uses.
+New crate `dql-studio`, and a `dqlrs --app` flag in `dql-cli` that depends on it. One iced window. `update` calls `Studio` for short work. Run and table refresh return a `Task`. A `subscription` reads the run channel and the directory watch. Cancel uses the flag the web server already uses. The watch calls `Studio` read only when the file's revision changes.
 
-Build the file tree, result cards, table browser, settings, theme, and endpoint popover. No editor yet beyond a plain text buffer if that unblocks the chrome. Directory watch replaces the one-second file read. The watch calls `Studio` read only when the file's revision changes.
+Build the file tree, result cards, table browser, settings, theme, and endpoint popover with `pane_grid`. The editor in this step is `text_editor` with no highlighter yet, enough to open a file. Every control the tests click gets a `widget::Id` (`menu-run-file`, `file-name`, `run`).
 
-Widget tests in this step: open the tree, switch Query and Tables, resize is optional until the layout is stable. Theme is a `Studio` or window setting asserted without a screenshot if the widget tree exposes it.
+`Simulator` tests in this step: open the tree, switch Query and Tables, open a file, see the open-file id. Theme is the `Theme` value passed to the next `view`, asserted without a snapshot. Resize can wait until the grid is stable.
+
+Do not add the iced dependency until rustc is at least 1.88. Headless tests use `tiny-skia` and `fira-sans`. The app window uses `wgpu`.
 
 HTTP `/api/*` still works in this step so the browser and the window can be compared.
 
 ## Step 3: Editor
 
-Replace the plain buffer with a rope editor drawn by egui.
+Keep `text_editor`. Add a DQL `Highlighter`.
 
-- Token colors and statement spans in Rust. Start from `repl/highlight.rs` and match `dql-tokens.js` (keywords, write bands, statement ranges). One test file of DQL fixtures, shared expectations, so the window and the old page would paint the same words.
-- Lint ranges map onto the rope. Run marks map onto statement starts.
-- Ctrl+Enter and Ctrl+\ run the statement at the cursor. Esc cancels.
+- Token colors and statement spans in Rust. Start from `repl/highlight.rs` and match `dql-tokens.js` (keywords, write bands, statement ranges). One test file of DQL fixtures, shared expectations, so the window and the old page would paint the same words. The highlighter is line based. Assert the ranges in that fixture test, not by reading pixels.
+- Lint ranges are highlighter spans. Run marks are a gutter widget beside the editor, one id per statement start.
+- Ctrl+Enter and Ctrl+\ run the statement at the cursor. Esc cancels. Those shortcuts are `simulate` events in a Rust test. The `.ice` key list cannot express them.
 - Completion reads the catalog `Studio` already loaded for the table browser.
 - Autosave and the conflict patch dialog call the same save method as step 1.
 
-Widget tests: type a statement, see a lint range, run it, see a gutter mark, stop a throttled insert. Core tests from step 1 still own the engine results.
+`Simulator` tests: type a statement, see a lint span in the fixture, run it, see the gutter id, stop a throttled insert by injecting `RunStarted` and then clicking Stop. Core tests from step 1 still own the engine results. One light and one dark snapshot for the open-file mark and the running dot.
 
 ## Step 4: Cut over
 
-When step 1 and step 3 tests cover the Playwright list in the PRD, remove `dqlrs-web/static` from the binary, remove `just web-test` from `just verify`, and delete `/api/*`. Keep `/mcp` and `--serve` on their own protocols. They do not grow a dependency on egui.
+When step 1 and step 3 tests cover the Playwright list in the PRD, remove `dqlrs-web/static` from the binary, remove `just web-test` from `just verify`, and delete `/api/*`. Keep `/mcp` and `--serve` on their own protocols. They do not grow a dependency on iced. `just native-ui-test` stays.
 
 `dqlrs --web` goes away in this step, or prints that the desktop app replaced it. Do not leave the JSON API up for the window.
 
 ## Step 5: Screen tests that core tests cannot see
 
-Only after the window is the product. Sticky headers, sideways scroll of a wide result, the patch dialog's wording, context-menu labels. egui headless clicks, not Chrome. Add them when a regression in paint shows up. They are not the gate for step 4.
+Only after the window is the product. Sticky headers, sideways scroll of a wide result, the patch dialog's wording, context-menu labels. `Simulator` clicks and a committed PNG, not Chrome. Add them when a regression in paint shows up. They are not the gate for step 4. `.ice` scripts stay the small set in [`testing.md`](testing.md). The format is experimental.
 
 ## Out of this plan
 
@@ -69,3 +71,4 @@ Only after the window is the product. Sticky headers, sideways scroll of a wide 
 - A webview.
 - Wasm in the browser.
 - Changing DynamoDB execution to make the UI easier.
+- egui, slint, or gpui.

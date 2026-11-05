@@ -49,18 +49,29 @@ Ratatui is already the REPL (`repl/app.rs`, `repl/rich_table.rs`). It draws in a
 
 Do not embed the current page in a webview (`wry` or similar). That keeps JavaScript and a bridge, which is another API.
 
-Use **egui** for the window chrome: tree, tables, settings, result cards, dialogs. It is pure Rust, and it can run headless in tests. Its stock text field is not this editor. The editor is a rope (`ropey`) painted by egui, with highlights from a Rust tokenizer. `repl/highlight.rs` is a start and is not enough: the web tokenizer in `dql-tokens.js` knows more words, query bands, and statement spans. One tokenizer has to feed both the terminal help path and the window, or the window gets its own and the REPL list is left alone.
+Use **[iced 0.14](https://book.iced.rs/index.html)** for the window. The book splits an interface into state, messages, `update`, and `view`. In 0.14 that is a `Program`: `update` may return a `Task`, and a `subscription` receives the directory watch and the run channel. The window state owns `Studio`. Short work runs inside `update`. Run and table refresh are `Task`s.
 
-gpui (the Zed toolkit) is the only ready-made Rust code editor, and it is not a stable library for this repo. iced and slint do not remove the need to write the editor. They are not the recommendation.
+Chrome comes from widgets that already exist:
+
+- `pane_grid` for the file tree, the editor, and the results pane. Dragging a split is the nav resize and the results resize.
+- `text_editor` for the buffer. A custom `Highlighter` colors keywords, write bands, and lint ranges from the same tokenizer rules as `dql-tokens.js`. `repl/highlight.rs` is a start and is not enough. The highlighter is per line. Gutter run marks and the filename underline are widgets beside the editor, not decorations inside `text_editor`.
+- `scrollable` with the header row outside the scroller for sticky table headers. Do not assume the 0.14 `table` widget pins its header.
+- `button`, `text_input`, and `mouse_area` for menus, search, and dialogs.
+
+egui, slint, and gpui are not the toolkit. gpui is still not a stable library for this repo. iced's editor is enough that we do not paint a rope ourselves unless `text_editor` cannot show a caret, a selection, and the highlighter.
+
+iced 0.14 requires rustc 1.88 (its crates are edition 2024). This repo's toolchain file asks for stable. The first crate that depends on iced waits until the environment's stable is at least 1.88.
 
 ## Testing
 
-Playwright is the spec today (`dqlrs-web/playwright/tests`). A native app cannot run those tests. The replacement has two layers.
+Playwright is the spec today (`dqlrs-web/playwright/tests`). A native app cannot run those tests. [`testing.md`](testing.md) is the replacement.
 
-1. **Core tests, no window.** Drive `Studio` the way the HTTP tests in `web/server.rs` drive routes: create a file, save, conflict, lint, run, stop, search, list tables, page rows, save and load. Most Playwright cases are this layer: `files.spec.js`, `lint.spec.js`, `search.spec.js`, `save-load.spec.js`, `functions.spec.js`, `nested.spec.js`, `help.spec.js`, and the run and result behavior in `editor.spec.js` and `tables.spec.js`.
-2. **Widget tests.** egui can render without a display and accept clicks. Use that for the cases that are about the screen: theme, pane resize, sticky headers, sideways scroll, gutter marks, the patch dialog, context menus. Those tests replace the Playwright assertions that read pixels and DOM ids. They do not need Chrome.
+1. **Core tests, no window.** Drive `Studio` the way the HTTP tests in `web/server.rs` drive routes. Most Playwright cases are this layer.
+2. **`Simulator` tests.** `iced_test` builds `view()` with no display and no `Task`. Click, type, and `find` by widget id. This is the Playwright page object.
+3. **A few `Emulator` scripts.** `.ice` files run the real program, including query `Task`s, against DynamoDB Local. The format is experimental, so it stays small.
+4. **Snapshots.** `snapshot` writes a PNG through the software renderer (`tiny-skia`). A missing baseline fails. These replace the Playwright screenshots, not the assertions.
 
-Do not delete Playwright until the core tests cover the same behaviors and the widget tests cover the screen cases that core tests cannot see. `just verify` grows a native-ui test target. It does not keep a browser in the loop after the cutover.
+Do not delete Playwright until layers 1 and 2 cover the same behaviors. `just verify` grows `just native-ui-test`. It does not keep a browser in the loop after the cutover.
 
 ## Non-goals
 
@@ -72,10 +83,10 @@ Do not delete Playwright until the core tests cover the same behaviors and the w
 
 ## Decision
 
-Build the native app as a window over an in-process `Studio`, with egui for chrome and a Rust editor. Drop `/api/*` and the JavaScript page only after Rust tests cover today's Playwright behavior. Keep `/mcp` and `--serve`.
+Build the native app as an iced 0.14 window over an in-process `Studio`. Use `text_editor` and a DQL `Highlighter`, and `pane_grid` for the layout. Drop `/api/*` and the JavaScript page only after the `Studio` tests and the `Simulator` tests cover today's Playwright behavior. Keep `/mcp` and `--serve`.
 
 ## Done when
 
 - The window can edit, run, lint, search, and browse tables against the same engine the web UI uses, with no HTTP call on those paths.
-- `just verify` runs the core suite and the widget suite without Playwright.
+- `just verify` runs the `Studio` suite and the `iced_test` suite without Playwright.
 - `dqlrs --web` is either gone or documented as a leftover. The plan's last phase removes it.
