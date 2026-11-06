@@ -121,10 +121,10 @@ test("shows csv and json files as tables", async ({ page, app }, testInfo) => {
   await expect(page.locator("#schema-pop-info")).toBeVisible();
   await expect(page.locator("#schema-pop-info")).toHaveAttribute(
     "title",
-    "Based on the rows on this page, not the whole file.",
+    "Based on every row in the file.",
   );
   await expect(page.locator("#schema-pop-title")).toHaveText("users.csv");
-  await expect(page.locator("#schema-pop-summary")).toHaveText("2 columns · 2 rows on this page");
+  await expect(page.locator("#schema-pop-summary")).toHaveText("2 columns · 2 rows");
   await expect(page.locator("#schema-pop-query")).toBeHidden();
   await expect(page.locator(".schema-pop-title-row .schema-key-chip")).toHaveCount(1);
   await expect(page.locator(".schema-pop-title-row .schema-key-chip")).toContainText("id");
@@ -138,7 +138,7 @@ test("shows csv and json files as tables", async ({ page, app }, testInfo) => {
   await expect(nameRow.locator(".schema-role-muted")).toHaveText("—");
   await expect(nameRow).toContainText("2/2");
   await expect(nameRow.locator(".schema-sample")).toHaveText("ada");
-  await expect(page.locator("#schema-pop-foot")).toHaveText("Types come from this page. No extra query was run.");
+  await expect(page.locator("#schema-pop-foot")).toHaveText("Types come from the whole file. No extra query was run.");
   expect(duringStructure).toEqual([]);
   page.off("request", watchStructure);
   await page.screenshot({ path: playwrightArtifact(`file-structure-${testInfo.project.name}.png`) });
@@ -186,9 +186,9 @@ test("shows csv and json files as tables", async ({ page, app }, testInfo) => {
   await expect(page.locator("#file-page-next")).toBeDisabled();
   await expect(page.locator("#file-page-prev")).toBeEnabled();
   await page.locator("#file-rows-schema").click();
-  await expect(page.locator("#schema-pop-summary")).toHaveText("2 columns · 1 row on this page");
+  await expect(page.locator("#schema-pop-summary")).toHaveText("2 columns · 51 rows");
   await expect(page.locator('#schema-table tbody tr[data-column="n"]')).toContainText("NUMBER");
-  await expect(page.locator('#schema-table tbody tr[data-column="n"] .schema-sample')).toHaveText("50");
+  await expect(page.locator('#schema-table tbody tr[data-column="n"] .schema-sample')).toHaveText("0");
   await page.keyboard.press("Escape");
 
   await node(page, "queries/read.dql").click();

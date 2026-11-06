@@ -24,25 +24,69 @@ pub struct StoredQuery {
     pub success: bool,
 }
 
-pub fn list(root: &Path, relative: &str) -> Result<Vec<StoredQuery>, PathError> {
+/// A stored statement plus the id the structure API uses to read it back.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ListedQuery {
+    pub id: String,
+    pub query: String,
+    pub result: Value,
+    pub success: bool,
+}
+
+pub fn list(root: &Path, relative: &str) -> Result<Vec<ListedQuery>, PathError> {
     let dir = cache_dir(root, relative)?;
+    let digest = dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+        .to_string();
     let mut files = result_files(&dir)?;
     files.sort_by_key(|(stamp, _)| *stamp);
     restrict_query_dirs(&dir);
     let mut stored = Vec::with_capacity(files.len());
-    for (_, path) in files {
-        let Some(bytes) = cache_seal::read_bytes(&path) else {
+    for (stamp, path) in files {
+        let Some(entry) = read_stored(&path) else {
             continue;
         };
-        let Ok(text) = String::from_utf8(bytes) else {
-            continue;
-        };
-        let Ok(entry) = serde_json::from_str::<StoredQuery>(&text) else {
-            continue;
-        };
-        stored.push(entry);
+        stored.push(ListedQuery {
+            id: format!("{digest}:{stamp}"),
+            query: entry.query,
+            result: entry.result,
+            success: entry.success,
+        });
     }
     Ok(stored)
+}
+
+/// Load one cached statement by the id returned from [`list`].
+pub fn load_by_id(root: &Path, id: &str) -> Result<ListedQuery, PathError> {
+    let (digest, stamp) = id
+        .split_once(':')
+        .ok_or_else(|| PathError("query result is not loaded".to_string()))?;
+    if digest.len() != 64 || !digest.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err(PathError("query result is not loaded".to_string()));
+    }
+    let stamp = stamp
+        .parse::<u128>()
+        .map_err(|_| PathError("query result is not loaded".to_string()))?;
+    let path = root
+        .join(CACHE_DIR)
+        .join(digest)
+        .join(format!("query_result_{stamp}.json"));
+    let entry =
+        read_stored(&path).ok_or_else(|| PathError("query result is not loaded".to_string()))?;
+    Ok(ListedQuery {
+        id: id.to_string(),
+        query: entry.query,
+        result: entry.result,
+        success: entry.success,
+    })
+}
+
+fn read_stored(path: &Path) -> Option<StoredQuery> {
+    let bytes = cache_seal::read_bytes(path)?;
+    let text = String::from_utf8(bytes).ok()?;
+    serde_json::from_str(&text).ok()
 }
 
 pub fn save(
@@ -268,6 +312,9 @@ mod tests {
         assert_eq!(other.len(), 1);
         assert_eq!(other[0].query, "SELECT 'other';");
         assert!(other[0].success);
+        let loaded = load_by_id(root.path(), &other[0].id).unwrap();
+        assert_eq!(loaded.query, "SELECT 'other';");
+        assert!(load_by_id(root.path(), "not-an-id").is_err());
 
         clear(root.path(), "notes.dql").unwrap();
         assert!(list(root.path(), "notes.dql").unwrap().is_empty());

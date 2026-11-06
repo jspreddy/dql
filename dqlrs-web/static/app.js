@@ -1338,12 +1338,10 @@ async function loadFileRows() {
     const rows = payload.items || [];
     body.replaceChildren(dataTable(rows, "file-rows-table", payload.columns));
     body.scrollTop = 0;
-    setFileSchema({
-      source: "file",
+    setFileSchema(rows.length || (payload.columns || []).length ? {
+      path,
       title: path.split("/").pop(),
-      rows,
-      columns: payload.columns || [],
-    });
+    } : null);
   } catch (error) {
     if (state.path === path) {
       body.replaceChildren(note(error.message, true));
@@ -2031,7 +2029,7 @@ function renderActivePane() {
     block.className = "query-result" + (entry.success ? "" : " is-error");
     block.dataset.testid = "query-result";
     const body = document.createElement("div");
-    renderResults(resultList(entry.result), body, index === latestItems);
+    renderResults(resultList(entry.result), body, index === latestItems, entry.id || "");
     block.append(queryShell(entry.query, body));
     resultBody.append(block);
   });
@@ -2801,7 +2799,7 @@ async function runDocuments(documents) {
   }
 }
 
-function renderResults(results, host, markTable = !host) {
+function renderResults(results, host, markTable = !host, resultId = "") {
   const target = host || resultBody;
   target.replaceChildren();
   if (!host) {
@@ -2833,6 +2831,7 @@ function renderResults(results, host, markTable = !host) {
       const last = markTable && item === dataItems[dataItems.length - 1];
       target.append(resultCard({
         source: "result",
+        resultId: resultId || item.id || "",
         title: tableName || "Result",
         statement: item.statement || "",
         rows,
@@ -2904,10 +2903,10 @@ function resultCard(snapshot, tableId) {
   name.className = "result-card-name";
   name.textContent = snapshot.title;
   title.append(name);
-  if (schemaColumns(snapshot.rows, snapshot.columns, snapshot.keys).length) {
+  if (snapshot.resultId && schemaColumns(snapshot.rows, snapshot.columns, snapshot.keys).length) {
     const button = schemaIconButton("Show result structure");
     button.classList.add("result-schema");
-    button.addEventListener("click", () => openSchema(snapshot, button));
+    button.addEventListener("click", () => openSchema({ resultId: snapshot.resultId }, button));
     title.append(button);
   }
   const meta = document.createElement("span");
@@ -3788,9 +3787,8 @@ function setFileSchema(snapshot) {
 }
 
 function syncSchemaButton(button, snapshot) {
-  const columns = snapshot ? schemaColumns(snapshot.rows, snapshot.columns, snapshot.keys) : [];
-  button.classList.toggle("hidden", !columns.length);
-  if (!columns.length) button.setAttribute("aria-expanded", "false");
+  button.classList.toggle("hidden", !snapshot);
+  if (!snapshot) button.setAttribute("aria-expanded", "false");
 }
 
 function schemaColumns(rows, columns, keys) {
@@ -3825,41 +3823,6 @@ function schemaColumns(rows, columns, keys) {
   return described.concat(extra.map((name) => ({ name })));
 }
 
-function valueKind(value) {
-  if (value === null || value === undefined) return "NULL";
-  if (typeof value === "boolean") return "BOOL";
-  if (typeof value === "number") return "NUMBER";
-  if (typeof value === "string") return "STRING";
-  if (Array.isArray(value)) return "LIST";
-  if (typeof value === "object") return "MAP";
-  return "STRING";
-}
-
-function inspectColumn(column, rows) {
-  const total = (rows || []).length;
-  let present = 0;
-  const kinds = [];
-  let sample;
-  for (const row of rows || []) {
-    if (!Object.prototype.hasOwnProperty.call(row, column.name)) continue;
-    present += 1;
-    const value = row[column.name];
-    const kind = valueKind(value);
-    if (kind !== "NULL" && !kinds.includes(kind)) kinds.push(kind);
-    if (sample === undefined && value !== null && value !== undefined) sample = value;
-  }
-  return {
-    column,
-    name: column.name,
-    kinds: kinds.length ? kinds : present ? ["NULL"] : [],
-    table: column.table || "",
-    index: column.index || "",
-    present,
-    total,
-    sample,
-  };
-}
-
 function roleLabels(column) {
   const labels = [];
   if (column.table === "hash") labels.push("Hash key");
@@ -3874,44 +3837,60 @@ function formatSample(value) {
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
-function openSchema(snapshot, button) {
-  if (!snapshot) return;
-  const columns = schemaColumns(snapshot.rows, snapshot.columns, snapshot.keys);
-  if (!columns.length) return;
-  const inspected = columns.map((column) => inspectColumn(column, snapshot.rows));
-  const rowCount = (snapshot.rows || []).length;
-  const browser = snapshot.source === "browser";
-  const file = snapshot.source === "file";
-  state.schemaKind = snapshot.source || "result";
+async function openSchema(request, button) {
+  if (!request) return;
+  const params = new URLSearchParams();
+  if (request.resultId) params.set("result", request.resultId);
+  else if (request.table) params.set("table", request.table);
+  else if (request.path) params.set("path", request.path);
+  else return;
+  let payload;
+  try {
+    payload = await api("/api/structure?" + params.toString());
+  } catch (error) {
+    reportError(error);
+    return;
+  }
+  const columns = Array.isArray(payload.columns) ? payload.columns : [];
+  const inspected = columns.map((column) => ({
+    column: {
+      name: column.name,
+      table: column.table || "",
+      index: column.index || "",
+    },
+    name: column.name,
+    kinds: column.kinds || [],
+    present: column.present,
+    total: column.total,
+    sample: column.sample,
+  }));
+  const rowCount = Number(payload.rows) || 0;
+  const browser = payload.kind === "table";
+  const file = payload.kind === "file";
+  state.schemaKind = browser ? "browser" : (payload.kind || "result");
   for (const other of document.querySelectorAll(".schema-btn")) {
     other.setAttribute("aria-expanded", other === button ? "true" : "false");
   }
   schemaPopKicker.textContent = browser ? "Table structure" : "Result structure";
   schemaPopInfo.classList.toggle("hidden", browser);
   const info = file
-    ? "Based on the rows on this page, not the whole file."
+    ? "Based on every row in the file."
     : "Based on this query result, not the entire table.";
   schemaPopInfo.title = info;
   schemaPopInfo.setAttribute("aria-label", info);
-  schemaPopTitle.textContent = snapshot.title || (browser ? "Table" : "Result");
+  schemaPopTitle.textContent = payload.title || (browser ? "Table" : "Result");
   schemaPopSummary.textContent = inspected.length
     + (inspected.length === 1 ? " column" : " columns")
     + " · "
     + rowCount
     + (rowCount === 1 ? " row" : " rows")
-    + (browser || file ? " on this page" : "");
+    + (browser ? " on this page" : "");
   schemaPopKeys.replaceChildren();
   const keyChips = [];
   for (const item of inspected) {
-    if (item.table === "hash" || item.table === "range") {
-      keyChips.push({ name: item.name, role: item.table });
-    }
-  }
-  if (!keyChips.length) {
-    for (const key of snapshot.keys || []) {
-      if (key && (key.role === "hash" || key.role === "range")) {
-        keyChips.push({ name: key.name, role: key.role });
-      }
+    const role = item.column.table;
+    if (role === "hash" || role === "range") {
+      keyChips.push({ name: item.name, role });
     }
   }
   for (const key of keyChips) {
@@ -3924,12 +3903,12 @@ function openSchema(snapshot, button) {
     chip.append(label);
     schemaPopKeys.append(chip);
   }
-  fillSchemaQuery(browser || file ? "" : snapshot.statement);
+  fillSchemaQuery(browser || file ? "" : payload.statement);
   schemaPopBody.replaceChildren(schemaTable(inspected));
   schemaPopFoot.textContent = browser
     ? "Types come from this page and the keys already listed. No extra query was run."
     : file
-      ? "Types come from this page. No extra query was run."
+      ? "Types come from the whole file. No extra query was run."
       : "Types come from this result. No extra query was run.";
   schemaPop.showModal();
 }
@@ -4401,14 +4380,10 @@ async function loadRows() {
     const rows = payload.items || [];
     body.replaceChildren(dataTable(rows, "rows-table", payload.columns));
     body.scrollTop = 0;
-    const listed = (state.listedTables || []).find((table) => table.name === state.table);
-    setBrowserSchema({
-      source: "browser",
+    setBrowserSchema(rows.length || (payload.columns || []).length ? {
+      table: payload.name || state.table,
       title: payload.name || state.table,
-      rows,
-      columns: payload.columns || [],
-      keys: listed ? listed.keys : [],
-    });
+    } : null);
   } catch (error) {
     body.replaceChildren(note(error.message, true));
     setBrowserSchema(null);

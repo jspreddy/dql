@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use regex::Regex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const PAGE_SIZE: usize = 50;
@@ -19,7 +19,7 @@ pub struct TableShape {
     pub indexes: HashMap<String, (String, Option<String>)>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Column {
     pub name: String,
     pub table: Option<String>,

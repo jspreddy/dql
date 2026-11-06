@@ -12,6 +12,7 @@ mod query_cache;
 pub(crate) mod search;
 mod server;
 pub(crate) mod shape;
+mod structure;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;

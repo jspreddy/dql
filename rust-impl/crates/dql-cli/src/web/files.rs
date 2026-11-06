@@ -238,13 +238,14 @@ pub fn require_dql_change(relative: &str) -> Result<(), PathError> {
     Ok(())
 }
 
-/// One page of a `.csv` or `.json` file, in the same shape as table rows.
-pub fn tabular_page(
-    root: &Path,
-    relative: &str,
-    page: usize,
-    page_size: usize,
-) -> Result<Value, PathError> {
+struct LoadedTable {
+    name: String,
+    path: String,
+    columns: Vec<Column>,
+    items: Vec<Value>,
+}
+
+fn load_table_view(root: &Path, relative: &str) -> Result<LoadedTable, PathError> {
     if !is_tabular_name(relative) {
         return Err(PathError(
             "only .csv and .json files can be viewed as tables".to_string(),
@@ -255,22 +256,14 @@ pub fn tabular_page(
         return Err(PathError(format!("{relative} is not a file")));
     }
     let table = dql_engine::load_tabular_file(&path).map_err(PathError)?;
-    let page_size = page_size.max(1);
-    let start = page.saturating_mul(page_size);
-    let total = table.items.len();
-    let end = (start + page_size).min(total);
-    let window = if start >= total {
-        &[]
-    } else {
-        &table.items[start..end]
-    };
-    let items = window
+    let items = table
+        .items
         .iter()
         .map(|item| {
             serde_json::from_str::<Value>(&dql_engine::json_util::item_to_json(item, 0))
                 .unwrap_or(Value::Null)
         })
-        .collect::<Vec<_>>();
+        .collect();
     let columns = table
         .columns
         .iter()
@@ -280,17 +273,51 @@ pub fn tabular_page(
             table: (index == 0).then(|| "hash".to_string()),
             index: None,
         })
-        .collect::<Vec<_>>();
-    Ok(json!({
-        "name": path
+        .collect();
+    Ok(LoadedTable {
+        name: path
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default(),
-        "path": rel(root, &path)?,
+        path: rel(root, &path)?,
+        columns,
+        items,
+    })
+}
+
+/// Every row of a `.csv` or `.json` file, for structure over the whole file.
+pub fn tabular_all(
+    root: &Path,
+    relative: &str,
+) -> Result<(String, Vec<Column>, Vec<Value>), PathError> {
+    let loaded = load_table_view(root, relative)?;
+    Ok((loaded.name, loaded.columns, loaded.items))
+}
+
+/// One page of a `.csv` or `.json` file, in the same shape as table rows.
+pub fn tabular_page(
+    root: &Path,
+    relative: &str,
+    page: usize,
+    page_size: usize,
+) -> Result<Value, PathError> {
+    let loaded = load_table_view(root, relative)?;
+    let page_size = page_size.max(1);
+    let start = page.saturating_mul(page_size);
+    let total = loaded.items.len();
+    let end = (start + page_size).min(total);
+    let items = if start >= total {
+        Vec::new()
+    } else {
+        loaded.items[start..end].to_vec()
+    };
+    Ok(json!({
+        "name": loaded.name,
+        "path": loaded.path,
         "page": page,
         "page_size": page_size,
         "items": items,
-        "columns": columns,
+        "columns": loaded.columns,
         "has_more": end < total,
     }))
 }
