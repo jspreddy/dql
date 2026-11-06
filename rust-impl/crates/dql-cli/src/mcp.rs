@@ -278,6 +278,7 @@ fn list_query_files(root: &Path) -> Result<Value, ToolError> {
 
 fn create_query_file(root: &Path, arguments: &Value) -> Result<Value, ToolError> {
     let path = required_str(arguments, "path")?;
+    files::require_dql_change(path).map_err(path_error)?;
     let text = optional_str(arguments, "text").unwrap_or("");
     let created = files::create_file(root, path).map_err(path_error)?;
     if !text.is_empty() {
@@ -295,6 +296,7 @@ fn read_query_file(root: &Path, arguments: &Value) -> Result<Value, ToolError> {
 
 fn update_query_file(root: &Path, arguments: &Value) -> Result<Value, ToolError> {
     let path = required_str(arguments, "path")?;
+    files::require_dql_change(path).map_err(path_error)?;
     let text = required_str(arguments, "text")?;
     let path = files::normalized_dql(root, path).map_err(path_error)?;
     if files::read_text(root, &path).is_err() {
@@ -1040,6 +1042,32 @@ DROP TABLE other;
             let text = rejected["result"]["content"][0]["text"].as_str().unwrap();
             assert!(text.contains("only .dql files can be read"), "{text}");
         }
+        let csv = std::fs::read(dir.path().join("users.csv")).unwrap();
+        let json = std::fs::read(dir.path().join("cities.json")).unwrap();
+        for (id, name, path) in [
+            (12, "update_query_file", "users.csv"),
+            (13, "update_query_file", "cities.json"),
+            (14, "create_query_file", "more.csv"),
+            (15, "create_query_file", "more.json"),
+        ] {
+            let rejected = rpc(
+                &mut server,
+                id,
+                "tools/call",
+                json!({
+                    "name": name,
+                    "arguments": { "path": path, "text": "changed\n" }
+                }),
+            );
+            assert_eq!(rejected["result"]["isError"], true, "{rejected}");
+            let text = rejected["result"]["content"][0]["text"].as_str().unwrap();
+            assert!(text.contains("only .dql files can be changed"), "{text}");
+        }
+        assert_eq!(std::fs::read(dir.path().join("users.csv")).unwrap(), csv);
+        assert_eq!(std::fs::read(dir.path().join("cities.json")).unwrap(), json);
+        assert!(!dir.path().join("more.csv").exists());
+        assert!(!dir.path().join("more.csv.dql").exists());
+        assert!(!dir.path().join("more.json.dql").exists());
     }
 
     #[test]

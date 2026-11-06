@@ -25,6 +25,7 @@ pub use throttle::RateLimit;
 pub use aws::{CallerIdentity, SdkBackend, SdkConfig};
 pub use cancel::CancelFlag;
 pub use engine::{age_phrase, Engine, LsReport, LsRow};
+pub use file_io::load_tabular_file;
 pub use memory::MemoryBackend;
 pub use progress::{ProgressEvent, ProgressSink, WRITE_PROGRESS_CHUNK};
 pub use query_context::{query_context_from_read, LastQueryContext};

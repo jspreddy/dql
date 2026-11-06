@@ -7,7 +7,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::Serialize;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+
+use super::shape::Column;
 
 /// One file at a time. Web saves compare the revision under this lock so two
 /// windows cannot both pass the check and then overwrite each other.
@@ -227,6 +230,71 @@ pub fn require_dql_read(relative: &str) -> Result<(), PathError> {
     Ok(())
 }
 
+/// Editor saves and MCP create/update accept only `.dql` paths.
+pub fn require_dql_change(relative: &str) -> Result<(), PathError> {
+    if foreign_extension(relative) {
+        return Err(PathError("only .dql files can be changed".to_string()));
+    }
+    Ok(())
+}
+
+/// One page of a `.csv` or `.json` file, in the same shape as table rows.
+pub fn tabular_page(
+    root: &Path,
+    relative: &str,
+    page: usize,
+    page_size: usize,
+) -> Result<Value, PathError> {
+    if !is_tabular_name(relative) {
+        return Err(PathError(
+            "only .csv and .json files can be viewed as tables".to_string(),
+        ));
+    }
+    let path = resolve_inside(root, relative)?;
+    if !path.is_file() {
+        return Err(PathError(format!("{relative} is not a file")));
+    }
+    let table = dql_engine::load_tabular_file(&path).map_err(PathError)?;
+    let page_size = page_size.max(1);
+    let start = page.saturating_mul(page_size);
+    let total = table.items.len();
+    let end = (start + page_size).min(total);
+    let window = if start >= total {
+        &[]
+    } else {
+        &table.items[start..end]
+    };
+    let items = window
+        .iter()
+        .map(|item| {
+            serde_json::from_str::<Value>(&dql_engine::json_util::item_to_json(item, 0))
+                .unwrap_or(Value::Null)
+        })
+        .collect::<Vec<_>>();
+    let columns = table
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(index, name)| Column {
+            name: name.clone(),
+            table: (index == 0).then(|| "hash".to_string()),
+            index: None,
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "name": path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        "path": rel(root, &path)?,
+        "page": page,
+        "page_size": page_size,
+        "items": items,
+        "columns": columns,
+        "has_more": end < total,
+    }))
+}
+
 pub fn is_missing(err: &PathError) -> bool {
     err.0.contains("is not a file")
 }
@@ -271,6 +339,7 @@ pub fn save_file(
     text: &str,
     base: Option<&str>,
 ) -> Result<SaveFile, PathError> {
+    require_dql_change(relative)?;
     let _guard = file_io();
     match read_text_unlocked(root, relative) {
         Ok(current) => {
@@ -319,6 +388,7 @@ pub fn normalized_dql(root: &Path, relative: &str) -> Result<String, PathError> 
 }
 
 pub fn write_text(root: &Path, relative: &str, text: &str) -> Result<(), PathError> {
+    require_dql_change(relative)?;
     let _guard = file_io();
     write_text_unlocked(root, relative, text)
 }
@@ -354,9 +424,7 @@ fn dql_path(root: &Path, relative: &str) -> Result<PathBuf, PathError> {
     if cleaned.is_empty() || cleaned.ends_with('/') {
         return Err(PathError("choose a file name ending in .dql".to_string()));
     }
-    if foreign_extension(&cleaned) {
-        return Err(PathError("only .dql files can be changed".to_string()));
-    }
+    require_dql_change(&cleaned)?;
     if !cleaned.to_ascii_lowercase().ends_with(".dql") {
         cleaned.push_str(".dql");
     }
@@ -684,6 +752,22 @@ mod tests {
         move_path(root.path(), "users.csv", "queries/users.csv").unwrap();
         assert!(root.path().join("queries/users.csv").is_file());
         assert!(!root.path().join("queries/users.csv.dql").exists());
+        let original = fs::read(root.path().join("queries/users.csv")).unwrap();
+        assert!(save_file(root.path(), "queries/users.csv", "changed\n", None).is_err());
+        assert!(write_text(root.path(), "queries/users.csv", "changed\n").is_err());
+        assert_eq!(
+            fs::read(root.path().join("queries/users.csv")).unwrap(),
+            original
+        );
+        let page = tabular_page(root.path(), "queries/users.csv", 0, 50).unwrap();
+        assert_eq!(page["items"].as_array().unwrap().len(), 1);
+        assert_eq!(page["items"][0]["name"], "ada");
+        assert_eq!(page["has_more"], false);
+        assert_eq!(page["columns"][0]["table"], "hash");
+        let next = tabular_page(root.path(), "queries/users.csv", 1, 50).unwrap();
+        assert!(next["items"].as_array().unwrap().is_empty());
+        assert_eq!(next["has_more"], false);
+        assert!(tabular_page(root.path(), "queries/posts.dql", 0, 50).is_err());
     }
 
     #[test]

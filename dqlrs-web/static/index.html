@@ -188,6 +188,22 @@
           </div>
           <div id="result-body" class="result-body" role="tabpanel" aria-labelledby="result-tab-result"></div>
         </section>
+        <section id="file-rows" class="file-rows hidden" aria-label="Data file">
+          <div class="rows-head">
+            <span class="rows-heading">
+              <span id="file-rows-title"></span>
+            </span>
+            <span id="file-rows-meta" class="meta"></span>
+          </div>
+          <div id="file-rows-body" class="result-body browser-rows"></div>
+          <div class="pager">
+            <span id="file-page-label" class="meta"></span>
+            <span>
+              <button type="button" id="file-page-prev">Previous</button>
+              <button type="button" id="file-page-next">Next</button>
+            </span>
+          </div>
+        </section>
       </section>
       <section id="tables-view" class="view hidden">
         <div class="rows-head">
@@ -202,7 +218,7 @@
           </span>
           <span id="rows-meta" class="meta"></span>
         </div>
-        <div id="rows-body" class="result-body"></div>
+        <div id="rows-body" class="result-body browser-rows"></div>
         <div class="pager">
           <span id="page-label" class="meta"></span>
           <span>

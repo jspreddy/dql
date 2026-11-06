@@ -71,10 +71,12 @@ async function expectUnderline(tab, primary) {
   expect(line.bottom).toBe("-1px");
 }
 
-test("shows csv and json files and opens them read only", async ({ page, app }, testInfo) => {
+test("shows csv and json files as tables", async ({ page, app }, testInfo) => {
   fs.writeFileSync(path.join(app.workspace, "users.csv"), "id,name\na,ada\nb,grace\n");
   fs.writeFileSync(path.join(app.workspace, "cities.json"), "[{\"id\":\"a\",\"city\":\"nyc\"}]\n");
   fs.writeFileSync(path.join(app.workspace, "notes.txt"), "hidden\n");
+  const many = ["id,n", ...Array.from({ length: 51 }, (_, index) => `r${index},${index}`)].join("\n") + "\n";
+  fs.writeFileSync(path.join(app.workspace, "many.csv"), many);
   await page.reload();
   await expect(node(page, "users.csv")).toBeVisible();
   await expect(node(page, "cities.json")).toBeVisible();
@@ -83,32 +85,58 @@ test("shows csv and json files and opens them read only", async ({ page, app }, 
   await expect(node(page, "cities.json").locator(".file-kind")).toHaveText("json");
 
   await node(page, "users.csv").click();
-  await expect(page.locator("#file-name")).toHaveText("users.csv");
-  await expect(page.locator("#editor-content")).toContainText("ada");
-  await expect(page.locator("#editor-content")).toContainText("grace");
-  await expect(page.locator("#editor-content")).toHaveAttribute("contenteditable", "false");
-  await expect(page.locator("#run")).toBeHidden();
-  await expect(page.locator("#run-file")).toBeHidden();
+  await expect(page.locator("#query-view")).toHaveClass(/is-data/);
+  await expect(page.locator("#editor")).toBeHidden();
+  await expect(page.locator("#results")).toBeHidden();
+  await expect(page.locator("#file-rows")).toBeVisible();
+  await expect(page.locator("#file-rows-title")).toHaveText("users.csv");
+  await expect(page.locator("#file-rows-meta")).toHaveText("50 rows at a time");
+  await expect(page.locator("#file-page-label")).toHaveText("Showing 1–2");
+  await expect(page.locator("#file-page-prev")).toBeDisabled();
+  await expect(page.locator("#file-page-next")).toBeDisabled();
+  await expect(page.locator("#file-rows-table tbody tr")).toHaveCount(2);
+  await expect(page.locator("#file-rows-table")).toContainText("ada");
+  await expect(page.locator("#file-rows-table")).toContainText("grace");
+  await expect(page.locator("#file-rows-table [data-key='hash']")).toBeVisible();
   await node(page, "users.csv").click({ button: "right" });
   await expect(page.locator("#menu-run-file")).toHaveCount(0);
-  await page.locator("#file-name").click();
+  await page.locator("#file-rows-title").click();
   await page.screenshot({ path: playwrightArtifact(`view-csv-${testInfo.project.name}.png`) });
 
   const before = fs.readFileSync(path.join(app.workspace, "users.csv"), "utf8");
-  await page.locator("#editor-content").click();
-  await page.keyboard.insertText("nope");
-  await expect(page.locator("#editor-content")).toContainText("ada");
-  await expect(page.locator("#editor-content")).not.toContainText("nope");
+  const rejected = await page.evaluate(async (path) => {
+    const saved = await fetch("/api/file", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, text: "changed\n" }),
+    });
+    return saved.ok ? "" : await saved.text();
+  }, "users.csv");
+  expect(rejected).toContain("only .dql files can be changed");
   expect(fs.readFileSync(path.join(app.workspace, "users.csv"), "utf8")).toBe(before);
 
   await node(page, "cities.json").click();
-  await expect(page.locator("#file-name")).toHaveText("cities.json");
-  await expect(page.locator("#editor-content")).toContainText("nyc");
-  await expect(page.locator("#editor-content")).toHaveAttribute("contenteditable", "false");
+  await expect(page.locator("#file-rows-title")).toHaveText("cities.json");
+  await expect(page.locator("#editor")).toBeHidden();
+  await expect(page.locator("#file-rows-table")).toContainText("nyc");
+  await expect(page.locator("#file-page-label")).toHaveText("Showing 1–1");
   await page.screenshot({ path: playwrightArtifact(`view-json-${testInfo.project.name}.png`) });
+
+  await node(page, "many.csv").click();
+  await expect(page.locator("#file-rows-table tbody tr")).toHaveCount(50);
+  await expect(page.locator("#file-page-label")).toHaveText("Showing 1–50");
+  await expect(page.locator("#file-page-next")).toBeEnabled();
+  await page.locator("#file-page-next").click();
+  await expect(page.locator("#file-page-label")).toHaveText("Showing 51–51");
+  await expect(page.locator("#file-rows-table tbody tr")).toHaveCount(1);
+  await expect(page.locator("#file-rows-table")).toContainText("r50");
+  await expect(page.locator("#file-page-next")).toBeDisabled();
+  await expect(page.locator("#file-page-prev")).toBeEnabled();
 
   await node(page, "queries/read.dql").click();
   await expect(page.locator("#file-name")).toHaveText("read.dql");
+  await expect(page.locator("#file-rows")).toBeHidden();
+  await expect(page.locator("#editor")).toBeVisible();
   await expect(page.locator("#editor-content")).toHaveAttribute("contenteditable", "true");
   await expect(page.locator("#run")).toBeEnabled();
 });

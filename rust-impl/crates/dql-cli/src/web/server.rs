@@ -453,6 +453,14 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
             Ok(node) => Reply::Json(200, serde_json::to_value(node).unwrap_or(Value::Null)),
             Err(err) => json_error(400, &err),
         },
+        "/api/file-rows" => {
+            let relative = query_value(query, "path");
+            let page = query_value(query, "page").parse::<usize>().unwrap_or(0);
+            match files::tabular_page(&app.root, &relative, page, PAGE_SIZE) {
+                Ok(value) => Reply::Json(200, value),
+                Err(err) => json_error(400, &err),
+            }
+        }
         "/api/file" => {
             let relative = query_value(query, "path");
             match files::read_file(&app.root, &relative) {

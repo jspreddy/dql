@@ -208,12 +208,12 @@ pub fn load_items(path: &Path) -> Result<Vec<Item>, String> {
 /// CSV or JSON rows, with columns in file order.
 ///
 /// JSON may be one object, an array of objects, or one object per line.
-pub(crate) struct TabularFile {
+pub struct TabularFile {
     pub columns: Vec<String>,
     pub items: Vec<Item>,
 }
 
-pub(crate) fn load_tabular_file(path: &Path) -> Result<TabularFile, String> {
+pub fn load_tabular_file(path: &Path) -> Result<TabularFile, String> {
     let spec = parse_file_spec(path)?;
     match spec.format {
         FileFormat::Csv => load_csv_table(&spec),

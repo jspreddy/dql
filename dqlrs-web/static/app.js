@@ -80,6 +80,8 @@ const state = {
   entries: [],
   page: 0,
   hasMore: false,
+  filePage: 0,
+  fileHasMore: false,
   suppressSave: false,
   dragPath: "",
   tablesRequest: 0,
@@ -875,6 +877,8 @@ document.querySelector("#refresh-tables").addEventListener("click", () => {
 });
 document.querySelector("#page-prev").addEventListener("click", () => changePage(-1));
 document.querySelector("#page-next").addEventListener("click", () => changePage(1));
+document.querySelector("#file-page-prev").addEventListener("click", () => changeFilePage(-1));
+document.querySelector("#file-page-next").addEventListener("click", () => changeFilePage(1));
 const rowsSchemaBtn = document.querySelector("#rows-schema");
 const schemaPop = document.querySelector("#schema-pop");
 const schemaPopTitle = document.querySelector("#schema-pop-title");
@@ -1082,6 +1086,9 @@ function setMode(mode) {
   document.querySelector("#refresh-tables").classList.toggle("hidden", !tables);
   if (!tables) document.querySelector("#table-cache").classList.add("hidden");
   document.querySelector("#side-title").textContent = tables ? "Tables" : "Files";
+  const data = !tables && dataFile(state.path);
+  document.querySelector("#query-view").classList.toggle("is-data", data);
+  document.querySelector("#file-rows").classList.toggle("hidden", !data);
   closeComplete();
   if (tables) loadTables();
 }
@@ -1275,6 +1282,20 @@ function nodeButton(twist, label, selected) {
 async function openFile(path) {
   try {
     await flushSave();
+    if (dataFile(path)) {
+      state.fileEpoch += 1;
+      state.disk = null;
+      state.filePage = 0;
+      state.fileHasMore = false;
+      showOpenFile(path);
+      state.entries = [];
+      showResults([]);
+      editor.dispatch({ effects: setLintIssues.of([]) });
+      paintLint([]);
+      setMode("query");
+      await Promise.all([refreshTree(), loadFileRows()]);
+      return;
+    }
     const file = await api("/api/file?path=" + encodeURIComponent(path));
     state.fileEpoch += 1;
     state.disk = { path: file.path || path, text: file.text, revision: file.revision };
@@ -1283,16 +1304,44 @@ async function openFile(path) {
     state.entries = [];
     showResults([]);
     setMode("query");
-    if (dataFile(file.path || path)) {
-      editor.dispatch({ effects: setLintIssues.of([]) });
-      paintLint([]);
-      await refreshTree();
-    } else {
-      await Promise.all([refreshTree(), loadFileResults(file.path || path)]);
-    }
+    await Promise.all([refreshTree(), loadFileResults(file.path || path)]);
   } catch (error) {
     reportError(error);
   }
+}
+
+async function loadFileRows() {
+  const path = state.path;
+  if (!dataFile(path)) return;
+  const body = document.querySelector("#file-rows-body");
+  document.querySelector("#file-rows-title").textContent = path.split("/").pop();
+  document.querySelector("#file-rows-meta").textContent = "50 rows at a time";
+  body.replaceChildren(note("Loading…", false));
+  try {
+    const payload = await api(
+      "/api/file-rows?path=" + encodeURIComponent(path) + "&page=" + state.filePage,
+    );
+    if (state.path !== path) return;
+    state.fileHasMore = Boolean(payload.has_more);
+    const start = payload.page * payload.page_size + (payload.items.length ? 1 : 0);
+    const end = payload.page * payload.page_size + payload.items.length;
+    document.querySelector("#file-page-label").textContent = payload.items.length
+      ? "Showing " + start + "–" + end
+      : "No rows";
+    document.querySelector("#file-page-prev").disabled = payload.page <= 0;
+    document.querySelector("#file-page-next").disabled = !state.fileHasMore;
+    body.replaceChildren(dataTable(payload.items || [], "file-rows-table", payload.columns));
+    body.scrollTop = 0;
+  } catch (error) {
+    if (state.path === path) body.replaceChildren(note(error.message, true));
+  }
+}
+
+function changeFilePage(delta) {
+  const next = state.filePage + delta;
+  if (next < 0 || (delta > 0 && !state.fileHasMore)) return;
+  state.filePage = next;
+  loadFileRows();
 }
 
 async function createFile() {
@@ -2010,7 +2059,7 @@ function startFileWatch() {
 
 async function watchOpenFile() {
   const path = state.disk?.path;
-  if (!path || state.applyingDisk || state.saveFlight || state.adopting) return;
+  if (!path || dataFile(path) || state.applyingDisk || state.saveFlight || state.adopting) return;
   const epoch = state.fileEpoch;
   let file;
   try {
