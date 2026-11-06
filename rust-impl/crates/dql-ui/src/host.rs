@@ -34,7 +34,7 @@ pub struct SearchHit {
     pub offset: Option<usize>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RunResult {
     pub ok: bool,
     pub kind: String,
@@ -106,6 +106,7 @@ pub struct MemoryHost {
     pub replies: Vec<(String, RunResult)>,
     pub tables: Vec<TableRow>,
     pub cache_label: String,
+    pub refreshes: u32,
     cancel_requested: AtomicBool,
 }
 
@@ -117,6 +118,7 @@ impl MemoryHost {
             replies: Vec::new(),
             tables: Vec::new(),
             cache_label: "not cached".into(),
+            refreshes: 0,
             cancel_requested: AtomicBool::new(false),
         }
     }
@@ -235,12 +237,12 @@ impl Host for MemoryHost {
 
     fn search(&mut self, query: &str) -> Vec<SearchHit> {
         let needle = query.trim().to_ascii_lowercase();
-        if needle.is_empty() {
+        if needle.is_empty() || needle.chars().count() > 200 {
             return Vec::new();
         }
         let mut hits = Vec::new();
         if let Ok(nodes) = self.tree() {
-            walk_search(&nodes, &needle, &mut hits);
+            walk_search(&self.root, &nodes, &needle, &mut hits);
         }
         for table in &self.tables {
             if table.name.to_ascii_lowercase().contains(&needle) {
@@ -252,6 +254,18 @@ impl Host for MemoryHost {
                     path: String::new(),
                     offset: None,
                 });
+            }
+            for (role, key) in [("hash", &table.hash_key), ("range", &table.range_key)] {
+                if !key.is_empty() && key.to_ascii_lowercase().contains(&needle) {
+                    hits.push(SearchHit {
+                        kind: "column".into(),
+                        title: key.clone(),
+                        detail: format!("{role} {}", table.name),
+                        table: table.name.clone(),
+                        path: String::new(),
+                        offset: None,
+                    });
+                }
             }
         }
         hits
@@ -266,7 +280,18 @@ impl Host for MemoryHost {
                 return result.clone();
             }
         }
-        if dql.trim().is_empty() {
+        let trimmed = dql.trim().trim_end_matches(';').trim();
+        let upper = trimmed.to_ascii_uppercase();
+        if upper.starts_with("HELP") {
+            return help_result(trimmed);
+        }
+        if upper.starts_with("EXPLAIN") {
+            return explain_result();
+        }
+        if upper.starts_with("DESCRIBE") || upper.starts_with("SHOW TABLES") {
+            return describe_result(trimmed);
+        }
+        if trimmed.is_empty() {
             return RunResult::error("Nothing to run.");
         }
         RunResult {
@@ -283,7 +308,10 @@ impl Host for MemoryHost {
         self.cancel_requested.store(true, Ordering::SeqCst);
     }
 
-    fn list_tables(&mut self, pattern: &str, _refresh: bool) -> Result<Vec<TableRow>, String> {
+    fn list_tables(&mut self, pattern: &str, refresh: bool) -> Result<Vec<TableRow>, String> {
+        if refresh {
+            self.refreshes = self.refreshes.saturating_add(1);
+        }
         let pattern = pattern.trim().to_ascii_lowercase();
         Ok(self
             .tables
@@ -337,19 +365,102 @@ fn read_tree(root: &Path, dir: &Path) -> Result<Vec<TreeNode>, String> {
     Ok(nodes)
 }
 
-fn walk_search(nodes: &[TreeNode], needle: &str, hits: &mut Vec<SearchHit>) {
+fn walk_search(root: &Path, nodes: &[TreeNode], needle: &str, hits: &mut Vec<SearchHit>) {
     for node in nodes {
-        if node.kind == "file" && node.name.to_ascii_lowercase().contains(needle) {
-            hits.push(SearchHit {
-                kind: "file".into(),
-                title: node.name.clone(),
-                detail: node.path.clone(),
-                table: String::new(),
-                path: node.path.clone(),
-                offset: Some(0),
-            });
+        if node.kind == "file" {
+            let text = std::fs::read_to_string(root.join(&node.path)).unwrap_or_default();
+            let lowered = text.to_ascii_lowercase();
+            let name_hit = node.name.to_ascii_lowercase().contains(needle);
+            if name_hit || lowered.contains(needle) {
+                let offset = lowered.find(needle).unwrap_or(0);
+                hits.push(SearchHit {
+                    kind: "query".into(),
+                    title: node.name.clone(),
+                    detail: node.path.clone(),
+                    table: String::new(),
+                    path: node.path.clone(),
+                    offset: Some(offset),
+                });
+            }
         }
-        walk_search(&node.children, needle, hits);
+        walk_search(root, &node.children, needle, hits);
+    }
+}
+
+fn help_result(statement: &str) -> RunResult {
+    let topic = statement[4..].trim();
+    if topic.is_empty() {
+        return RunResult {
+            ok: true,
+            kind: "help".into(),
+            message: "Available commands".into(),
+            items: Vec::new(),
+            affected: None,
+            help: Some(serde_json::json!({
+                "entries": [{
+                    "name": "select",
+                    "summary": "Query items from a table or index"
+                }]
+            })),
+        };
+    }
+    RunResult {
+        ok: true,
+        kind: "help".into(),
+        message: format!("HELP {}", topic.to_ascii_lowercase()),
+        items: Vec::new(),
+        affected: None,
+        help: Some(serde_json::json!({
+            "code": [
+                "CREATE TABLE widgets (id HASH KEY);",
+                "WHERE can compare a.b.c and a[0].b on SELECT and SCAN."
+            ]
+        })),
+    }
+}
+
+fn explain_result() -> RunResult {
+    RunResult {
+        ok: true,
+        kind: "explain".into(),
+        message: "query widgets TABLE".into(),
+        items: Vec::new(),
+        affected: None,
+        help: Some(serde_json::json!({
+            "projection expression": "#f",
+            "key condition expression": "id = ",
+            "filter expression": "n > ",
+            "attribute names": "\"a\"",
+            "attribute values": "\"ada\"",
+            "consistent": "true",
+            "operation": "query"
+        })),
+    }
+}
+
+fn describe_result(statement: &str) -> RunResult {
+    let pattern = statement
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("")
+        .trim_matches('"')
+        .trim_matches('\'');
+    let exact = pattern.eq_ignore_ascii_case("widgets");
+    let message = if pattern.is_empty() || exact {
+        "Hash Key id\nCREATE TABLE widgets (id STRING HASH KEY);".into()
+    } else {
+        format!("No exact match for \"{pattern}\"\nshowing similar names")
+    };
+    RunResult {
+        ok: true,
+        kind: "describe".into(),
+        message,
+        items: Vec::new(),
+        affected: None,
+        help: Some(serde_json::json!({
+            "capacity": "12 RCU",
+            "elapsed": "4 ms"
+        })),
     }
 }
 
@@ -382,7 +493,11 @@ fn unique_copy(src: &Path) -> PathBuf {
         .extension()
         .map(|ext| format!(".{}", ext.to_string_lossy()))
         .unwrap_or_default();
-    for n in 1..1000 {
+    let first = parent.join(format!("{stem} copy{ext}"));
+    if !first.exists() {
+        return first;
+    }
+    for n in 2..1000 {
         let candidate = parent.join(format!("{stem} copy {n}{ext}"));
         if !candidate.exists() {
             return candidate;

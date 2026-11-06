@@ -6,8 +6,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use dql_engine::{help_page, HelpBlock, HelpPage};
 use dql_ui::host::{CacheEntry, Host, LintIssue, RunResult, SearchHit, TableRow, TreeNode};
 use dql_ui::tokens::cache_age_label;
+use serde_json::{json, Value};
 
 use crate::session::Session;
 use crate::web::{files, lint, search};
@@ -160,14 +162,17 @@ impl Host for LiveHost {
             .map(|err| err.message.clone())
             .or(envelope.message)
             .unwrap_or_default();
-        RunResult {
-            ok: envelope.ok,
-            kind: envelope.kind,
-            message,
-            items: envelope.items.unwrap_or_default(),
-            affected: envelope.affected,
-            help: envelope.help,
-        }
+        present_statement(
+            dql,
+            RunResult {
+                ok: envelope.ok,
+                kind: envelope.kind,
+                message,
+                items: envelope.items.unwrap_or_default(),
+                affected: envelope.affected,
+                help: envelope.help,
+            },
+        )
     }
 
     fn cancel(&self) {
@@ -226,6 +231,48 @@ impl Host for LiveHost {
     }
 }
 
+fn present_statement(dql: &str, mut result: RunResult) -> RunResult {
+    let statement = dql.trim().trim_end_matches(';').trim();
+    let upper = statement.to_ascii_uppercase();
+    if upper.starts_with("HELP") {
+        let topic = statement[4..].trim();
+        let topic = if topic.is_empty() { None } else { Some(topic) };
+        if let Ok(page) = help_page(topic) {
+            result.ok = true;
+            result.kind = "help".into();
+            result.message = page.title.clone();
+            result.help = Some(help_json(&page));
+        }
+    } else if upper.starts_with("EXPLAIN") && result.kind.is_empty() {
+        result.kind = "explain".into();
+    } else if (upper.starts_with("DESCRIBE") || upper.starts_with("SHOW")) && result.kind.is_empty()
+    {
+        result.kind = "describe".into();
+    }
+    result
+}
+
+fn help_json(page: &HelpPage) -> Value {
+    let mut entries = Vec::new();
+    let mut code = Vec::new();
+    let mut prose = Vec::new();
+    for block in &page.blocks {
+        match block {
+            HelpBlock::Entry { name, summary } => {
+                entries.push(json!({ "name": name, "summary": summary }));
+            }
+            HelpBlock::Code(text) => code.push(json!(text)),
+            HelpBlock::Prose(text) | HelpBlock::Heading(text) => prose.push(json!(text)),
+        }
+    }
+    json!({
+        "title": page.title,
+        "entries": entries,
+        "code": code,
+        "prose": prose,
+    })
+}
+
 fn lock(session: &Mutex<Session>) -> std::sync::MutexGuard<'_, Session> {
     session.lock().unwrap_or_else(|err| err.into_inner())
 }
@@ -260,6 +307,37 @@ mod tests {
         assert_eq!(host.read_file("a.dql").unwrap(), "SELECT 1;\n");
         let result = host.execute("SELECT 1;");
         assert!(!result.message.is_empty() || !result.kind.is_empty());
+        let help = host.execute("HELP;");
+        assert_eq!(help.message, "Available commands");
+        let page = help.help.unwrap().to_string();
+        assert!(page.contains("Query items from a table or index"), "{page}");
+        let topic = host.execute("HELP SELECT;");
+        assert_eq!(topic.message, "HELP select");
+        let body = topic.help.unwrap().to_string();
+        assert!(
+            body.contains("WHERE can compare a.b.c and a[0].b on SELECT and SCAN."),
+            "{body}"
+        );
+        let setup = host
+            .execute("CREATE TABLE demo (id STRING HASH KEY); INSERT INTO demo (id) VALUES ('a');");
+        assert!(setup.ok, "{}", setup.message);
+        let saved = dir.path().join("out.json");
+        let save = host.execute(&format!("SCAN * FROM demo SAVE '{}';", saved.display()));
+        assert!(save.ok, "{}", save.message);
+        assert!(saved.is_file(), "{}", save.message);
+        let loaded = host.execute(&format!("LOAD '{}' INTO demo;", saved.display()));
+        assert!(loaded.ok, "{}", loaded.message);
+        let missing = dir.path().join("missing-parent").join("out.json");
+        let rejected = host.execute(&format!("SCAN * FROM demo SAVE '{}';", missing.display()));
+        assert!(!rejected.ok, "{}", rejected.message);
+        assert!(!missing.exists());
+        let nested = dir.path().join("made").join("out.csv");
+        let parents = host.execute(&format!(
+            "SCAN * FROM demo SAVE '{}' CREATE PARENTS;",
+            nested.display()
+        ));
+        assert!(parents.ok, "{}", parents.message);
+        assert!(nested.is_file(), "{}", parents.message);
         host.cancel();
     }
 }

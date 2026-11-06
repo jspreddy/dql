@@ -8,5 +8,7 @@ pub mod rows;
 pub mod tokens;
 
 mod app;
+mod logic;
+mod prefs;
 
 pub use app::{run_native, Studio};
