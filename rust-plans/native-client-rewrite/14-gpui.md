@@ -77,7 +77,7 @@ Do not depend on `libwebkit2gtk`. The upstream Linux install script includes it 
 
 ## Module map
 
-New code lives in `rust-impl/crates/dql-cli/src/gpui_ui/`, behind the `ui` feature. The name is not `dqlrs_ui`, which was the iced window on another branch.
+New code lives in the `dql-ui` crate at `rust-impl/crates/dql-ui`, beside `dql-cli`. `dqlrs` always links it, the same way `--web` is always in the binary. There is no `ui` cargo feature. The window calls a `Host` trait in that crate. `dql-cli` implements the trait by calling `web::files`, `web::lint`, `web::search`, `web::shape`, and `Session::execute_for_serve` on the UI thread. It does not open an HTTP client. `tokens` is the port of `dql-tokens.js` (statement bands and word colors), not a credential.
 
 | Module | Owns |
 | --- | --- |

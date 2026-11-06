@@ -1,0 +1,18 @@
+[package]
+name = "dql-ui"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Native dqlrs window. Calls the engine in process."
+
+[dependencies]
+gpui-kit = "0.9"
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+gpui-kit = { version = "0.9", features = ["test-support"] }
+tempfile = "3.23.0"

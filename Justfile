@@ -306,6 +306,56 @@ web *args: (_title "web")
     fi
     exec ./dqlrs-web/run.sh "${mcp[@]}" "${args[@]}"
 
+# Open the native window. Extra args go to dqlrs: just ui -- --dir ~/queries
+[group('web')]
+ui *args: (_title "ui")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    (cd rust-impl && cargo build -p dql-cli)
+    args=({{args}})
+    if [[ ${#args[@]} -gt 0 && "${args[0]}" == "--" ]]; then
+        args=("${args[@]:1}")
+    fi
+    use_local=1
+    if [[ ${#args[@]} -gt 0 ]]; then
+        for arg in "${args[@]}"; do
+            if [[ "$arg" == "--aws" ]]; then
+                use_local=0
+            fi
+        done
+    fi
+    if [[ "$use_local" -eq 1 ]]; then
+        just dynamo
+    fi
+    bin="{{justfile_directory()}}/rust-impl/target/debug/dqlrs"
+    if [[ ${#args[@]} -eq 0 ]]; then
+        exec "$bin" --ui -H localhost -p 8000 --dir "{{justfile_directory()}}/dqlrs-web/examples"
+    fi
+    forwarded=()
+    for arg in "${args[@]}"; do
+        if [[ "$arg" != "--aws" ]]; then
+            forwarded+=("$arg")
+        fi
+    done
+    exec "$bin" --ui "${forwarded[@]}"
+
+# Headless native UI tests. No DynamoDB and no display.
+[group('web')]
+ui-test *filter: (_title "ui-test")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}/rust-impl"
+    filter=({{filter}})
+    if [[ ${#filter[@]} -gt 0 && "${filter[0]}" == "--" ]]; then
+        filter=("${filter[@]:1}")
+    fi
+    if [[ ${#filter[@]} -eq 0 ]]; then
+        cargo test -p dql-ui --lib
+    else
+        cargo test -p dql-ui --lib -- "${filter[@]}"
+    fi
+
 # Node tests for the DQLRS Web editor
 [group('web')]
 web-unit: (_title "web-unit")
@@ -431,7 +481,7 @@ fix: (_title "fix") py-sync py-fix rust-fix
 test: (_title "test") dynamo py-sync rust-build web-unit py-test rust-test rust-local rust-smoke black-box notebook-test web-test mcp-test
 
 # Static analysis, package builds, and every test suite. Does not call `test`.
-verify: (_title "verify") dynamo web-unit py rust black-box notebook-test web-test mcp-test
+verify: (_title "verify") dynamo web-unit py rust black-box notebook-test web-test ui-test mcp-test
 
 # Install dql and dqlrs onto ~/.local/bin
 install: (_title "install") py rust py-install rust-install
