@@ -841,6 +841,18 @@ document.querySelector("#table-search").addEventListener("input", () => {
   clearTimeout(state.searchTimer);
   state.searchTimer = setTimeout(loadTables, 250);
 });
+const groupTablesButton = document.querySelector("#group-tables");
+state.groupTables = localStorage.getItem("dqlrs-group-tables") === "1";
+groupTablesButton.setAttribute("aria-pressed", state.groupTables ? "true" : "false");
+groupTablesButton.addEventListener("click", () => {
+  state.groupTables = !state.groupTables;
+  localStorage.setItem("dqlrs-group-tables", state.groupTables ? "1" : "0");
+  groupTablesButton.setAttribute("aria-pressed", state.groupTables ? "true" : "false");
+  const list = document.querySelector("#table-list");
+  const kept = [...list.children].filter((node) => !node.classList.contains("table-row") && !node.classList.contains("table-group"));
+  list.replaceChildren(...kept);
+  paintTables(list, state.listedTables || []);
+});
 document.querySelector("#refresh-tables").addEventListener("click", () => {
   loadTables({ refresh: true, background: true });
 });
@@ -3114,6 +3126,13 @@ function describeCard(description, note, cache) {
   title.className = "describe-name";
   title.textContent = description.name;
   head.append(title);
+  if (description.type && description.type !== "DYNAMODB") {
+    const kind = document.createElement("span");
+    kind.className = "table-kind";
+    kind.dataset.kind = description.type === "LOCALTABLE" ? "local" : "temp";
+    kind.textContent = description.type === "LOCALTABLE" ? "local" : "temp";
+    head.append(kind);
+  }
   const aside = document.createElement("div");
   aside.className = "describe-head-aside";
   if (cache) aside.append(cacheHint(cache));
@@ -3929,17 +3948,7 @@ async function loadTables(options = {}) {
       state.table = payload.tables[0].name;
       state.page = 0;
     }
-    for (const table of payload.tables) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.id = "table-" + table.name.replaceAll(/[^A-Za-z0-9_-]/g, "_");
-      button.className = "table-row" + (table.name === state.table ? " selected" : "");
-      const name = document.createElement("strong");
-      name.textContent = table.name;
-      button.append(name, tableKeyLine(table.keys));
-      button.addEventListener("click", () => selectTable(table.name));
-      list.append(button);
-    }
+    paintTables(list, payload.tables);
     await loadRows();
   } catch (error) {
     if (request !== state.tablesRequest) return;
@@ -4009,6 +4018,57 @@ function watchCacheRefresh(cache) {
   clearTimeout(state.cachePoll);
   if (!cache || !cache.refreshing) return;
   state.cachePoll = setTimeout(() => loadTables({ poll: true }), 700);
+}
+
+function tableKind(table) {
+  return table.kind || "dynamodb";
+}
+
+function tableMarker(kind) {
+  if (kind !== "local" && kind !== "temp") return null;
+  const mark = document.createElement("span");
+  mark.className = "table-kind";
+  mark.dataset.kind = kind;
+  mark.textContent = kind;
+  return mark;
+}
+
+function tableButton(table) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.id = "table-" + table.name.replaceAll(/[^A-Za-z0-9_-]/g, "_");
+  button.className = "table-row" + (table.name === state.table ? " selected" : "");
+  const title = document.createElement("span");
+  title.className = "table-name";
+  const name = document.createElement("strong");
+  name.textContent = table.name;
+  title.append(name);
+  const marker = tableMarker(tableKind(table));
+  if (marker) title.append(marker);
+  button.append(title, tableKeyLine(table.keys));
+  button.addEventListener("click", () => selectTable(table.name));
+  return button;
+}
+
+function paintTables(list, tables) {
+  if (!state.groupTables) {
+    for (const table of tables) list.append(tableButton(table));
+    return;
+  }
+  const groups = [
+    ["local", "Local"],
+    ["temp", "Temp"],
+    ["dynamodb", "DynamoDB"],
+  ];
+  for (const [kind, label] of groups) {
+    const rows = tables.filter((table) => tableKind(table) === kind);
+    if (!rows.length) continue;
+    const head = document.createElement("div");
+    head.className = "table-group";
+    head.textContent = label;
+    list.append(head);
+    for (const table of rows) list.append(tableButton(table));
+  }
 }
 
 function selectTable(name) {

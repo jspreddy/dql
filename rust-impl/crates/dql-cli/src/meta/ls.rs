@@ -127,6 +127,7 @@ pub fn web_table_list(
         .map(|row| {
             let meta = row.meta;
             crate::web::shape::ListedTable {
+                kind: row.kind.as_str().to_string(),
                 keys: if meta.has_definition() {
                     let mut keys = vec![crate::web::shape::KeyRole {
                         name: meta.hash_key.clone(),

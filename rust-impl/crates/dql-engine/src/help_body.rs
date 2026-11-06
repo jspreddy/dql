@@ -31,16 +31,33 @@ pub const ANALYZE: &str = r"
 pub const CREATE: &str = r"
     Create a new table
 
-    CREATE TABLE
+    CREATE [DYNAMODB] TABLE
         [IF NOT EXISTS]
         tablename
         attributes
         [GLOBAL [ALL|KEYS|INCLUDE] INDEX global_index]
 
+    CREATE LOCALTABLE
+        [IF NOT EXISTS]
+        tablename
+        AS 'file.csv' | 'file.json'
+
+    CREATE TEMPTABLE
+        [IF NOT EXISTS]
+        tablename
+        AS (SELECT ... | SCAN ...)
+
+    DYNAMODB TABLE is the same statement as TABLE. A local table reads a CSV
+    or JSON file. Its definition is encrypted and loaded the next time this
+    program starts. A temp table keeps the query result in memory until this
+    process exits, and other processes do not see it.
+
     Examples
     --------
     CREATE TABLE foobars (id STRING HASH KEY);
-    CREATE TABLE IF NOT EXISTS foobars (id STRING HASH KEY);
+    CREATE DYNAMODB TABLE foobars (id STRING HASH KEY);
+    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id, name) VALUES ('a', 'Ada'); SCAN * FROM foobars SAVE users.csv; CREATE LOCALTABLE users AS 'users.csv';
+    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id) VALUES ('a'); CREATE TEMPTABLE hot AS (SELECT * FROM foobars WHERE id = 'a');
 ";
 
 pub const DELETE: &str = r"
@@ -60,14 +77,21 @@ pub const DELETE: &str = r"
 pub const DROP: &str = r"
     Delete a table
 
-    DROP TABLE
+    DROP [DYNAMODB] TABLE
         [ IF EXISTS ]
         tablename
+    DROP LOCALTABLE [ IF EXISTS ] tablename
+    DROP TEMPTABLE [ IF EXISTS ] tablename
+
+    DYNAMODB TABLE is the same statement as TABLE. Dropping a local table
+    forgets the saved definition and leaves the file on disk.
 
     Examples
     --------
     CREATE TABLE foobars (id STRING HASH KEY); DROP TABLE foobars;
     DROP TABLE IF EXISTS foobars;
+    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id) VALUES ('a'); SCAN * FROM foobars SAVE users.csv; CREATE LOCALTABLE users AS 'users.csv'; DROP LOCALTABLE users;
+    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id) VALUES ('a'); CREATE TEMPTABLE hot AS (SELECT * FROM foobars WHERE id = 'a'); DROP TEMPTABLE hot;
 ";
 
 pub const DUMP: &str = r"

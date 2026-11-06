@@ -15,6 +15,7 @@ mod table_cache;
 mod table_match;
 mod table_text;
 mod throttle;
+mod virtual_tables;
 
 pub use fragment::FragmentEngine;
 pub use help::{help_page, topic_help, HelpBlock, HelpPage};
@@ -30,6 +31,7 @@ pub use query_context::{query_context_from_read, LastQueryContext};
 pub use table_cache::{CachedDefinition, CachedNameList, SharedTableCache, TableCacheStore};
 pub use table_match::{intelligent_like_matches, intelligent_matches, MatchTable};
 pub use table_text::{format_table_description, format_table_summary};
+pub use virtual_tables::{LocalColumn, LocalDefinition, LocalDefinitionStore, TableKind};
 
 use crate::json_util::{item_to_json, string_to_json};
 use dql_parser::{AlterAction, Condition, OrderBy, QueryOptions, Selection, UpdateExpr};

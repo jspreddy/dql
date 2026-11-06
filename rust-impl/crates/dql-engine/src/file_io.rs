@@ -205,6 +205,130 @@ pub fn load_items(path: &Path) -> Result<Vec<Item>, String> {
     }
 }
 
+/// CSV or JSON rows, with columns in file order.
+///
+/// JSON may be one object, an array of objects, or one object per line.
+pub(crate) struct TabularFile {
+    pub columns: Vec<String>,
+    pub items: Vec<Item>,
+}
+
+pub(crate) fn load_tabular_file(path: &Path) -> Result<TabularFile, String> {
+    let spec = parse_file_spec(path)?;
+    match spec.format {
+        FileFormat::Csv => load_csv_table(&spec),
+        FileFormat::Json => load_json_table(&spec),
+        FileFormat::MsgPack => Err(format!(
+            "local tables read .csv and .json files, not '{}'",
+            spec.path.display()
+        )),
+    }
+}
+
+fn load_csv_table(spec: &FileSpec) -> Result<TabularFile, String> {
+    let reader = open_text_reader(spec)?;
+    let mut lines = reader.lines();
+    let header = lines
+        .next()
+        .transpose()
+        .map_err(|err| err.to_string())?
+        .ok_or_else(|| "CSV file is missing a header row".to_string())?;
+    let columns: Vec<String> = split_csv_line(&header)
+        .into_iter()
+        .filter(|column| !column.is_empty())
+        .collect();
+    if columns.is_empty() {
+        return Err("CSV file is missing a header row".to_string());
+    }
+    let mut items = Vec::new();
+    for line in lines {
+        let line = line.map_err(|err| err.to_string())?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let fields = split_csv_line(&line);
+        let mut item = Item::new();
+        for (column, value) in columns.iter().zip(fields.iter()) {
+            item.insert(column.clone(), csv_field_to_value(value));
+        }
+        items.push(item);
+    }
+    Ok(TabularFile { columns, items })
+}
+
+fn load_json_table(spec: &FileSpec) -> Result<TabularFile, String> {
+    let mut reader = open_text_reader(spec)?;
+    let mut text = String::new();
+    reader
+        .read_to_string(&mut text)
+        .map_err(|err| err.to_string())?;
+    let rows = json_rows(&text)?;
+    let mut columns = Vec::new();
+    let mut items = Vec::new();
+    for row in rows {
+        for key in row.keys() {
+            if !columns.iter().any(|column| column == key) {
+                columns.push(key.clone());
+            }
+        }
+        items.push(json_value_to_item(&serde_json::Value::Object(row))?);
+    }
+    if columns.is_empty() {
+        return Err(format!(
+            "JSON file '{}' has no columns",
+            spec.path.display()
+        ));
+    }
+    Ok(TabularFile { columns, items })
+}
+
+fn json_rows(text: &str) -> Result<Vec<serde_json::Map<String, serde_json::Value>>, String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err("JSON file is empty".to_string());
+    }
+    if trimmed.starts_with('[') {
+        let value: serde_json::Value =
+            serde_json::from_str(trimmed).map_err(|err| err.to_string())?;
+        let array = value
+            .as_array()
+            .ok_or_else(|| "expected a JSON array".to_string())?;
+        if array.is_empty() {
+            return Err("JSON file has no rows".to_string());
+        }
+        return array.iter().map(json_object).collect();
+    }
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if value.is_object() {
+            return Ok(vec![json_object(&value)?]);
+        }
+        return Err(
+            "expected a JSON object, an array of objects, or one object per line".to_string(),
+        );
+    }
+    let mut rows = Vec::new();
+    for line in trimmed.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let value: serde_json::Value = serde_json::from_str(line).map_err(|err| err.to_string())?;
+        rows.push(json_object(&value)?);
+    }
+    if rows.is_empty() {
+        return Err("JSON file has no rows".to_string());
+    }
+    Ok(rows)
+}
+
+fn json_object(
+    value: &serde_json::Value,
+) -> Result<serde_json::Map<String, serde_json::Value>, String> {
+    value
+        .as_object()
+        .cloned()
+        .ok_or_else(|| "expected a JSON object".to_string())
+}
+
 fn save_json(spec: &FileSpec, items: &[Item]) -> Result<usize, String> {
     let mut writer = open_writer(spec)?;
     for item in items {
