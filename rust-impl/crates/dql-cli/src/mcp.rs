@@ -183,8 +183,13 @@ fn lint_query_file(
 
 fn read_query_text(root: &Path, arguments: &Value) -> Result<String, ToolError> {
     let path = required_str(arguments, "path")?;
-    let path = files::normalized_dql(root, path).map_err(path_error)?;
+    let path = dql_read_path(root, path)?;
     files::read_text(root, &path).map_err(path_error)
+}
+
+fn dql_read_path(root: &Path, path: &str) -> Result<String, ToolError> {
+    files::require_dql_read(path).map_err(path_error)?;
+    files::normalized_dql(root, path).map_err(path_error)
 }
 
 fn lint_report(session: &mut Session, text: &str) -> Result<Value, ToolError> {
@@ -283,7 +288,7 @@ fn create_query_file(root: &Path, arguments: &Value) -> Result<Value, ToolError>
 
 fn read_query_file(root: &Path, arguments: &Value) -> Result<Value, ToolError> {
     let path = required_str(arguments, "path")?;
-    let path = files::normalized_dql(root, path).map_err(path_error)?;
+    let path = dql_read_path(root, path)?;
     let text = files::read_text(root, &path).map_err(path_error)?;
     Ok(json!({ "path": path, "text": text }))
 }
@@ -1008,6 +1013,33 @@ DROP TABLE other;
             .collect::<Vec<_>>();
         assert_eq!(queries.len(), 1);
         assert_eq!(queries[0]["path"], "queries/orders.dql");
+
+        std::fs::write(dir.path().join("users.csv"), "id,name\na,ada\n").unwrap();
+        std::fs::write(dir.path().join("cities.json"), "[{\"id\":\"a\"}]\n").unwrap();
+        let files = tool_body(&rpc(
+            &mut server,
+            8,
+            "tools/call",
+            json!({"name": "list_query_files", "arguments": {}}),
+        ));
+        let paths = files["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|file| file["path"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(paths, ["queries/orders.dql"]);
+        for (id, path) in [(9, "users.csv"), (10, "cities.json"), (11, "notes.txt")] {
+            let rejected = rpc(
+                &mut server,
+                id,
+                "tools/call",
+                json!({"name": "read_query_file", "arguments": {"path": path}}),
+            );
+            assert_eq!(rejected["result"]["isError"], true, "{rejected}");
+            let text = rejected["result"]["content"][0]["text"].as_str().unwrap();
+            assert!(text.contains("only .dql files can be read"), "{text}");
+        }
     }
 
     #[test]

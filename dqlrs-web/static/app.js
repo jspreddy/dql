@@ -168,6 +168,7 @@ function saveHighlightOptions(options) {
 
 const highlightOptions = loadHighlightOptions();
 const highlightCompartment = new Compartment();
+const viewCompartment = new Compartment();
 const treeEl = document.querySelector("#tree");
 const editor = new EditorView({
   parent: document.querySelector("#editor"),
@@ -195,6 +196,7 @@ const editor = new EditorView({
       ])),
       dqlLanguage,
       highlightCompartment.of(queryHighlight(highlightOptions)),
+      viewCompartment.of([]),
       runFrame,
       runButtonLayer,
       // Below-layers paint earlier entries above later ones. Selection must
@@ -580,13 +582,28 @@ window.addEventListener("keydown", (event) => {
   stopRun();
 });
 
+function dataFile(path) {
+  const name = String(path || "").split("/").pop().toLowerCase();
+  return name.endsWith(".csv") || name.endsWith(".json");
+}
+
+function setViewOnly(viewOnly) {
+  editor.dispatch({
+    effects: viewCompartment.reconfigure(viewOnly
+      ? [EditorState.readOnly.of(true), EditorView.editable.of(false)]
+      : []),
+  });
+  editor.dom.classList.toggle("is-view-only", viewOnly);
+}
+
 function setRunBusy(busy) {
   hideRunTip();
-  runButton.disabled = busy;
-  runButton.classList.toggle("hidden", busy);
+  const viewOnly = dataFile(state.path);
+  runButton.disabled = busy || viewOnly;
+  runButton.classList.toggle("hidden", busy || viewOnly);
   stopButton.classList.toggle("hidden", !busy);
   stopButton.disabled = !busy;
-  runFileButton.disabled = busy || !state.path;
+  runFileButton.disabled = busy || !state.path || dataFile(state.path);
   syncClearResults();
   const floating = editor.dom.querySelector(".run-float");
   if (floating) floating.disabled = busy;
@@ -603,14 +620,14 @@ async function stopRun() {
 }
 
 function runFromEditor() {
-  if (runButton.disabled) return true;
+  if (runButton.disabled || dataFile(state.path)) return true;
   armRunPane();
   runSelection();
   return true;
 }
 
 async function runFile() {
-  if (runButton.disabled || !state.path) return;
+  if (runButton.disabled || !state.path || dataFile(state.path)) return;
   await flushSave();
   await runDocuments([{ text: editorText(), path: state.path, base: 0 }]);
 }
@@ -1089,6 +1106,7 @@ function renderDir(node, isRoot) {
     const item = document.createElement("li");
     const open = child.type === "dir" && state.expanded.has(child.path);
     const editorFile = child.type === "file" && child.path === state.path;
+    const data = child.type === "file" && dataFile(child.path);
     const button = nodeButton(child.type === "dir" ? (open ? "▾" : "▸") : "", child.name, child.path === state.path);
     if (editorFile) {
       button.classList.add("is-open");
@@ -1099,6 +1117,7 @@ function renderDir(node, isRoot) {
     button.dataset.path = child.path;
     button.id = nodeDomId(child.path);
     button.dataset.testid = button.id;
+    if (data) button.append(fileKindMark(child.path));
     bindNode(button, child);
     item.append(button);
     if (open) item.append(renderDir(child, false));
@@ -1233,6 +1252,15 @@ function setRunningFile(path) {
   }
 }
 
+function fileKindMark(path) {
+  const mark = document.createElement("span");
+  const kind = path.toLowerCase().endsWith(".csv") ? "csv" : "json";
+  mark.className = "file-kind";
+  mark.dataset.kind = kind;
+  mark.textContent = kind;
+  return mark;
+}
+
 function nodeButton(twist, label, selected) {
   const button = document.createElement("button");
   button.type = "button";
@@ -1255,7 +1283,13 @@ async function openFile(path) {
     state.entries = [];
     showResults([]);
     setMode("query");
-    await Promise.all([refreshTree(), loadFileResults(file.path || path)]);
+    if (dataFile(file.path || path)) {
+      editor.dispatch({ effects: setLintIssues.of([]) });
+      paintLint([]);
+      await refreshTree();
+    } else {
+      await Promise.all([refreshTree(), loadFileResults(file.path || path)]);
+    }
   } catch (error) {
     reportError(error);
   }
@@ -1427,7 +1461,8 @@ function beginRename(path) {
 function menuItems(target) {
   const dir = target.type === "dir" ? target.path : parentOf(target.path || ".");
   const items = [];
-  if (target.type === "file") {
+  const data = target.type === "file" && dataFile(target.path);
+  if (target.type === "file" && !data) {
     items.push({ label: "Run file", icon: "forward", danger: true, run: () => runFileAt(target.path) }, "-");
   }
   if (target.type === "dir") {
@@ -1446,7 +1481,7 @@ function menuItems(target) {
     { label: "Rename", run: () => beginRename(target.path) },
     { label: "Move to…", run: () => moveEntry(target.path) },
   );
-  if (target.type === "file" || target.type === "dir") {
+  if ((target.type === "file" && !data) || target.type === "dir") {
     items.push({ label: "Clear results", run: () => clearFileResults(target.path) });
   }
   items.push(
@@ -1547,7 +1582,7 @@ function flushSave() {
 
 async function flushSaveNow() {
   clearTimeout(state.saveTimer);
-  if (!state.path || !state.disk || state.applyingDisk) return;
+  if (!state.path || !state.disk || state.applyingDisk || dataFile(state.path)) return;
   const text = editorText();
   if (text === state.disk.text) return;
   const path = state.path;
@@ -1598,6 +1633,11 @@ function scheduleLint() {
 }
 
 async function lintEditor(generation) {
+  if (dataFile(state.path)) {
+    editor.dispatch({ effects: setLintIssues.of([]) });
+    paintLint([]);
+    return;
+  }
   const text = editorText();
   let report;
   try {
@@ -1733,10 +1773,16 @@ function showOpenFile(path) {
     text.className = "file-name-text";
     name.replaceChildren(text);
   }
+  const viewOnly = dataFile(state.path);
   text.textContent = state.path ? state.path.split("/").pop() : "No file open";
+  name.title = viewOnly ? "View only" : "";
   name.classList.toggle("is-open", Boolean(state.path));
-  runFileButton.classList.toggle("hidden", !state.path);
-  runFileButton.disabled = !state.path || runButton.disabled;
+  setViewOnly(viewOnly);
+  const running = !stopButton.classList.contains("hidden");
+  runButton.disabled = viewOnly || running;
+  runButton.classList.toggle("hidden", viewOnly || running);
+  runFileButton.classList.toggle("hidden", !state.path || viewOnly);
+  runFileButton.disabled = !state.path || viewOnly || runButton.disabled;
   if (!state.path) {
     state.entries = [];
     showResults([]);
@@ -1745,7 +1791,7 @@ function showOpenFile(path) {
 }
 
 function syncClearResults() {
-  const open = Boolean(state.path);
+  const open = Boolean(state.path) && !dataFile(state.path);
   clearResultsButton.classList.toggle("hidden", !open);
   clearResultsButton.disabled = !open || runButton.disabled;
 }

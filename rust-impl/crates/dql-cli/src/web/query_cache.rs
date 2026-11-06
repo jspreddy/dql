@@ -134,7 +134,9 @@ fn find_node<'a>(node: &'a files::Node, target: &str) -> Option<&'a files::Node>
 
 fn collect_files(node: &files::Node, paths: &mut Vec<String>) {
     if node.kind == "file" {
-        paths.push(node.path.clone());
+        if node.path.to_ascii_lowercase().ends_with(".dql") {
+            paths.push(node.path.clone());
+        }
         return;
     }
     for child in node.children.as_deref().unwrap_or(&[]) {

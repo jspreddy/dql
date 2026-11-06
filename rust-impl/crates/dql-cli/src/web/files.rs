@@ -1,4 +1,6 @@
-//! Workspace tree of `.dql` files. Paths cannot escape the root.
+//! Workspace tree of `.dql`, `.csv`, and `.json` files. Paths cannot escape the root.
+//!
+//! The web UI can open all three. Writes, and the MCP file tools, stay on `.dql`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -95,7 +97,7 @@ pub fn list_dql_files(root: &Path) -> Result<Vec<(String, String)>, PathError> {
 }
 
 fn collect_dql_files(node: &Node, files: &mut Vec<(String, String)>) {
-    if node.kind == "file" {
+    if node.kind == "file" && is_dql(Path::new(&node.path)) {
         files.push((node.path.clone(), node.name.clone()));
     }
     if let Some(children) = &node.children {
@@ -131,7 +133,7 @@ pub fn move_path(
     let dst = if kind == "dir" {
         dir_path(root, dest)?
     } else {
-        dql_path(root, dest)?
+        placed_file(root, dest)?
     };
     if dst == src {
         return Ok((rel(root, &src)?, kind));
@@ -164,15 +166,17 @@ pub fn duplicate_path(root: &Path, source: &str) -> Result<(String, &'static str
 pub fn delete_path(root: &Path, relative: &str) -> Result<(), PathError> {
     let path = existing(root, relative)?;
     if path.is_file() {
-        if !is_dql(&path) {
-            return Err(PathError("only .dql files can be deleted".to_string()));
+        if !is_viewable(&path) {
+            return Err(PathError(
+                "only .dql, .csv, and .json files can be deleted".to_string(),
+            ));
         }
         fs::remove_file(path).map_err(|err| PathError(err.to_string()))?;
         return Ok(());
     }
     if let Some(blocked) = foreign_entry(&path)? {
         return Err(PathError(format!(
-            "folder contains {blocked}, which is not a .dql file"
+            "folder contains {blocked}, which is not a .dql, .csv, or .json file"
         )));
     }
     fs::remove_dir_all(path).map_err(|err| PathError(err.to_string()))?;
@@ -185,14 +189,42 @@ pub fn read_text(root: &Path, relative: &str) -> Result<String, PathError> {
 }
 
 fn read_text_unlocked(root: &Path, relative: &str) -> Result<String, PathError> {
+    read_opened(root, relative, false)
+}
+
+/// Text of a `.dql`, `.csv`, or `.json` file for the web file view.
+pub fn read_viewable(root: &Path, relative: &str) -> Result<String, PathError> {
+    let _guard = file_io();
+    read_opened(root, relative, true)
+}
+
+fn read_opened(root: &Path, relative: &str, viewable: bool) -> Result<String, PathError> {
     let path = resolve_inside(root, relative)?;
     if !path.is_file() {
         return Err(PathError(format!("{relative} is not a file")));
     }
-    if !is_dql(&path) {
-        return Err(PathError("only .dql files can be opened".to_string()));
+    let allowed = if viewable {
+        is_viewable(&path)
+    } else {
+        is_dql(&path)
+    };
+    if !allowed {
+        let message = if viewable {
+            "only .dql, .csv, and .json files can be opened"
+        } else {
+            "only .dql files can be opened"
+        };
+        return Err(PathError(message.to_string()));
     }
     fs::read_to_string(path).map_err(|err| PathError(err.to_string()))
+}
+
+/// MCP reads require a `.dql` path. Any other extension is rejected.
+pub fn require_dql_read(relative: &str) -> Result<(), PathError> {
+    if foreign_extension(relative) {
+        return Err(PathError("only .dql files can be read".to_string()));
+    }
+    Ok(())
 }
 
 pub fn is_missing(err: &PathError) -> bool {
@@ -225,7 +257,7 @@ pub enum SaveFile {
 }
 
 pub fn read_file(root: &Path, relative: &str) -> Result<DiskFile, PathError> {
-    let text = read_text(root, relative)?;
+    let text = read_viewable(root, relative)?;
     Ok(present(relative, &text))
 }
 
@@ -322,10 +354,26 @@ fn dql_path(root: &Path, relative: &str) -> Result<PathBuf, PathError> {
     if cleaned.is_empty() || cleaned.ends_with('/') {
         return Err(PathError("choose a file name ending in .dql".to_string()));
     }
+    if foreign_extension(&cleaned) {
+        return Err(PathError("only .dql files can be changed".to_string()));
+    }
     if !cleaned.to_ascii_lowercase().ends_with(".dql") {
         cleaned.push_str(".dql");
     }
     resolve_inside(root, &cleaned)
+}
+
+/// Destination for a move or rename. `.csv` and `.json` keep their extension.
+fn placed_file(root: &Path, relative: &str) -> Result<PathBuf, PathError> {
+    let cleaned = relative.trim().replace('\\', "/");
+    let cleaned = cleaned.trim_start_matches('/').trim_end_matches('/');
+    if cleaned.is_empty() {
+        return Err(PathError("choose a file name".to_string()));
+    }
+    if is_tabular_name(cleaned) {
+        return resolve_inside(root, cleaned);
+    }
+    dql_path(root, cleaned)
 }
 
 fn dir_path(root: &Path, relative: &str) -> Result<PathBuf, PathError> {
@@ -382,7 +430,7 @@ fn dir_node(
             }
             continue;
         }
-        if path.is_file() && is_dql(&path) {
+        if path.is_file() && is_viewable(&path) {
             children.push(Node {
                 kind: "file",
                 name,
@@ -506,7 +554,7 @@ fn copy_tree(src: &Path, dest: &Path) -> Result<(), PathError> {
         let target = dest.join(&name);
         if path.is_dir() {
             copy_tree(&path, &target)?;
-        } else if path.is_file() && is_dql(&path) {
+        } else if path.is_file() && is_viewable(&path) {
             fs::copy(path, target).map_err(|err| PathError(err.to_string()))?;
         }
     }
@@ -525,7 +573,7 @@ fn foreign_entry(path: &Path) -> Result<Option<String>, PathError> {
             if let Some(found) = foreign_entry(&child)? {
                 return Ok(Some(found));
             }
-        } else if !child.is_file() || !is_dql(&child) {
+        } else if !child.is_file() || !is_viewable(&child) {
             return Ok(Some(name));
         }
     }
@@ -533,10 +581,38 @@ fn foreign_entry(path: &Path) -> Result<Option<String>, PathError> {
 }
 
 fn is_dql(path: &Path) -> bool {
+    extension(path) == "dql"
+}
+
+fn is_tabular_name(relative: &str) -> bool {
+    matches!(name_extension(relative).as_deref(), Some("csv" | "json"))
+}
+
+fn is_viewable(path: &Path) -> bool {
+    matches!(extension(path).as_str(), "dql" | "csv" | "json")
+}
+
+fn extension(path: &Path) -> String {
     path.extension()
         .and_then(|ext| ext.to_str())
         .unwrap_or("")
-        .eq_ignore_ascii_case("dql")
+        .to_ascii_lowercase()
+}
+
+fn name_extension(relative: &str) -> Option<String> {
+    let name = relative.rsplit(['/', '\\']).next().unwrap_or(relative);
+    let (stem, ext) = name.rsplit_once('.')?;
+    if stem.is_empty() {
+        return None;
+    }
+    Some(ext.to_ascii_lowercase())
+}
+
+fn foreign_extension(relative: &str) -> bool {
+    match name_extension(relative).as_deref() {
+        Some("dql") | None => false,
+        Some(_) => true,
+    }
 }
 
 #[cfg(test)]
@@ -571,6 +647,43 @@ mod tests {
         assert_eq!(queries.kind, "dir");
         assert_eq!(queries.children.unwrap()[0].path, "queries/posts.dql");
         assert!(resolve_inside(root.path(), "../secret.dql").is_err());
+    }
+
+    #[test]
+    fn tree_shows_csv_and_json_for_the_web_view() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("users.csv"), "id,name\na,ada\n").unwrap();
+        fs::write(root.path().join("cities.json"), "[{\"id\":\"a\"}]\n").unwrap();
+        fs::write(root.path().join("notes.txt"), "hidden\n").unwrap();
+        fs::create_dir(root.path().join("queries")).unwrap();
+        fs::write(root.path().join("queries/posts.dql"), "SCAN * FROM t;\n").unwrap();
+        let names: Vec<_> = tree(root.path())
+            .unwrap()
+            .children
+            .unwrap()
+            .into_iter()
+            .map(|child| child.name)
+            .collect();
+        assert_eq!(names, ["queries", "cities.json", "users.csv"]);
+        assert_eq!(
+            read_file(root.path(), "users.csv").unwrap().text,
+            "id,name\na,ada\n"
+        );
+        assert!(read_text(root.path(), "users.csv").is_err());
+        assert!(read_text(root.path(), "cities.json").is_err());
+        assert!(require_dql_read("users.csv").is_err());
+        assert!(require_dql_read("cities.JSON").is_err());
+        assert!(require_dql_read("notes.txt").is_err());
+        assert!(require_dql_read("queries/posts.dql").is_ok());
+        assert!(require_dql_read("queries/posts").is_ok());
+        let listed = list_dql_files(root.path()).unwrap();
+        assert_eq!(
+            listed,
+            [("queries/posts.dql".to_string(), "posts.dql".to_string())]
+        );
+        move_path(root.path(), "users.csv", "queries/users.csv").unwrap();
+        assert!(root.path().join("queries/users.csv").is_file());
+        assert!(!root.path().join("queries/users.csv.dql").exists());
     }
 
     #[test]

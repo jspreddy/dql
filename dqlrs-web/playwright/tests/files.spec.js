@@ -71,6 +71,48 @@ async function expectUnderline(tab, primary) {
   expect(line.bottom).toBe("-1px");
 }
 
+test("shows csv and json files and opens them read only", async ({ page, app }, testInfo) => {
+  fs.writeFileSync(path.join(app.workspace, "users.csv"), "id,name\na,ada\nb,grace\n");
+  fs.writeFileSync(path.join(app.workspace, "cities.json"), "[{\"id\":\"a\",\"city\":\"nyc\"}]\n");
+  fs.writeFileSync(path.join(app.workspace, "notes.txt"), "hidden\n");
+  await page.reload();
+  await expect(node(page, "users.csv")).toBeVisible();
+  await expect(node(page, "cities.json")).toBeVisible();
+  await expect(node(page, "notes.txt")).toHaveCount(0);
+  await expect(node(page, "users.csv").locator(".file-kind")).toHaveText("csv");
+  await expect(node(page, "cities.json").locator(".file-kind")).toHaveText("json");
+
+  await node(page, "users.csv").click();
+  await expect(page.locator("#file-name")).toHaveText("users.csv");
+  await expect(page.locator("#editor-content")).toContainText("ada");
+  await expect(page.locator("#editor-content")).toContainText("grace");
+  await expect(page.locator("#editor-content")).toHaveAttribute("contenteditable", "false");
+  await expect(page.locator("#run")).toBeHidden();
+  await expect(page.locator("#run-file")).toBeHidden();
+  await node(page, "users.csv").click({ button: "right" });
+  await expect(page.locator("#menu-run-file")).toHaveCount(0);
+  await page.locator("#file-name").click();
+  await page.screenshot({ path: playwrightArtifact(`view-csv-${testInfo.project.name}.png`) });
+
+  const before = fs.readFileSync(path.join(app.workspace, "users.csv"), "utf8");
+  await page.locator("#editor-content").click();
+  await page.keyboard.insertText("nope");
+  await expect(page.locator("#editor-content")).toContainText("ada");
+  await expect(page.locator("#editor-content")).not.toContainText("nope");
+  expect(fs.readFileSync(path.join(app.workspace, "users.csv"), "utf8")).toBe(before);
+
+  await node(page, "cities.json").click();
+  await expect(page.locator("#file-name")).toHaveText("cities.json");
+  await expect(page.locator("#editor-content")).toContainText("nyc");
+  await expect(page.locator("#editor-content")).toHaveAttribute("contenteditable", "false");
+  await page.screenshot({ path: playwrightArtifact(`view-json-${testInfo.project.name}.png`) });
+
+  await node(page, "queries/read.dql").click();
+  await expect(page.locator("#file-name")).toHaveText("read.dql");
+  await expect(page.locator("#editor-content")).toHaveAttribute("contenteditable", "true");
+  await expect(page.locator("#run")).toBeEnabled();
+});
+
 test("marks the file open in the editor", async ({ page }, testInfo) => {
   const edit = node(page, "queries/edit.dql");
   const primary = await themeColor(page, "--teal");

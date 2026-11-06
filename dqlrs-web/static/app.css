@@ -939,6 +939,28 @@ body.side-resizing * {
 
 .tree .node.is-open { border-right: 2px solid var(--teal); }
 
+.tree .node .file-kind {
+  margin-left: auto;
+  flex: none;
+  border-radius: 999px;
+  padding: 0 5px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--teal-wash);
+  color: var(--teal-ink);
+}
+
+.tree .node .file-kind[data-kind="json"] {
+  background: var(--amber-bg);
+  color: var(--amber-ink);
+}
+
+.cm-editor.is-view-only .cm-run-fill,
+.cm-editor.is-view-only .cm-run-button-layer {
+  display: none;
+}
+
 .tree .node .node-running {
   width: 7px;
   height: 7px;
