@@ -3,7 +3,7 @@
 //! The header stays the dark slate bar in both themes. The page under it
 //! follows the light or dark paper tokens.
 
-use iced::widget::{button, container, text_editor, text_input};
+use iced::widget::{button, checkbox, container, text_editor, text_input};
 use iced::{Background, Border, Color, Shadow, Theme, Vector};
 
 #[derive(Clone, Copy)]
@@ -107,6 +107,85 @@ pub fn card(p: Palette) -> impl Fn(&Theme) -> container::Style {
                 width: 1.0,
                 radius: 10.0.into(),
             })
+    }
+}
+
+/// Settings popover, matching `.settings-pop`.
+pub fn settings_pop(p: Palette) -> impl Fn(&Theme) -> container::Style {
+    move |_| {
+        container::Style::default()
+            .background(p.paper)
+            .color(p.text)
+            .border(Border {
+                color: p.line,
+                width: 1.0,
+                radius: 10.0.into(),
+            })
+            .shadow(Shadow {
+                color: Color {
+                    r: if p.dark { 0.0 } else { 15.0 / 255.0 },
+                    g: if p.dark { 0.0 } else { 23.0 / 255.0 },
+                    b: if p.dark { 0.0 } else { 42.0 / 255.0 },
+                    a: if p.dark { 0.5 } else { 0.18 },
+                },
+                offset: Vector::new(0.0, 12.0),
+                blur_radius: 32.0,
+            })
+    }
+}
+
+/// Clear-cache button, matching `#clear-table-cache` (`--line-control`).
+pub fn cache_clear(p: Palette) -> impl Fn(&Theme, button::Status) -> button::Style + Copy {
+    let line = if p.dark {
+        rgb(0x3d, 0x4f, 0x64)
+    } else {
+        rgb(0xcf, 0xd6, 0xde)
+    };
+    move |_, status| {
+        let background = match status {
+            button::Status::Hovered | button::Status::Pressed => darken(p.paper, 0.04),
+            _ => p.paper,
+        };
+        button::Style {
+            background: Some(Background::Color(background)),
+            text_color: p.text,
+            border: Border {
+                color: line,
+                width: 1.0,
+                radius: 4.0.into(),
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        }
+    }
+}
+
+pub fn setting_check(p: Palette) -> impl Fn(&Theme, checkbox::Status) -> checkbox::Style + Copy {
+    move |_, status| {
+        let checked = match status {
+            checkbox::Status::Active { is_checked }
+            | checkbox::Status::Hovered { is_checked }
+            | checkbox::Status::Disabled { is_checked } => is_checked,
+        };
+        let border = if p.dark {
+            rgb(0x3d, 0x4f, 0x64)
+        } else {
+            rgb(0xcf, 0xd6, 0xde)
+        };
+        checkbox::Style {
+            background: if checked {
+                p.blue.into()
+            } else {
+                p.paper.into()
+            },
+            icon_color: Color::WHITE,
+            border: Border {
+                color: if checked { p.blue } else { border },
+                width: 1.0,
+                radius: 3.0.into(),
+            },
+            text_color: Some(p.text),
+        }
     }
 }
 

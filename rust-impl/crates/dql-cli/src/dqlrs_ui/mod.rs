@@ -22,7 +22,7 @@ use crate::session::Session;
 use crate::web::files::{Node, SaveFile};
 use crate::web::lint::LintIssue;
 use crate::web::search::SearchHit;
-use crate::web::shape::{Column, ListedTable};
+use crate::web::shape::{Column, ListedTable, TableCacheHint};
 use crate::web::studio::{self, LiveProgress, StatementCard, Studio};
 
 pub fn run(session: Session, root: PathBuf, load_tables: bool) -> color_eyre::Result<()> {
@@ -59,6 +59,10 @@ struct Prefs {
     nav: f32,
     results: f32,
     write_bands: bool,
+    #[serde(default)]
+    minimal_write: bool,
+    #[serde(default = "default_even_odd")]
+    even_odd: bool,
     /// File this value was loaded from. Later saves use it so a changed
     /// `DQLRS_UI_PREFS` cannot redirect the write.
     #[serde(skip)]
@@ -72,6 +76,8 @@ impl Default for Prefs {
             nav: 260.0,
             results: 280.0,
             write_bands: true,
+            minimal_write: false,
+            even_odd: true,
             path: PathBuf::new(),
         }
     }
@@ -101,6 +107,10 @@ impl Prefs {
             let _ = std::fs::write(path, text);
         }
     }
+}
+
+fn default_even_odd() -> bool {
+    true
 }
 
 fn prefs_path() -> PathBuf {
@@ -207,6 +217,8 @@ struct App {
     tables: Vec<ListedTable>,
     table_note: String,
     cache_text: String,
+    cache: TableCacheHint,
+    cache_note: String,
     table_filter: String,
     open_table: String,
     table_page: usize,
@@ -264,7 +276,8 @@ enum Message {
     ToggleSettings,
     ToggleEnv,
     ToggleTheme,
-    ToggleBands,
+    SetMinimalWrite(bool),
+    SetEvenOdd(bool),
     ToggleCard(usize),
     ShowRow(String),
     CloseRow,
@@ -321,6 +334,8 @@ impl App {
             tables: Vec::new(),
             table_note: String::new(),
             cache_text: String::new(),
+            cache: TableCacheHint::default(),
+            cache_note: String::new(),
             table_filter: String::new(),
             open_table: String::new(),
             table_page: 0,
@@ -529,10 +544,15 @@ impl App {
                 self.toast("Nothing to run", "No statement at the cursor.".to_string());
             }
             Message::Stop => {
-                if self.schema.is_some() || self.row_json.is_some() || self.menu.is_some() {
+                if self.schema.is_some()
+                    || self.row_json.is_some()
+                    || self.menu.is_some()
+                    || self.show_settings
+                {
                     self.schema = None;
                     self.row_json = None;
                     self.menu = None;
+                    self.show_settings = false;
                 } else {
                     self.cancel.request();
                     self.status = "Stopping…".to_string();
@@ -580,7 +600,8 @@ impl App {
                     Ok(list) => {
                         self.tables = list.tables;
                         self.table_note = list.note;
-                        self.cache_text = list.cache.text;
+                        self.cache_text = list.cache.text.clone();
+                        self.cache = list.cache;
                         self.status.clear();
                     }
                     Err(err) => self.status = err,
@@ -607,7 +628,8 @@ impl App {
             Message::ClearCache => {
                 lock(&self.studio).clear_table_cache();
                 self.tables.clear();
-                self.cache_text = "Cache cleared.".to_string();
+                self.cache_note = "Table cache cleared.".to_string();
+                self.cache = lock(&self.studio).table_cache_status();
                 return self.update(Message::RefreshTables(true));
             }
             Message::DialogText(text) => self.dialog_text = text,
@@ -616,14 +638,24 @@ impl App {
                 self.dialog = Dialog::None;
                 self.dialog_text.clear();
             }
-            Message::ToggleSettings => self.show_settings = !self.show_settings,
+            Message::ToggleSettings => {
+                self.show_settings = !self.show_settings;
+                if self.show_settings {
+                    self.cache_note.clear();
+                    self.cache = lock(&self.studio).table_cache_status();
+                }
+            }
             Message::ToggleEnv => self.show_env = !self.show_env,
             Message::ToggleTheme => {
                 self.prefs.dark = !self.prefs.dark;
                 self.prefs.store();
             }
-            Message::ToggleBands => {
-                self.prefs.write_bands = !self.prefs.write_bands;
+            Message::SetMinimalWrite(on) => {
+                self.prefs.minimal_write = on;
+                self.prefs.store();
+            }
+            Message::SetEvenOdd(on) => {
+                self.prefs.even_odd = on;
                 self.prefs.store();
             }
             Message::ToggleCard(index) => {
@@ -1506,6 +1538,15 @@ SELECT * FROM demo WHERE id = 'a';
         assert!(dir.path.join("ui.json").is_file());
         let _ = app.update(Message::ToggleSettings);
         assert!(app.show_settings);
+        assert!(app.cache_note.is_empty());
+        let _ = app.update(Message::SetMinimalWrite(true));
+        let _ = app.update(Message::SetEvenOdd(false));
+        assert!(app.prefs.minimal_write);
+        assert!(!app.prefs.even_odd);
+        let _ = app.update(Message::ClearCache);
+        assert_eq!(app.cache_note, "Table cache cleared.");
+        let _ = app.update(Message::Stop);
+        assert!(!app.show_settings);
         let _ = app.update(Message::Mode(Mode::Tables));
         assert_eq!(app.mode, Mode::Tables);
 

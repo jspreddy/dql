@@ -278,6 +278,11 @@ impl Studio {
         self.session.cache_refreshing()
     }
 
+    /// Saved table-list age for the settings menu. Does not list tables.
+    pub fn table_cache_status(&self) -> crate::web::shape::TableCacheHint {
+        crate::meta::ls::web_table_cache_status(&self.session)
+    }
+
     pub fn start_table_load(&self) -> bool {
         self.session.start_background_load()
     }

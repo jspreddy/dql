@@ -26,6 +26,62 @@ pub struct Band {
     pub index: usize,
 }
 
+/// How one query band is painted, matching `bandAppearance` in `dql-tokens.js`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BandPaint {
+    Plain,
+    Alt,
+    Write,
+    WriteEven,
+    Bar,
+    BarEven,
+}
+
+pub fn band_paint(band: &Band, minimal_write: bool, even_odd: bool) -> BandPaint {
+    let even = even_odd && band.index.is_multiple_of(2);
+    if band.write {
+        if minimal_write {
+            return if even {
+                BandPaint::BarEven
+            } else {
+                BandPaint::Bar
+            };
+        }
+        return if even {
+            BandPaint::WriteEven
+        } else {
+            BandPaint::Write
+        };
+    }
+    if even {
+        BandPaint::Alt
+    } else {
+        BandPaint::Plain
+    }
+}
+
+/// One paint per source line. Lines outside a band stay plain.
+pub fn line_paint(text: &str, minimal_write: bool, even_odd: bool) -> Vec<BandPaint> {
+    let count = if text.is_empty() {
+        1
+    } else {
+        text.split('\n').count()
+    };
+    let mut paints = vec![BandPaint::Plain; count];
+    for band in query_bands(text) {
+        let paint = band_paint(&band, minimal_write, even_odd);
+        if paint == BandPaint::Plain {
+            continue;
+        }
+        let start = line_index(text, band.from);
+        let end = line_index(text, band.to.saturating_sub(1));
+        for slot in paints.iter_mut().take(end + 1).skip(start) {
+            *slot = paint;
+        }
+    }
+    paints
+}
+
 /// Blue window around the glyphs the web `runBox` frames.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Frame {
@@ -405,6 +461,33 @@ mod tests {
         let quoted = "SELECT 'a;b';";
         assert_eq!(query_bands(quoted).len(), 1);
         assert_eq!(query_bands(quoted)[0].to, quoted.len());
+    }
+
+    #[test]
+    fn highlight_options_paint_like_the_web_menu() {
+        let text = "SELECT 1;\nCREATE TABLE t (id STRING HASH KEY);";
+        assert_eq!(
+            line_paint(text, false, true),
+            vec![BandPaint::Alt, BandPaint::Write]
+        );
+        assert_eq!(
+            line_paint(text, true, true),
+            vec![BandPaint::Alt, BandPaint::Bar]
+        );
+        assert_eq!(
+            line_paint(text, false, false),
+            vec![BandPaint::Plain, BandPaint::Write]
+        );
+        assert_eq!(
+            line_paint(text, true, false),
+            vec![BandPaint::Plain, BandPaint::Bar]
+        );
+        let even_write = "CREATE TABLE t (id STRING HASH KEY);";
+        assert_eq!(
+            line_paint(even_write, false, true),
+            vec![BandPaint::WriteEven]
+        );
+        assert_eq!(line_paint(even_write, true, true), vec![BandPaint::BarEven]);
     }
 
     #[test]

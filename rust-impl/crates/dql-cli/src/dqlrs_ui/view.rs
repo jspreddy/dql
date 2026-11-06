@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use iced::widget::{
-    button, column, container, float, keyed, mouse_area, opaque, pane_grid, progress_bar, row,
-    rule, scrollable, stack, text, text_editor, text_input, tooltip,
+    button, checkbox, column, container, float, keyed, mouse_area, opaque, pane_grid, progress_bar,
+    row, rule, scrollable, stack, text, text_editor, text_input, tooltip,
 };
 use iced::{Color, Element, Fill, Length, Point, Rectangle, Vector};
 
@@ -35,6 +35,9 @@ pub fn view(app: &App) -> Element<'_, Message> {
     }
     if let Some(layer) = popup(app) {
         layers.push(layer);
+    }
+    if app.show_settings {
+        layers.push(settings_layer(app));
     }
     if !app.notices.is_empty() {
         layers.push(notices(app));
@@ -117,8 +120,8 @@ fn header(app: &App) -> Element<'_, Message> {
             modes,
             search,
             endpoint,
-            theme,
             settings,
+            theme,
         ]
         .spacing(10)
         .align_y(iced::alignment::Vertical::Center)
@@ -128,7 +131,7 @@ fn header(app: &App) -> Element<'_, Message> {
     .width(Fill)
     .style(style::fill(p.bar));
     let mut col = column![bar].spacing(0);
-    if app.show_env || app.show_settings {
+    if app.show_env {
         col = col.push(header_pop(app, p));
     }
     col.into()
@@ -143,14 +146,6 @@ fn header_pop(app: &App, p: Palette) -> Element<'_, Message> {
         }
         body = body.push(
             container(env)
-                .width(Fill)
-                .padding(10)
-                .style(style::menu_card(p)),
-        );
-    }
-    if app.show_settings {
-        body = body.push(
-            container(settings_panel(app, p))
                 .width(Fill)
                 .padding(10)
                 .style(style::menu_card(p)),
@@ -229,34 +224,199 @@ fn search_kind(kind: &str) -> String {
     .to_string()
 }
 
-fn settings_panel(app: &App, p: Palette) -> Element<'_, Message> {
-    column![
-        text("Highlight").size(11).color(p.muted),
-        button(
-            text(if app.prefs.write_bands {
-                "Write bands on"
-            } else {
-                "Write bands off"
-            })
-            .size(13)
-            .color(p.text)
-        )
-        .on_press(Message::ToggleBands)
-        .padding([4, 8])
-        .style(style::paint(p, style::Look::Quiet)),
-        text("Keyboard").size(11).color(p.muted),
-        text("Run the statement at the cursor    Ctrl + Enter    Ctrl + \\")
-            .size(12)
-            .color(p.text),
-        text("Stop a run    Esc     Save    Ctrl + S")
-            .size(12)
-            .color(p.text),
-        text("Right-click a file for Run file, rename, move, and delete.")
-            .size(12)
-            .color(p.muted),
+fn settings_layer(app: &App) -> Element<'_, Message> {
+    let p = style::palette(app.prefs.dark);
+    let scrim = opaque(
+        mouse_area(container(text("")).width(Fill).height(Fill)).on_press(Message::ToggleSettings),
+    );
+    let width = 232.0;
+    let left = (app.window_width - 46.0 - width).max(8.0);
+    let top = 35.0;
+    let card = float(settings_card(app, p))
+        .translate(move |bounds, _viewport| Vector::new(left - bounds.x, top - bounds.y));
+    stack![scrim, card].into()
+}
+
+fn settings_card(app: &App, p: Palette) -> Element<'_, Message> {
+    let age = settings_cache_age(app.cache.saved_at_ms, now_ms());
+    let detail = if app.cache.text.is_empty() {
+        "No table list cached.".to_string()
+    } else {
+        app.cache.text.clone()
+    };
+    let age_color = if app.cache.refreshing {
+        if p.dark {
+            style::rgb(0x9a, 0xab, 0xbd)
+        } else {
+            style::rgb(0x52, 0x60, 0x71)
+        }
+    } else {
+        p.muted
+    };
+    let mut body = column![
+        section_label("Highlight", p),
+        container(setting_check(
+            "Minimal write highlight",
+            app.prefs.minimal_write,
+            Message::SetMinimalWrite,
+            p,
+        ))
+        .padding([4, 4]),
+        container(setting_check(
+            "Even/odd highlight",
+            app.prefs.even_odd,
+            Message::SetEvenOdd,
+            p,
+        ))
+        .padding([4, 4]),
+        settings_rule(p),
+        row![
+            section_label("Table cache", p),
+            iced::widget::Space::new().width(Fill),
+            tooltip(
+                text(age).size(12).color(age_color),
+                container(text(detail).size(12).color(p.text).width(220))
+                    .padding([4, 8])
+                    .style(style::menu_card(p)),
+                tooltip::Position::Bottom,
+            ),
+        ]
+        .align_y(iced::alignment::Vertical::Center),
+        button(button_label("Clear table cache", 13.0))
+            .on_press(Message::ClearCache)
+            .width(Fill)
+            .height(26)
+            .style(style::cache_clear(p)),
     ]
-    .spacing(4)
+    .spacing(0);
+    if !app.cache_note.is_empty() {
+        body = body.push(
+            container(text(app.cache_note.clone()).size(12).color(p.muted)).padding(
+                iced::Padding {
+                    top: 6.0,
+                    right: 4.0,
+                    bottom: 0.0,
+                    left: 4.0,
+                },
+            ),
+        );
+    }
+    body = body.push(settings_rule(p));
+    body = body.push(section_label("Keyboard", p));
+    body = body.push(shortcut_row(
+        "Run selection",
+        column![
+            text("Ctrl + Enter").size(12).color(p.muted),
+            text("Ctrl + \\").size(12).color(p.muted),
+        ]
+        .spacing(2)
+        .align_x(iced::alignment::Horizontal::Right)
+        .into(),
+        p,
+    ));
+    body = body.push(shortcut_row(
+        "Stop query",
+        text("Esc").size(12).color(p.muted).into(),
+        p,
+    ));
+    container(body)
+        .width(Length::Fixed(232.0))
+        .padding(8)
+        .style(style::settings_pop(p))
+        .into()
+}
+
+fn section_label(label: &str, p: Palette) -> Element<'_, Message> {
+    container(
+        text(label.to_ascii_uppercase())
+            .size(11)
+            .font(iced::Font {
+                weight: iced::font::Weight::Semibold,
+                ..iced::Font::default()
+            })
+            .color(p.muted),
+    )
+    .padding(iced::Padding {
+        top: 2.0,
+        right: 4.0,
+        bottom: 6.0,
+        left: 4.0,
+    })
     .into()
+}
+
+fn setting_check<'a>(
+    label: &'a str,
+    checked: bool,
+    toggle: fn(bool) -> Message,
+    p: Palette,
+) -> Element<'a, Message> {
+    checkbox(checked)
+        .label(label)
+        .size(14)
+        .spacing(8)
+        .text_size(13)
+        .on_toggle(toggle)
+        .style(style::setting_check(p))
+        .into()
+}
+
+fn settings_rule(p: Palette) -> Element<'static, Message> {
+    container(separator(p)).padding([8, 4]).into()
+}
+
+fn shortcut_row<'a>(
+    action: &'a str,
+    keys: Element<'a, Message>,
+    p: Palette,
+) -> Element<'a, Message> {
+    row![
+        text(action).size(12).color(p.text),
+        iced::widget::Space::new().width(Fill),
+        keys,
+    ]
+    .align_y(iced::alignment::Vertical::Center)
+    .padding(iced::Padding {
+        top: 0.0,
+        right: 4.0,
+        bottom: 6.0,
+        left: 4.0,
+    })
+    .into()
+}
+
+fn settings_cache_age(saved_at_ms: Option<u64>, now_ms: u64) -> String {
+    match saved_at_ms {
+        Some(saved) => format!("({})", cache_age_phrase(saved, now_ms)),
+        None => "not cached".to_string(),
+    }
+}
+
+fn cache_age_phrase(saved_at_ms: u64, now_ms: u64) -> String {
+    let elapsed = now_ms.saturating_sub(saved_at_ms) / 1000;
+    if elapsed < 5 {
+        "just now".to_string()
+    } else if elapsed < 60 {
+        format!("{elapsed}s ago")
+    } else if elapsed < 3600 {
+        format!("{} min ago", elapsed / 60)
+    } else if elapsed < 86_400 {
+        format!("{} hr ago", elapsed / 3600)
+    } else {
+        let days = elapsed / 86_400;
+        if days == 1 {
+            "1 day ago".to_string()
+        } else {
+            format!("{days} days ago")
+        }
+    }
+}
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
+        .unwrap_or(0)
 }
 
 fn button_label(label: impl Into<String>, size: f32) -> Element<'static, Message> {
@@ -664,6 +824,7 @@ fn dialog(app: &App, p: Palette) -> Element<'_, Message> {
 
 fn editor_body(app: &App, p: Palette) -> Element<'_, Message> {
     let source = editor_text_view(app);
+    let paints = query::line_paint(&source, app.prefs.minimal_write, app.prefs.even_odd);
     let lines: Vec<&str> = if source.is_empty() {
         vec![""]
     } else {
@@ -678,37 +839,46 @@ fn editor_body(app: &App, p: Palette) -> Element<'_, Message> {
             bottom: query::PAD_TOP,
             left: 0.0,
         });
-    for (index, line) in lines.iter().enumerate() {
+    for (index, _line) in lines.iter().enumerate() {
         let number = index + 1;
         let issue = app.lint.iter().find(|issue| issue.line == number);
-        let write = app.prefs.write_bands && line_is_write(line);
         let mark = if issue.is_some() { "●" } else { "" };
+        let numbers: Element<'_, Message> = row![
+            text(mark)
+                .size(8)
+                .color(if issue.is_some_and(|issue| issue.severity == "error") {
+                    p.danger
+                } else {
+                    p.amber
+                }),
+            text(number.to_string()).size(11).color(p.muted),
+        ]
+        .spacing(2)
+        .align_y(iced::alignment::Vertical::Center)
+        .padding([0.0, 4.0])
+        .width(Fill)
+        .height(Fill)
+        .into();
+        let paint = paints
+            .get(index)
+            .copied()
+            .unwrap_or(query::BandPaint::Plain);
+        let inner = if let Some(color) = gutter_bar(paint, p.dark) {
+            stack![
+                container(iced::widget::Space::new())
+                    .width(Length::Fixed(3.0))
+                    .height(Fill)
+                    .style(style::fill(color)),
+                numbers,
+            ]
+            .into()
+        } else {
+            numbers
+        };
         gutter = gutter.push(
-            container(
-                row![
-                    text(mark).size(8).color(
-                        if issue.is_some_and(|issue| issue.severity == "error") {
-                            p.danger
-                        } else {
-                            p.amber
-                        }
-                    ),
-                    text(number.to_string()).size(11).color(p.muted),
-                ]
-                .spacing(2)
-                .align_y(iced::alignment::Vertical::Center),
-            )
-            .height(Length::Fixed(query::LINE_H))
-            .width(Fill)
-            .padding([0.0, 4.0])
-            .style(style::fill(if write {
-                Color {
-                    a: if p.dark { 0.28 } else { 0.10 },
-                    ..p.danger
-                }
-            } else {
-                Color::TRANSPARENT
-            })),
+            container(inner)
+                .height(Length::Fixed(query::LINE_H))
+                .width(Fill),
         );
     }
     let editor = highlight::editor(&app.editor)
@@ -803,6 +973,7 @@ fn editor_body(app: &App, p: Palette) -> Element<'_, Message> {
     if let Some(frame) = run_frame(app, p, &source) {
         document = document.push_under(frame);
     }
+    document = document.push_under(band_layer(&paints, p.dark));
     let scroller = scrollable(document)
         .id(app.editor_scroll.clone())
         .on_scroll(Message::EditorScrolled)
@@ -812,8 +983,12 @@ fn editor_body(app: &App, p: Palette) -> Element<'_, Message> {
         .width(Fill)
         .height(Fill)
         .push(scroller);
-    if let Some(button) = run_button(app, p, &source) {
-        editor_stack = editor_stack.push(button);
+    // The run button is a float, and floats share one overlay index, so it can
+    // paint over this menu. Hide it while the menu is open.
+    if !app.show_settings {
+        if let Some(button) = run_button(app, p, &source) {
+            editor_stack = editor_stack.push(button);
+        }
     }
     container(column![editor_stack, below.padding([4, 10])].height(Fill))
         .width(Fill)
@@ -879,16 +1054,67 @@ fn editor_text_view(app: &App) -> String {
     super::editor_text(&app.editor)
 }
 
-fn line_is_write(line: &str) -> bool {
-    let word = line
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .to_ascii_uppercase();
-    matches!(
-        word.as_str(),
-        "INSERT" | "UPDATE" | "DELETE" | "DROP" | "CREATE"
-    )
+fn band_layer(paints: &[query::BandPaint], dark: bool) -> Element<'static, Message> {
+    let mut rows = column![].spacing(0).width(Fill);
+    for paint in paints {
+        rows = rows.push(
+            container(iced::widget::Space::new())
+                .height(Length::Fixed(query::LINE_H))
+                .width(Fill)
+                .style(style::fill(
+                    content_band(*paint, dark).unwrap_or(Color::TRANSPARENT),
+                )),
+        );
+    }
+    container(rows)
+        .width(Fill)
+        .padding(iced::Padding {
+            top: query::PAD_TOP,
+            right: 0.0,
+            bottom: 0.0,
+            left: query::GUTTER_W,
+        })
+        .into()
+}
+
+fn content_band(paint: query::BandPaint, dark: bool) -> Option<Color> {
+    let color = match paint {
+        query::BandPaint::Alt => {
+            if dark {
+                (0x1e, 0x29, 0x36)
+            } else {
+                (0xf4, 0xf7, 0xf8)
+            }
+        }
+        query::BandPaint::Write => {
+            if dark {
+                (0x3a, 0x1d, 0x24)
+            } else {
+                (0xfd, 0xec, 0xec)
+            }
+        }
+        query::BandPaint::WriteEven => {
+            if dark {
+                (0x5a, 0x28, 0x32)
+            } else {
+                (0xf3, 0xc4, 0xc4)
+            }
+        }
+        query::BandPaint::Plain | query::BandPaint::Bar | query::BandPaint::BarEven => return None,
+    };
+    Some(style::rgb(color.0, color.1, color.2))
+}
+
+fn gutter_bar(paint: query::BandPaint, dark: bool) -> Option<Color> {
+    match paint {
+        query::BandPaint::Bar => Some(style::rgb(0xfb, 0x71, 0x85)),
+        query::BandPaint::BarEven => Some(if dark {
+            style::rgb(0xfd, 0xa4, 0xaf)
+        } else {
+            style::rgb(0xbe, 0x12, 0x3c)
+        }),
+        _ => None,
+    }
 }
 
 fn results(app: &App, p: Palette) -> Element<'_, Message> {
@@ -2238,4 +2464,27 @@ fn editor_keys(press: text_editor::KeyPress) -> Option<text_editor::Binding<Mess
         }
     }
     text_editor::Binding::from_key_press(press)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::settings_cache_age;
+
+    #[test]
+    fn cache_age_matches_the_web_settings_label() {
+        let now = 1_700_000_000_000;
+        assert_eq!(settings_cache_age(None, now), "not cached");
+        assert_eq!(settings_cache_age(Some(now), now), "(just now)");
+        assert_eq!(settings_cache_age(Some(now - 12_000), now), "(12s ago)");
+        assert_eq!(settings_cache_age(Some(now - 120_000), now), "(2 min ago)");
+        assert_eq!(settings_cache_age(Some(now - 7_200_000), now), "(2 hr ago)");
+        assert_eq!(
+            settings_cache_age(Some(now - 86_400_000), now),
+            "(1 day ago)"
+        );
+        assert_eq!(
+            settings_cache_age(Some(now - 2 * 86_400_000), now),
+            "(2 days ago)"
+        );
+    }
 }
