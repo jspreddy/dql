@@ -1092,9 +1092,9 @@ fn editor_body(app: &App, p: Palette) -> Element<'_, Message> {
         .width(Fill)
         .height(Fill)
         .push(scroller);
-    // The run button is a float, and floats share one overlay index, so it can
-    // paint over a menu. Hide it while one of those cards is open.
-    if !app.show_settings && !app.search_open {
+    // The run button is a float, and floats share one overlay index, so it
+    // paints over a later stack layer. Hide it while a card covers the editor.
+    if !covers_editor(app) {
         if let Some(button) = run_button(app, p, &source) {
             editor_stack = editor_stack.push(button);
         }
@@ -1125,6 +1125,10 @@ fn run_frame(app: &App, p: Palette, source: &str) -> Option<Element<'static, Mes
         })
         .into(),
     )
+}
+
+pub(super) fn covers_editor(app: &App) -> bool {
+    app.show_settings || app.search_open || app.schema.is_some() || app.row_json.is_some()
 }
 
 fn run_button(app: &App, p: Palette, source: &str) -> Option<Element<'static, Message>> {

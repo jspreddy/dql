@@ -1812,6 +1812,17 @@ SELECT * FROM demo WHERE id = 'a';
     }
 
     #[test]
+    fn the_run_button_stays_under_settings_and_search() {
+        let (_dir, mut app) = workspace();
+        assert!(!view::covers_editor(&app));
+        app.show_settings = true;
+        assert!(view::covers_editor(&app));
+        app.show_settings = false;
+        app.search_open = true;
+        assert!(view::covers_editor(&app));
+    }
+
+    #[test]
     fn structure_and_row_popups_follow_the_web() {
         let (_dir, mut app) = workspace();
         let script = "\
@@ -1837,6 +1848,7 @@ SELECT * FROM keyed_demo WHERE n = 7 AND sk = 2 USING by-n;
             .position(|card| card.statement.contains("SCAN * FROM shape_demo"))
             .expect("scan card");
         let _ = app.update(Message::ShowResultSchema(scan));
+        assert!(view::covers_editor(&app));
         for label in [
             "RESULT STRUCTURE",
             "shape_demo",
@@ -1856,6 +1868,7 @@ SELECT * FROM keyed_demo WHERE n = 7 AND sk = 2 USING by-n;
         }
         let _ = app.update(Message::CloseSchema);
         assert!(app.schema.is_none());
+        assert!(!view::covers_editor(&app));
 
         let select = app
             .results
@@ -1864,11 +1877,13 @@ SELECT * FROM keyed_demo WHERE n = 7 AND sk = 2 USING by-n;
             .expect("index read");
         let json = serde_json::to_string_pretty(&app.results[select].items[0]).unwrap();
         let _ = app.update(Message::ShowRow(json));
+        assert!(view::covers_editor(&app));
         for label in ["ROW", "id = a", "sk = 2", "n = 7", "\"label\"", "\"alpha\""] {
             show_text(&app, label);
         }
         let _ = app.update(Message::Stop);
         assert!(app.row_json.is_none());
+        assert!(!view::covers_editor(&app));
 
         let _ = app.update(Message::OpenTable("shape_demo".to_string()));
         let _ = app.update(Message::ShowTableSchema);
