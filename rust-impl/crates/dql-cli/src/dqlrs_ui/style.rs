@@ -13,6 +13,7 @@ pub struct Palette {
     pub header_fg: Color,
     pub header_text: Color,
     pub header_line: Color,
+    pub header_line_hover: Color,
     pub teal: Color,
     pub text: Color,
     pub muted: Color,
@@ -41,6 +42,7 @@ pub fn palette(dark: bool) -> Palette {
             header_fg: rgb(0xe8, 0xee, 0xf5),
             header_text: rgb(0xc9, 0xd4, 0xe0),
             header_line: rgb(0x3a, 0x4d, 0x63),
+            header_line_hover: rgb(0x8e, 0xa4, 0xbb),
             teal: rgb(0x0f, 0x76, 0x6e),
             text: rgb(0xe7, 0xee, 0xf6),
             muted: rgb(0x8b, 0x9e, 0xb3),
@@ -67,6 +69,7 @@ pub fn palette(dark: bool) -> Palette {
             header_fg: rgb(0xe8, 0xee, 0xf5),
             header_text: rgb(0xd5, 0xdd, 0xe6),
             header_line: rgb(0x45, 0x56, 0x6b),
+            header_line_hover: rgb(0x8a, 0xa0, 0xb8),
             teal: rgb(0x0f, 0x76, 0x6e),
             text: rgb(0x1c, 0x24, 0x30),
             muted: rgb(0x66, 0x74, 0x84),
@@ -483,17 +486,49 @@ pub fn paint(p: Palette, look: Look) -> impl Fn(&Theme, button::Status) -> butto
 }
 
 pub fn header_field(p: Palette) -> impl Fn(&Theme, text_input::Status) -> text_input::Style + Copy {
-    move |_, _| text_input::Style {
-        background: Background::Color(Color::TRANSPARENT),
-        border: Border {
-            color: p.header_line,
-            width: 1.0,
-            radius: 999.0.into(),
-        },
-        icon: p.header_text,
-        placeholder: p.header_text,
-        value: p.header_fg,
-        selection: p.blue,
+    move |_, status| {
+        let focused = matches!(status, text_input::Status::Focused { .. });
+        let mut placeholder = p.header_text;
+        placeholder.a = 0.75;
+        text_input::Style {
+            background: Background::Color(Color::TRANSPARENT),
+            border: Border {
+                color: if focused {
+                    p.header_line_hover
+                } else {
+                    p.header_line
+                },
+                width: 1.0,
+                radius: 999.0.into(),
+            },
+            icon: p.header_text,
+            placeholder,
+            value: p.header_fg,
+            selection: p.blue,
+        }
+    }
+}
+
+/// A title-search row. Hover and the keyboard selection share `--hover`.
+pub fn search_row(p: Palette, selected: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    let hover = if p.dark {
+        rgb(0x24, 0x31, 0x40)
+    } else {
+        rgb(0xe8, 0xed, 0xf2)
+    };
+    move |_, status| {
+        let hot = selected || matches!(status, button::Status::Hovered | button::Status::Pressed);
+        button::Style {
+            background: hot.then_some(Background::Color(hover)),
+            text_color: p.text,
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 6.0.into(),
+            },
+            shadow: Shadow::default(),
+            snap: true,
+        }
     }
 }
 

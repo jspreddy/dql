@@ -32,7 +32,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     if let Some(menu) = floating_menu(app) {
         layers.push(menu);
     }
-    if !app.hits.is_empty() {
+    if app.search_open {
         layers.push(floating_search(app));
     }
     if let Some(layer) = popup(app) {
@@ -73,12 +73,16 @@ fn header(app: &App) -> Element<'_, Message> {
             radius: 6.0.into(),
         })
     });
-    let search = text_input("Search tables, columns, queries", &app.search)
-        .on_input(Message::Search)
-        .size(12)
-        .padding([2, 10])
-        .width(Fill)
-        .style(style::header_field(p));
+    let search = report_bounds(
+        text_input("Search tables, columns, queries", &app.search)
+            .on_input(Message::Search)
+            .on_submit(Message::SearchSubmit)
+            .size(13)
+            .padding([2, 10])
+            .width(Fill)
+            .style(style::header_field(p)),
+        Message::SearchBounds,
+    );
     let endpoint = button(button_label(app.endpoint.clone(), 12.0))
         .on_press(Message::ToggleEnv)
         .padding([0, 8])
@@ -155,14 +159,14 @@ fn header_pop(app: &App, p: Palette) -> Element<'_, Message> {
         .into()
 }
 
-fn search_list(app: &App, p: Palette) -> Element<'_, Message> {
+fn search_list(app: &App, p: Palette, width: f32) -> Element<'_, Message> {
     let groups = [
         ("Tables", &["table"][..]),
         ("Columns", &["column", "index"][..]),
         ("Queries", &["query"][..]),
     ];
-    let mut list = column![].spacing(0).padding(6);
-    let mut shown = 0usize;
+    let mut list = column![].spacing(0);
+    let mut visual = 0usize;
     for (label, kinds) in groups {
         let rows: Vec<_> = app
             .hits
@@ -173,23 +177,41 @@ fn search_list(app: &App, p: Palette) -> Element<'_, Message> {
         if rows.is_empty() {
             continue;
         }
-        list = list.push(text(label.to_ascii_uppercase()).size(11).color(p.muted));
+        list = list.push(search_group(label, p));
         for (index, hit) in rows {
-            shown += 1;
+            let selected = app.search_active == Some(visual);
+            visual += 1;
+            let title = container(
+                text(hit.title.clone())
+                    .size(13)
+                    .color(p.text)
+                    .wrapping(iced::widget::text::Wrapping::None),
+            )
+            .width(Fill)
+            .clip(true);
             let mut lines = column![row![
                 text(search_kind(&hit.kind))
                     .size(11)
                     .color(p.muted)
                     .width(Length::Fixed(58.0)),
-                text(hit.title.clone()).size(13).color(p.text),
+                title,
             ]
-            .spacing(8)]
-            .spacing(0);
+            .spacing(8)
+            .align_y(iced::alignment::Vertical::Center)]
+            .spacing(0)
+            .width(Fill);
             if !hit.detail.is_empty() {
                 lines = lines.push(
                     row![
                         text("").width(Length::Fixed(58.0)),
-                        text(hit.detail.clone()).size(12).color(p.muted),
+                        container(
+                            text(hit.detail.clone())
+                                .size(12)
+                                .color(p.muted)
+                                .wrapping(iced::widget::text::Wrapping::None),
+                        )
+                        .width(Fill)
+                        .clip(true),
                     ]
                     .spacing(8),
                 );
@@ -199,17 +221,103 @@ fn search_list(app: &App, p: Palette) -> Element<'_, Message> {
                     .on_press(Message::PickHit(index))
                     .width(Fill)
                     .padding([5, 6])
-                    .style(style::paint(p, style::Look::Quiet)),
+                    .style(style::search_row(p, selected)),
             );
         }
     }
-    if shown == 0 {
-        list = list.push(text("No matches").size(12).color(p.muted));
+    if visual == 0 {
+        list = list.push(
+            container(text("No matches").size(12).color(p.muted)).padding(iced::Padding {
+                top: 8.0,
+                right: 6.0,
+                bottom: 8.0,
+                left: 6.0,
+            }),
+        );
     }
-    container(list)
-        .width(Length::Fixed(480.0))
-        .style(style::menu_card(p))
+    let content = search_content_height(&app.hits);
+    let max_card = search_max_card(app.window_height);
+    let body: Element<'_, Message> = if content + 12.0 > max_card {
+        scrollable(list)
+            .height(Length::Fixed((max_card - 12.0).max(1.0)))
+            .width(Fill)
+            .into()
+    } else {
+        list.into()
+    };
+    container(body)
+        .width(Length::Fixed(width))
+        .padding(6)
+        .style(style::settings_pop(p))
         .into()
+}
+
+fn search_group(label: &str, p: Palette) -> Element<'_, Message> {
+    container(
+        text(label.to_ascii_uppercase())
+            .size(11)
+            .font(iced::Font {
+                weight: iced::font::Weight::Semibold,
+                ..iced::Font::default()
+            })
+            .color(p.muted),
+    )
+    .padding(iced::Padding {
+        top: 6.0,
+        right: 4.0,
+        bottom: 2.0,
+        left: 4.0,
+    })
+    .into()
+}
+
+pub(super) fn search_popup_rect(
+    field: Rectangle,
+    hits: &[crate::web::search::SearchHit],
+    window_h: f32,
+) -> Rectangle {
+    let height = search_card_height(hits, window_h);
+    Rectangle {
+        x: field.x,
+        y: field.y + field.height + 6.0,
+        width: field.width,
+        height,
+    }
+}
+
+fn search_content_height(hits: &[crate::web::search::SearchHit]) -> f32 {
+    let groups = [&["table"][..], &["column", "index"][..], &["query"][..]];
+    let mut content = 0.0_f32;
+    let mut rows = 0usize;
+    for kinds in groups {
+        let matched: Vec<_> = hits
+            .iter()
+            .filter(|hit| kinds.contains(&hit.kind.as_str()))
+            .collect();
+        if matched.is_empty() {
+            continue;
+        }
+        content += 22.0;
+        for hit in matched {
+            content += if hit.detail.is_empty() { 28.0 } else { 42.0 };
+            rows += 1;
+        }
+    }
+    if rows == 0 {
+        32.0
+    } else {
+        content
+    }
+}
+
+fn search_max_card(window_h: f32) -> f32 {
+    (window_h * 0.7).clamp(160.0, 420.0)
+}
+
+fn search_card_height(hits: &[crate::web::search::SearchHit], window_h: f32) -> f32 {
+    (search_content_height(hits) + 12.0)
+        .min(search_max_card(window_h))
+        .max(28.0)
 }
 
 fn search_kind(kind: &str) -> String {
@@ -985,8 +1093,8 @@ fn editor_body(app: &App, p: Palette) -> Element<'_, Message> {
         .height(Fill)
         .push(scroller);
     // The run button is a float, and floats share one overlay index, so it can
-    // paint over this menu. Hide it while the menu is open.
-    if !app.show_settings {
+    // paint over a menu. Hide it while one of those cards is open.
+    if !app.show_settings && !app.search_open {
         if let Some(button) = run_button(app, p, &source) {
             editor_stack = editor_stack.push(button);
         }
@@ -2381,9 +2489,21 @@ fn floating_menu(app: &App) -> Option<Element<'_, Message>> {
 
 fn floating_search(app: &App) -> Element<'_, Message> {
     let p = style::palette(app.prefs.dark);
-    let card = search_list(app, p);
+    let field = if app.search_bounds.width > 1.0 {
+        app.search_bounds
+    } else {
+        Rectangle {
+            x: 220.0,
+            y: 6.0,
+            width: 480.0,
+            height: 24.0,
+        }
+    };
+    let card = search_list(app, p, field.width);
+    let left = field.x;
+    let top = field.y + field.height + 6.0;
     float(card)
-        .translate(|bounds, viewport| place(Point::new(220.0, 42.0), bounds, viewport))
+        .translate(move |bounds, _viewport| Vector::new(left - bounds.x, top - bounds.y))
         .into()
 }
 
@@ -2465,6 +2585,162 @@ fn editor_keys(press: text_editor::KeyPress) -> Option<text_editor::Binding<Mess
         }
     }
     text_editor::Binding::from_key_press(press)
+}
+
+fn report_bounds<'a>(
+    content: impl Into<Element<'a, Message>>,
+    report: fn(Rectangle) -> Message,
+) -> Element<'a, Message> {
+    BoundsProbe {
+        content: content.into(),
+        report,
+    }
+    .into()
+}
+
+struct BoundsProbe<'a> {
+    content: Element<'a, Message>,
+    report: fn(Rectangle) -> Message,
+}
+
+#[derive(Default)]
+struct BoundsState {
+    last: Option<Rectangle>,
+}
+
+impl<'a> iced::advanced::Widget<Message, iced::Theme, iced::Renderer> for BoundsProbe<'a> {
+    fn tag(&self) -> iced::advanced::widget::tree::Tag {
+        iced::advanced::widget::tree::Tag::of::<BoundsState>()
+    }
+
+    fn state(&self) -> iced::advanced::widget::tree::State {
+        iced::advanced::widget::tree::State::new(BoundsState::default())
+    }
+
+    fn children(&self) -> Vec<iced::advanced::widget::Tree> {
+        vec![iced::advanced::widget::Tree::new(&self.content)]
+    }
+
+    fn diff(&self, tree: &mut iced::advanced::widget::Tree) {
+        tree.diff_children(&[&self.content]);
+    }
+
+    fn size(&self) -> iced::Size<Length> {
+        self.content.as_widget().size()
+    }
+
+    fn layout(
+        &mut self,
+        tree: &mut iced::advanced::widget::Tree,
+        renderer: &iced::Renderer,
+        limits: &iced::advanced::layout::Limits,
+    ) -> iced::advanced::layout::Node {
+        self.content
+            .as_widget_mut()
+            .layout(&mut tree.children[0], renderer, limits)
+    }
+
+    fn update(
+        &mut self,
+        tree: &mut iced::advanced::widget::Tree,
+        event: &iced::Event,
+        layout: iced::advanced::Layout<'_>,
+        cursor: iced::advanced::mouse::Cursor,
+        renderer: &iced::Renderer,
+        clipboard: &mut dyn iced::advanced::Clipboard,
+        shell: &mut iced::advanced::Shell<'_, Message>,
+        viewport: &Rectangle,
+    ) {
+        let bounds = layout.bounds();
+        let state = tree.state.downcast_mut::<BoundsState>();
+        if state.last != Some(bounds) {
+            state.last = Some(bounds);
+            shell.publish((self.report)(bounds));
+        }
+        self.content.as_widget_mut().update(
+            &mut tree.children[0],
+            event,
+            layout,
+            cursor,
+            renderer,
+            clipboard,
+            shell,
+            viewport,
+        );
+    }
+
+    fn draw(
+        &self,
+        tree: &iced::advanced::widget::Tree,
+        renderer: &mut iced::Renderer,
+        theme: &iced::Theme,
+        style: &iced::advanced::renderer::Style,
+        layout: iced::advanced::Layout<'_>,
+        cursor: iced::advanced::mouse::Cursor,
+        viewport: &Rectangle,
+    ) {
+        self.content.as_widget().draw(
+            &tree.children[0],
+            renderer,
+            theme,
+            style,
+            layout,
+            cursor,
+            viewport,
+        );
+    }
+
+    fn operate(
+        &mut self,
+        tree: &mut iced::advanced::widget::Tree,
+        layout: iced::advanced::Layout<'_>,
+        renderer: &iced::Renderer,
+        operation: &mut dyn iced::advanced::widget::Operation,
+    ) {
+        self.content
+            .as_widget_mut()
+            .operate(&mut tree.children[0], layout, renderer, operation);
+    }
+
+    fn mouse_interaction(
+        &self,
+        tree: &iced::advanced::widget::Tree,
+        layout: iced::advanced::Layout<'_>,
+        cursor: iced::advanced::mouse::Cursor,
+        viewport: &Rectangle,
+        renderer: &iced::Renderer,
+    ) -> iced::advanced::mouse::Interaction {
+        self.content.as_widget().mouse_interaction(
+            &tree.children[0],
+            layout,
+            cursor,
+            viewport,
+            renderer,
+        )
+    }
+
+    fn overlay<'b>(
+        &'b mut self,
+        tree: &'b mut iced::advanced::widget::Tree,
+        layout: iced::advanced::Layout<'b>,
+        renderer: &iced::Renderer,
+        viewport: &Rectangle,
+        translation: Vector,
+    ) -> Option<iced::advanced::overlay::Element<'b, Message, iced::Theme, iced::Renderer>> {
+        self.content.as_widget_mut().overlay(
+            &mut tree.children[0],
+            layout,
+            renderer,
+            viewport,
+            translation,
+        )
+    }
+}
+
+impl<'a> From<BoundsProbe<'a>> for Element<'a, Message> {
+    fn from(probe: BoundsProbe<'a>) -> Self {
+        Element::new(probe)
+    }
 }
 
 #[cfg(test)]

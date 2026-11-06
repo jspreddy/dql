@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use iced::widget::{pane_grid, text_editor};
-use iced::{Element, Subscription, Task, Theme};
+use iced::{Element, Rectangle, Subscription, Task, Theme};
 use serde::{Deserialize, Serialize};
 
 use crate::session::Session;
@@ -211,6 +211,10 @@ struct App {
     live: LiveProgress,
     search: String,
     hits: Vec<SearchHit>,
+    search_open: bool,
+    search_active: Option<usize>,
+    search_after: Option<std::time::Instant>,
+    search_bounds: Rectangle,
     suggest: Vec<SearchHit>,
     menu: Option<MenuAt>,
     dialog: Dialog,
@@ -250,6 +254,11 @@ struct App {
 enum Message {
     Mode(Mode),
     Search(String),
+    SearchTick,
+    SearchMove(i32),
+    SearchSubmit,
+    SearchDismiss,
+    SearchBounds(Rectangle),
     PickHit(usize),
     Open(String),
     Menu(String, String),
@@ -328,6 +337,10 @@ impl App {
             live: LiveProgress::default(),
             search: String::new(),
             hits: Vec::new(),
+            search_open: false,
+            search_active: None,
+            search_after: None,
+            search_bounds: Rectangle::default(),
             suggest: Vec::new(),
             menu: None,
             dialog: Dialog::None,
@@ -398,6 +411,9 @@ impl App {
         if !self.notices.is_empty() {
             subs.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::NoticeTick));
         }
+        if self.search_after.is_some() {
+            subs.push(iced::time::every(Duration::from_millis(50)).map(|_| Message::SearchTick));
+        }
         Subscription::batch(subs)
     }
 
@@ -436,24 +452,40 @@ impl App {
             }
             Message::Search(query) => {
                 self.search = query;
-                self.hits = if self.search.trim().is_empty() {
-                    Vec::new()
+                self.search_active = None;
+                if self.search.trim().is_empty() {
+                    self.search_after = None;
+                    self.search_open = false;
+                    self.hits.clear();
                 } else {
-                    lock(&self.studio).search(&self.search).items
-                };
+                    self.search_after =
+                        Some(std::time::Instant::now() + Duration::from_millis(150));
+                }
+            }
+            Message::SearchTick => {
+                let due = self
+                    .search_after
+                    .is_some_and(|due| due <= std::time::Instant::now());
+                if due {
+                    self.search_after = None;
+                    self.run_title_search();
+                }
+            }
+            Message::SearchMove(delta) => self.move_search(delta),
+            Message::SearchSubmit => return self.submit_search(),
+            Message::SearchDismiss => self.dismiss_search(),
+            Message::SearchBounds(bounds) => {
+                if bounds.width > 1.0 && bounds.height > 1.0 {
+                    self.search_bounds = bounds;
+                }
             }
             Message::PickHit(index) => {
-                if let Some(hit) = self.hits.get(index).cloned() {
-                    if let Some(path) = hit.path {
-                        self.open_file(path);
-                    } else if let Some(table) = hit.table {
-                        self.mode = Mode::Tables;
-                        self.open_table(table);
-                    }
-                }
-                self.search.clear();
-                self.hits.clear();
+                let hit = self.hits.get(index).cloned();
+                self.hide_search_list();
                 self.suggest.clear();
+                if let Some(hit) = hit {
+                    return self.open_search_hit(hit);
+                }
             }
             Message::Open(path) => {
                 if path.ends_with(".dql") {
@@ -551,6 +583,10 @@ impl App {
                 self.toast("Nothing to run", "No statement at the cursor.".to_string());
             }
             Message::Stop => {
+                if self.search_open {
+                    self.hide_search_list();
+                    return Task::none();
+                }
                 if self.schema.is_some()
                     || self.row_json.is_some()
                     || self.menu.is_some()
@@ -1013,6 +1049,114 @@ impl App {
         )
     }
 
+    fn hide_search_list(&mut self) {
+        self.search_open = false;
+        self.search_active = None;
+    }
+
+    fn run_title_search(&mut self) {
+        let query = self.search.trim().to_string();
+        if query.is_empty() {
+            self.hits.clear();
+            self.hide_search_list();
+            return;
+        }
+        self.hits = lock(&self.studio).search(&query).items;
+        self.search_open = true;
+        self.search_active = None;
+    }
+
+    fn move_search(&mut self, delta: i32) {
+        if !self.search_open {
+            return;
+        }
+        let order = search_order(&self.hits);
+        if order.is_empty() || delta == 0 {
+            return;
+        }
+        let len = order.len() as i32;
+        let next = match self.search_active {
+            Some(current) => (current as i32 + delta).rem_euclid(len),
+            None if delta > 0 => 0,
+            None => len - 1,
+        };
+        self.search_active = Some(next as usize);
+    }
+
+    fn submit_search(&mut self) -> Task<Message> {
+        let order = search_order(&self.hits);
+        let Some(slot) = self.search_active else {
+            return Task::none();
+        };
+        let Some(index) = order.get(slot).copied() else {
+            return Task::none();
+        };
+        let Some(hit) = self.hits.get(index).cloned() else {
+            return Task::none();
+        };
+        self.hide_search_list();
+        self.suggest.clear();
+        self.open_search_hit(hit)
+    }
+
+    fn dismiss_search(&mut self) {
+        let at = self.pointer;
+        if self.search_bounds.contains(at) {
+            if !self.search.trim().is_empty() && self.search_after.is_none() {
+                self.run_title_search();
+            }
+            return;
+        }
+        if !self.search_open {
+            return;
+        }
+        let popup = view::search_popup_rect(self.search_bounds, &self.hits, self.window_height);
+        if popup.contains(at) {
+            return;
+        }
+        self.hide_search_list();
+    }
+
+    fn open_search_hit(&mut self, hit: SearchHit) -> Task<Message> {
+        if hit.kind == "query" {
+            let Some(path) = hit.path else {
+                return Task::none();
+            };
+            self.open_file(path);
+            let Some(offset) = hit.offset else {
+                return Task::none();
+            };
+            self.editor_jump_top = false;
+            let text = editor_text(&self.editor);
+            let at = statement_code_pos(&text, offset);
+            let (line, column) = char_line_column(&text, at);
+            self.editor.move_to(text_editor::Cursor {
+                position: text_editor::Position { line, column },
+                selection: None,
+            });
+            return self.scroll_line_centered(line);
+        }
+        let Some(table) = hit.table else {
+            return Task::none();
+        };
+        self.table_filter.clear();
+        self.open_table(table);
+        self.update(Message::RefreshTables(false))
+    }
+
+    fn scroll_line_centered(&self, line: usize) -> Task<Message> {
+        let line_top = query::PAD_TOP + line as f32 * query::LINE_H;
+        let view = self.editor_view_h.max(query::LINE_H);
+        let y = (line_top - (view - query::LINE_H) / 2.0).max(0.0);
+        iced::widget::operation::scroll_to(
+            self.editor_scroll.clone(),
+            iced::widget::operation::AbsoluteOffset {
+                x: Some(0.0),
+                y: Some(y),
+            },
+        )
+    }
+
     fn open_file(&mut self, path: String) {
         self.save_editor();
         let read = {
@@ -1255,6 +1399,59 @@ fn cursor_byte(content: &text_editor::Content, text: &str) -> usize {
     caret_bytes(content, text).0
 }
 
+fn search_order(hits: &[SearchHit]) -> Vec<usize> {
+    const GROUPS: [&[&str]; 3] = [&["table"], &["column", "index"], &["query"]];
+    let mut order = Vec::new();
+    for kinds in GROUPS {
+        for (index, hit) in hits.iter().enumerate() {
+            if kinds.contains(&hit.kind.as_str()) {
+                order.push(index);
+            }
+        }
+    }
+    order
+}
+
+/// First code character at or after `pos`, matching `statementCodePos`.
+fn statement_code_pos(text: &str, pos: usize) -> usize {
+    let chars: Vec<char> = text.chars().collect();
+    let start = pos.min(chars.len());
+    let mut index = start;
+    while index < chars.len() {
+        let ch = chars[index];
+        let next = chars.get(index + 1).copied().unwrap_or('\0');
+        if ch == '-' && next == '-' {
+            while index < chars.len() && chars[index] != '\n' {
+                index += 1;
+            }
+            if index < chars.len() && chars[index] == '\n' {
+                index += 1;
+            }
+            continue;
+        }
+        if ch == ';' {
+            return start;
+        }
+        if !ch.is_whitespace() {
+            return index;
+        }
+        index += 1;
+    }
+    start
+}
+
+fn char_line_column(text: &str, char_offset: usize) -> (usize, usize) {
+    let mut seen = 0usize;
+    for (line, row) in text.split_inclusive('\n').enumerate() {
+        let count = row.chars().count();
+        if seen + count > char_offset {
+            return (line, char_offset - seen);
+        }
+        seen += count;
+    }
+    (text.split_inclusive('\n').count().saturating_sub(1), 0)
+}
+
 fn position_byte(text: &str, line: usize, column: usize) -> usize {
     let mut byte = 0usize;
     for (index, row) in text.split_inclusive('\n').enumerate() {
@@ -1392,6 +1589,14 @@ fn keyboard_subscription() -> Subscription<Message> {
             if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape) {
                 return Some(Message::Stop);
             }
+            if status == iced::event::Status::Ignored {
+                if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowDown) {
+                    return Some(Message::SearchMove(1));
+                }
+                if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::ArrowUp) {
+                    return Some(Message::SearchMove(-1));
+                }
+            }
             if key == iced::keyboard::Key::Named(iced::keyboard::key::Named::Tab)
                 && status == iced::event::Status::Ignored
             {
@@ -1417,6 +1622,7 @@ fn keyboard_subscription() -> Subscription<Message> {
         iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
             Some(Message::Pointer(position))
         }
+        iced::Event::Mouse(iced::mouse::Event::ButtonPressed(_)) => Some(Message::SearchDismiss),
         _ => None,
     })
 }
@@ -1560,6 +1766,49 @@ SELECT * FROM demo WHERE id = 'a';
         assert_eq!(token_at("SELECT widgets", 13), "widgets");
         assert_eq!(app.editor.cursor().position.line, 0);
         assert_eq!(app.editor.cursor().position.column, 0);
+    }
+
+    #[test]
+    fn title_search_opens_the_statement_and_keeps_the_query() {
+        let (dir, mut app) = workspace();
+        std::fs::create_dir_all(dir.path.join("queries")).unwrap();
+        std::fs::write(
+            dir.path.join("queries/read.dql"),
+            "-- header stays with the select\nSELECT * FROM pw_missing_table\nWHERE id = 'a';\n",
+        )
+        .unwrap();
+        let _ = app.update(Message::Search("pw_missing".to_string()));
+        assert!(!app.search_open);
+        app.search_after = Some(std::time::Instant::now() - Duration::from_millis(1));
+        let _ = app.update(Message::SearchTick);
+        assert!(app.search_open);
+        let query = app
+            .hits
+            .iter()
+            .find(|hit| hit.kind == "query")
+            .expect("query hit");
+        assert!(query.title.contains("pw_missing_table"));
+        assert_eq!(query.detail, "queries/read.dql");
+        let _ = app.update(Message::SearchMove(1));
+        assert_eq!(app.search_active, Some(0));
+        let _ = app.update(Message::SearchSubmit);
+        assert!(!app.search_open);
+        assert_eq!(app.search, "pw_missing");
+        assert_eq!(app.open_path, "queries/read.dql");
+        assert_eq!(app.editor.cursor().position.line, 1);
+        assert_eq!(app.editor.cursor().position.column, 0);
+
+        let _ = app.update(Message::Search("zz_no_such_column".to_string()));
+        app.search_after = Some(std::time::Instant::now() - Duration::from_millis(1));
+        let _ = app.update(Message::SearchTick);
+        assert!(app.search_open);
+        assert!(app.hits.is_empty());
+        let _ = app.update(Message::Stop);
+        assert!(!app.search_open);
+        assert_eq!(app.search, "zz_no_such_column");
+        let _ = app.update(Message::Search("   ".to_string()));
+        assert!(!app.search_open);
+        assert!(app.hits.is_empty());
     }
 
     #[test]
