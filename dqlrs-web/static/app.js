@@ -89,6 +89,7 @@ const state = {
   cacheStatusRequest: 0,
   listedTables: [],
   browserSchema: null,
+  fileSchema: null,
   schemaKind: "",
   environment: null,
   catalog: null,
@@ -880,6 +881,7 @@ document.querySelector("#page-next").addEventListener("click", () => changePage(
 document.querySelector("#file-page-prev").addEventListener("click", () => changeFilePage(-1));
 document.querySelector("#file-page-next").addEventListener("click", () => changeFilePage(1));
 const rowsSchemaBtn = document.querySelector("#rows-schema");
+const fileSchemaBtn = document.querySelector("#file-rows-schema");
 const schemaPop = document.querySelector("#schema-pop");
 const schemaPopTitle = document.querySelector("#schema-pop-title");
 const schemaPopKicker = document.querySelector("#schema-pop-kicker");
@@ -894,6 +896,7 @@ const rowPopTitle = document.querySelector("#row-pop-title");
 const rowPopKeys = document.querySelector("#row-pop-keys");
 const rowPopBody = document.querySelector("#row-pop-body");
 rowsSchemaBtn.addEventListener("click", () => openSchema(state.browserSchema, rowsSchemaBtn));
+fileSchemaBtn.addEventListener("click", () => openSchema(state.fileSchema, fileSchemaBtn));
 document.querySelector("#schema-pop-close").addEventListener("click", () => schemaPop.close());
 document.querySelector("#row-pop-close").addEventListener("click", () => rowPop.close());
 for (const dialog of [schemaPop, rowPop]) {
@@ -1296,6 +1299,7 @@ async function openFile(path) {
       await Promise.all([refreshTree(), loadFileRows()]);
       return;
     }
+    setFileSchema(null);
     const file = await api("/api/file?path=" + encodeURIComponent(path));
     state.fileEpoch += 1;
     state.disk = { path: file.path || path, text: file.text, revision: file.revision };
@@ -1317,6 +1321,7 @@ async function loadFileRows() {
   document.querySelector("#file-rows-title").textContent = path.split("/").pop();
   document.querySelector("#file-rows-meta").textContent = "50 rows at a time";
   body.replaceChildren(note("Loading…", false));
+  setFileSchema(null);
   try {
     const payload = await api(
       "/api/file-rows?path=" + encodeURIComponent(path) + "&page=" + state.filePage,
@@ -1330,10 +1335,20 @@ async function loadFileRows() {
       : "No rows";
     document.querySelector("#file-page-prev").disabled = payload.page <= 0;
     document.querySelector("#file-page-next").disabled = !state.fileHasMore;
-    body.replaceChildren(dataTable(payload.items || [], "file-rows-table", payload.columns));
+    const rows = payload.items || [];
+    body.replaceChildren(dataTable(rows, "file-rows-table", payload.columns));
     body.scrollTop = 0;
+    setFileSchema({
+      source: "file",
+      title: path.split("/").pop(),
+      rows,
+      columns: payload.columns || [],
+    });
   } catch (error) {
-    if (state.path === path) body.replaceChildren(note(error.message, true));
+    if (state.path === path) {
+      body.replaceChildren(note(error.message, true));
+      setFileSchema(null);
+    }
   }
 }
 
@@ -3766,6 +3781,12 @@ function setBrowserSchema(snapshot) {
   if (!snapshot && rowsSchemaBtn.getAttribute("aria-expanded") === "true") schemaPop.close();
 }
 
+function setFileSchema(snapshot) {
+  state.fileSchema = snapshot;
+  syncSchemaButton(fileSchemaBtn, snapshot);
+  if (!snapshot && fileSchemaBtn.getAttribute("aria-expanded") === "true") schemaPop.close();
+}
+
 function syncSchemaButton(button, snapshot) {
   const columns = snapshot ? schemaColumns(snapshot.rows, snapshot.columns, snapshot.keys) : [];
   button.classList.toggle("hidden", !columns.length);
@@ -3860,19 +3881,25 @@ function openSchema(snapshot, button) {
   const inspected = columns.map((column) => inspectColumn(column, snapshot.rows));
   const rowCount = (snapshot.rows || []).length;
   const browser = snapshot.source === "browser";
+  const file = snapshot.source === "file";
   state.schemaKind = snapshot.source || "result";
   for (const other of document.querySelectorAll(".schema-btn")) {
     other.setAttribute("aria-expanded", other === button ? "true" : "false");
   }
   schemaPopKicker.textContent = browser ? "Table structure" : "Result structure";
   schemaPopInfo.classList.toggle("hidden", browser);
+  const info = file
+    ? "Based on the rows on this page, not the whole file."
+    : "Based on this query result, not the entire table.";
+  schemaPopInfo.title = info;
+  schemaPopInfo.setAttribute("aria-label", info);
   schemaPopTitle.textContent = snapshot.title || (browser ? "Table" : "Result");
   schemaPopSummary.textContent = inspected.length
     + (inspected.length === 1 ? " column" : " columns")
     + " · "
     + rowCount
     + (rowCount === 1 ? " row" : " rows")
-    + (browser ? " on this page" : "");
+    + (browser || file ? " on this page" : "");
   schemaPopKeys.replaceChildren();
   const keyChips = [];
   for (const item of inspected) {
@@ -3897,11 +3924,13 @@ function openSchema(snapshot, button) {
     chip.append(label);
     schemaPopKeys.append(chip);
   }
-  fillSchemaQuery(browser ? "" : snapshot.statement);
+  fillSchemaQuery(browser || file ? "" : snapshot.statement);
   schemaPopBody.replaceChildren(schemaTable(inspected));
   schemaPopFoot.textContent = browser
     ? "Types come from this page and the keys already listed. No extra query was run."
-    : "Types come from this result. No extra query was run.";
+    : file
+      ? "Types come from this page. No extra query was run."
+      : "Types come from this result. No extra query was run.";
   schemaPop.showModal();
 }
 
