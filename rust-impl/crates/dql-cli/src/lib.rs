@@ -2,6 +2,7 @@ mod api_token;
 pub mod args;
 mod cache_seal;
 pub mod config;
+mod dqlrs_ui;
 pub mod error;
 pub mod help;
 pub mod history;
@@ -46,6 +47,7 @@ const KNOWN_FLAGS: &[&str] = &[
     "--listen",
     "--dir",
     "--load-tables",
+    "--ui",
     "--version",
     "-h",
     "--help",
@@ -100,11 +102,14 @@ pub fn run() -> color_eyre::Result<()> {
     if args.listen.is_some() && !args.web {
         bail!("--listen requires --web");
     }
-    if args.dir.is_some() && !args.web && !args.mcp {
-        bail!("--dir requires --web or --mcp");
+    if args.dir.is_some() && !args.web && !args.mcp && !args.ui {
+        bail!("--dir requires --web, --mcp, or --ui");
     }
-    if args.load_tables && !args.web {
-        bail!("--load-tables requires --web");
+    if args.load_tables && !args.web && !args.ui {
+        bail!("--load-tables requires --web or --ui");
+    }
+    if args.ui && (args.web || args.serve || args.mcp || args.command.is_some()) {
+        bail!("--ui cannot be used with --web, --serve, --mcp, or -c");
     }
     if args.serve && args.command.is_some() {
         bail!("--serve cannot be used with -c/--command");
@@ -119,10 +124,20 @@ pub fn run() -> color_eyre::Result<()> {
         bail!("--mcp cannot be used with --serve or -c/--command");
     }
 
-    if (args.web || args.mcp) && args.host.is_some() {
+    if (args.web || args.mcp || args.ui) && args.host.is_some() {
         set_default_env("AWS_ACCESS_KEY_ID", "fakeid");
         set_default_env("AWS_SECRET_ACCESS_KEY", "fakekey");
         set_default_env("AWS_EC2_METADATA_DISABLED", "true");
+    }
+
+    if args.ui {
+        let dir = match args.dir.clone() {
+            Some(dir) => std::path::PathBuf::from(dir),
+            None => std::env::current_dir().wrap_err("current directory")?,
+        };
+        let session = Session::new_for_serve(&args).wrap_err("failed to start session")?;
+        dqlrs_ui::run(session, dir, args.load_tables)?;
+        return Ok(());
     }
 
     if args.web {

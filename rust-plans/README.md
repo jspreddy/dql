@@ -88,6 +88,16 @@ front end, not a parity gap:
 
 Related: [`todo_unify_cli_pipelines.md`](todo_unify_cli_pipelines.md) (`-c` / REPL / serve should share one `execute_input`).
 
+## Native UI
+
+`dqlrs --ui` is the iced window inside the `dqlrs` binary. It calls the engine in process. The web UI stays.
+
+| Plan | Focus |
+| --- | --- |
+| [`native-ui/prd.md`](native-ui/prd.md) | Feature parity, dropping `/api/*`, an iced 0.14 window |
+| [`native-ui/plan.md`](native-ui/plan.md) | `Studio` in process, then the window. The web UI stays. |
+| [`native-ui/testing.md`](native-ui/testing.md) | `iced_test` in place of Playwright |
+
 ## Security
 
 Plans for locking the on-disk caches and the local API. The query-result cache stays in the workspace. These are plans only.
