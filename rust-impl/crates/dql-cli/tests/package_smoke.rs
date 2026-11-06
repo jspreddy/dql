@@ -128,6 +128,26 @@ fn smoke_help_mentions_serve_and_bind() {
         stderr.contains("--load-tables"),
         "help should mention --load-tables: {stderr}"
     );
+    assert!(
+        stderr.contains("--ui"),
+        "help should mention --ui: {stderr}"
+    );
+}
+
+#[test]
+fn smoke_ui_rejects_web_serve_and_command() {
+    for args in [
+        &["--ui", "--web"][..],
+        &["--ui", "--serve"][..],
+        &["--ui", "-c", "ls"][..],
+    ] {
+        let output = run_raw(args);
+        assert!(
+            !output.status.success(),
+            "dqlrs {args:?} should fail\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }
 
 #[test]

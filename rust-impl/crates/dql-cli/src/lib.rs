@@ -13,6 +13,7 @@ pub mod serve;
 pub mod session;
 pub mod table_cache;
 pub mod throttle;
+mod ui_host;
 pub mod web;
 
 use args::{help_text, CliArgs};
@@ -42,6 +43,7 @@ const KNOWN_FLAGS: &[&str] = &[
     "--serve",
     "--bind",
     "--web",
+    "--ui",
     "--mcp",
     "--listen",
     "--dir",
@@ -100,11 +102,11 @@ pub fn run() -> color_eyre::Result<()> {
     if args.listen.is_some() && !args.web {
         bail!("--listen requires --web");
     }
-    if args.dir.is_some() && !args.web && !args.mcp {
-        bail!("--dir requires --web or --mcp");
+    if args.dir.is_some() && !args.web && !args.mcp && !args.ui {
+        bail!("--dir requires --web, --ui, or --mcp");
     }
-    if args.load_tables && !args.web {
-        bail!("--load-tables requires --web");
+    if args.load_tables && !args.web && !args.ui {
+        bail!("--load-tables requires --web or --ui");
     }
     if args.serve && args.command.is_some() {
         bail!("--serve cannot be used with -c/--command");
@@ -115,11 +117,23 @@ pub fn run() -> color_eyre::Result<()> {
     if args.web && args.command.is_some() {
         bail!("--web cannot be used with -c/--command");
     }
+    if args.ui && args.web {
+        bail!("--ui cannot be used with --web");
+    }
+    if args.ui && args.serve {
+        bail!("--ui cannot be used with --serve");
+    }
+    if args.ui && args.command.is_some() {
+        bail!("--ui cannot be used with -c/--command");
+    }
+    if args.ui && args.mcp {
+        bail!("--ui cannot be used with --mcp");
+    }
     if args.mcp && (args.serve || args.command.is_some()) {
         bail!("--mcp cannot be used with --serve or -c/--command");
     }
 
-    if (args.web || args.mcp) && args.host.is_some() {
+    if (args.web || args.mcp || args.ui) && args.host.is_some() {
         set_default_env("AWS_ACCESS_KEY_ID", "fakeid");
         set_default_env("AWS_SECRET_ACCESS_KEY", "fakekey");
         set_default_env("AWS_EC2_METADATA_DISABLED", "true");
@@ -140,6 +154,27 @@ pub fn run() -> color_eyre::Result<()> {
         };
         let session = Session::new_for_serve(&args).wrap_err("failed to start session")?;
         web::run(session, dir, listen, args.mcp, args.load_tables)?;
+        return Ok(());
+    }
+
+    if args.ui {
+        let dir = match args.dir.clone() {
+            Some(dir) => std::path::PathBuf::from(dir),
+            None => std::env::current_dir().wrap_err("current directory")?,
+        };
+        let endpoint = match args.host.as_deref() {
+            Some(host) => format!("{host}:{}", args.port),
+            None if std::env::var("DQL_BACKEND").ok().as_deref() == Some("memory") => {
+                "memory".to_string()
+            }
+            None => "dynamodb".to_string(),
+        };
+        let session = Session::new_for_serve(&args).wrap_err("failed to start session")?;
+        let host = ui_host::LiveHost::new(session, dir, endpoint);
+        if args.load_tables {
+            host.load_tables_in_background();
+        }
+        dql_ui::run_native(Box::new(host));
         return Ok(());
     }
 

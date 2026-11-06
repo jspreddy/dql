@@ -58,6 +58,12 @@ pub struct CliArgs {
     pub web: bool,
 
     #[arg(
+        long = "ui",
+        help = "Open the native query editor and table browser. Calls the engine in process."
+    )]
+    pub ui: bool,
+
+    #[arg(
         long = "mcp",
         help = "MCP tools. Alone, stdio. With --web, HTTP at /mcp on the web host."
     )]
@@ -73,13 +79,13 @@ pub struct CliArgs {
     #[arg(
         long = "dir",
         value_name = "DIR",
-        help = "With --web or --mcp, folder of .dql files (default: current directory)"
+        help = "With --web, --ui, or --mcp, folder of .dql files (default: current directory)"
     )]
     pub dir: Option<String>,
 
     #[arg(
         long = "load-tables",
-        help = "With --web, load every table and its definition in the background"
+        help = "With --web or --ui, load every table and its definition in the background"
     )]
     pub load_tables: bool,
 
@@ -105,10 +111,11 @@ pub fn help_text() -> String {
            --serve              Headless JSON-lines worker (stdio, or --bind on loopback). Not a TTY REPL.\n\
            --bind <ADDR>        With --serve, listen on loopback HOST:PORT (or PORT as 127.0.0.1:PORT)\n\
            --web                Serve the query editor and table browser\n\
+           --ui                 Open the native query editor. Calls the engine in process\n\
            --mcp                MCP tools. Alone, stdio. With --web, HTTP at /mcp\n\
            --listen <ADDR>      With --web, listen on loopback HOST:PORT (default 127.0.0.1:8765)\n\
-           --dir <DIR>          With --web or --mcp, folder of .dql files (default: current directory)\n\
-           --load-tables        With --web, load every table and its definition in the background\n\
+           --dir <DIR>          With --web, --ui, or --mcp, folder of .dql files (default: current directory)\n\
+           --load-tables        With --web or --ui, load every table and its definition in the background\n\
            notebook, --notebook Start JupyterLab with a DQL (Rust) kernel (this binary)\n\
            --version            Print the version and exit\n\n\
      Environment:\n\
@@ -226,5 +233,6 @@ mod tests {
         assert!(args.web);
         assert!(args.load_tables);
         assert!(help_text().contains("--load-tables"));
+        assert!(help_text().contains("--ui"));
     }
 }

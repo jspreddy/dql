@@ -71,7 +71,7 @@ Do not assert a screenshot as the pass condition. A few geometry checks replace 
 
 | Recipe | What it does |
 | --- | --- |
-| `just ui-test` | `cargo test -p dql-cli --features ui --lib gpui_ui::` with `test-support` from dev-dependencies. No DynamoDB, no browser. |
+| `just ui-test` | `cargo test -p dql-ui --lib`. `test-support` is a dev-dependency of `dql-ui`. No DynamoDB, no browser, no feature flag. |
 | `just ui-test files` | The same, filtered to one module, the way `just web-test -- tests/files.spec.js` filters Playwright. |
 | `just ui` | The real window. See [14-gpui.md](14-gpui.md). |
 

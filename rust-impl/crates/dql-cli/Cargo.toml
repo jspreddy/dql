@@ -16,6 +16,7 @@ default = []
 watch = ["dql-engine/cloudwatch"]
 
 [dependencies]
+dql-ui = { path = "../dql-ui" }
 aes-gcm = "0.10"
 better-panic = "0.3.0"
 clap.workspace = true
