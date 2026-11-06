@@ -135,7 +135,7 @@ const KEYWORDS: &[&str] = &[
     "THROTTLE",
 ];
 
-fn spans(line: &str) -> Vec<(Range<usize>, Tone)> {
+pub(super) fn spans(line: &str) -> Vec<(Range<usize>, Tone)> {
     let trimmed = line.trim_start();
     if trimmed.starts_with("--") {
         return vec![(0..line.len(), Tone::Comment)];

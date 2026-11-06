@@ -1812,6 +1812,83 @@ SELECT * FROM demo WHERE id = 'a';
     }
 
     #[test]
+    fn structure_and_row_popups_follow_the_web() {
+        let (_dir, mut app) = workspace();
+        let script = "\
+DROP TABLE IF EXISTS shape_demo;
+CREATE TABLE shape_demo (id STRING HASH KEY, sk NUMBER RANGE KEY);
+INSERT INTO shape_demo (id, sk, extra) VALUES ('a', 1, 'wide-sample'), ('b', 2, 'wide-sample');
+INSERT INTO shape_demo (id, sk) VALUES ('c', 3);
+SCAN * FROM shape_demo;
+CREATE TABLE keyed_demo (id STRING HASH KEY, sk NUMBER RANGE KEY) GLOBAL INDEX ('by-n', n NUMBER, sk NUMBER);
+INSERT INTO keyed_demo (id, sk, label, n) VALUES ('a', 2, 'alpha', 7);
+SELECT * FROM keyed_demo WHERE n = 7 AND sk = 2 USING by-n;
+";
+        let cards = {
+            let mut studio = lock(&app.studio);
+            studio.run_text("widgets.dql", script, &app.progress)
+        };
+        assert!(cards.iter().all(|card| card.ok), "{cards:?}");
+        let _ = app.update(Message::RunDone(cards));
+
+        let scan = app
+            .results
+            .iter()
+            .position(|card| card.statement.contains("SCAN * FROM shape_demo"))
+            .expect("scan card");
+        let _ = app.update(Message::ShowResultSchema(scan));
+        for label in [
+            "RESULT STRUCTURE",
+            "shape_demo",
+            "3 columns · 3 rows",
+            "Hash key",
+            "Range key",
+            "STRING",
+            "NUMBER",
+            "3/3",
+            "2/3",
+            "wide-sample",
+            "—",
+            "Types come from this result. No extra query was run.",
+            "SCAN",
+        ] {
+            show_text(&app, label);
+        }
+        let _ = app.update(Message::CloseSchema);
+        assert!(app.schema.is_none());
+
+        let select = app
+            .results
+            .iter()
+            .position(|card| card.statement.contains("USING by-n"))
+            .expect("index read");
+        let json = serde_json::to_string_pretty(&app.results[select].items[0]).unwrap();
+        let _ = app.update(Message::ShowRow(json));
+        for label in ["ROW", "id = a", "sk = 2", "n = 7", "\"label\"", "\"alpha\""] {
+            show_text(&app, label);
+        }
+        let _ = app.update(Message::Stop);
+        assert!(app.row_json.is_none());
+
+        let _ = app.update(Message::OpenTable("shape_demo".to_string()));
+        let _ = app.update(Message::ShowTableSchema);
+        show_text(&app, "TABLE STRUCTURE");
+        show_text(&app, "3 columns · 3 rows on this page");
+        show_text(
+            &app,
+            "Types come from this page and the keys already listed. No extra query was run.",
+        );
+    }
+
+    fn show_text(app: &App, label: &str) {
+        std::env::set_var("ICED_TEST_BACKEND", "tiny-skia");
+        let mut simulator = iced_test::Simulator::new(app.view());
+        simulator
+            .find(label)
+            .unwrap_or_else(|err| panic!("missing {label}: {err:?}"));
+    }
+
+    #[test]
     fn growing_table_list_keeps_each_row_state() {
         let (_dir, mut app) = workspace();
         let _ = app.update(Message::Mode(Mode::Tables));

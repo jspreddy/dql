@@ -14,6 +14,7 @@ pub enum Mark {
     Forward,
     Play,
     Schema,
+    Info,
     Close,
     Eye,
     Hash,
@@ -55,6 +56,7 @@ impl<Message> canvas::Program<Message> for Glyph {
 fn view_box(kind: Mark) -> f32 {
     match kind {
         Mark::Close | Mark::Hash | Mark::Range => 12.0,
+        Mark::Info => 14.0,
         _ => 16.0,
     }
 }
@@ -100,6 +102,13 @@ fn paint(frame: &mut canvas::Frame, kind: Mark, color: Color) {
             );
             frame.stroke(&Path::line(pt(2.5, 6.4), pt(13.5, 6.4)), pen);
             frame.stroke(&Path::line(pt(6.7, 3.2), pt(6.7, 12.8)), pen);
+        }
+        Mark::Info => {
+            let pen = stroke(color, 1.4);
+            frame.stroke(&Path::circle(pt(7.0, 7.0), 5.2), pen);
+            let stem = stroke(color, 1.5);
+            frame.stroke(&Path::line(pt(7.0, 6.3), pt(7.0, 9.7)), stem);
+            frame.stroke(&Path::line(pt(7.0, 4.4), pt(7.0, 4.6)), stem);
         }
         Mark::Close => {
             let pen = stroke(color, 1.6);

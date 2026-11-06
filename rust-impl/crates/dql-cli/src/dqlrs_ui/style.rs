@@ -215,38 +215,6 @@ pub fn menu_card(p: Palette) -> impl Fn(&Theme) -> container::Style {
     }
 }
 
-pub fn pop_card(p: Palette) -> impl Fn(&Theme) -> container::Style {
-    move |_| {
-        container::Style::default()
-            .background(p.paper)
-            .color(p.text)
-            .border(Border {
-                color: p.line,
-                width: 1.0,
-                radius: 8.0.into(),
-            })
-            .shadow(Shadow {
-                color: Color {
-                    r: 0.06,
-                    g: 0.09,
-                    b: 0.15,
-                    a: if p.dark { 0.55 } else { 0.28 },
-                },
-                offset: Vector::new(0.0, 18.0),
-                blur_radius: 48.0,
-            })
-    }
-}
-
-pub fn scrim(dark: bool) -> Color {
-    Color {
-        r: if dark { 0.0 } else { 0.06 },
-        g: if dark { 0.0 } else { 0.09 },
-        b: if dark { 0.0 } else { 0.15 },
-        a: if dark { 0.62 } else { 0.38 },
-    }
-}
-
 pub struct ColumnPaint {
     pub head: Color,
     pub head_line: Color,
