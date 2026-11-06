@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+
+# No sub-agents
+
+Do not launch sub-agents. Do not use computer use.
+
+When the work touches the web UI, or you need to see what the web UI shows, add or extend a Playwright test under `dqlrs-web/playwright/tests/` and run `just web-test`. Save screenshots with `playwrightArtifact`, as in the Playwright screenshots rule. Use those screenshots as the evidence of what the page showed.
