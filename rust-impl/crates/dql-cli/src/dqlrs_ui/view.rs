@@ -1,119 +1,258 @@
 //! Layout for the native window. It follows the web UI: header, file tree,
 //! editor, results, and a table browser.
 
-use iced::widget::{button, column, container, mouse_area, row, scrollable, text, text_input};
+use iced::widget::{
+    button, column, container, mouse_area, row, scrollable, stack, text, text_input,
+};
 use iced::{Color, Element, Fill, Length};
 
 use crate::web::files::Node;
-use crate::web::shape::split_statements;
 use crate::web::studio::{menu_labels, StatementCard};
 
 use super::highlight;
+use super::style::{self, Palette};
 use super::{App, Dialog, Message, Mode};
 
-const TEAL: Color = Color::from_rgb8(0x0f, 0x76, 0x6e);
-const BLUE: Color = Color::from_rgb8(0x25, 0x63, 0xeb);
-const DANGER: Color = Color::from_rgb8(0xb9, 0x1c, 0x1c);
-
 pub fn view(app: &App) -> Element<'_, Message> {
+    let colors = style::palette(app.prefs.dark);
     let body = match app.mode {
         Mode::Query => query(app),
-        Mode::Tables => tables(app),
+        Mode::Tables => tables(app, colors),
     };
-    column![header(app), body, status_bar(app)]
-        .spacing(0)
-        .into()
+    let window = column![header(app), body, status_bar(app)].spacing(0);
+    match popup(app) {
+        Some(layer) => stack![window, layer].into(),
+        None => window.into(),
+    }
 }
 
 fn header(app: &App) -> Element<'_, Message> {
-    let brand = container(text("dqlrs").size(16))
-        .padding([8, 14])
-        .style(|_theme| {
-            container::Style::default().background(if app.show_env {
-                TEAL
-            } else {
-                Color::TRANSPARENT
-            })
-        });
-    let mode = row![
-        mode_button("Query", app.mode == Mode::Query, Message::Mode(Mode::Query)),
-        mode_button(
-            "Tables",
-            app.mode == Mode::Tables,
-            Message::Mode(Mode::Tables)
-        ),
-    ]
-    .spacing(0);
-    let mut search = column![text_input("Search tables, columns, queries", &app.search)
+    let p = style::palette(app.prefs.dark);
+    let modes = container(
+        row![
+            mode_button(
+                "Query",
+                app.mode == Mode::Query,
+                Message::Mode(Mode::Query),
+                p
+            ),
+            mode_button(
+                "Tables",
+                app.mode == Mode::Tables,
+                Message::Mode(Mode::Tables),
+                p
+            ),
+        ]
+        .spacing(0),
+    )
+    .style(move |_| {
+        iced::widget::container::Style::default().border(iced::Border {
+            color: p.header_line,
+            width: 1.0,
+            radius: 6.0.into(),
+        })
+    });
+    let search = text_input("Search tables, columns, queries", &app.search)
         .on_input(Message::Search)
-        .width(Fill)]
-    .spacing(2);
-    for (index, hit) in app.hits.iter().take(8).enumerate() {
-        let label = format!("{}  {}", hit.kind, hit.title);
-        search = search.push(
-            button(text(label).size(12))
-                .on_press(Message::PickHit(index))
-                .width(Fill),
-        );
-    }
-    let endpoint = button(text(app.endpoint.clone()).size(12)).on_press(Message::ToggleEnv);
-    let theme = button(text(if app.prefs.dark { "Light" } else { "Dark" }).size(12))
-        .on_press(Message::ToggleTheme);
-    let settings = button(text("Settings").size(12)).on_press(Message::ToggleSettings);
-    let bar = row![brand, mode, search, endpoint, theme, settings]
-        .spacing(8)
+        .size(12)
+        .padding([2, 10])
+        .width(Fill)
+        .style(style::header_field(p));
+    let endpoint = button(text(app.endpoint.clone()).size(12))
+        .on_press(Message::ToggleEnv)
+        .padding([1, 8])
+        .style(style::paint(p, style::Look::Pill));
+    let theme = button(text(if app.prefs.dark { "☀" } else { "☾" }).size(13))
+        .on_press(Message::ToggleTheme)
+        .padding([2, 8])
+        .style(style::paint(p, style::Look::Bar));
+    let settings = button(text("☰").size(14))
+        .on_press(Message::ToggleSettings)
+        .padding([2, 8])
+        .style(style::paint(p, style::Look::Bar));
+    let bar = container(
+        row![
+            text("dqlrs").size(13).color(p.header_fg),
+            modes,
+            search,
+            endpoint,
+            theme,
+            settings,
+        ]
+        .spacing(10)
         .align_y(iced::alignment::Vertical::Center)
-        .padding([4, 8]);
-    let mut col = column![bar].spacing(4);
-    if app.show_env {
-        for (key, value) in &app.env_lines {
-            col = col.push(text(format!("{key}: {value}")).size(12));
-        }
-    }
-    if app.show_settings {
-        col = col.push(settings_panel(app));
+        .padding([0, 10])
+        .height(Length::Fixed(36.0)),
+    )
+    .width(Fill)
+    .style(style::fill(p.bar));
+    let mut col = column![bar].spacing(0);
+    if !app.hits.is_empty() || app.show_env || app.show_settings {
+        col = col.push(header_pop(app, p));
     }
     col.into()
 }
 
-fn settings_panel(app: &App) -> Element<'_, Message> {
+fn header_pop(app: &App, p: Palette) -> Element<'_, Message> {
+    let mut body = column![].spacing(8).padding([8, 12]);
+    if !app.hits.is_empty() {
+        body = body.push(search_list(app, p));
+    }
+    if app.show_env {
+        let mut env = column![].spacing(2);
+        for (key, value) in &app.env_lines {
+            env = env.push(text(format!("{key}: {value}")).size(12).color(p.muted));
+        }
+        body = body.push(
+            container(env)
+                .width(Fill)
+                .padding(10)
+                .style(style::menu_card(p)),
+        );
+    }
+    if app.show_settings {
+        body = body.push(
+            container(settings_panel(app, p))
+                .width(Fill)
+                .padding(10)
+                .style(style::menu_card(p)),
+        );
+    }
+    container(body)
+        .width(Fill)
+        .style(style::fill(p.canvas))
+        .into()
+}
+
+fn search_list(app: &App, p: Palette) -> Element<'_, Message> {
+    let groups = [
+        ("Tables", &["table"][..]),
+        ("Columns", &["column", "index"][..]),
+        ("Queries", &["query"][..]),
+    ];
+    let mut list = column![].spacing(0).padding(6);
+    let mut shown = 0usize;
+    for (label, kinds) in groups {
+        let rows: Vec<_> = app
+            .hits
+            .iter()
+            .enumerate()
+            .filter(|(_, hit)| kinds.contains(&hit.kind.as_str()))
+            .collect();
+        if rows.is_empty() {
+            continue;
+        }
+        list = list.push(text(label.to_ascii_uppercase()).size(11).color(p.muted));
+        for (index, hit) in rows {
+            shown += 1;
+            let mut lines = column![row![
+                text(search_kind(&hit.kind))
+                    .size(11)
+                    .color(p.muted)
+                    .width(Length::Fixed(58.0)),
+                text(hit.title.clone()).size(13).color(p.text),
+            ]
+            .spacing(8)]
+            .spacing(0);
+            if !hit.detail.is_empty() {
+                lines = lines.push(
+                    row![
+                        text("").width(Length::Fixed(58.0)),
+                        text(hit.detail.clone()).size(12).color(p.muted),
+                    ]
+                    .spacing(8),
+                );
+            }
+            list = list.push(
+                button(lines)
+                    .on_press(Message::PickHit(index))
+                    .width(Fill)
+                    .padding([5, 6])
+                    .style(style::paint(p, style::Look::Quiet)),
+            );
+        }
+    }
+    if shown == 0 {
+        list = list.push(text("No matches").size(12).color(p.muted));
+    }
+    container(list)
+        .width(Fill)
+        .style(style::menu_card(p))
+        .into()
+}
+
+fn search_kind(kind: &str) -> String {
+    match kind {
+        "table" => "Table",
+        "column" => "Column",
+        "index" => "Index",
+        _ => "Query",
+    }
+    .to_string()
+}
+
+fn settings_panel(app: &App, p: Palette) -> Element<'_, Message> {
     column![
-        button(text(if app.prefs.write_bands {
-            "Write bands: on"
-        } else {
-            "Write bands: off"
-        }))
-        .on_press(Message::ToggleBands),
-        text("Ctrl+Enter or Ctrl+\\ runs the statement at the cursor.").size(12),
-        text("Esc stops a run. Ctrl+S saves. The editor also saves as you type.").size(12),
-        text("Right-click a file for Run file, rename, move, and delete.").size(12),
-        text("A word of two letters or more lists matching tables, columns, and queries under the editor.").size(12),
+        text("Highlight").size(11).color(p.muted),
+        button(
+            text(if app.prefs.write_bands {
+                "Write bands on"
+            } else {
+                "Write bands off"
+            })
+            .size(13)
+            .color(p.text)
+        )
+        .on_press(Message::ToggleBands)
+        .padding([4, 8])
+        .style(style::paint(p, style::Look::Quiet)),
+        text("Keyboard").size(11).color(p.muted),
+        text("Run the statement at the cursor    Ctrl + Enter    Ctrl + \\")
+            .size(12)
+            .color(p.text),
+        text("Stop a run    Esc     Save    Ctrl + S")
+            .size(12)
+            .color(p.text),
+        text("Right-click a file for Run file, rename, move, and delete.")
+            .size(12)
+            .color(p.muted),
     ]
     .spacing(4)
-    .padding(8)
     .into()
 }
 
-fn mode_button(label: &'static str, active: bool, message: Message) -> Element<'static, Message> {
-    let button = button(text(label).size(13)).on_press(message);
-    if active {
-        button.style(button::primary)
-    } else {
-        button.style(button::secondary)
-    }
-    .into()
+fn mode_button(
+    label: &'static str,
+    active: bool,
+    message: Message,
+    p: Palette,
+) -> Element<'static, Message> {
+    let style = style::paint(
+        p,
+        if active {
+            style::Look::ModeOn
+        } else {
+            style::Look::ModeOff
+        },
+    );
+    button(text(label).size(13))
+        .on_press(message)
+        .padding([3, 14])
+        .style(style)
+        .into()
 }
 
 fn query(app: &App) -> Element<'_, Message> {
+    let p = style::palette(app.prefs.dark);
     row![
-        tree_pane(app),
+        tree_pane(app, p),
         column![
-            editor_head(app),
-            dialog(app),
-            editor_body(app),
-            results(app)
+            editor_head(app, p),
+            dialog(app, p),
+            editor_body(app, p),
+            results(app, p)
         ]
-        .spacing(4)
+        .spacing(0)
         .width(Fill)
     ]
     .spacing(0)
@@ -121,87 +260,152 @@ fn query(app: &App) -> Element<'_, Message> {
     .into()
 }
 
-fn tree_pane(app: &App) -> Element<'_, Message> {
-    let mut tree = column![row![
-        button(text("Files").size(12)).on_press(Message::MenuRoot),
-        button(text("<").size(12)).on_press(Message::Nav(-24.0)),
-        button(text(">").size(12)).on_press(Message::Nav(24.0)),
-    ]
-    .spacing(4)]
-    .spacing(2)
-    .padding(6);
-    if let Some(menu) = &app.menu {
-        tree = tree.push(text(format!("{}  {}", menu.kind, display_path(&menu.path))).size(11));
-        for label in menu_labels(&menu.kind) {
-            let mut button = button(text(label).size(12))
-                .on_press(Message::MenuAct(label))
-                .width(Fill);
-            if label == "Delete" || label == "Run file" || label == "Run folder" {
-                button = button.style(button::danger);
-            }
-            tree = tree.push(button);
-        }
-        tree = tree.push(button(text("Close menu").size(11)).on_press(Message::CloseMenu));
+fn tree_pane(app: &App, p: Palette) -> Element<'_, Message> {
+    let head = container(
+        row![
+            button(text("Files").size(13).color(p.text))
+                .on_press(Message::MenuRoot)
+                .padding([2, 0])
+                .style(style::paint(p, style::Look::Quiet)),
+            iced::widget::Space::new().width(Fill),
+            button(text("‹").size(12).color(p.muted))
+                .on_press(Message::Nav(-24.0))
+                .padding([0, 6])
+                .style(style::paint(p, style::Look::Control)),
+            button(text("›").size(12).color(p.muted))
+                .on_press(Message::Nav(24.0))
+                .padding([0, 6])
+                .style(style::paint(p, style::Look::Control)),
+            button(text("+").size(14).color(p.text))
+                .on_press(Message::MenuAct("New file"))
+                .padding([0, 7])
+                .style(style::paint(p, style::Look::Control)),
+        ]
+        .spacing(4)
+        .align_y(iced::alignment::Vertical::Center),
+    )
+    .width(Fill)
+    .height(Length::Fixed(30.0))
+    .padding([0, 8])
+    .style(style::fill(p.side));
+    let mut tree = column![head].spacing(0);
+    if app.menu.as_ref().is_some_and(|menu| menu.kind == "root") {
+        tree = tree.push(context_menu("root", p));
     }
     if let Some(root) = &app.tree {
         if let Some(children) = &root.children {
             for child in children {
-                tree = tree.push(node_view(app, child, 0));
+                tree = tree.push(node_view(app, child, 0, p));
             }
         }
     }
     container(scrollable(tree).height(Fill))
         .width(Length::Fixed(app.prefs.nav))
         .height(Fill)
+        .style(style::fill(p.side))
         .into()
 }
 
-fn node_view<'a>(app: &'a App, node: &'a Node, depth: usize) -> Element<'a, Message> {
-    let pad = Length::Fixed(depth as f32 * 12.0);
+fn context_menu(kind: &str, p: Palette) -> Element<'static, Message> {
+    let labels = menu_labels(kind);
+    let mut items = column![].spacing(0).padding(4).width(Length::Fixed(188.0));
+    for (index, label) in labels.iter().copied().enumerate() {
+        let rule = label == "Delete"
+            || (index == 1 && matches!(labels.first().copied(), Some("Run file" | "Run folder")));
+        if rule {
+            items = items.push(
+                container(text(""))
+                    .height(1)
+                    .width(Fill)
+                    .style(style::fill(p.line)),
+            );
+        }
+        let danger = matches!(label, "Delete" | "Run file" | "Run folder");
+        items = items.push(
+            button(text(label).size(13))
+                .on_press(Message::MenuAct(label))
+                .width(Fill)
+                .padding([4, 8])
+                .style(style::paint(
+                    p,
+                    if danger {
+                        style::Look::Danger
+                    } else {
+                        style::Look::Quiet
+                    },
+                )),
+        );
+    }
+    container(items)
+        .padding([2, 6])
+        .style(style::menu_card(p))
+        .into()
+}
+
+fn node_view<'a>(app: &'a App, node: &'a Node, depth: usize, p: Palette) -> Element<'a, Message> {
+    let pad = Length::Fixed(depth as f32 * 14.0);
+    let mut col = column![tree_row(app, node, pad, p)].spacing(0);
+    if app
+        .menu
+        .as_ref()
+        .is_some_and(|menu| menu.path == node.path && menu.kind == node.kind)
+    {
+        col = col.push(context_menu(node.kind, p));
+    }
     if node.kind == "dir" {
-        let mut col = column![tree_row(app, node, pad)].spacing(0);
         if let Some(children) = &node.children {
             for child in children {
-                col = col.push(node_view(app, child, depth + 1));
+                col = col.push(node_view(app, child, depth + 1, p));
             }
         }
-        col.into()
-    } else {
-        tree_row(app, node, pad)
     }
+    col.into()
 }
 
-fn tree_row<'a>(app: &'a App, node: &'a Node, pad: Length) -> Element<'a, Message> {
+fn tree_row<'a>(app: &'a App, node: &'a Node, pad: Length, p: Palette) -> Element<'a, Message> {
     let open = node.kind == "file" && node.path == app.open_path;
     let running = node.kind == "file" && node.path == app.running_path;
+    let twist = if node.kind == "dir" { "▾" } else { " " };
     let mark = if running {
-        text(if app.pulse { "●" } else { "○" }).size(12).color(BLUE)
+        container(text(""))
+            .width(7)
+            .height(7)
+            .style(style::chip(p.blue, p.blue))
     } else {
-        text(" ").size(12)
+        container(text("")).width(7).height(7)
     };
-    let label = text(node.name.clone()).size(13);
     let inner = row![
         container(text("")).width(pad),
-        label,
+        text(twist)
+            .size(10)
+            .color(p.muted)
+            .width(Length::Fixed(14.0)),
+        text(node.name.clone()).size(13).color(p.text),
+        iced::widget::Space::new().width(Fill),
         mark,
-        if open {
-            container(text(""))
-                .width(2)
-                .height(18)
-                .style(|_theme| container::Style::default().background(TEAL))
-        } else {
-            container(text("")).width(2).height(18)
-        }
+        container(text(""))
+            .width(2)
+            .height(Length::Fixed(22.0))
+            .style(style::fill(if open { p.teal } else { Color::TRANSPARENT })),
     ]
-    .spacing(6)
+    .spacing(4)
+    .height(Length::Fixed(22.0))
+    .padding([0, 6])
     .align_y(iced::alignment::Vertical::Center);
-    mouse_area(inner)
+    let row = mouse_area(inner)
         .on_press(Message::Open(node.path.clone()))
-        .on_right_press(Message::Menu(node.path.clone(), node.kind.to_string()))
+        .on_right_press(Message::Menu(node.path.clone(), node.kind.to_string()));
+    container(row)
+        .width(Fill)
+        .style(style::fill(if open {
+            p.selected
+        } else {
+            Color::TRANSPARENT
+        }))
         .into()
 }
 
-fn editor_head(app: &App) -> Element<'_, Message> {
+fn editor_head(app: &App, p: Palette) -> Element<'_, Message> {
     let name = if app.open_path.is_empty() {
         "No file open".to_string()
     } else {
@@ -212,93 +416,214 @@ fn editor_head(app: &App) -> Element<'_, Message> {
             .to_string()
     };
     let title = column![
-        text(name).size(14),
-        if app.open_path.is_empty() {
-            container(text("")).height(0)
-        } else {
-            container(text(""))
-                .height(2)
-                .width(Fill)
-                .style(|_theme| container::Style::default().background(TEAL))
-        }
+        text(name).size(13).color(p.text),
+        container(text(""))
+            .height(2)
+            .width(Fill)
+            .style(style::fill(if app.open_path.is_empty() {
+                p.paper
+            } else {
+                p.teal
+            })),
     ]
     .spacing(0);
-    let mut buttons = row![
-        button(text("<").size(12)).on_press(Message::Results(-40.0)),
-        button(text(">").size(12)).on_press(Message::Results(40.0)),
-    ]
-    .spacing(4);
+    let mut buttons = row![].spacing(6);
+    if !app.lint.is_empty() {
+        let errors = app
+            .lint
+            .iter()
+            .filter(|issue| issue.severity == "error")
+            .count();
+        let label = if errors > 0 {
+            format!("{errors} error{}", if errors == 1 { "" } else { "s" })
+        } else {
+            format!(
+                "{} warning{}",
+                app.lint.len(),
+                if app.lint.len() == 1 { "" } else { "s" }
+            )
+        };
+        buttons = buttons.push(
+            container(
+                text(label)
+                    .size(12)
+                    .color(if errors > 0 { p.danger } else { p.amber }),
+            )
+            .height(22)
+            .padding([2, 7])
+            .style(style::fill(if errors > 0 {
+                if p.dark {
+                    style::rgb(0x3f, 0x1d, 0x1d)
+                } else {
+                    style::rgb(0xfe, 0xf2, 0xf2)
+                }
+            } else {
+                p.amber_bg
+            })),
+        );
+    }
     if !app.open_path.is_empty() {
         buttons = buttons.push(
-            button(text("Run file"))
+            button(text("Run file").size(12))
                 .on_press(Message::RunFile)
-                .style(button::danger),
+                .padding([0, 7])
+                .height(22)
+                .style(style::paint(p, style::Look::Outline)),
+        );
+        buttons = buttons.push(
+            button(text("Run").size(12))
+                .on_press(Message::RunCursor)
+                .padding([0, 8])
+                .height(22)
+                .style(style::paint(p, style::Look::Primary)),
         );
     }
     if !app.running_path.is_empty() {
-        buttons = buttons.push(button(text("Stop")).on_press(Message::Stop));
+        buttons = buttons.push(
+            button(text("Stop").size(12))
+                .on_press(Message::Stop)
+                .padding([3, 10])
+                .style(style::paint(p, style::Look::Stop)),
+        );
     }
-    row![title, buttons]
-        .spacing(8)
-        .align_y(iced::alignment::Vertical::Center)
-        .padding([4, 8])
-        .into()
+    container(
+        row![title, buttons]
+            .spacing(8)
+            .align_y(iced::alignment::Vertical::Center)
+            .padding([4, 10])
+            .height(Length::Fixed(36.0)),
+    )
+    .width(Fill)
+    .style(style::fill(p.paper))
+    .into()
 }
 
-fn dialog(app: &App) -> Element<'_, Message> {
+fn dialog(app: &App, p: Palette) -> Element<'_, Message> {
     match &app.dialog {
         Dialog::None => container(text("")).height(0).into(),
-        Dialog::Conflict => row![
-            text("This file changed on disk. Your edits were kept.").size(12),
-            button(text("Load disk")).on_press(Message::ReloadDisk),
-            button(text("Keep mine")).on_press(Message::KeepEdits),
-        ]
-        .spacing(8)
-        .padding(8)
+        Dialog::Conflict => container(
+            row![
+                text("This file changed on disk. Your edits were kept.")
+                    .size(12)
+                    .color(p.amber),
+                button(text("Load disk").size(12))
+                    .on_press(Message::ReloadDisk)
+                    .padding([3, 8])
+                    .style(style::paint(p, style::Look::Primary)),
+                button(text("Keep mine").size(12))
+                    .on_press(Message::KeepEdits)
+                    .padding([3, 8])
+                    .style(style::paint(p, style::Look::Quiet)),
+            ]
+            .spacing(8)
+            .align_y(iced::alignment::Vertical::Center)
+            .padding(8),
+        )
+        .width(Fill)
+        .style(style::fill(p.amber_bg))
         .into(),
-        Dialog::Name { title, .. } => row![
-            text(*title).size(13),
-            text_input("name", &app.dialog_text).on_input(Message::DialogText),
-            button(text("OK")).on_press(Message::DialogOk),
-            button(text("Cancel")).on_press(Message::DialogCancel),
-        ]
-        .spacing(8)
-        .padding(8)
+        Dialog::Name { title, .. } => container(
+            row![
+                text(*title).size(13).color(p.text),
+                text_input("name", &app.dialog_text)
+                    .on_input(Message::DialogText)
+                    .size(13)
+                    .padding([4, 8])
+                    .style(style::field(p)),
+                button(text("OK").size(12))
+                    .on_press(Message::DialogOk)
+                    .padding([3, 10])
+                    .style(style::paint(p, style::Look::Primary)),
+                button(text("Cancel").size(12))
+                    .on_press(Message::DialogCancel)
+                    .padding([3, 8])
+                    .style(style::paint(p, style::Look::Quiet)),
+            ]
+            .spacing(8)
+            .align_y(iced::alignment::Vertical::Center)
+            .padding(8),
+        )
+        .width(Fill)
+        .style(style::fill(p.paper))
         .into(),
-        Dialog::Move { path } => row![
-            text(format!("Move {path} to")).size(12),
-            text_input("folder or path", &app.dialog_text).on_input(Message::DialogText),
-            button(text("Move")).on_press(Message::DialogOk),
-            button(text("Cancel")).on_press(Message::DialogCancel),
-        ]
-        .spacing(8)
-        .padding(8)
+        Dialog::Move { path } => container(
+            row![
+                text(format!("Move {path} to")).size(12).color(p.text),
+                text_input("folder or path", &app.dialog_text)
+                    .on_input(Message::DialogText)
+                    .size(13)
+                    .padding([4, 8])
+                    .style(style::field(p)),
+                button(text("Move").size(12))
+                    .on_press(Message::DialogOk)
+                    .padding([3, 10])
+                    .style(style::paint(p, style::Look::Primary)),
+                button(text("Cancel").size(12))
+                    .on_press(Message::DialogCancel)
+                    .padding([3, 8])
+                    .style(style::paint(p, style::Look::Quiet)),
+            ]
+            .spacing(8)
+            .align_y(iced::alignment::Vertical::Center)
+            .padding(8),
+        )
+        .width(Fill)
+        .style(style::fill(p.paper))
         .into(),
     }
 }
 
-fn editor_body(app: &App) -> Element<'_, Message> {
+fn editor_body(app: &App, p: Palette) -> Element<'_, Message> {
     let source = editor_text_view(app);
-    let statements = split_statements(&source);
-    let mut gutter = column![].spacing(2).width(Length::Fixed(36.0));
-    for statement in &statements {
-        let write = app.prefs.write_bands
-            && statement_word(statement).is_some_and(|word| {
-                matches!(word, "INSERT" | "UPDATE" | "DELETE" | "DROP" | "CREATE")
-            });
-        let mut play = button(text(if write { "▸" } else { "▶" }).size(11))
-            .on_press(Message::RunStatement(statement.clone()))
-            .padding(2);
-        if write {
-            play = play.style(button::danger);
-        }
-        gutter = gutter.push(play);
+    let lines: Vec<&str> = if source.is_empty() {
+        vec![""]
+    } else {
+        source.split('\n').collect()
+    };
+    let mut gutter = column![]
+        .spacing(0)
+        .width(Length::Fixed(42.0))
+        .padding([8.0, 0.0]);
+    for (index, line) in lines.iter().enumerate() {
+        let number = index + 1;
+        let issue = app.lint.iter().find(|issue| issue.line == number);
+        let write = app.prefs.write_bands && line_is_write(line);
+        let mark = if issue.is_some() { "●" } else { "" };
+        gutter = gutter.push(
+            container(
+                row![
+                    text(mark).size(8).color(
+                        if issue.is_some_and(|issue| issue.severity == "error") {
+                            p.danger
+                        } else {
+                            p.amber
+                        }
+                    ),
+                    text(number.to_string()).size(11).color(p.muted),
+                ]
+                .spacing(2)
+                .align_y(iced::alignment::Vertical::Center),
+            )
+            .height(18)
+            .width(Fill)
+            .padding([0.0, 4.0])
+            .style(style::fill(if write {
+                Color {
+                    a: if p.dark { 0.28 } else { 0.10 },
+                    ..p.danger
+                }
+            } else {
+                Color::TRANSPARENT
+            })),
+        );
     }
     let editor = highlight::editor(&app.editor)
         .on_action(Message::Editor)
+        .size(13)
+        .line_height(iced::widget::text::LineHeight::Absolute(18.0.into()))
         .height(Fill)
-        .padding(8);
-    let mut below = column![].spacing(2);
+        .padding([8.0, 10.0]);
+    let mut below = column![].spacing(4);
     if !app.running_path.is_empty() {
         let total = app.live.total.unwrap_or(0);
         let bar = progress_bar(app.live.done, total);
@@ -308,24 +633,41 @@ fn editor_body(app: &App) -> Element<'_, Message> {
                 app.running_path, app.live.phase, app.live.done, total
             ))
             .size(12)
-            .color(BLUE),
+            .color(p.blue),
         );
     }
     if !app.suggest.is_empty() {
-        let mut suggestions = row![text("Suggestions").size(12)].spacing(4);
-        for (index, hit) in app.suggest.iter().take(6).enumerate() {
+        let mut suggestions = column![].spacing(0).padding(4);
+        for (index, hit) in app.suggest.iter().take(8).enumerate() {
             suggestions = suggestions.push(
-                button(text(format!("{} {}", hit.kind, hit.title)).size(11))
-                    .on_press(Message::UseSuggest(index)),
+                button(
+                    row![
+                        text(hit.title.clone())
+                            .size(12)
+                            .font(iced::Font::MONOSPACE)
+                            .color(p.text),
+                        iced::widget::Space::new().width(Fill),
+                        text(hit.kind.clone()).size(11).color(p.muted),
+                    ]
+                    .spacing(8),
+                )
+                .on_press(Message::UseSuggest(index))
+                .width(Fill)
+                .padding([4, 8])
+                .style(style::paint(p, style::Look::Quiet)),
             );
         }
-        below = below.push(suggestions);
+        below = below.push(
+            container(suggestions)
+                .width(Length::Fixed(320.0))
+                .style(style::menu_card(p)),
+        );
     }
     for issue in app.lint.iter().take(6) {
         let color = if issue.severity == "error" {
-            DANGER
+            p.danger
         } else {
-            Color::from_rgb8(0xb4, 0x53, 0x09)
+            p.amber
         };
         below = below.push(
             text(format!("{}:{} {}", issue.line, issue.column, issue.message))
@@ -333,83 +675,230 @@ fn editor_body(app: &App) -> Element<'_, Message> {
                 .color(color),
         );
     }
-    column![row![gutter, editor].spacing(4).height(Fill), below]
-        .height(Fill)
-        .padding([0, 8])
-        .into()
+    container(
+        column![
+            row![
+                container(gutter)
+                    .height(Fill)
+                    .clip(true)
+                    .style(style::fill(p.gutter)),
+                editor
+            ]
+            .spacing(0)
+            .height(Fill),
+            below.padding([4, 10])
+        ]
+        .height(Fill),
+    )
+    .width(Fill)
+    .height(Fill)
+    .style(style::fill(p.paper))
+    .into()
 }
 
 fn editor_text_view(app: &App) -> String {
     super::editor_text(&app.editor)
 }
 
-fn statement_word(statement: &str) -> Option<&str> {
-    statement.split_whitespace().next()
+fn line_is_write(line: &str) -> bool {
+    let word = line
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_ascii_uppercase();
+    matches!(
+        word.as_str(),
+        "INSERT" | "UPDATE" | "DELETE" | "DROP" | "CREATE"
+    )
 }
 
-fn results(app: &App) -> Element<'_, Message> {
-    let mut cards = column![text("Results").size(13)].spacing(6);
-    if let Some(json) = &app.row_json {
-        cards = cards.push(
-            column![
-                button(text("Close row")).on_press(Message::CloseRow),
-                text(json.clone()).font(iced::Font::MONOSPACE).size(12),
-            ]
-            .spacing(4),
-        );
-    }
+fn results(app: &App, p: Palette) -> Element<'_, Message> {
+    let grip = row![
+        text("Results").size(12).color(p.muted),
+        button(text("–").size(14).color(p.muted))
+            .on_press(Message::Results(-40.0))
+            .padding([0, 6])
+            .style(style::paint(p, style::Look::Quiet)),
+        button(text("+").size(14).color(p.muted))
+            .on_press(Message::Results(40.0))
+            .padding([0, 6])
+            .style(style::paint(p, style::Look::Quiet)),
+    ]
+    .spacing(4)
+    .align_y(iced::alignment::Vertical::Center);
+    let mut cards = column![grip].spacing(8).padding(8);
     for (index, card) in app.results.iter().take(20).enumerate() {
-        cards = cards.push(card_view(app, index, card));
+        cards = cards.push(card_view(app, index, card, p));
     }
     container(scrollable(cards).height(Fill))
         .height(Length::Fixed(app.prefs.results))
-        .padding(8)
+        .width(Fill)
+        .style(style::fill(p.canvas))
         .into()
 }
 
-fn card_view<'a>(app: &'a App, index: usize, card: &'a StatementCard) -> Element<'a, Message> {
-    let flag = if card.ok { "ok" } else { "failed" };
-    let mut head = row![
-        button(text(
-            if app.open_cards.get(index).copied().unwrap_or(false) {
-                "●"
-            } else {
-                "○"
-            }
-        ))
-        .on_press(Message::ToggleCard(index))
-        .padding(2),
-        text(format!("{flag}  {}", card.kind)).size(12),
-        text(format!("{} ms", card.elapsed_ms)).size(12),
+fn card_view<'a>(
+    app: &'a App,
+    index: usize,
+    card: &'a StatementCard,
+    p: Palette,
+) -> Element<'a, Message> {
+    if !card.items.is_empty() {
+        return item_card(app, index, card, p);
+    }
+    let (bg, fg) = if card.ok {
+        (p.ok_bg, p.ok)
+    } else {
+        (p.amber_bg, p.danger)
+    };
+    let message = if !card.ok {
+        card.failure_text()
+    } else if !card.message.is_empty() {
+        card.message.clone()
+    } else {
+        card.kind.clone()
+    };
+    let note = container(text(message).size(13).color(fg))
+        .padding([8, 10])
+        .width(Fill)
+        .style(move |_| {
+            iced::widget::container::Style::default()
+                .background(bg)
+                .border(iced::Border {
+                    color: bg,
+                    width: 1.0,
+                    radius: 8.0.into(),
+                })
+        });
+    let Some(help) = &card.help else {
+        return note.into();
+    };
+    let pretty = serde_json::to_string_pretty(help).unwrap_or_else(|_| help.to_string());
+    column![
+        note,
+        text(pretty)
+            .font(iced::Font::MONOSPACE)
+            .size(12)
+            .color(p.text),
     ]
-    .spacing(8);
-    if card.read_units > 0.0 {
-        head = head.push(text(format!("RCU {:.1}", card.read_units)).size(12));
+    .spacing(6)
+    .into()
+}
+
+fn item_card<'a>(
+    app: &'a App,
+    index: usize,
+    card: &'a StatementCard,
+    p: Palette,
+) -> Element<'a, Message> {
+    let title = table_name(&card.statement).unwrap_or_else(|| "Result".to_string());
+    let rows = card.items.len();
+    let open = app.open_cards.get(index).copied().unwrap_or(false);
+    let mut head = row![
+        text(title)
+            .size(13.5)
+            .font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..iced::Font::MONOSPACE
+            })
+            .color(if app.prefs.dark {
+                style::rgb(0xe7, 0xee, 0xf6)
+            } else {
+                style::rgb(0x12, 0x20, 0x2b)
+            }),
+        stat_chip(
+            format!("{rows} {}", if rows == 1 { "row" } else { "rows" }),
+            p,
+        ),
+    ]
+    .spacing(6)
+    .align_y(iced::alignment::Vertical::Center);
+    if let Some(capacity) = capacity_label(card.read_units, card.write_units) {
+        head = head.push(stat_chip(capacity, p));
     }
-    if card.write_units > 0.0 {
-        head = head.push(text(format!("WCU {:.1}", card.write_units)).size(12));
-    }
-    let mut body = column![head].spacing(4);
-    if app.open_cards.get(index).copied().unwrap_or(false) {
-        body = body.push(
-            text(card.statement.clone())
-                .font(iced::Font::MONOSPACE)
-                .size(12),
+    head = head.push(stat_chip(elapsed_label(card.elapsed_ms), p));
+    if !card.columns.is_empty() || !card.items.is_empty() {
+        head = head.push(
+            button(text("schema").size(12))
+                .on_press(Message::ShowResultSchema(index))
+                .padding([0, 7])
+                .height(22)
+                .style(style::paint(p, style::Look::Control)),
         );
     }
-    if !card.ok {
-        body = body.push(text(card.failure_text()).size(12).color(DANGER));
-    } else if !card.message.is_empty() && card.items.is_empty() {
-        body = body.push(text(card.message.clone()).size(12));
+    let head = container(head)
+        .width(Fill)
+        .padding([8, 12])
+        .style(style::fill(if app.prefs.dark {
+            style::rgb(0x15, 0x24, 0x2a)
+        } else {
+            style::rgb(0xf6, 0xfb, 0xf9)
+        }));
+    let mut body = column![head, hairline(p.line_strong)]
+        .width(Fill)
+        .spacing(0);
+    if open {
+        body = body.push(
+            container(
+                text(card.statement.clone())
+                    .font(iced::Font::MONOSPACE)
+                    .size(12.5)
+                    .color(if app.prefs.dark {
+                        style::rgb(0xc5, 0xd2, 0xe0)
+                    } else {
+                        style::rgb(0x33, 0x41, 0x55)
+                    }),
+            )
+            .width(Fill)
+            .padding([10, 12])
+            .style(style::fill(if app.prefs.dark {
+                style::rgb(0x14, 0x1c, 0x26)
+            } else {
+                style::rgb(0xf8, 0xfa, 0xfc)
+            })),
+        );
+        body = body.push(hairline(p.line_strong));
     }
-    if let Some(help) = &card.help {
-        let pretty = serde_json::to_string_pretty(help).unwrap_or_else(|_| help.to_string());
-        body = body.push(text(pretty).font(iced::Font::MONOSPACE).size(12));
-    }
-    if !card.items.is_empty() {
-        body = body.push(items_table(&card.columns, &card.items, true, false));
-    }
-    container(body).padding(6).width(Fill).into()
+    body = body.push(items_table(&card.columns, &card.items, true, true, p));
+    let card_face = container(body).width(Fill).style(style::card(p));
+    row![query_dot(open, index, p), card_face]
+        .spacing(6)
+        .align_y(iced::alignment::Vertical::Top)
+        .into()
+}
+
+fn query_dot(open: bool, index: usize, p: Palette) -> Element<'static, Message> {
+    let color = if open {
+        p.teal
+    } else {
+        style::rgb(0x9a, 0xa3, 0xad)
+    };
+    button(container(text("")).width(8).height(8).style(move |_| {
+        iced::widget::container::Style::default()
+            .background(color)
+            .border(iced::Border {
+                color,
+                width: 0.0,
+                radius: 4.0.into(),
+            })
+    }))
+    .on_press(Message::ToggleCard(index))
+    .padding([13, 0])
+    .style(style::paint(p, style::Look::Quiet))
+    .into()
+}
+
+fn stat_chip(label: String, p: Palette) -> Element<'static, Message> {
+    let fg = if p.dark {
+        style::rgb(0xc5, 0xd2, 0xe0)
+    } else {
+        style::rgb(0x33, 0x41, 0x55)
+    };
+    container(text(label).size(12).color(fg))
+        .height(22)
+        .padding([0, 8])
+        .style(style::chip(p.chip, fg))
+        .into()
 }
 
 fn progress_bar(done: u64, total: u64) -> String {
@@ -426,144 +915,949 @@ fn items_table<'a>(
     columns: &'a [crate::web::shape::Column],
     items: &'a [serde_json::Value],
     clickable: bool,
-    pin_header: bool,
+    result_card: bool,
+    p: Palette,
 ) -> Element<'a, Message> {
-    let names: Vec<String> = if columns.is_empty() {
-        items
-            .first()
-            .and_then(|item| item.as_object())
-            .map(|map| map.keys().cloned().collect())
-            .unwrap_or_default()
-    } else {
-        columns.iter().map(|column| column.name.clone()).collect()
-    };
-    let mut header = row![].spacing(8);
-    for name in &names {
-        header = header.push(text(name.clone()).size(12));
+    let columns = ordered_columns(columns, items);
+    let shown: Vec<_> = items.iter().take(50).collect();
+    let widths: Vec<f32> = columns
+        .iter()
+        .map(|column| {
+            let header = cell_width(&column.name) + key_extra(column);
+            shown
+                .iter()
+                .map(|item| cell_text(item.get(&column.name)))
+                .map(|value| cell_width(&value))
+                .fold(header, f32::max)
+                .clamp(72.0, 420.0)
+        })
+        .collect();
+    let header = grid_row(
+        peek_cell(false, String::new(), true, result_card, p),
+        columns.iter().zip(&widths).map(|(column, width)| {
+            let paint = style::column_paint(p, column.table.as_deref(), column.index.as_deref());
+            ruled(
+                header_label(column, p.text, paint.mark),
+                *width,
+                paint.head,
+                paint.head_line,
+                true,
+            )
+        }),
+        p.gutter,
+    );
+    let last = shown.len().saturating_sub(1);
+    let mut rows = column![header].spacing(0);
+    for (index, item) in shown.into_iter().enumerate() {
+        let json = serde_json::to_string_pretty(item).unwrap_or_default();
+        let stripe = index % 2 == 1;
+        let rule = index != last;
+        rows = rows.push(grid_row(
+            peek_cell(clickable, json, false, result_card, p),
+            columns.iter().zip(&widths).map(|(column, width)| {
+                let paint =
+                    style::column_paint(p, column.table.as_deref(), column.index.as_deref());
+                let bg = if paint.keyed {
+                    paint.cell
+                } else if stripe {
+                    row_stripe(p)
+                } else {
+                    paint.cell
+                };
+                ruled(
+                    text(cell_text(item.get(&column.name)))
+                        .size(12)
+                        .color(p.text)
+                        .into(),
+                    *width,
+                    bg,
+                    paint.cell_line,
+                    rule,
+                )
+            }),
+            if stripe { row_stripe(p) } else { p.paper },
+        ));
     }
-    let mut rows = column![].spacing(2);
-    for (row_index, item) in items.iter().take(50).enumerate() {
-        let mut line = row![].spacing(8);
-        for name in &names {
-            let cell = item.get(name).map(value_text).unwrap_or_default();
-            line = line.push(text(cell).size(12).font(iced::Font::MONOSPACE));
-        }
-        if clickable {
-            let json = serde_json::to_string_pretty(item).unwrap_or_default();
-            rows = rows.push(
-                button(line)
-                    .on_press(Message::ShowRow(json))
-                    .padding(2)
-                    .style(button::text),
-            );
+    rows.into()
+}
+
+fn grid_row<'a>(
+    peek: Element<'a, Message>,
+    cells: impl Iterator<Item = Element<'a, Message>>,
+    band: Color,
+) -> Element<'a, Message> {
+    let mut line = row![peek]
+        .spacing(0)
+        .align_y(iced::alignment::Vertical::Center);
+    for cell in cells {
+        line = line.push(cell);
+    }
+    container(line).style(style::fill(band)).into()
+}
+
+fn hairline(color: Color) -> Element<'static, Message> {
+    container(text(""))
+        .height(1)
+        .width(Fill)
+        .style(style::fill(color))
+        .into()
+}
+
+fn peek_cell(
+    clickable: bool,
+    json: String,
+    header: bool,
+    result_card: bool,
+    p: Palette,
+) -> Element<'static, Message> {
+    let bg = if header && result_card {
+        if p.dark {
+            style::rgb(0x1e, 0x29, 0x36)
         } else {
-            let _ = row_index;
-            rows = rows.push(line);
+            style::rgb(0xf4, 0xf7, 0xf8)
         }
-    }
-    let both = scrollable::Direction::Both {
-        vertical: scrollable::Scrollbar::default(),
-        horizontal: scrollable::Scrollbar::default(),
-    };
-    if pin_header {
-        column![header, scrollable(rows).direction(both)]
-            .spacing(4)
-            .into()
+    } else if header {
+        p.gutter
     } else {
-        scrollable(column![header, rows].spacing(2))
-            .direction(both)
-            .into()
+        p.paper
+    };
+    let eye: Element<'static, Message> = if clickable {
+        text("◉").size(11).color(p.teal).into()
+    } else {
+        text("").size(11).into()
+    };
+    let cell = container(eye)
+        .width(28)
+        .align_x(iced::alignment::Horizontal::Center)
+        .padding([3.0, 0.0])
+        .style(move |_| {
+            iced::widget::container::Style::default()
+                .background(bg)
+                .border(iced::Border {
+                    color: p.line,
+                    width: 1.0,
+                    radius: 0.0.into(),
+                })
+        });
+    if !clickable {
+        return cell.into();
+    }
+    button(cell)
+        .on_press(Message::ShowRow(json))
+        .padding(0)
+        .width(28)
+        .style(style::paint(p, style::Look::Quiet))
+        .into()
+}
+
+fn ruled(
+    label: Element<'static, Message>,
+    width: f32,
+    bg: Color,
+    line: Color,
+    rule: bool,
+) -> Element<'static, Message> {
+    let body = container(label)
+        .width(Length::Fixed(width))
+        .padding([3.0, 8.0]);
+    let mut cell = column![body].spacing(0).width(Length::Fixed(width));
+    if rule {
+        cell = cell.push(hairline_fixed(line, width));
+    }
+    container(cell)
+        .width(Length::Fixed(width))
+        .style(style::fill(bg))
+        .into()
+}
+
+fn hairline_fixed(color: Color, width: f32) -> Element<'static, Message> {
+    container(text(""))
+        .height(1)
+        .width(Length::Fixed(width))
+        .style(style::fill(color))
+        .into()
+}
+
+fn row_stripe(p: Palette) -> Color {
+    if p.dark {
+        style::rgb(0x1a, 0x24, 0x30)
+    } else {
+        style::rgb(0xf8, 0xfa, 0xfb)
     }
 }
 
-fn tables(app: &App) -> Element<'_, Message> {
-    let mut list = column![
+fn header_label(
+    column: &crate::web::shape::Column,
+    fg: Color,
+    mark: Color,
+) -> Element<'static, Message> {
+    let mut line = row![text(column.name.clone()).size(12).color(fg)]
+        .spacing(4)
+        .align_y(iced::alignment::Vertical::Center);
+    if column.table.as_deref() == Some("hash") || column.index.as_deref() == Some("hash") {
+        line = line.push(text("#").size(11).color(mark));
+    }
+    if column.table.as_deref() == Some("range") || column.index.as_deref() == Some("range") {
+        line = line.push(text("↕").size(11).color(mark));
+    }
+    line.into()
+}
+
+fn tables(app: &App, p: Palette) -> Element<'_, Message> {
+    let head = container(
         row![
-            text_input("Filter tables", &app.table_filter).on_input(Message::TableFilter),
-            button(text("Refresh")).on_press(Message::RefreshTables(true)),
-            button(text("Clear cache")).on_press(Message::ClearCache),
+            text_input("catalog", &app.table_filter)
+                .on_input(Message::TableFilter)
+                .size(12)
+                .padding([2, 6])
+                .width(Fill)
+                .style(style::field(p)),
+            button(text("Refresh").size(12))
+                .on_press(Message::RefreshTables(true))
+                .padding([0, 6])
+                .height(22)
+                .style(style::paint(p, style::Look::Control)),
+            button(text("Clear").size(12))
+                .on_press(Message::ClearCache)
+                .padding([0, 6])
+                .height(22)
+                .style(style::paint(p, style::Look::Control)),
         ]
-        .spacing(8),
+        .spacing(4)
+        .align_y(iced::alignment::Vertical::Center),
+    )
+    .width(Fill)
+    .padding([4, 8]);
+    let mut list = column![
+        head,
         text(if app.cache_text.is_empty() {
             app.table_note.clone()
         } else {
             format!("{}  {}", app.table_note, app.cache_text)
         })
-        .size(12),
+        .size(11)
+        .color(p.muted),
     ]
-    .spacing(4);
+    .spacing(2)
+    .padding(6);
     for table in &app.tables {
-        let keys = table
-            .keys
-            .iter()
-            .map(|key| format!("{} {}", key.role, key.name))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let selected = table.name == app.open_table;
+        let mut keys = row![].spacing(6);
+        for key in &table.keys {
+            let color = if key.role == "hash" {
+                if p.dark {
+                    style::rgb(0x86, 0xef, 0xac)
+                } else {
+                    style::rgb(0x3f, 0x6f, 0x57)
+                }
+            } else if p.dark {
+                style::rgb(0x93, 0xc5, 0xfd)
+            } else {
+                style::rgb(0x3c, 0x63, 0x99)
+            };
+            let mark = if key.role == "hash" { "#" } else { "↕" };
+            keys = keys.push(
+                row![
+                    text(mark).size(11).color(color),
+                    text(key.name.clone()).size(12).color(p.muted),
+                ]
+                .spacing(3),
+            );
+        }
+        let label = column![
+            text(table.name.clone()).size(13).font(iced::Font {
+                weight: iced::font::Weight::Semibold,
+                ..iced::Font::default()
+            }),
+            keys,
+        ]
+        .spacing(1);
         list = list.push(
-            button(text(format!("{}   {keys}", table.name)).size(13))
+            button(label)
                 .on_press(Message::OpenTable(table.name.clone()))
-                .width(Fill),
+                .width(Fill)
+                .padding([3, 8])
+                .style(style::paint(
+                    p,
+                    if selected {
+                        style::Look::Selected
+                    } else {
+                        style::Look::Quiet
+                    },
+                )),
         );
     }
-    let mut page = column![
-        text(if app.open_table.is_empty() {
-            "Select a table".to_string()
-        } else {
-            format!("{}  page {}", app.open_table, app.table_page + 1)
-        })
-        .size(14),
+    let count = app.table_items.len();
+    let start = if count == 0 {
+        0
+    } else {
+        app.table_page * 50 + 1
+    };
+    let end = if count == 0 { 0 } else { start + count - 1 };
+    let showing = if count == 0 {
+        "No rows".to_string()
+    } else {
+        format!("Showing {start}–{end}")
+    };
+    let title = if app.open_table.is_empty() {
+        "Select a table".to_string()
+    } else {
+        app.open_table.clone()
+    };
+    let mut previous = button(text("Previous").size(12))
+        .padding([0, 8])
+        .height(22)
+        .style(style::paint(p, style::Look::Control));
+    if app.table_page > 0 {
+        previous = previous.on_press(Message::TablePage(-1));
+    }
+    let mut next = button(text("Next").size(12))
+        .padding([0, 8])
+        .height(22)
+        .style(style::paint(p, style::Look::Control));
+    if app.table_has_more {
+        next = next.on_press(Message::TablePage(1));
+    }
+    let mut page = column![container(
         row![
-            button(text("Previous")).on_press(Message::TablePage(-1)),
-            button(text("Next")).on_press(Message::TablePage(1)),
-            text(if app.table_has_more {
-                "more rows"
-            } else {
-                "end"
-            })
-            .size(12),
+            text(title).size(16).font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..iced::Font::default()
+            }),
+            text("50 rows at a time").size(12).color(p.muted),
+            iced::widget::Space::new().width(Fill),
+            button(text("schema").size(12))
+                .on_press(Message::ShowTableSchema)
+                .padding([0, 7])
+                .height(22)
+                .style(style::paint(p, style::Look::Control)),
         ]
-        .spacing(8),
-    ]
-    .spacing(6);
+        .spacing(8)
+        .align_y(iced::alignment::Vertical::Center),
+    )
+    .width(Fill)
+    .padding([10, 14])]
+    .spacing(0);
     if !app.table_items.is_empty() {
         page = page.push(items_table(
             &app.table_columns,
             &app.table_items,
             true,
-            true,
+            false,
+            p,
         ));
     }
+    page = page.push(
+        container(
+            row![text(showing).size(12).color(p.muted), previous, next]
+                .spacing(8)
+                .align_y(iced::alignment::Vertical::Center),
+        )
+        .width(Fill)
+        .padding([8, 14]),
+    );
     row![
-        scrollable(list).width(Length::Fixed(360.0)).height(Fill),
-        scrollable(page).width(Fill).height(Fill),
+        container(scrollable(list).height(Fill))
+            .width(Length::Fixed(app.prefs.nav))
+            .height(Fill)
+            .style(style::fill(p.side)),
+        container(scrollable(page).height(Fill))
+            .width(Fill)
+            .height(Fill)
+            .style(style::fill(p.paper)),
     ]
-    .spacing(8)
-    .padding(8)
+    .spacing(0)
     .height(Fill)
     .into()
 }
 
 fn status_bar(app: &App) -> Element<'_, Message> {
-    text(if app.status.is_empty() {
-        "dqlrs-ui".to_string()
-    } else {
-        app.status.clone()
-    })
-    .size(12)
+    let p = style::palette(app.prefs.dark);
+    container(
+        text(if app.status.is_empty() {
+            "Ready".to_string()
+        } else {
+            app.status.clone()
+        })
+        .size(12)
+        .color(p.muted),
+    )
+    .width(Fill)
+    .padding([3, 10])
+    .style(style::fill(p.status))
     .into()
 }
 
-fn display_path(path: &str) -> &str {
-    if path.is_empty() {
-        "workspace"
+fn table_name(statement: &str) -> Option<String> {
+    let text = statement.split("--").next().unwrap_or(statement);
+    let mut words = text.split_whitespace();
+    let mut first = words.next()?.to_ascii_lowercase();
+    if first == "analyze" {
+        first = words.next()?.to_ascii_lowercase();
+    }
+    if first != "select" && first != "scan" {
+        return None;
+    }
+    let mut from = false;
+    for word in words {
+        if from {
+            let name: String = word
+                .chars()
+                .take_while(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '-'))
+                .collect();
+            return if name.is_empty() { None } else { Some(name) };
+        }
+        if word.eq_ignore_ascii_case("from") {
+            from = true;
+        }
+    }
+    None
+}
+
+fn capacity_label(read_units: f64, write_units: f64) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(read) = unit_text(read_units) {
+        parts.push(format!("{read} RCU"));
+    }
+    if let Some(write) = unit_text(write_units) {
+        parts.push(format!("{write} WCU"));
+    }
+    if parts.is_empty() {
+        None
     } else {
-        path
+        Some(parts.join(" · "))
     }
 }
 
-fn value_text(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(text) => text.clone(),
-        other => other.to_string(),
+fn unit_text(value: f64) -> Option<String> {
+    if !value.is_finite() || value <= 0.0 {
+        return None;
     }
+    let rounded = (value * 100.0).round() / 100.0;
+    if rounded == 0.0 {
+        None
+    } else if rounded.fract() == 0.0 {
+        Some(format!("{rounded:.0}"))
+    } else {
+        Some(rounded.to_string())
+    }
+}
+
+fn elapsed_label(elapsed_ms: u64) -> String {
+    if elapsed_ms < 1000 {
+        return format!("{elapsed_ms} ms");
+    }
+    let seconds = elapsed_ms as f64 / 1000.0;
+    let text = if seconds < 10.0 {
+        format!("{seconds:.1}")
+    } else {
+        format!("{seconds:.0}")
+    };
+    format!("{} s", text.trim_end_matches(".0"))
+}
+
+fn ordered_columns(
+    columns: &[crate::web::shape::Column],
+    items: &[serde_json::Value],
+) -> Vec<crate::web::shape::Column> {
+    let mut present = Vec::new();
+    for item in items {
+        let Some(map) = item.as_object() else {
+            continue;
+        };
+        for key in map.keys() {
+            if !present.iter().any(|name| name == key) {
+                present.push(key.clone());
+            }
+        }
+    }
+    let described = |name: String| crate::web::shape::Column {
+        name,
+        table: None,
+        index: None,
+    };
+    if columns.is_empty() {
+        return present.into_iter().map(described).collect();
+    }
+    let mut ordered = Vec::new();
+    for column in columns {
+        if present.iter().any(|name| name == &column.name)
+            && !ordered
+                .iter()
+                .any(|kept: &crate::web::shape::Column| kept.name == column.name)
+        {
+            ordered.push(column.clone());
+        }
+    }
+    if ordered.is_empty() {
+        return present.into_iter().map(described).collect();
+    }
+    let mut extra: Vec<_> = present
+        .into_iter()
+        .filter(|name| !ordered.iter().any(|column| column.name == *name))
+        .collect();
+    extra.sort();
+    ordered.extend(extra.into_iter().map(described));
+    ordered
+}
+
+fn key_extra(column: &crate::web::shape::Column) -> f32 {
+    let hash = column.table.as_deref() == Some("hash") || column.index.as_deref() == Some("hash");
+    let range =
+        column.table.as_deref() == Some("range") || column.index.as_deref() == Some("range");
+    match (hash, range) {
+        (true, true) => 32.0,
+        (true, false) | (false, true) => 16.0,
+        (false, false) => 0.0,
+    }
+}
+
+fn cell_text(value: Option<&serde_json::Value>) -> String {
+    match value {
+        None | Some(serde_json::Value::Null) => String::new(),
+        Some(serde_json::Value::String(text)) => text.clone(),
+        Some(other) => other.to_string(),
+    }
+}
+
+fn cell_width(text: &str) -> f32 {
+    text.chars().count() as f32 * 7.2 + 16.0
+}
+
+fn popup(app: &App) -> Option<Element<'_, Message>> {
+    let p = style::palette(app.prefs.dark);
+    if let Some(json) = &app.row_json {
+        return Some(modal(row_dialog(app, json, p), Message::CloseRow, p));
+    }
+    app.schema
+        .as_ref()
+        .map(|kind| modal(schema_dialog(app, kind, p), Message::CloseSchema, p))
+}
+
+fn modal(card: Element<'static, Message>, close: Message, p: Palette) -> Element<'static, Message> {
+    let scrim = mouse_area(
+        container(text(""))
+            .width(Fill)
+            .height(Fill)
+            .style(style::fill(style::scrim(p.dark))),
+    )
+    .on_press(close);
+    let sheet = container(mouse_area(card).on_press(Message::Keep))
+        .width(Fill)
+        .height(Fill)
+        .align_x(iced::alignment::Horizontal::Center)
+        .align_y(iced::alignment::Vertical::Center)
+        .padding(28);
+    stack![scrim, sheet].into()
+}
+
+fn row_dialog(app: &App, json: &str, p: Palette) -> Element<'static, Message> {
+    let (title, columns, _) = row_match(app, json);
+    let mut chips = row![].spacing(6);
+    for column in &columns {
+        let hash =
+            column.table.as_deref() == Some("hash") || column.index.as_deref() == Some("hash");
+        let range =
+            column.table.as_deref() == Some("range") || column.index.as_deref() == Some("range");
+        if !hash && !range {
+            continue;
+        }
+        if title.starts_with(&format!("{} = ", column.name)) {
+            continue;
+        }
+        let paint = style::column_paint(p, column.table.as_deref(), column.index.as_deref());
+        chips = chips.push(
+            container(
+                row![
+                    text(if hash { "#" } else { "↕" })
+                        .size(11)
+                        .color(paint.mark),
+                    text(column.name.clone()).size(12).color(paint.mark),
+                ]
+                .spacing(3),
+            )
+            .padding([2, 6])
+            .style(style::chip(paint.head, paint.head_line)),
+        );
+    }
+    let head = row![
+        column![
+            text("ROW").size(11).color(p.teal).font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..iced::Font::default()
+            }),
+            text(title).size(16).font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..iced::Font::default()
+            }),
+            chips,
+        ]
+        .spacing(4),
+        iced::widget::Space::new().width(Fill),
+        button(text("×").size(16))
+            .on_press(Message::CloseRow)
+            .padding([2, 8])
+            .style(style::paint(p, style::Look::Quiet)),
+    ]
+    .spacing(8)
+    .align_y(iced::alignment::Vertical::Center);
+    dialog_shell("Row", head.into(), json_block(json, p), p)
+}
+
+fn row_match(
+    app: &App,
+    json: &str,
+) -> (
+    String,
+    Vec<crate::web::shape::Column>,
+    Option<serde_json::Value>,
+) {
+    let mut sources: Vec<(&[serde_json::Value], &[crate::web::shape::Column])> =
+        vec![(&app.table_items, &app.table_columns)];
+    for card in &app.results {
+        sources.push((&card.items, &card.columns));
+    }
+    for (items, columns) in sources {
+        for item in items {
+            if serde_json::to_string_pretty(item).ok().as_deref() == Some(json) {
+                return (
+                    row_title(columns, item),
+                    columns.to_vec(),
+                    Some(item.clone()),
+                );
+            }
+        }
+    }
+    ("Row".to_string(), Vec::new(), None)
+}
+
+fn row_title(columns: &[crate::web::shape::Column], item: &serde_json::Value) -> String {
+    let hash = columns.iter().find(|column| {
+        column.table.as_deref() == Some("hash") || column.index.as_deref() == Some("hash")
+    });
+    if let Some(column) = hash {
+        if let Some(serde_json::Value::String(value)) = item.get(&column.name) {
+            if !value.is_empty() && value.chars().count() <= 48 {
+                return format!("{} = {value}", column.name);
+            }
+        }
+    }
+    "Row".to_string()
+}
+
+fn json_block(json: &str, p: Palette) -> Element<'static, Message> {
+    let mut lines = column![].spacing(0);
+    for line in json.lines() {
+        lines = lines.push(json_line(line, p));
+    }
+    container(lines)
+        .width(Fill)
+        .padding([12, 14])
+        .style(move |_| {
+            iced::widget::container::Style::default()
+                .background(if p.dark {
+                    style::rgb(0x14, 0x1c, 0x26)
+                } else {
+                    style::rgb(0xf8, 0xfa, 0xfc)
+                })
+                .border(iced::Border {
+                    color: p.line,
+                    width: 1.0,
+                    radius: 8.0.into(),
+                })
+        })
+        .into()
+}
+
+fn json_line(line: &str, p: Palette) -> Element<'static, Message> {
+    let trimmed = line.trim_start();
+    let indent = " ".repeat(line.len() - trimmed.len());
+    let mono = iced::Font::MONOSPACE;
+    let mut parts: Vec<Element<'static, Message>> = vec![text(indent).size(12.5).font(mono).into()];
+    if let Some(rest) = trimmed.strip_prefix('"') {
+        if let Some(end) = rest.find('"') {
+            let key = rest[..end].to_string();
+            let after = rest[end + 1..].trim_start_matches(':').trim();
+            parts.push(
+                text(format!("\"{key}\""))
+                    .size(12.5)
+                    .font(mono)
+                    .color(p.teal)
+                    .into(),
+            );
+            parts.push(text(": ").size(12.5).font(mono).color(p.muted).into());
+            parts.push(json_value(after.trim_end_matches(','), p));
+            if after.ends_with(',') {
+                parts.push(text(",").size(12.5).font(mono).color(p.muted).into());
+            }
+            return row(parts).spacing(0).into();
+        }
+    }
+    parts.push(
+        text(trimmed.to_string())
+            .size(12.5)
+            .font(mono)
+            .color(p.text)
+            .into(),
+    );
+    row(parts).spacing(0).into()
+}
+
+fn json_value(value: &str, p: Palette) -> Element<'static, Message> {
+    let color = if value.starts_with('"') {
+        if p.dark {
+            style::rgb(0xfd, 0xba, 0x74)
+        } else {
+            style::rgb(0xbe, 0x12, 0x3c)
+        }
+    } else if value.starts_with(|ch: char| ch.is_ascii_digit() || ch == '-') {
+        if p.dark {
+            style::rgb(0xfd, 0xe6, 0x8a)
+        } else {
+            style::rgb(0xb4, 0x53, 0x09)
+        }
+    } else if matches!(value, "true" | "false" | "null") {
+        if p.dark {
+            style::rgb(0x7d, 0xd3, 0xfc)
+        } else {
+            style::rgb(0x03, 0x69, 0xa1)
+        }
+    } else {
+        p.text
+    };
+    text(value.to_string())
+        .size(12.5)
+        .font(iced::Font::MONOSPACE)
+        .color(color)
+        .into()
+}
+
+fn schema_dialog(app: &App, kind: &super::SchemaKind, p: Palette) -> Element<'static, Message> {
+    let (title, columns, items) = match kind {
+        super::SchemaKind::Result(index) => app
+            .results
+            .get(*index)
+            .map(|card| {
+                (
+                    table_name(&card.statement).unwrap_or_else(|| "Result".to_string()),
+                    card.columns.clone(),
+                    card.items.clone(),
+                )
+            })
+            .unwrap_or_else(|| ("Result".to_string(), Vec::new(), Vec::new())),
+        super::SchemaKind::Table => (
+            if app.open_table.is_empty() {
+                "Table".to_string()
+            } else {
+                app.open_table.clone()
+            },
+            app.table_columns.clone(),
+            app.table_items.clone(),
+        ),
+    };
+    let fields = schema_fields(&columns, &items);
+    let summary = format!(
+        "{} column{}",
+        fields.len(),
+        if fields.len() == 1 { "" } else { "s" }
+    );
+    let head = row![
+        column![
+            text("STRUCTURE").size(11).color(p.teal).font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..iced::Font::default()
+            }),
+            text(title).size(16).font(iced::Font {
+                weight: iced::font::Weight::Bold,
+                ..iced::Font::default()
+            }),
+            text(summary).size(12).color(p.muted),
+        ]
+        .spacing(2),
+        iced::widget::Space::new().width(Fill),
+        button(text("×").size(16))
+            .on_press(Message::CloseSchema)
+            .padding([2, 8])
+            .style(style::paint(p, style::Look::Quiet)),
+    ]
+    .align_y(iced::alignment::Vertical::Center);
+    dialog_shell(
+        "Structure",
+        head.into(),
+        schema_table(&fields, items.len(), p),
+        p,
+    )
+}
+
+struct SchemaField {
+    name: String,
+    kind: &'static str,
+    role: String,
+    sample: String,
+    present: usize,
+}
+
+fn schema_fields(
+    columns: &[crate::web::shape::Column],
+    items: &[serde_json::Value],
+) -> Vec<SchemaField> {
+    ordered_columns(columns, items)
+        .into_iter()
+        .map(|column| {
+            let mut kind = "NULL";
+            let mut sample = String::new();
+            let mut present = 0usize;
+            for item in items {
+                let Some(value) = item.get(&column.name) else {
+                    continue;
+                };
+                if value.is_null() {
+                    continue;
+                }
+                present += 1;
+                if sample.is_empty() {
+                    kind = value_kind(value);
+                    sample = cell_text(Some(value));
+                    if sample.chars().count() > 42 {
+                        sample = sample.chars().take(42).collect::<String>() + "…";
+                    }
+                }
+            }
+            let hash =
+                column.table.as_deref() == Some("hash") || column.index.as_deref() == Some("hash");
+            let range = column.table.as_deref() == Some("range")
+                || column.index.as_deref() == Some("range");
+            let role = match (hash, range) {
+                (true, true) => "hash + range",
+                (true, false) => "hash",
+                (false, true) => "range",
+                (false, false) => "",
+            };
+            SchemaField {
+                name: column.name,
+                kind,
+                role: role.to_string(),
+                sample,
+                present,
+            }
+        })
+        .collect()
+}
+
+fn value_kind(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "NULL",
+        serde_json::Value::Bool(_) => "BOOL",
+        serde_json::Value::Number(_) => "NUMBER",
+        serde_json::Value::String(_) => "STRING",
+        serde_json::Value::Array(_) => "LIST",
+        serde_json::Value::Object(_) => "MAP",
+    }
+}
+
+fn schema_table(fields: &[SchemaField], total: usize, p: Palette) -> Element<'static, Message> {
+    let header = |label: &'static str, width: f32| -> Element<'static, Message> {
+        container(text(label).size(11).color(p.muted))
+            .width(Length::Fixed(width))
+            .padding([6, 10])
+            .into()
+    };
+    let mut rows = column![container(
+        row![
+            header("NAME", 160.0),
+            header("TYPE", 90.0),
+            header("ROLE", 110.0),
+            header("PRESENT", 90.0),
+            header("SAMPLE", 220.0),
+        ]
+        .spacing(0),
+    )
+    .style(style::fill(p.canvas))]
+    .spacing(0)
+    .width(Length::Fixed(670.0));
+    for field in fields {
+        let share = if total == 0 {
+            0.0
+        } else {
+            field.present as f32 / total as f32
+        };
+        rows = rows.push(hairline(p.line));
+        rows = rows.push(
+            row![
+                container(
+                    text(field.name.clone())
+                        .size(12.5)
+                        .font(iced::Font::MONOSPACE)
+                        .color(p.text)
+                )
+                .width(Length::Fixed(160.0))
+                .padding([8, 10]),
+                container(text(field.kind).size(11).color(kind_color(field.kind, p)))
+                    .width(Length::Fixed(90.0))
+                    .padding([8, 10]),
+                container(text(field.role.clone()).size(12).color(p.muted))
+                    .width(Length::Fixed(110.0))
+                    .padding([8, 10]),
+                container(
+                    row![
+                        text(field.present.to_string()).size(11).color(p.muted),
+                        container(text(""))
+                            .width(Length::Fixed((52.0 * share).max(if share > 0.0 {
+                                2.0
+                            } else {
+                                0.0
+                            })))
+                            .height(4)
+                            .style(style::fill(p.teal)),
+                    ]
+                    .spacing(6)
+                    .align_y(iced::alignment::Vertical::Center),
+                )
+                .width(Length::Fixed(90.0))
+                .padding([8, 10]),
+                container(
+                    text(field.sample.clone())
+                        .size(12)
+                        .font(iced::Font::MONOSPACE)
+                        .color(p.muted)
+                )
+                .width(Length::Fixed(220.0))
+                .padding([8, 10]),
+            ]
+            .spacing(0),
+        );
+    }
+    rows.into()
+}
+
+fn kind_color(kind: &str, p: Palette) -> Color {
+    match kind {
+        "STRING" => p.teal,
+        "NUMBER" => p.amber,
+        "BOOL" => p.blue,
+        "LIST" => style::rgb(0x7c, 0x3a, 0xed),
+        "MAP" => style::rgb(0xc0, 0x26, 0xd3),
+        _ => p.muted,
+    }
+}
+
+fn dialog_shell(
+    _name: &str,
+    head: Element<'static, Message>,
+    body: Element<'static, Message>,
+    p: Palette,
+) -> Element<'static, Message> {
+    container(
+        column![
+            container(head).width(Fill).padding([14, 16]),
+            hairline(p.line),
+            container(scrollable(body).height(Length::Fixed(420.0)))
+                .width(Fill)
+                .padding([12, 16]),
+        ]
+        .spacing(0)
+        .width(Length::Fixed(760.0)),
+    )
+    .style(style::pop_card(p))
+    .into()
 }

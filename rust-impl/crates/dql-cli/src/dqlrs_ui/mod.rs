@@ -4,6 +4,7 @@
 //! process. There is no HTTP hop and no second install.
 
 mod highlight;
+mod style;
 mod view;
 
 use std::path::PathBuf;
@@ -36,6 +37,13 @@ pub fn run(session: Session, root: PathBuf, load_tables: bool) -> color_eyre::Re
     )
     .title("dqlrs")
     .theme(App::theme)
+    .style(|state, _theme| {
+        let colors = style::palette(state.prefs.dark);
+        iced::theme::Style {
+            background_color: colors.canvas,
+            text_color: colors.text,
+        }
+    })
     .subscription(App::subscription)
     .window_size(iced::Size::new(1280.0, 800.0))
     .run()
@@ -136,6 +144,12 @@ struct MenuAt {
     kind: String,
 }
 
+#[derive(Clone, Debug)]
+enum SchemaKind {
+    Result(usize),
+    Table,
+}
+
 struct App {
     studio: Arc<Mutex<Studio>>,
     progress: Arc<Mutex<LiveProgress>>,
@@ -174,6 +188,7 @@ struct App {
     show_env: bool,
     open_cards: Vec<bool>,
     row_json: Option<String>,
+    schema: Option<SchemaKind>,
     status: String,
 }
 
@@ -185,7 +200,6 @@ enum Message {
     Open(String),
     Menu(String, String),
     MenuRoot,
-    CloseMenu,
     MenuAct(&'static str),
     Editor(text_editor::Action),
     Save,
@@ -193,7 +207,6 @@ enum Message {
     KeepEdits,
     RunFile,
     RunCursor,
-    RunStatement(String),
     Stop,
     Tick,
     Pulse,
@@ -216,6 +229,10 @@ enum Message {
     ToggleCard(usize),
     ShowRow(String),
     CloseRow,
+    ShowResultSchema(usize),
+    ShowTableSchema,
+    CloseSchema,
+    Keep,
     UseSuggest(usize),
 }
 
@@ -267,6 +284,7 @@ impl App {
             show_env: false,
             open_cards: Vec::new(),
             row_json: None,
+            schema: None,
             status: String::new(),
         };
         app.refresh_tree();
@@ -336,13 +354,13 @@ impl App {
                     kind: "root".to_string(),
                 });
             }
-            Message::CloseMenu => self.menu = None,
             Message::MenuAct(label) => {
-                let menu = self.menu.clone();
+                let menu = self.menu.clone().unwrap_or(MenuAt {
+                    path: String::new(),
+                    kind: "root".to_string(),
+                });
                 self.menu = None;
-                if let Some(menu) = menu {
-                    return self.menu_act(&menu, label);
-                }
+                return self.menu_act(&menu, label);
             }
             Message::Editor(action) => {
                 let is_edit = matches!(action, text_editor::Action::Edit(_));
@@ -392,13 +410,15 @@ impl App {
                 }
                 self.status = "No statement at the cursor.".to_string();
             }
-            Message::RunStatement(statement) => {
-                self.save_editor();
-                return self.start_run(vec![(self.open_path.clone(), statement)]);
-            }
             Message::Stop => {
-                self.cancel.request();
-                self.status = "Stopping…".to_string();
+                if self.schema.is_some() || self.row_json.is_some() || self.menu.is_some() {
+                    self.schema = None;
+                    self.row_json = None;
+                    self.menu = None;
+                } else {
+                    self.cancel.request();
+                    self.status = "Stopping…".to_string();
+                }
             }
             Message::Pulse => self.pulse = !self.pulse,
             Message::Tick => {
@@ -501,8 +521,21 @@ impl App {
                     *open = !*open;
                 }
             }
-            Message::ShowRow(json) => self.row_json = Some(json),
+            Message::ShowRow(json) => {
+                self.schema = None;
+                self.row_json = Some(json);
+            }
             Message::CloseRow => self.row_json = None,
+            Message::ShowResultSchema(index) => {
+                self.row_json = None;
+                self.schema = Some(SchemaKind::Result(index));
+            }
+            Message::ShowTableSchema => {
+                self.row_json = None;
+                self.schema = Some(SchemaKind::Table);
+            }
+            Message::CloseSchema => self.schema = None,
+            Message::Keep => {}
             Message::UseSuggest(index) => {
                 if let Some(hit) = self.suggest.get(index).cloned() {
                     self.use_suggest(hit);
@@ -1105,6 +1138,16 @@ SELECT * FROM demo WHERE id = 'a';
         let _ = app.update(Message::RunDone(cards));
         assert!(app.results.iter().any(|card| card.ok));
         assert!(app.status.contains("finished"));
+        {
+            std::env::set_var("ICED_TEST_BACKEND", "tiny-skia");
+            let mut simulator = iced_test::Simulator::new(app.view());
+            simulator
+                .click("id")
+                .unwrap_or_else(|err| panic!("header id: {err:?}"));
+            simulator
+                .click("a")
+                .unwrap_or_else(|err| panic!("cell a: {err:?}"));
+        }
 
         std::fs::write(dir.path.join("widgets.dql"), "SELECT 2;\n").unwrap();
         app.dirty = true;
