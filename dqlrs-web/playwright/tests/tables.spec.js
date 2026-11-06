@@ -2,6 +2,12 @@ import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
 import { colorPattern, openResultPane, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
 
+function tablesBody(request) {
+  const url = new URL(request.url());
+  if (request.method() !== "POST" || url.pathname !== "/api/tables") return null;
+  return request.postDataJSON();
+}
+
 test("opens the table browser from the #tables hash", async ({ page, app }) => {
   await page.goto(`${app.baseURL}/#tables`);
   await expect(page.locator("#tables-view")).toBeVisible();
@@ -31,8 +37,8 @@ test("opens the table browser from the #tables hash", async ({ page, app }) => {
 
 test("refresh button reloads the table list without the description cache", async ({ page, app }) => {
   const first = page.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return response.ok() && url.pathname === "/api/tables" && url.searchParams.get("refresh") !== "1";
+    const body = tablesBody(response.request());
+    return response.ok() && body && body.refresh !== true;
   });
   await page.goto(`${app.baseURL}/#tables`);
   await first;
@@ -41,14 +47,14 @@ test("refresh button reloads the table list without the description cache", asyn
   await expect(button).toBeEnabled();
 
   const pending = page.waitForRequest((request) => {
-    const url = new URL(request.url());
-    return url.pathname === "/api/tables" && url.searchParams.get("refresh") === "1";
+    const body = tablesBody(request);
+    return body && body.refresh === true;
   });
   await button.click();
   const request = await pending;
-  const params = new URL(request.url()).searchParams;
-  expect(params.get("pattern")).toBe("");
-  expect(params.get("async")).toBe("1");
+  const body = request.postDataJSON();
+  expect(body.pattern).toBe("");
+  expect(body.async).toBe(true);
   await expect(button).toBeEnabled();
   await expect(page.locator("#table-list")).not.toHaveText("Loading…");
   const cache = page.locator("#table-cache");
@@ -61,8 +67,8 @@ test("refresh button reloads the table list without the description cache", asyn
 
 test("settings menu clears the table cache", async ({ page, app }) => {
   const first = page.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return response.ok() && url.pathname === "/api/tables" && url.searchParams.get("refresh") !== "1";
+    const body = tablesBody(response.request());
+    return response.ok() && body && body.refresh !== true;
   });
   await page.goto(`${app.baseURL}/#tables`);
   await first;
@@ -86,8 +92,8 @@ test("settings menu clears the table cache", async ({ page, app }) => {
     return response.request().method() === "POST" && url.pathname === "/api/table-cache/clear" && response.ok();
   });
   const listed = page.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return response.ok() && url.pathname === "/api/tables";
+    const body = tablesBody(response.request());
+    return response.ok() && body;
   });
   await page.locator("#clear-table-cache").click();
   await cleared;
@@ -109,8 +115,8 @@ test("settings menu shows the cache age before the table list is open", async ({
 
 test("searching tables filters the cached list without refresh", async ({ page, app }) => {
   const first = page.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return response.ok() && url.pathname === "/api/tables" && url.searchParams.get("refresh") !== "1";
+    const body = tablesBody(response.request());
+    return response.ok() && body && body.refresh !== true;
   });
   await page.goto(`${app.baseURL}/#tables`);
   await first;
@@ -118,24 +124,24 @@ test("searching tables filters the cached list without refresh", async ({ page, 
 
   const tablesRequests = [];
   page.on("request", (request) => {
-    const url = new URL(request.url());
-    if (url.pathname === "/api/tables") tablesRequests.push(url);
+    const body = tablesBody(request);
+    if (body) tablesRequests.push(body);
   });
 
   await page.locator("#table-search").fill("zzz_no_such_table_*");
   await expect(page.locator("#table-list")).toContainText("No tables match zzz_no_such_table_*");
   await expect(page.locator("#table-list")).not.toHaveText("Loading…");
   expect(tablesRequests.length).toBeGreaterThan(0);
-  expect(tablesRequests.every((url) => url.searchParams.get("refresh") !== "1")).toBe(true);
-  expect(tablesRequests.some((url) => url.searchParams.get("pattern") === "zzz_no_such_table_*")).toBe(true);
+  expect(tablesRequests.every((body) => body.refresh !== true)).toBe(true);
+  expect(tablesRequests.some((body) => body.pattern === "zzz_no_such_table_*")).toBe(true);
 
   const pending = page.waitForRequest((request) => {
-    const url = new URL(request.url());
-    return url.pathname === "/api/tables" && url.searchParams.get("refresh") === "1";
+    const body = tablesBody(request);
+    return body && body.refresh === true;
   });
   await page.locator("#refresh-tables").click();
   const request = await pending;
-  expect(new URL(request.url()).searchParams.get("pattern")).toBe("zzz_no_such_table_*");
+  expect(request.postDataJSON().pattern).toBe("zzz_no_such_table_*");
   await expect(page.locator("#table-list")).toContainText("No tables match zzz_no_such_table_*");
 });
 
