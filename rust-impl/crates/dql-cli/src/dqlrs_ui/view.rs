@@ -12,6 +12,7 @@ use iced::{Color, Element, Fill, Length, Point, Rectangle, Vector};
 use crate::web::files::Node;
 use crate::web::studio::{menu_labels, StatementCard};
 
+use super::cover::cover;
 use super::highlight;
 use super::icons::{self, Mark};
 use super::query;
@@ -2013,11 +2014,11 @@ fn cell_width(text: &str) -> f32 {
 fn popup(app: &App) -> Option<Element<'_, Message>> {
     let p = style::palette(app.prefs.dark);
     if app.row_json.is_some() {
-        return Some(opaque(row_sheet(app, p)));
+        return Some(cover(row_sheet(app, p)));
     }
     app.schema
         .as_ref()
-        .map(|kind| opaque(schema_sheet(app, kind, p)))
+        .map(|kind| cover(schema_sheet(app, kind, p)))
 }
 
 fn sheet(body: Element<'static, Message>, p: Palette) -> Element<'static, Message> {

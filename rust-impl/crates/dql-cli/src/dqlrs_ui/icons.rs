@@ -1,10 +1,10 @@
 //! Small marks copied from the web UI's inline SVG.
 //!
-//! Each mark is drawn in its own view box and scaled to the widget size, so a
-//! 14px button icon keeps the same stroke as the 16px source.
+//! These are symbolic SVGs, recolored at draw time. Canvas meshes are a
+//! separate render pass and were painting on top of later windows.
 
-use iced::widget::canvas::{self, LineCap, LineJoin, Path, Stroke};
-use iced::{Color, Element, Point, Radians, Rectangle, Renderer, Theme};
+use iced::widget::svg::{self, Handle};
+use iced::{Color, Element, Length};
 
 #[derive(Clone, Copy)]
 pub enum Mark {
@@ -23,173 +23,54 @@ pub enum Mark {
 }
 
 pub fn mark<'a, Message: 'a>(kind: Mark, color: Color, px: f32) -> Element<'a, Message> {
-    canvas::Canvas::new(Glyph { kind, color })
-        .width(px)
-        .height(px)
+    svg::Svg::new(handle(kind))
+        .width(Length::Fixed(px))
+        .height(Length::Fixed(px))
+        .style(move |_theme, _status| svg::Style { color: Some(color) })
         .into()
 }
 
-struct Glyph {
-    kind: Mark,
-    color: Color,
+fn handle(kind: Mark) -> Handle {
+    Handle::from_memory(source(kind).as_bytes())
 }
 
-impl<Message> canvas::Program<Message> for Glyph {
-    type State = ();
-
-    fn draw(
-        &self,
-        _state: &(),
-        renderer: &Renderer,
-        _theme: &Theme,
-        bounds: Rectangle,
-        _cursor: iced::mouse::Cursor,
-    ) -> Vec<canvas::Geometry> {
-        let mut frame = canvas::Frame::new(renderer, bounds.size());
-        let view = view_box(self.kind);
-        frame.scale(bounds.width / view);
-        paint(&mut frame, self.kind, self.color);
-        vec![frame.into_geometry()]
-    }
-}
-
-fn view_box(kind: Mark) -> f32 {
+fn source(kind: Mark) -> &'static str {
     match kind {
-        Mark::Close | Mark::Hash | Mark::Range => 12.0,
-        Mark::Info => 14.0,
-        _ => 16.0,
+        Mark::Settings => SETTINGS,
+        Mark::Moon => MOON,
+        Mark::Sun => SUN,
+        Mark::Forward => FORWARD,
+        Mark::Play => PLAY,
+        Mark::Schema => SCHEMA,
+        Mark::Info => INFO,
+        Mark::Close => CLOSE,
+        Mark::Eye => EYE,
+        Mark::Hash => HASH,
+        Mark::Range => RANGE,
+        Mark::Refresh => REFRESH,
     }
 }
 
-fn paint(frame: &mut canvas::Frame, kind: Mark, color: Color) {
-    match kind {
-        Mark::Settings => {
-            let pen = stroke(color, 1.4);
-            for y in [4.2, 8.0, 11.8] {
-                frame.stroke(&Path::line(pt(2.2, y), pt(13.8, y)), pen);
-            }
-            for (x, y) in [(6.0, 4.2), (10.4, 8.0), (5.2, 11.8)] {
-                frame.stroke(&Path::circle(pt(x, y), 1.45), pen);
-            }
-        }
-        Mark::Moon => frame.fill(&moon(), color),
-        Mark::Sun => {
-            let pen = stroke(color, 1.4);
-            frame.stroke(&Path::circle(pt(8.0, 8.0), 2.6), pen);
-            for (from, to) in [
-                (pt(8.0, 1.6), pt(8.0, 3.2)),
-                (pt(8.0, 12.8), pt(8.0, 14.4)),
-                (pt(1.6, 8.0), pt(3.2, 8.0)),
-                (pt(12.8, 8.0), pt(14.4, 8.0)),
-                (pt(3.3, 3.3), pt(4.4, 4.4)),
-                (pt(11.6, 11.6), pt(12.7, 12.7)),
-                (pt(12.7, 3.3), pt(11.6, 4.4)),
-                (pt(4.4, 11.6), pt(3.3, 12.7)),
-            ] {
-                frame.stroke(&Path::line(from, to), pen);
-            }
-        }
-        Mark::Forward => {
-            frame.fill(&triangle(1.6, 7.2), color);
-            frame.fill(&triangle(8.4, 14.0), color);
-        }
-        Mark::Play => frame.fill(&triangle(5.2, 12.4), color),
-        Mark::Schema => {
-            let pen = stroke(color, 1.4);
-            frame.stroke(
-                &Path::rectangle(pt(2.5, 3.2), iced::Size::new(11.0, 9.6)),
-                pen,
-            );
-            frame.stroke(&Path::line(pt(2.5, 6.4), pt(13.5, 6.4)), pen);
-            frame.stroke(&Path::line(pt(6.7, 3.2), pt(6.7, 12.8)), pen);
-        }
-        Mark::Info => {
-            let pen = stroke(color, 1.4);
-            frame.stroke(&Path::circle(pt(7.0, 7.0), 5.2), pen);
-            let stem = stroke(color, 1.5);
-            frame.stroke(&Path::line(pt(7.0, 6.3), pt(7.0, 9.7)), stem);
-            frame.stroke(&Path::line(pt(7.0, 4.4), pt(7.0, 4.6)), stem);
-        }
-        Mark::Close => {
-            let pen = stroke(color, 1.6);
-            frame.stroke(&Path::line(pt(2.0, 2.0), pt(10.0, 10.0)), pen);
-            frame.stroke(&Path::line(pt(10.0, 2.0), pt(2.0, 10.0)), pen);
-        }
-        Mark::Eye => {
-            let pen = stroke(color, 1.4);
-            frame.stroke(
-                &Path::new(|path| {
-                    path.move_to(pt(1.4, 8.0));
-                    path.quadratic_curve_to(pt(8.0, 3.2), pt(14.6, 8.0));
-                    path.quadratic_curve_to(pt(8.0, 12.8), pt(1.4, 8.0));
-                    path.close();
-                }),
-                pen,
-            );
-            frame.stroke(&Path::circle(pt(8.0, 8.0), 1.7), pen);
-        }
-        Mark::Hash => {
-            let pen = stroke(color, 1.3);
-            frame.stroke(&Path::line(pt(4.2, 1.2), pt(4.2, 10.8)), pen);
-            frame.stroke(&Path::line(pt(7.8, 1.2), pt(7.8, 10.8)), pen);
-            frame.stroke(&Path::line(pt(1.3, 4.2), pt(10.7, 4.2)), pen);
-            frame.stroke(&Path::line(pt(1.3, 7.8), pt(10.7, 7.8)), pen);
-        }
-        Mark::Range => {
-            let pen = stroke(color, 1.3);
-            frame.stroke(&Path::line(pt(6.0, 1.3), pt(6.0, 10.7)), pen);
-            frame.stroke(&Path::line(pt(6.0, 1.3), pt(3.7, 3.6)), pen);
-            frame.stroke(&Path::line(pt(6.0, 1.3), pt(8.3, 3.6)), pen);
-            frame.stroke(&Path::line(pt(6.0, 10.7), pt(3.7, 8.4)), pen);
-            frame.stroke(&Path::line(pt(6.0, 10.7), pt(8.3, 8.4)), pen);
-        }
-        Mark::Refresh => {
-            let pen = stroke(color, 1.5);
-            frame.stroke(
-                &Path::new(|path| {
-                    path.arc(canvas::path::Arc {
-                        center: pt(8.0, 8.0),
-                        radius: 5.2,
-                        start_angle: Radians(0.55),
-                        end_angle: Radians(5.8),
-                    });
-                }),
-                pen,
-            );
-            frame.stroke(&Path::line(pt(13.4, 2.2), pt(13.4, 5.3)), pen);
-            frame.stroke(&Path::line(pt(13.4, 2.2), pt(10.3, 2.2)), pen);
-        }
-    }
-}
+const SETTINGS: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.2 4.2H13.8M2.2 8H13.8M2.2 11.8H13.8"/><circle cx="6" cy="4.2" r="1.45"/><circle cx="10.4" cy="8" r="1.45"/><circle cx="5.2" cy="11.8" r="1.45"/></svg>"##;
 
-fn stroke(color: Color, width: f32) -> Stroke<'static> {
-    Stroke::default()
-        .with_color(color)
-        .with_width(width)
-        .with_line_cap(LineCap::Round)
-        .with_line_join(LineJoin::Round)
-}
+const MOON: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="#000" d="M10.2 2C5 2.4 2.4 5.4 2.8 9C3.2 12.8 6.2 14.8 10.2 14.2C6.4 12.6 5 10.4 5.4 7.8C5.8 5 7.6 3 10.2 2Z"/></svg>"##;
 
-fn pt(x: f32, y: f32) -> Point {
-    Point::new(x, y)
-}
+const SUN: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="2.6"/><path d="M8 1.6V3.2M8 12.8V14.4M1.6 8H3.2M12.8 8H14.4M3.3 3.3L4.4 4.4M11.6 11.6L12.7 12.7M12.7 3.3L11.6 4.4M4.4 11.6L3.3 12.7"/></svg>"##;
 
-fn triangle(left: f32, right: f32) -> Path {
-    Path::new(|path| {
-        path.move_to(pt(left, 3.1));
-        path.line_to(pt(right, 8.0));
-        path.line_to(pt(left, 12.9));
-        path.close();
-    })
-}
+const FORWARD: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="#000" d="M1.6 3.1L7.2 8L1.6 12.9Z"/><path fill="#000" d="M8.4 3.1L14 8L8.4 12.9Z"/></svg>"##;
 
-fn moon() -> Path {
-    Path::new(|path| {
-        path.move_to(pt(10.2, 2.0));
-        path.bezier_curve_to(pt(5.0, 2.4), pt(2.4, 5.4), pt(2.8, 9.0));
-        path.bezier_curve_to(pt(3.2, 12.8), pt(6.2, 14.8), pt(10.2, 14.2));
-        path.bezier_curve_to(pt(6.4, 12.6), pt(5.0, 10.4), pt(5.4, 7.8));
-        path.bezier_curve_to(pt(5.8, 5.0), pt(7.6, 3.0), pt(10.2, 2.0));
-        path.close();
-    })
-}
+const PLAY: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="#000" d="M5.2 3.1L12.4 8L5.2 12.9Z"/></svg>"##;
+
+const SCHEMA: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="3.2" width="11" height="9.6"/><path d="M2.5 6.4H13.5M6.7 3.2V12.8"/></svg>"##;
+
+const INFO: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 14" fill="none" stroke="#000" stroke-linecap="round"><circle cx="7" cy="7" r="5.2" stroke-width="1.4"/><path d="M7 6.3V9.7M7 4.4V4.6" stroke-width="1.5"/></svg>"##;
+
+const CLOSE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round"><path d="M2 2L10 10M10 2L2 10"/></svg>"##;
+
+const EYE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#000" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.4 8Q8 3.2 14.6 8Q8 12.8 1.4 8Z"/><circle cx="8" cy="8" r="1.7"/></svg>"##;
+
+const HASH: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="#000" stroke-width="1.3" stroke-linecap="round"><path d="M4.2 1.2V10.8M7.8 1.2V10.8M1.3 4.2H10.7M1.3 7.8H10.7"/></svg>"##;
+
+const RANGE: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="#000" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 1.3V10.7M6 1.3L3.7 3.6M6 1.3L8.3 3.6M6 10.7L3.7 8.4M6 10.7L8.3 8.4"/></svg>"##;
+
+const REFRESH: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.43 10.72A5.2 5.2 0 1 1 12.6 5.58"/><path d="M13.4 2.2V5.3M13.4 2.2H10.3"/></svg>"##;

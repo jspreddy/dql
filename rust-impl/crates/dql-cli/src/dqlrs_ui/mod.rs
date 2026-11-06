@@ -3,6 +3,7 @@
 //! `dqlrs --ui` builds this iced interface and calls [`crate::web::studio`] in
 //! process. There is no HTTP hop and no second install.
 
+mod cover;
 mod highlight;
 mod icons;
 mod query;
