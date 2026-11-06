@@ -26,6 +26,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
         Mode::Tables => tables(app, colors),
     };
     let window = column![header(app), body, status_bar(app)].spacing(0);
+    // The root stays a stack. Column and Stack are both stateless, so swapping
+    // the root when a menu opens makes iced reuse the file tree's empty state.
     let mut layers: Vec<Element<'_, Message>> = vec![window.into()];
     if let Some(menu) = floating_menu(app) {
         layers.push(menu);
@@ -42,11 +44,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     if !app.notices.is_empty() {
         layers.push(notices(app));
     }
-    if layers.len() == 1 {
-        layers.pop().unwrap_or_else(|| text("").into())
-    } else {
-        stack(layers).into()
-    }
+    stack(layers).width(Fill).height(Fill).into()
 }
 
 fn header(app: &App) -> Element<'_, Message> {
@@ -533,14 +531,17 @@ fn tree_pane(app: &App, p: Palette) -> Element<'_, Message> {
     .height(Length::Fixed(30.0))
     .padding([0, 8])
     .style(style::fill(p.side));
-    let mut tree = column![head].spacing(0);
+    // Each entry keeps its own state. The header, the Files menu, and every
+    // node are stateless columns, and iced will reuse that empty state when
+    // a click inserts or removes one of them.
+    let mut tree = column![row_slot(head)].spacing(0);
     if app.menu.as_ref().is_some_and(|menu| menu.kind == "root") {
-        tree = tree.push(context_menu("root", p));
+        tree = tree.push(row_slot(context_menu("root", p)));
     }
     if let Some(root) = &app.tree {
         if let Some(children) = &root.children {
             for child in children {
-                tree = tree.push(node_view(app, child, 0, p));
+                tree = tree.push(row_slot(node_view(app, child, 0, p)));
             }
         }
     }
@@ -1120,7 +1121,7 @@ fn gutter_bar(paint: query::BandPaint, dark: bool) -> Option<Color> {
 fn results(app: &App, p: Palette) -> Element<'_, Message> {
     let mut cards = keyed::Column::new().spacing(8).padding(8).width(Fill);
     for (index, card) in app.results.iter().take(20).enumerate() {
-        cards = cards.push(index, card_view(app, index, card, p));
+        cards = cards.push(index, row_slot(card_view(app, index, card, p)));
     }
     container(
         column![
@@ -2370,7 +2371,7 @@ fn floating_menu(app: &App) -> Option<Element<'_, Message>> {
     }
     let p = style::palette(app.prefs.dark);
     let card = context_menu(&menu.kind, p);
-    let at = app.pointer;
+    let at = menu.at;
     Some(
         float(card)
             .translate(move |bounds, viewport| place(at, bounds, viewport))

@@ -166,6 +166,7 @@ enum Dialog {
 struct MenuAt {
     path: String,
     kind: String,
+    at: iced::Point,
 }
 
 #[derive(Clone, Debug)]
@@ -461,18 +462,24 @@ impl App {
                 self.menu = None;
             }
             Message::Menu(path, kind) => {
-                self.menu = Some(MenuAt { path, kind });
+                self.menu = Some(MenuAt {
+                    path,
+                    kind,
+                    at: self.pointer,
+                });
             }
             Message::MenuRoot => {
                 self.menu = Some(MenuAt {
                     path: String::new(),
                     kind: "root".to_string(),
+                    at: self.pointer,
                 });
             }
             Message::MenuAct(label) => {
                 let menu = self.menu.clone().unwrap_or(MenuAt {
                     path: String::new(),
                     kind: "root".to_string(),
+                    at: self.pointer,
                 });
                 self.menu = None;
                 return self.menu_act(&menu, label);
@@ -1580,6 +1587,48 @@ SELECT * FROM demo WHERE id = 'a';
             keys: Vec::new(),
         });
         let _ = show_frame_with(&app, cache);
+    }
+
+    #[test]
+    fn nav_click_keeps_menu_anchor_and_widget_state() {
+        let (_dir, mut app) = workspace();
+        let mut cache = show_frame(&app);
+        app.pointer = iced::Point::new(48.0, 90.0);
+        let _ = app.update(Message::Menu("widgets.dql".to_string(), "file".to_string()));
+        let anchor = app.menu.as_ref().map(|menu| menu.at);
+        app.pointer = iced::Point::new(400.0, 500.0);
+        cache = show_frame_with(&app, cache);
+        assert_eq!(anchor, Some(iced::Point::new(48.0, 90.0)));
+        app.results = vec![message_card(), item_card()];
+        cache = show_frame_with(&app, cache);
+        app.results = vec![item_card()];
+        app.menu = None;
+        let _ = show_frame_with(&app, cache);
+    }
+
+    fn message_card() -> crate::web::studio::StatementCard {
+        crate::web::studio::StatementCard {
+            statement: "SELECT 1".to_string(),
+            ok: true,
+            kind: "message".to_string(),
+            message: "ok".to_string(),
+            error: String::new(),
+            items: Vec::new(),
+            columns: Vec::new(),
+            elapsed_ms: 1,
+            read_units: 0.0,
+            write_units: 0.0,
+            help: None,
+            affected: None,
+        }
+    }
+
+    fn item_card() -> crate::web::studio::StatementCard {
+        let mut card = message_card();
+        card.kind = "items".to_string();
+        card.message.clear();
+        card.items = vec![serde_json::json!({"id": "a"})];
+        card
     }
 
     fn show_frame(app: &App) -> iced_test::runtime::user_interface::Cache {
