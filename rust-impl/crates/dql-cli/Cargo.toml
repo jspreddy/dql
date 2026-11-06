@@ -39,7 +39,7 @@ sha2 = "0.10.9"
 shell-words.workspace = true
 strip-ansi-escapes = "0.2.1"
 zeroize = "1.9"
-iced = { version = "0.14.0", features = ["advanced", "tokio"] }
+iced = { version = "0.14.0", features = ["advanced", "svg", "tokio"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

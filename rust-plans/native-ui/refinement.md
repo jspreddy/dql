@@ -1,6 +1,6 @@
 # Plan: native UI refinement
 
-**Status:** proposal. The window already ships as `dqlrs --ui` on iced 0.14.0 (`advanced`, `tokio`). This pass is look and interaction. Behavior stays the list in [`prd.md`](prd.md). `dqlrs-web` stays.
+**Status:** in the window. `dqlrs --ui` on iced 0.14.0 (`advanced`, `tokio`) now drags its splits, floats menus and search, scrolls wide grids on both axes, and toasts save and run failure. Behavior stays the list in [`prd.md`](prd.md). `dqlrs-web` stays.
 
 The source is the [iced 0.14.0 tree](https://github.com/iced-rs/iced/tree/0.14.0), not `master`. `examples/README.md` on that tag still describes tour, todos, and styling, and it omits later examples that are in the tree (`modal`, `toast`, `table`, `lazy`, `editor`, `scrollable`). The widget list is [`widget/src/lib.rs`](https://github.com/iced-rs/iced/blob/0.14.0/widget/src/lib.rs). The book page cited by [`testing.md`](testing.md) is the architecture (state, message, `update`, `view`). It does not add widgets.
 
