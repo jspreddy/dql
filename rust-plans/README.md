@@ -97,6 +97,7 @@ Related: [`todo_unify_cli_pipelines.md`](todo_unify_cli_pipelines.md) (`-c` / RE
 | [`native-ui/prd.md`](native-ui/prd.md) | Feature parity, dropping `/api/*`, an iced 0.14 window |
 | [`native-ui/plan.md`](native-ui/plan.md) | `Studio` in process, then the window. The web UI stays. |
 | [`native-ui/testing.md`](native-ui/testing.md) | `iced_test` in place of Playwright |
+| [`native-ui/refinement.md`](native-ui/refinement.md) | iced 0.14 widgets to take for look and interaction |
 
 ## Security
 
