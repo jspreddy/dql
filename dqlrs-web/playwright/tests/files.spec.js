@@ -429,7 +429,7 @@ test("moves a file through the prompt and by dragging", async ({ page }) => {
   await expect(node(page, "empty/moved.dql")).toHaveCount(0);
 });
 
-test("deletes a file, deletes an empty folder, and refuses a folder that holds a non-dql file", async ({ page }) => {
+test("deletes a file and an empty folder, and refuses a folder that has contents", async ({ page }) => {
   const dialogs = handleDialogs(page, async (dialog) => {
     await dialog.accept();
   });
@@ -445,11 +445,13 @@ test("deletes a file, deletes an empty folder, and refuses a folder that holds a
   await page.locator("#menu-delete").click();
   await expect(node(page, "empty copy")).toHaveCount(0);
 
+  await node(page, "queries").click({ button: "right" });
+  await page.locator("#menu-delete").click();
   await node(page, "empty").click({ button: "right" });
   await page.locator("#menu-delete").click();
-  await expect.poll(() => dialogs.messages.map((item) => item.message).join("\n")).toContain(
-    "folder contains .gitkeep, which is not a .dql file",
-  );
+  await expect.poll(() => dialogs.messages.filter((item) => item.message === "Folder is not empty, so unable to delete it from here.")).toHaveLength(2);
+  await expect(node(page, "queries")).toBeVisible();
+  await expect(node(page, "queries/edit.dql")).toBeVisible();
   await expect(node(page, "empty")).toBeVisible();
   await dialogs.stop();
 });

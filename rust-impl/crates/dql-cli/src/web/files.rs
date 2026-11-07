@@ -177,12 +177,10 @@ pub fn delete_path(root: &Path, relative: &str) -> Result<(), PathError> {
         fs::remove_file(path).map_err(|err| PathError(err.to_string()))?;
         return Ok(());
     }
-    if let Some(blocked) = foreign_entry(&path)? {
-        return Err(PathError(format!(
-            "folder contains {blocked}, which is not a .dql, .csv, or .json file"
-        )));
+    if !directory_is_empty(&path)? {
+        return Err(PathError("Folder is not empty, so unable to delete it from here.".to_string()));
     }
-    fs::remove_dir_all(path).map_err(|err| PathError(err.to_string()))?;
+    fs::remove_dir(path).map_err(|err| PathError(err.to_string()))?;
     Ok(())
 }
 
@@ -656,23 +654,13 @@ fn copy_tree(src: &Path, dest: &Path) -> Result<(), PathError> {
     Ok(())
 }
 
-fn foreign_entry(path: &Path) -> Result<Option<String>, PathError> {
-    for entry in fs::read_dir(path).map_err(|err| PathError(err.to_string()))? {
-        let entry = entry.map_err(|err| PathError(err.to_string()))?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') || SKIP_DIRS.contains(&name.as_str()) {
-            return Ok(Some(name));
-        }
-        let child = entry.path();
-        if child.is_dir() {
-            if let Some(found) = foreign_entry(&child)? {
-                return Ok(Some(found));
-            }
-        } else if !child.is_file() || !is_viewable(&child) {
-            return Ok(Some(name));
-        }
+fn directory_is_empty(path: &Path) -> Result<bool, PathError> {
+    let mut entries = fs::read_dir(path).map_err(|err| PathError(err.to_string()))?;
+    match entries.next() {
+        None => Ok(true),
+        Some(Ok(_)) => Ok(false),
+        Some(Err(err)) => Err(PathError(err.to_string())),
     }
-    Ok(None)
 }
 
 fn is_dql(path: &Path) -> bool {
@@ -835,10 +823,24 @@ mod tests {
         assert!(move_path(root.path(), "archive", "archive/nested").is_err());
         assert!(move_path(root.path(), "archive/posts.dql", "../out.dql").is_err());
         fs::write(root.path().join("archive/notes.txt"), "keep").unwrap();
-        assert!(delete_path(root.path(), "archive").is_err());
+        assert_eq!(
+            delete_path(root.path(), "archive").unwrap_err().0,
+            "Folder is not empty, so unable to delete it from here."
+        );
         fs::remove_file(root.path().join("archive/notes.txt")).unwrap();
+        assert_eq!(
+            delete_path(root.path(), "archive").unwrap_err().0,
+            "Folder is not empty, so unable to delete it from here."
+        );
         delete_path(root.path(), "archive/posts copy.dql").unwrap();
         assert!(!root.path().join("archive/posts copy.dql").exists());
+        assert_eq!(
+            delete_path(root.path(), "archive copy").unwrap_err().0,
+            "Folder is not empty, so unable to delete it from here."
+        );
+        for name in ["posts.dql", "posts copy.dql", "posts copy 2.dql"] {
+            delete_path(root.path(), &format!("archive copy/{name}")).unwrap();
+        }
         delete_path(root.path(), "archive copy").unwrap();
         assert!(!root.path().join("archive copy").exists());
     }

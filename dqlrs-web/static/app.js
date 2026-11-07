@@ -1415,7 +1415,7 @@ async function moveEntry(path) {
 
 async function deleteEntry(path, kind) {
   const label = path.split("/").pop();
-  const message = kind === "dir" ? "Delete folder " + label + " and the .dql files inside it?" : "Delete " + label + "?";
+  const message = kind === "dir" ? "Delete folder " + label + "?" : "Delete " + label + "?";
   if (!window.confirm(message)) return;
   clearTimeout(state.saveTimer);
   state.fileEpoch += 1;
