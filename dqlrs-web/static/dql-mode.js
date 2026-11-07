@@ -417,18 +417,41 @@ export const runStatusGutter = gutter({
 
 export const setLintIssues = StateEffect.define();
 
+function clampLintPos(value, limit) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, Math.min(Math.trunc(number), limit));
+}
+
+// A range that starts at the document end cannot extend past it. CodeMirror
+// throws if mapPos is given a position greater than the changeset length.
+function clipLintIssue(issue, limit) {
+  const offset = clampLintPos(issue.offset, limit);
+  let end = clampLintPos(issue.end, limit);
+  if (end <= offset && offset > 0) {
+    return { ...issue, offset: offset - 1, end: offset };
+  }
+  return { ...issue, offset, end };
+}
+
 export const lintIssuesField = StateField.define({
   create() {
     return [];
   },
   update(issues, transaction) {
     for (const effect of transaction.effects) {
-      if (effect.is(setLintIssues)) return effect.value;
+      if (effect.is(setLintIssues)) {
+        return effect.value
+          .map((issue) => clipLintIssue(issue, transaction.state.doc.length))
+          .filter((issue) => issue.end > issue.offset);
+      }
     }
     if (!transaction.docChanged) return issues;
+    const limit = transaction.startState.doc.length;
     return issues.flatMap((issue) => {
-      const offset = transaction.changes.mapPos(issue.offset, 1);
-      const end = transaction.changes.mapPos(issue.end, 1);
+      const clipped = clipLintIssue(issue, limit);
+      const offset = transaction.changes.mapPos(clipped.offset, 1);
+      const end = transaction.changes.mapPos(clipped.end, 1);
       if (end <= offset) return [];
       return [{ ...issue, offset, end }];
     });

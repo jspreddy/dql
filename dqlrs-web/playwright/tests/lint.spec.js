@@ -140,3 +140,17 @@ test("lints on open, after save, and when a fetch replaces the file", async ({ p
   await expect(page.locator(".cm-lint-error")).toHaveCount(0);
   await page.screenshot({ path: playwrightArtifact(`lint-on-fetch-${testInfo.project.name}.png`) });
 });
+
+test("editing recent.dql after an end-of-file lint does not throw", async ({ page }, testInfo) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(String(error)));
+  await replaceEditor(page, "SCAN * FROM nb_posts;\n");
+  await replaceEditor(page, "SCAN * FROM");
+  await expect(page.locator("#lint-status")).toBeVisible();
+  await page.locator("#editor-content").click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" nb_posts");
+  await expect(page.locator("#editor-content")).toContainText("SCAN * FROM nb_posts");
+  expect(errors).toEqual([]);
+  await page.screenshot({ path: playwrightArtifact(`lint-edit-recent-${testInfo.project.name}.png`) });
+});
