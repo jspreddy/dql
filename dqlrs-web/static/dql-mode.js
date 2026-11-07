@@ -439,17 +439,14 @@ function clipLintIssues(issues, limit) {
     .filter((issue) => issue.end > issue.offset);
 }
 
-// Lint is applied only by setLintIssues. A document edit drops the previous
-// report instead of mapping its positions, so a bad range cannot reject the edit.
-function lintFieldUpdate(current, transaction, apply, cleared) {
+// A throw while mapping or drawing lint used to reject the whole editor
+// transaction. Log it and keep the document change.
+function guardLint(fallback, update) {
   try {
-    for (const effect of transaction.effects) {
-      if (effect.is(setLintIssues)) return apply(effect.value, transaction.state.doc);
-    }
-    if (transaction.docChanged) return cleared;
-    return current;
-  } catch {
-    return cleared;
+    return update();
+  } catch (error) {
+    console.error(error);
+    return fallback;
   }
 }
 
@@ -458,7 +455,20 @@ export const lintIssuesField = StateField.define({
     return [];
   },
   update(issues, transaction) {
-    return lintFieldUpdate(issues, transaction, (value, doc) => clipLintIssues(value, doc.length), []);
+    return guardLint([], () => {
+      for (const effect of transaction.effects) {
+        if (effect.is(setLintIssues)) return clipLintIssues(effect.value, transaction.state.doc.length);
+      }
+      if (!transaction.docChanged) return issues;
+      const limit = transaction.startState.doc.length;
+      return issues.flatMap((issue) => {
+        const clipped = clipLintIssue(issue, limit);
+        const offset = transaction.changes.mapPos(clipped.offset, 1);
+        const end = transaction.changes.mapPos(clipped.end, 1);
+        if (end <= offset) return [];
+        return [{ ...issue, offset, end }];
+      });
+    });
   },
 });
 
@@ -490,7 +500,13 @@ const lintMarkField = StateField.define({
     return Decoration.none;
   },
   update(marks, transaction) {
-    return lintFieldUpdate(marks, transaction, lintMarkSet, Decoration.none);
+    return guardLint(Decoration.none, () => {
+      for (const effect of transaction.effects) {
+        if (effect.is(setLintIssues)) return lintMarkSet(effect.value, transaction.state.doc);
+      }
+      if (transaction.docChanged) return marks.map(transaction.changes);
+      return marks;
+    });
   },
   provide: (field) => EditorView.decorations.from(field),
 });
@@ -521,7 +537,12 @@ const lintGutterField = StateField.define({
     return RangeSet.empty;
   },
   update(markers, transaction) {
-    return lintFieldUpdate(markers, transaction, lintGutterSet, RangeSet.empty);
+    return guardLint(RangeSet.empty, () => {
+      for (const effect of transaction.effects) {
+        if (effect.is(setLintIssues)) return lintGutterSet(effect.value, transaction.state.doc);
+      }
+      return markers.map(transaction.changes);
+    });
   },
 });
 

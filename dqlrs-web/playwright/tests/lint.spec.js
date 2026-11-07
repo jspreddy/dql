@@ -141,7 +141,7 @@ test("lints on open, after save, and when a fetch replaces the file", async ({ p
   await page.screenshot({ path: playwrightArtifact(`lint-on-fetch-${testInfo.project.name}.png`) });
 });
 
-test("a lint error does not block editing recent.dql", async ({ page }, testInfo) => {
+test("a lint throw does not block editing recent.dql", async ({ page }, testInfo) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(String(error)));
   await replaceEditor(page, "SCAN * FROM nb_posts;\n");
@@ -156,7 +156,38 @@ test("a lint error does not block editing recent.dql", async ({ page }, testInfo
     marks: document.querySelectorAll(".cm-lint-error, .cm-lint-warning").length,
   }));
   expect(edited.text).toContain("SCAN * FROM nb_posts");
-  expect(edited.marks).toBe(0);
+  expect(edited.marks).toBeGreaterThan(0);
   expect(errors).toEqual([]);
   await page.screenshot({ path: playwrightArtifact(`lint-edit-recent-${testInfo.project.name}.png`) });
+});
+
+test("a thrown lint update is logged and the edit still applies", async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    const { EditorState } = await import("/vendor/codemirror-state.js");
+    const { lintExtension, setLintIssues } = await import("/dql-mode.js");
+    const logs = [];
+    const original = console.error;
+    console.error = (...args) => {
+      logs.push(args.map((arg) => (arg instanceof Error ? arg.message : String(arg))).join(" "));
+      original.apply(console, args);
+    };
+    const issue = {
+      get offset() {
+        throw new RangeError("Position 30 is out of range for changeset of length 29");
+      },
+      end: 4,
+      severity: "error",
+      message: "boom",
+    };
+    try {
+      let state = EditorState.create({ doc: "SCAN * FROM", extensions: lintExtension });
+      state = state.update({ effects: setLintIssues.of([issue]) }).state;
+      state = state.update({ changes: { from: state.doc.length, insert: " x" } }).state;
+      return { doc: state.doc.toString(), logs };
+    } finally {
+      console.error = original;
+    }
+  });
+  expect(result.doc).toBe("SCAN * FROM x");
+  expect(result.logs.join("\n")).toContain("Position 30 is out of range");
 });

@@ -1710,8 +1710,8 @@ function applyLint(issues) {
   const list = Array.isArray(issues) ? issues : [];
   try {
     editor.dispatch({ effects: setLintIssues.of(list) });
-  } catch {
-    // A lint report must not reject an editor update.
+  } catch (error) {
+    console.error(error);
   }
   paintLint(list);
 }
