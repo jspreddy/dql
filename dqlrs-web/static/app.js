@@ -213,6 +213,9 @@ const editor = new EditorView({
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "false", id: "editor-content" }),
       Prec.highest(EditorView.theme({
+        ".cm-cursor, .cm-dropCursor": {
+          borderLeftColor: "var(--cursor)",
+        },
         ".cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground": {
           backgroundColor: "var(--selection) !important",
         },

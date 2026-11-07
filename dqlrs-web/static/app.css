@@ -1181,6 +1181,11 @@ main { flex: 1; min-width: 0; min-height: 0; display: flex; }
   color: var(--text);
 }
 
+.cm-editor .cm-cursor,
+.cm-editor .cm-dropCursor {
+  border-left-color: var(--cursor);
+}
+
 #editor {
   flex: 1;
   min-width: 0;

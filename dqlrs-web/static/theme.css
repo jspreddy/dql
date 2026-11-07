@@ -14,6 +14,7 @@
   --line-control: #cfd6de;
   --side: #f3f5f7;
   --text: #1c2430;
+  --cursor: #000000;
   --text-strong: #12202b;
   --text-secondary: #334155;
   --label: #526071;
@@ -152,6 +153,7 @@
   --line-control: #3d4f64;
   --side: #121922;
   --text: #e7eef6;
+  --cursor: #ffffff;
   --text-strong: #f5f9fc;
   --text-secondary: #c5d2e0;
   --label: #9aabbd;
