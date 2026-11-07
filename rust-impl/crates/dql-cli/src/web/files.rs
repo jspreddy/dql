@@ -178,7 +178,9 @@ pub fn delete_path(root: &Path, relative: &str) -> Result<(), PathError> {
         return Ok(());
     }
     if !directory_is_empty(&path)? {
-        return Err(PathError("Folder is not empty, so unable to delete it from here.".to_string()));
+        return Err(PathError(
+            "Folder is not empty, so unable to delete it from here.".to_string(),
+        ));
     }
     fs::remove_dir(path).map_err(|err| PathError(err.to_string()))?;
     Ok(())
