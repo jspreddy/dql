@@ -22,7 +22,7 @@ DROP TEMPTABLE IF EXISTS sample_temp_notes;
 DROP TABLE IF EXISTS sample_local_source;
 
 -- Register the CSV that ships with these examples.
-CREATE LOCALTABLE sample_local_users AS 'dqlrs-web/examples/data/sample-users.csv';
+CREATE LOCALTABLE sample_local_users AS './data/sample-users.csv';
 -- When the process was started in dqlrs-web/examples, use this path instead:
 -- CREATE LOCALTABLE sample_local_users AS 'data/sample-users.csv';
 
@@ -31,7 +31,7 @@ SELECT * FROM sample_local_users WHERE id = 'a';
 SCAN * FROM sample_local_users;
 
 -- JSON is the same kind of table. id is first, so it is the hash key.
-CREATE LOCALTABLE sample_local_cities AS 'dqlrs-web/examples/data/sample-cities.json';
+CREATE LOCALTABLE sample_local_cities AS './data/sample-cities.json';
 
 SELECT city, country FROM sample_local_cities WHERE id = 'b';
 
@@ -45,7 +45,7 @@ CREATE TEMPTABLE sample_temp_london AS (
 );
 
 SCAN * FROM sample_temp_london;
-
+scan * from sample_local_users;
 -- This row is visible to every tab of this server, and to no other process.
 INSERT INTO sample_temp_london (id, name, city) VALUES ('c', 'Lin', 'Oslo');
 
@@ -69,8 +69,8 @@ DESCRIBE sample_local_users;
 DESCRIBE sample_temp_london;
 
 -- The CSV stays on disk. The temp table does not.
-DROP LOCALTABLE sample_local_users;
-DROP TEMPTABLE sample_temp_london;
-DROP TEMPTABLE sample_temp_notes;
-DROP LOCALTABLE sample_local_cities;
-DROP TABLE sample_local_source;
+-- DROP LOCALTABLE sample_local_users;
+-- DROP TEMPTABLE sample_temp_london;
+-- DROP TEMPTABLE sample_temp_notes;
+-- DROP LOCALTABLE sample_local_cities;
+-- DROP TABLE sample_local_source;
