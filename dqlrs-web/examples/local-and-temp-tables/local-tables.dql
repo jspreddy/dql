@@ -19,10 +19,10 @@ DROP LOCALTABLE IF EXISTS sample_local_users;
 DROP LOCALTABLE IF EXISTS sample_local_cities;
 DROP TEMPTABLE IF EXISTS sample_temp_london;
 DROP TEMPTABLE IF EXISTS sample_temp_notes;
-DROP TABLE IF EXISTS sample_local_source;
+DROP TABLE IF EXISTS sample_source;
 
 -- Register the CSV that ships with these examples.
-CREATE LOCALTABLE sample_local_users AS './data/sample-users.csv';
+CREATE LOCALTABLE sample_local_users AS './local-and-temp-tables/sample-users.csv';
 -- When the process was started in dqlrs-web/examples, use this path instead:
 -- CREATE LOCALTABLE sample_local_users AS 'data/sample-users.csv';
 
@@ -31,7 +31,7 @@ SELECT * FROM sample_local_users WHERE id = 'a';
 SCAN * FROM sample_local_users;
 
 -- JSON is the same kind of table. id is first, so it is the hash key.
-CREATE LOCALTABLE sample_local_cities AS './data/sample-cities.json';
+CREATE LOCALTABLE sample_local_cities AS './local-and-temp-tables/sample-cities.json';
 
 SELECT city, country FROM sample_local_cities WHERE id = 'b';
 
@@ -52,14 +52,14 @@ INSERT INTO sample_temp_london (id, name, city) VALUES ('c', 'Lin', 'Oslo');
 SELECT * FROM sample_temp_london WHERE id = 'c';
 
 -- The same statement can slice a DynamoDB table after the rows are inserted.
-CREATE TABLE sample_local_source (
+CREATE TABLE sample_source (
   id STRING HASH KEY
 );
 
-INSERT INTO sample_local_source (id, name) VALUES ('a', 'Ada'), ('b', 'Grace');
+INSERT INTO sample_source (id, name) VALUES ('a', 'Ada'), ('b', 'Grace');
 
 CREATE TEMPTABLE sample_temp_notes AS (
-  SELECT * FROM sample_local_source WHERE id = 'a'
+  SELECT * FROM sample_source WHERE id = 'a'
 );
 
 SCAN * FROM sample_temp_notes;
@@ -73,4 +73,6 @@ DESCRIBE sample_temp_london;
 -- DROP TEMPTABLE sample_temp_london;
 -- DROP TEMPTABLE sample_temp_notes;
 -- DROP LOCALTABLE sample_local_cities;
--- DROP TABLE sample_local_source;
+-- DROP TABLE sample_source;
+
+
