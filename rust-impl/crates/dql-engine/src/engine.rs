@@ -386,6 +386,11 @@ impl<B: DynamoBackend> Engine<B> {
         }
     }
 
+    /// `dynamodb`, `local`, or `temp` for one table. Does not list the catalog.
+    pub fn table_kind_name(&self, name: &str) -> &'static str {
+        self.row_kind(name).0.as_str()
+    }
+
     fn row_kind(&self, name: &str) -> (TableKind, Option<String>) {
         match self.virtual_tables.kind(name) {
             Some(kind) => (kind, self.virtual_tables.schema_line(name)),

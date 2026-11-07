@@ -85,6 +85,8 @@ const state = {
   suppressSave: false,
   dragPath: "",
   tablesRequest: 0,
+  listGeneration: 0,
+  tableListNote: "",
   cachePoll: 0,
   cacheStatusRequest: 0,
   listedTables: [],
@@ -2139,7 +2141,12 @@ function handleEventFrame(frame) {
   if (event === "tree") {
     refreshTree().catch((error) => reportError(error));
   } else if (event === "tables") {
-    if (state.mode === "tables") loadTables({ background: true }).catch((error) => reportError(error));
+    const names = Array.isArray(payload.tables)
+      ? payload.tables.filter((name) => typeof name === "string" && name)
+      : [];
+    for (const name of names) {
+      refreshOneTable(name).catch((error) => reportError(error));
+    }
   } else if (event === "presence") {
     renderPresence(payload.clients || []);
   } else if (event === "file") {
@@ -4121,11 +4128,93 @@ function schemaPresent(present, total) {
   return wrap;
 }
 
+const tableFetchTokens = new Map();
+
+function byTableName(left, right) {
+  if (left.name < right.name) return -1;
+  if (left.name > right.name) return 1;
+  return 0;
+}
+
+function nameMatchesPattern(pattern, name) {
+  if (!pattern) return true;
+  const source = "^" + pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*").replaceAll("?", ".") + "$";
+  return new RegExp(source).test(name);
+}
+
+async function refreshOneTable(name) {
+  if (state.mode !== "tables") return;
+  state.listGeneration += 1;
+  const token = (tableFetchTokens.get(name) || 0) + 1;
+  tableFetchTokens.set(name, token);
+  let payload;
+  try {
+    payload = await api("/api/tables?name=" + encodeURIComponent(name));
+  } catch (error) {
+    if (tableFetchTokens.get(name) !== token) return;
+    reportError(error);
+    return;
+  }
+  if (tableFetchTokens.get(name) !== token || state.mode !== "tables") return;
+  const found = (payload.tables || []).find((table) => table.name === name) || null;
+  mergeListedTable(name, found);
+}
+
+function mergeListedTable(name, table) {
+  const pattern = document.querySelector("#table-search").value.trim();
+  const had = state.listedTables.some((row) => row.name === name);
+  const listed = state.listedTables.filter((row) => row.name !== name);
+  if (table && (had || nameMatchesPattern(pattern, name))) {
+    listed.push(table);
+    listed.sort(byTableName);
+  }
+  state.listedTables = listed;
+  if (!pattern) state.catalog = listed.slice();
+  else if (table) rememberCatalog(table);
+  else forgetCatalog(name);
+  const selectedGone = state.table === name && !listed.some((row) => row.name === name);
+  if (selectedGone) {
+    state.table = listed[0] ? listed[0].name : "";
+    state.page = 0;
+  }
+  paintTableList();
+  if (selectedGone) {
+    if (state.table) loadRows();
+    else clearRows();
+  }
+}
+
+function rememberCatalog(table) {
+  if (!Array.isArray(state.catalog)) return;
+  const next = state.catalog.filter((row) => row.name !== table.name);
+  next.push(table);
+  next.sort(byTableName);
+  state.catalog = next;
+}
+
+function forgetCatalog(name) {
+  if (!Array.isArray(state.catalog)) return;
+  state.catalog = state.catalog.filter((row) => row.name !== name);
+}
+
+function paintTableList() {
+  const list = document.querySelector("#table-list");
+  const pattern = document.querySelector("#table-search").value.trim();
+  list.replaceChildren();
+  if (state.tableListNote) list.append(sidebarMatchNote(state.tableListNote));
+  if (!state.listedTables.length) {
+    list.append(note(pattern ? "No tables match " + pattern : "No tables", false));
+    return;
+  }
+  paintTables(list, state.listedTables);
+}
+
 async function loadTables(options = {}) {
   const refresh = Boolean(options.refresh);
   const background = Boolean(options.background);
   const poll = Boolean(options.poll);
   const request = ++state.tablesRequest;
+  const generation = state.listGeneration;
   const pattern = document.querySelector("#table-search").value.trim();
   const list = document.querySelector("#table-list");
   const refreshButton = document.querySelector("#refresh-tables");
@@ -4141,29 +4230,25 @@ async function loadTables(options = {}) {
     if (refresh) query.set("refresh", "1");
     if (background) query.set("async", "1");
     const payload = await api("/api/tables?" + query.toString());
-    if (request !== state.tablesRequest) return;
+    if (request !== state.tablesRequest || generation !== state.listGeneration) return;
     renderCacheHint(payload.cache);
     watchCacheRefresh(payload.cache);
-    list.replaceChildren();
-    if (payload.note) list.append(sidebarMatchNote(payload.note));
-    if (!payload.tables.length) {
-      state.table = "";
-      state.listedTables = [];
-      list.append(note(pattern ? "No tables match " + pattern : "No tables", false));
+    state.tableListNote = payload.note || "";
+    state.listedTables = payload.tables || [];
+    if (!pattern) state.catalog = state.listedTables;
+    else if (refresh) state.catalog = null;
+    if (!state.listedTables.some((table) => table.name === state.table)) {
+      state.table = state.listedTables[0] ? state.listedTables[0].name : "";
+      state.page = 0;
+    }
+    paintTableList();
+    if (!state.table) {
       clearRows();
       return;
     }
-    state.listedTables = payload.tables;
-    if (!pattern) state.catalog = payload.tables;
-    else if (refresh) state.catalog = null;
-    if (!payload.tables.some((table) => table.name === state.table)) {
-      state.table = payload.tables[0].name;
-      state.page = 0;
-    }
-    paintTables(list, payload.tables);
     await loadRows();
   } catch (error) {
-    if (request !== state.tablesRequest) return;
+    if (request !== state.tablesRequest || generation !== state.listGeneration) return;
     list.replaceChildren(note(error.message, true));
   } finally {
     if (request === state.tablesRequest) {

@@ -307,6 +307,14 @@ impl RuntimeEngine {
         }
     }
 
+    /// `dynamodb`, `local`, or `temp`. Does not list or describe the catalog.
+    pub fn table_kind_name(&self, name: &str) -> &'static str {
+        match self {
+            Self::Memory(engine) => engine.inner().table_kind_name(name),
+            Self::Remote(engine) => engine.inner().table_kind_name(name),
+        }
+    }
+
     pub fn cached_definition(&mut self, table: &str) -> Option<dql_models::TableMeta> {
         match self {
             Self::Memory(engine) => engine.inner_mut().cached_definition(table),

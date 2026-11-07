@@ -21,7 +21,7 @@ use super::files::{self, PathError};
 use super::presence::{self, Kind};
 use super::query_cache;
 use super::shape::{
-    changes_schema, column_order, explain_index, parse_table_shape, read_query, safe_table_name,
+    changed_tables, column_order, explain_index, parse_table_shape, read_query, safe_table_name,
     split_statements, Column, ExecText, ListedTable, TableShape, PAGE_SIZE,
 };
 use super::structure;
@@ -535,12 +535,16 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
             Reply::Json(200, serde_json::to_value(hint).unwrap_or(Value::Null))
         }
         "/api/tables" => {
-            let pattern = query_value(query, "pattern");
-            let refresh = query_flag(query, "refresh");
-            let background = query_flag(query, "async");
             let mut state = lock_state(app);
-            let listed =
-                crate::meta::ls::web_table_list(&mut state.session, &pattern, refresh, background);
+            let name = query_value(query, "name");
+            let listed = if !name.is_empty() {
+                crate::meta::ls::web_table_by_name(&mut state.session, &name)
+            } else {
+                let pattern = query_value(query, "pattern");
+                let refresh = query_flag(query, "refresh");
+                let background = query_flag(query, "async");
+                crate::meta::ls::web_table_list(&mut state.session, &pattern, refresh, background)
+            };
             match listed {
                 Ok(listed) => Reply::Json(200, serde_json::to_value(listed).unwrap_or(Value::Null)),
                 Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
@@ -829,10 +833,15 @@ fn run_script(app: Arc<App>, statements: Vec<String>, writer: impl Write + Send 
         } else {
             None
         };
-        if envelope.ok && changes_schema(statement) {
-            state.shapes.clear();
-            state.table_catalog = None;
-            app.hub.tables();
+        if envelope.ok {
+            let names = changed_tables(statement);
+            if !names.is_empty() {
+                for name in &names {
+                    state.shapes.remove(name);
+                }
+                state.table_catalog = None;
+                app.hub.tables(&names);
+            }
         }
         let mut result = public_result(
             statement,
@@ -2116,6 +2125,19 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             "{filtered}"
         );
 
+        let one = http_body(addr, "GET", "/api/tables?name=posts", "");
+        let one_json: Value = serde_json::from_str(&one).expect(&one);
+        assert_eq!(one_json["tables"].as_array().unwrap().len(), 1);
+        assert_eq!(one_json["tables"][0]["name"], "posts");
+        assert_eq!(one_json["tables"][0]["kind"], "dynamodb");
+        assert_eq!(one_json["tables"][0]["keys"][0]["name"], "id");
+        let missing = http_body(addr, "GET", "/api/tables?name=not_a_table", "");
+        let missing_json: Value = serde_json::from_str(&missing).expect(&missing);
+        assert!(
+            missing_json["tables"].as_array().unwrap().is_empty(),
+            "{missing}"
+        );
+
         let cache = http_body(addr, "GET", "/api/table-cache", "");
         let cache_json: Value = serde_json::from_str(&cache).expect(&cache);
         assert_eq!(cache_json["text"], "No table list cached.");
@@ -2255,7 +2277,7 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         let token = server_token(addr);
         let mut stream = TcpStream::connect(addr).unwrap();
         stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
+            .set_read_timeout(Some(Duration::from_millis(200)))
             .unwrap();
         write!(
             stream,
@@ -2264,60 +2286,65 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         .unwrap();
         let mut buf = String::new();
         let mut bytes = [0u8; 1024];
-        let deadline = Instant::now() + Duration::from_secs(4);
-        while Instant::now() < deadline && !buf.contains("event: presence") {
-            match stream.read(&mut bytes) {
-                Ok(0) => break,
-                Ok(n) => buf.push_str(&String::from_utf8_lossy(&bytes[..n])),
-                Err(err)
-                    if err.kind() == std::io::ErrorKind::WouldBlock
-                        || err.kind() == std::io::ErrorKind::TimedOut =>
-                {
-                    break
-                }
-                Err(err) => panic!("{err}"),
-            }
-        }
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.contains("event: presence")
+        });
         assert!(buf.contains("event: presence"), "{buf}");
         assert!(buf.contains("\"label\":\"W1\""), "{buf}");
         let created = http(addr, "POST", "/api/file", r#"{"path":"notes.dql"}"#);
         assert!(created.contains("notes.dql"), "{created}");
-        while Instant::now() < deadline && !buf.contains("event: file") {
-            match stream.read(&mut bytes) {
-                Ok(0) => break,
-                Ok(n) => buf.push_str(&String::from_utf8_lossy(&bytes[..n])),
-                Err(err)
-                    if err.kind() == std::io::ErrorKind::WouldBlock
-                        || err.kind() == std::io::ErrorKind::TimedOut =>
-                {
-                    break
-                }
-                Err(err) => panic!("{err}"),
-            }
-        }
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.contains("event: file")
+        });
         assert!(buf.contains("event: tree"), "{buf}");
         assert!(buf.contains("event: file"), "{buf}");
         assert!(buf.contains("notes.dql"), "{buf}");
         std::fs::write(root.path().join("notes.dql"), "from outside\n").unwrap();
-        while Instant::now() < deadline && buf.matches("event: file").count() < 2 {
-            match stream.read(&mut bytes) {
-                Ok(0) => break,
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.matches("event: file").count() >= 2
+        });
+        assert!(
+            buf.matches("event: file").count() >= 2,
+            "outside write was not announced\n{buf}"
+        );
+        let created_table = http_body(
+            addr,
+            "POST",
+            "/api/run",
+            r#"{"dql":"CREATE TABLE shelf (id STRING HASH KEY);"}"#,
+        );
+        assert!(created_table.contains("\"ok\":true"), "{created_table}");
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.contains("event: tables")
+        });
+        assert!(
+            buf.contains("event: tables\ndata: {\"tables\":[\"shelf\"]}"),
+            "tables event did not name the table\n{buf}"
+        );
+        drop(stream);
+        drop(guard);
+    }
+
+    fn read_until(
+        stream: &mut TcpStream,
+        buf: &mut String,
+        bytes: &mut [u8],
+        done: impl Fn(&str) -> bool,
+    ) {
+        let deadline = Instant::now() + Duration::from_secs(4);
+        while Instant::now() < deadline && !done(buf) {
+            match stream.read(bytes) {
+                Ok(0) => return,
                 Ok(n) => buf.push_str(&String::from_utf8_lossy(&bytes[..n])),
                 Err(err)
                     if err.kind() == std::io::ErrorKind::WouldBlock
                         || err.kind() == std::io::ErrorKind::TimedOut =>
                 {
-                    break
+                    thread::sleep(Duration::from_millis(20));
                 }
                 Err(err) => panic!("{err}"),
             }
         }
-        assert!(
-            buf.matches("event: file").count() >= 2,
-            "outside write was not announced\n{buf}"
-        );
-        drop(stream);
-        drop(guard);
     }
 
     fn spawn_server(root: PathBuf) -> (SocketAddr, ServerGuard) {

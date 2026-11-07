@@ -195,3 +195,69 @@ test("shows web and mcp clients as profile icons", async ({ page }, testInfo) =>
   await expect(page.locator("#presence-tip")).toContainText("MCP: M1");
   await page.screenshot({ path: playwrightArtifact(`presence-web-mcp-${testInfo.project.name}.png`) });
 });
+
+test("a tables event names the table and updates that row", async ({ page, app }) => {
+  await page.addInitScript(() => {
+    window.__sseFrames = [];
+    const original = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const response = await original(input, init);
+      const url = typeof input === "string" ? input : input.url;
+      if (!String(url).includes("/api/events") || !response.body) return response;
+      const [stream, tap] = response.body.tee();
+      const reader = tap.getReader();
+      const decoder = new TextDecoder();
+      (async () => {
+        let buffer = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let split = buffer.indexOf("\n\n");
+          while (split >= 0) {
+            window.__sseFrames.push(buffer.slice(0, split));
+            buffer = buffer.slice(split + 2);
+            split = buffer.indexOf("\n\n");
+          }
+        }
+      })();
+      return new Response(stream, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    };
+  });
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await page.locator("#mode-tables").click();
+  await expect(page.locator("#tables-view")).toBeVisible();
+
+  const name = `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  app.trackTable(name);
+  const tableGets = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/tables") tableGets.push(url.search);
+  });
+
+  const other = await page.context().newPage();
+  await openApp(other, app);
+  await replaceEditor(other, `CREATE TABLE ${name} (id STRING HASH KEY);\n`);
+  await other.locator("#run").click();
+  await expect(other.locator(".query-result").last()).toContainText(name);
+  await expect(page.locator(`#table-${name}`)).toBeVisible();
+  await expect(page.locator(`#table-${name}`)).toContainText("id");
+
+  const frames = await page.evaluate(() => window.__sseFrames.filter((frame) => frame.includes("event: tables")));
+  expect(frames.some((frame) => frame.includes(`"tables":["${name}"]`))).toBe(true);
+  expect(tableGets.some((search) => search.includes(`name=${name}`))).toBe(true);
+  expect(tableGets.every((search) => search.startsWith("?name="))).toBe(true);
+
+  await replaceEditor(other, `DROP TABLE ${name};\n`);
+  await other.locator("#run").click();
+  await expect(page.locator(`#table-${name}`)).toHaveCount(0);
+  const afterDrop = await page.evaluate(() => window.__sseFrames.filter((frame) => frame.includes("event: tables")));
+  expect(afterDrop.filter((frame) => frame.includes(`"tables":["${name}"]`)).length).toBeGreaterThanOrEqual(2);
+  await other.close();
+});

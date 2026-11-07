@@ -88,8 +88,15 @@ impl Hub {
         publish(&mut inner, frame("tree", &json!({})));
     }
 
-    pub(crate) fn tables(&self) {
-        publish(&mut self.lock(), frame("tables", &json!({})));
+    /// `names` are the tables a create, drop, or alter just changed.
+    pub(crate) fn tables(&self, names: &[String]) {
+        if names.is_empty() {
+            return;
+        }
+        publish(
+            &mut self.lock(),
+            frame("tables", &json!({ "tables": names })),
+        );
     }
 
     pub(crate) fn presence(&self, snapshot: &Value) {

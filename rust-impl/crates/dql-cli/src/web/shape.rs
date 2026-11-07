@@ -346,6 +346,35 @@ pub fn changes_schema(statement: &str) -> bool {
     SCHEMA_CHANGE.is_match(strip_comments(statement).trim())
 }
 
+/// Table names a successful create, drop, or alter changed.
+///
+/// One statement names one table. An empty list means the text is not one of
+/// those statements, so the caller does not announce a catalog change.
+pub fn changed_tables(statement: &str) -> Vec<String> {
+    use dql_parser::Statement;
+    if !changes_schema(statement) {
+        return Vec::new();
+    }
+    let text = strip_comments(statement);
+    let text = text.trim().trim_end_matches(';').trim();
+    if text.is_empty() {
+        return Vec::new();
+    }
+    let Ok(statement) = dql_parser::parse_statement(text) else {
+        return Vec::new();
+    };
+    match statement {
+        Statement::CreateTable { name, .. }
+        | Statement::CreateLocalTable { name, .. }
+        | Statement::CreateTempTable { name, .. }
+        | Statement::DropTable { name, .. }
+        | Statement::DropLocalTable { name, .. }
+        | Statement::DropTempTable { name, .. } => vec![name],
+        Statement::AlterTable { table, .. } => vec![table],
+        _ => Vec::new(),
+    }
+}
+
 pub fn safe_table_name(name: &str) -> bool {
     let mut chars = name.chars();
     match chars.next() {
@@ -700,6 +729,21 @@ mod tests {
         ));
         assert!(changes_schema("DROP TABLE posts"));
         assert!(!changes_schema("SELECT * FROM posts"));
+        assert_eq!(
+            changed_tables("CREATE LOCALTABLE users AS 'users.csv'"),
+            ["users"]
+        );
+        assert_eq!(changed_tables("DROP TEMPTABLE IF EXISTS hot"), ["hot"]);
+        assert_eq!(
+            changed_tables("CREATE DYNAMODB TABLE posts (id STRING HASH KEY)"),
+            ["posts"]
+        );
+        assert_eq!(changed_tables("DROP TABLE posts"), ["posts"]);
+        assert_eq!(
+            changed_tables("ALTER TABLE posts SET THROUGHPUT (1, 1)"),
+            ["posts"]
+        );
+        assert!(changed_tables("SELECT * FROM posts").is_empty());
     }
 
     #[test]
