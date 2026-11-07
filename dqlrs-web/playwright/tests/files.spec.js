@@ -71,6 +71,136 @@ async function expectUnderline(tab, primary) {
   expect(line.bottom).toBe("-1px");
 }
 
+test("shows csv and json files as tables", async ({ page, app }, testInfo) => {
+  fs.writeFileSync(path.join(app.workspace, "users.csv"), "id,name\na,ada\nb,grace\n");
+  fs.writeFileSync(path.join(app.workspace, "cities.json"), "[{\"id\":\"a\",\"city\":\"nyc\"}]\n");
+  fs.writeFileSync(path.join(app.workspace, "notes.txt"), "hidden\n");
+  const many = ["id,n", ...Array.from({ length: 51 }, (_, index) => `r${index},${index}`)].join("\n") + "\n";
+  fs.writeFileSync(path.join(app.workspace, "many.csv"), many);
+  await page.reload();
+  await expect(node(page, "users.csv")).toBeVisible();
+  await expect(node(page, "cities.json")).toBeVisible();
+  await expect(node(page, "notes.txt")).toHaveCount(0);
+  await expect(node(page, "users.csv").locator(".file-kind")).toHaveText("csv");
+  await expect(node(page, "cities.json").locator(".file-kind")).toHaveText("json");
+
+  await node(page, "users.csv").click();
+  await expect(page.locator("#query-view")).toHaveClass(/is-data/);
+  await expect(page.locator("#editor")).toBeHidden();
+  await expect(page.locator("#results")).toBeHidden();
+  await expect(page.locator("#file-rows")).toBeVisible();
+  await expect(page.locator("#file-rows-title")).toHaveText("users.csv");
+  await expect(page.locator("#file-rows-meta")).toHaveText("50 rows at a time");
+  await expect(page.locator("#file-page-label")).toHaveText("Showing 1–2");
+  await expect(page.locator("#file-page-prev")).toBeDisabled();
+  await expect(page.locator("#file-page-next")).toBeDisabled();
+  await expect(page.locator("#file-rows-table tbody tr")).toHaveCount(2);
+  await expect(page.locator("#file-rows-table")).toContainText("ada");
+  await expect(page.locator("#file-rows-table")).toContainText("grace");
+  await expect(page.locator("#file-rows-table [data-key='hash']")).toBeVisible();
+  const schema = page.locator("#file-rows-schema");
+  await expect(schema).toBeVisible();
+  await expect(schema).toHaveAttribute("aria-label", "Show result structure");
+  const titleBox = await page.locator("#file-rows-title").boundingBox();
+  const schemaBox = await schema.boundingBox();
+  expect(schemaBox.x).toBeGreaterThan(titleBox.x + titleBox.width - 2);
+  expect(Math.abs(schemaBox.y + schemaBox.height / 2 - (titleBox.y + titleBox.height / 2))).toBeLessThan(8);
+
+  const duringStructure = [];
+  const watchStructure = (request) => {
+    const requestPath = new URL(request.url()).pathname;
+    if (requestPath === "/api/file-rows" || requestPath === "/api/run" || requestPath === "/api/rows") {
+      duringStructure.push(requestPath);
+    }
+  };
+  page.on("request", watchStructure);
+  await schema.click();
+  const pop = page.locator("#schema-pop");
+  await expect(pop).toBeVisible();
+  await expect(page.locator("#schema-pop-kicker")).toHaveText("Result structure");
+  await expect(page.locator("#schema-pop-info")).toBeVisible();
+  await expect(page.locator("#schema-pop-info")).toHaveAttribute(
+    "title",
+    "Based on every row in the file.",
+  );
+  await expect(page.locator("#schema-pop-title")).toHaveText("users.csv");
+  await expect(page.locator("#schema-pop-summary")).toHaveText("2 columns · 2 rows");
+  await expect(page.locator("#schema-pop-query")).toBeHidden();
+  await expect(page.locator(".schema-pop-title-row .schema-key-chip")).toHaveCount(1);
+  await expect(page.locator(".schema-pop-title-row .schema-key-chip")).toContainText("id");
+  const idRow = page.locator('#schema-table tbody tr[data-column="id"]');
+  await expect(idRow).toContainText("STRING");
+  await expect(idRow).toContainText("Hash key");
+  await expect(idRow).toContainText("2/2");
+  await expect(idRow.locator(".schema-sample")).toHaveText("a");
+  const nameRow = page.locator('#schema-table tbody tr[data-column="name"]');
+  await expect(nameRow).toContainText("STRING");
+  await expect(nameRow.locator(".schema-role-muted")).toHaveText("—");
+  await expect(nameRow).toContainText("2/2");
+  await expect(nameRow.locator(".schema-sample")).toHaveText("ada");
+  await expect(page.locator("#schema-pop-foot")).toHaveText("Types come from the whole file. No extra query was run.");
+  expect(duringStructure).toEqual([]);
+  page.off("request", watchStructure);
+  await page.screenshot({ path: playwrightArtifact(`file-structure-${testInfo.project.name}.png`) });
+  await page.keyboard.press("Escape");
+  await expect(pop).toBeHidden();
+
+  await node(page, "users.csv").click({ button: "right" });
+  await expect(page.locator("#menu-run-file")).toHaveCount(0);
+  await page.locator("#file-rows-title").click();
+  await page.screenshot({ path: playwrightArtifact(`view-csv-${testInfo.project.name}.png`) });
+
+  const before = fs.readFileSync(path.join(app.workspace, "users.csv"), "utf8");
+  const rejected = await page.evaluate(async (path) => {
+    const saved = await fetch("/api/file", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, text: "changed\n" }),
+    });
+    return saved.ok ? "" : await saved.text();
+  }, "users.csv");
+  expect(rejected).toContain("only .dql files can be changed");
+  expect(fs.readFileSync(path.join(app.workspace, "users.csv"), "utf8")).toBe(before);
+
+  await node(page, "cities.json").click();
+  await expect(page.locator("#file-rows-title")).toHaveText("cities.json");
+  await expect(page.locator("#editor")).toBeHidden();
+  await expect(page.locator("#file-rows-table")).toContainText("nyc");
+  await expect(page.locator("#file-page-label")).toHaveText("Showing 1–1");
+  await page.locator("#file-rows-schema").click();
+  await expect(page.locator("#schema-pop-title")).toHaveText("cities.json");
+  await expect(page.locator("#schema-pop-kicker")).toHaveText("Result structure");
+  await expect(page.locator('#schema-table tbody tr[data-column="city"]')).toContainText("STRING");
+  await expect(page.locator('#schema-table tbody tr[data-column="city"] .schema-sample')).toHaveText("nyc");
+  await page.keyboard.press("Escape");
+  await page.screenshot({ path: playwrightArtifact(`view-json-${testInfo.project.name}.png`) });
+
+  await node(page, "many.csv").click();
+  await expect(page.locator("#file-rows-table tbody tr")).toHaveCount(50);
+  await expect(page.locator("#file-page-label")).toHaveText("Showing 1–50");
+  await expect(page.locator("#file-page-next")).toBeEnabled();
+  await page.locator("#file-page-next").click();
+  await expect(page.locator("#file-page-label")).toHaveText("Showing 51–51");
+  await expect(page.locator("#file-rows-table tbody tr")).toHaveCount(1);
+  await expect(page.locator("#file-rows-table")).toContainText("r50");
+  await expect(page.locator("#file-page-next")).toBeDisabled();
+  await expect(page.locator("#file-page-prev")).toBeEnabled();
+  await page.locator("#file-rows-schema").click();
+  await expect(page.locator("#schema-pop-summary")).toHaveText("2 columns · 51 rows");
+  await expect(page.locator('#schema-table tbody tr[data-column="n"]')).toContainText("NUMBER");
+  await expect(page.locator('#schema-table tbody tr[data-column="n"] .schema-sample')).toHaveText("0");
+  await page.keyboard.press("Escape");
+
+  await node(page, "queries/read.dql").click();
+  await expect(page.locator("#file-name")).toHaveText("read.dql");
+  await expect(page.locator("#file-rows")).toBeHidden();
+  await expect(page.locator("#editor")).toBeVisible();
+  await expect(page.locator("#editor-content")).toHaveAttribute("contenteditable", "true");
+  await expect(page.locator("#run")).toBeEnabled();
+  await expect(page.locator("#schema-pop")).toBeHidden();
+  await expect(page.locator("#file-rows-schema")).toBeHidden();
+});
+
 test("marks the file open in the editor", async ({ page }, testInfo) => {
   const edit = node(page, "queries/edit.dql");
   const primary = await themeColor(page, "--teal");
@@ -299,7 +429,7 @@ test("moves a file through the prompt and by dragging", async ({ page }) => {
   await expect(node(page, "empty/moved.dql")).toHaveCount(0);
 });
 
-test("deletes a file, deletes an empty folder, and refuses a folder that holds a non-dql file", async ({ page }) => {
+test("deletes a file and an empty folder, and refuses a folder that has contents", async ({ page }) => {
   const dialogs = handleDialogs(page, async (dialog) => {
     await dialog.accept();
   });
@@ -315,11 +445,13 @@ test("deletes a file, deletes an empty folder, and refuses a folder that holds a
   await page.locator("#menu-delete").click();
   await expect(node(page, "empty copy")).toHaveCount(0);
 
+  await node(page, "queries").click({ button: "right" });
+  await page.locator("#menu-delete").click();
   await node(page, "empty").click({ button: "right" });
   await page.locator("#menu-delete").click();
-  await expect.poll(() => dialogs.messages.map((item) => item.message).join("\n")).toContain(
-    "folder contains .gitkeep, which is not a .dql file",
-  );
+  await expect.poll(() => dialogs.messages.filter((item) => item.message === "Folder is not empty, so unable to delete it from here.")).toHaveLength(2);
+  await expect(node(page, "queries")).toBeVisible();
+  await expect(node(page, "queries/edit.dql")).toBeVisible();
   await expect(node(page, "empty")).toBeVisible();
   await dialogs.stop();
 });

@@ -5,6 +5,7 @@ pub mod config;
 pub mod error;
 pub mod help;
 pub mod history;
+mod local_tables;
 pub mod mcp;
 pub mod meta;
 pub mod notebook;

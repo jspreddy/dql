@@ -118,6 +118,11 @@
       <div id="tables-nav" class="tables-nav hidden">
         <div class="search-row">
           <input id="table-search" type="search" placeholder="catalog" spellcheck="false" aria-label="Filter tables" title="Same matching as ls. A glob lists those tables. Otherwise similar names and related keys." />
+          <button type="button" id="group-tables" title="Group by table type" aria-label="Group by table type" aria-pressed="false">
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+              <path fill="none" stroke="currentColor" stroke-width="1.4" d="M2 3.2h5.2v4.2H2zM8.8 3.2H14v4.2H8.8zM5.4 8.6h5.2v4.2H5.4z"/>
+            </svg>
+          </button>
         </div>
         <div id="table-list" class="table-list"></div>
       </div>
@@ -183,6 +188,28 @@
           </div>
           <div id="result-body" class="result-body" role="tabpanel" aria-labelledby="result-tab-result"></div>
         </section>
+        <section id="file-rows" class="file-rows hidden" aria-label="Data file">
+          <div class="rows-head">
+            <span class="rows-heading">
+              <span id="file-rows-title"></span>
+              <button type="button" id="file-rows-schema" class="schema-btn hidden" title="Show result structure" aria-label="Show result structure" aria-haspopup="dialog" aria-controls="schema-pop" aria-expanded="false">
+                <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                  <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M2.5 3.2h11v9.6h-11z"/>
+                  <path fill="none" stroke="currentColor" stroke-width="1.4" d="M2.5 6.4h11M6.7 3.2v9.6"/>
+                </svg>
+              </button>
+            </span>
+            <span id="file-rows-meta" class="meta"></span>
+          </div>
+          <div id="file-rows-body" class="result-body browser-rows"></div>
+          <div class="pager">
+            <span id="file-page-label" class="meta"></span>
+            <span>
+              <button type="button" id="file-page-prev">Previous</button>
+              <button type="button" id="file-page-next">Next</button>
+            </span>
+          </div>
+        </section>
       </section>
       <section id="tables-view" class="view hidden">
         <div class="rows-head">
@@ -197,7 +224,7 @@
           </span>
           <span id="rows-meta" class="meta"></span>
         </div>
-        <div id="rows-body" class="result-body"></div>
+        <div id="rows-body" class="result-body browser-rows"></div>
         <div class="pager">
           <span id="page-label" class="meta"></span>
           <span>

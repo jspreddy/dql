@@ -81,7 +81,7 @@ export function parseTableDescription(text) {
   const name = lines[0] && lines[0].match(/^Name: (.+)$/);
   if (!name) return null;
 
-  const known = new Set(["Status", "Items", "Size", "Read", "Write", "Hash Key", "Range Key"]);
+  const known = new Set(["Type", "Status", "Items", "Size", "Read", "Write", "Hash Key", "Range Key"]);
   const fields = { Name: name[1] };
   const extra = [];
   const schema = [];
@@ -91,7 +91,7 @@ export function parseTableDescription(text) {
       schema.push(line);
       continue;
     }
-    if (line.startsWith("CREATE TABLE ")) {
+    if (line.startsWith("CREATE ")) {
       inSchema = true;
       schema.push(line);
       continue;
@@ -107,6 +107,7 @@ export function parseTableDescription(text) {
 
   return {
     name: fields.Name,
+    type: fields.Type || "",
     status: fields.Status || "",
     items: fields.Items || "",
     size: fields.Size || "",

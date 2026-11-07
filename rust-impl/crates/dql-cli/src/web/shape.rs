@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use regex::Regex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const PAGE_SIZE: usize = 50;
@@ -19,7 +19,7 @@ pub struct TableShape {
     pub indexes: HashMap<String, (String, Option<String>)>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Column {
     pub name: String,
     pub table: Option<String>,
@@ -67,6 +67,8 @@ pub struct KeyRole {
 pub struct ListedTable {
     pub name: String,
     pub keys: Vec<KeyRole>,
+    /// `dynamodb`, `local`, or `temp`.
+    pub kind: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
@@ -378,7 +380,11 @@ fn load_table_catalog(
     let mut tables = Vec::new();
     for name in ls_names(&summary.message) {
         let keys = shapes.get(&name).map(keys_from_shape).unwrap_or_default();
-        tables.push(ListedTable { name, keys });
+        tables.push(ListedTable {
+            name,
+            keys,
+            kind: "dynamodb".to_string(),
+        });
     }
     Ok(tables)
 }
