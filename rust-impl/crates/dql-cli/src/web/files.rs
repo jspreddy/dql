@@ -327,6 +327,32 @@ pub fn is_missing(err: &PathError) -> bool {
 }
 
 /// SHA-256 of the file text. The web client sends this back as `base` on save.
+/// Workspace-relative path for a filesystem event, or nothing when the path
+/// is outside the root or in a directory the file tree hides.
+pub fn relative_watch(root: &Path, path: &Path) -> Option<String> {
+    let relative = path.strip_prefix(root).ok()?;
+    let text = relative.to_string_lossy().replace('\\', "/");
+    if text.is_empty()
+        || text.split('/').any(|part| {
+            part.is_empty()
+                || part == "."
+                || part == ".."
+                || part.starts_with('.')
+                || SKIP_DIRS.contains(&part)
+        })
+    {
+        return None;
+    }
+    Some(text)
+}
+
+pub fn viewable_relative(relative: &str) -> bool {
+    matches!(
+        name_extension(relative).as_deref(),
+        Some("dql" | "csv" | "json")
+    )
+}
+
 pub fn content_revision(text: &str) -> String {
     let digest = Sha256::digest(text.as_bytes());
     let mut out = String::with_capacity(digest.len() * 2);

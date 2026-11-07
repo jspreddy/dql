@@ -50,52 +50,24 @@ test("keeps a dirty editor and shows the disk change once", async ({ page, app }
   await expect(page.locator("#patch-recall")).toHaveText("Unsaved patch");
 });
 
-test("a stale file poll does not revert a saved edit", async ({ page, app }) => {
-  const file = path.join(app.workspace, "queries/edit.dql");
-  const original = fs.readFileSync(file, "utf8");
-  let releaseStale = null;
-  let held = false;
+test("refetches a file when its hash changes and not before", async ({ page, app }) => {
+  let gets = 0;
   await page.route(/\/api\/file\?/, async (route) => {
-    if (held) {
-      await route.continue();
-      return;
-    }
-    held = true;
-    await new Promise((resolve) => {
-      releaseStale = resolve;
-    });
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        path: "queries/edit.dql",
-        text: original,
-        revision: "stale",
-      }),
-    });
+    gets += 1;
+    await route.continue();
   });
-  await expect.poll(() => releaseStale !== null).toBe(true);
-  const saved = page.waitForResponse((response) => {
-    const request = response.request();
-    return response.url().includes("/api/file") && request.method() === "PUT" && response.ok();
-  });
-  await replaceEditor(page, "-- editable\nSELECT 1;\n-- saved edit\n");
-  await saved;
-  const stale = page.waitForResponse(async (response) => {
-    if (response.request().method() !== "GET" || !response.url().includes("/api/file?")) return false;
-    const body = await response.text();
-    return body.includes('"revision":"stale"');
-  });
-  releaseStale();
-  await stale;
-  await expect(page.locator("#editor-content")).toContainText("saved edit");
-  await expect(page.locator("#patch-pop")).toBeHidden();
   await page.waitForTimeout(1200);
-  await expect(page.locator("#editor-content")).toContainText("saved edit");
+  expect(gets).toBe(0);
+  const file = path.join(app.workspace, "queries/edit.dql");
+  fs.writeFileSync(file, "-- editable\nSELECT 1;\n-- from disk\n");
+  await expect(page.locator("#editor-content")).toContainText("from disk");
+  expect(gets).toBeGreaterThan(0);
   await expect(page.locator("#patch-pop")).toBeHidden();
-  const disk = fs.readFileSync(file, "utf8");
-  expect(disk).toContain("saved edit");
-  expect(disk).not.toBe(original);
+});
+
+test("shows a file added outside the editor", async ({ page, app }) => {
+  fs.writeFileSync(path.join(app.workspace, "queries/fresh.dql"), "SELECT 1;\n");
+  await expect(page.locator('[data-testid="node-queries__fresh.dql"]')).toBeVisible();
 });
 
 test("a second window picks up a saved edit without a patch", async ({ page, app }) => {
@@ -195,17 +167,19 @@ test("lists each open web window on the title bar", async ({ page, app }, testIn
 });
 
 test("shows web and mcp clients as profile icons", async ({ page }, testInfo) => {
-  await page.route("**/api/presence", async (route) => {
+  const clients = {
+    clients: [
+      { id: "web-window-a", kind: "web", label: "W1", color: "#c2410c" },
+      { id: "web-window-b", kind: "web", label: "W2", color: "#0067a5" },
+      { id: "mcp", kind: "mcp", label: "M1", color: "#b45309" },
+    ],
+  };
+  const body = `event: presence\ndata: ${JSON.stringify(clients)}\n\n`;
+  await page.route("**/api/events**", async (route) => {
     await route.fulfill({
       status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        clients: [
-          { id: "web-window-a", kind: "web", label: "W1", color: "#c2410c" },
-          { id: "web-window-b", kind: "web", label: "W2", color: "#0067a5" },
-          { id: "mcp", kind: "mcp", label: "M1", color: "#b45309" },
-        ],
-      }),
+      headers: { "content-type": "text/event-stream", "cache-control": "no-store" },
+      body,
     });
   });
   await page.reload();

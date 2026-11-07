@@ -5,6 +5,7 @@
 //! without a rebuild. The installed binary falls back to the embedded copy.
 
 mod environment;
+mod events;
 pub(crate) mod files;
 pub(crate) mod lint;
 mod presence;

@@ -673,8 +673,10 @@ static READ_QUERY: LazyLock<Regex> = LazyLock::new(|| {
     )
     .expect("read query")
 });
-static SCHEMA_CHANGE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^(create|drop|alter)\s+table\b").expect("schema change"));
+static SCHEMA_CHANGE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^(create|drop|alter)\s+(?:dynamodb\s+)?(?:localtable|temptable|table)\b")
+        .expect("schema change")
+});
 static EXPLAIN_INDEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"'index':\s+"([^"]+)""#).expect("explain index"));
 static CONSISTENT: LazyLock<Regex> =
@@ -688,6 +690,17 @@ static AS_ALIAS: LazyLock<Regex> =
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn local_and_temp_tables_change_the_catalog() {
+        assert!(changes_schema("CREATE LOCALTABLE users AS 'users.csv'"));
+        assert!(changes_schema("DROP TEMPTABLE IF EXISTS hot"));
+        assert!(changes_schema(
+            "CREATE DYNAMODB TABLE posts (id STRING HASH KEY)"
+        ));
+        assert!(changes_schema("DROP TABLE posts"));
+        assert!(!changes_schema("SELECT * FROM posts"));
+    }
 
     #[test]
     fn splits_on_semicolons_and_keeps_quotes() {

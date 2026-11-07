@@ -58,13 +58,14 @@ struct WebState {
     next_result: u64,
 }
 
-struct App {
-    root: PathBuf,
+pub(crate) struct App {
+    pub(crate) root: PathBuf,
     endpoint: String,
     state: Mutex<WebState>,
     cancel: dql_engine::CancelFlag,
     identity: Mutex<Option<dql_engine::CallerIdentity>>,
     presence: presence::Book,
+    pub(crate) hub: super::events::Hub,
     mcp: bool,
     token: String,
 }
@@ -85,6 +86,7 @@ enum Reply {
     Json(u16, Value),
     Bytes(u16, &'static str, Vec<u8>),
     Ndjson(Arc<App>, Vec<String>),
+    Events(Arc<App>, String),
 }
 
 pub fn serve(
@@ -98,6 +100,7 @@ pub fn serve(
     let root = root.canonicalize()?;
     let token = crate::api_token::load()?;
     let app = Arc::new(App::new(session, root, mcp, token));
+    super::events::start(&app);
     let listener = TcpListener::bind(listen)?;
     let bound = listener.local_addr().unwrap_or(listen);
     println!("DQLRS Web  http://{bound}");
@@ -202,6 +205,7 @@ impl App {
             cancel,
             identity: Mutex::new(None),
             presence: presence::Book::new(),
+            hub: super::events::Hub::new(),
             mcp,
             token,
         }
@@ -426,11 +430,20 @@ fn dispatch(app: &Arc<App>, request: &Incoming) -> Reply {
     }
     let query = request.query.as_str();
     match request.method.as_str() {
+        "GET" if path == "/api/events" => events_reply(app, query),
         "GET" => dispatch_get(app, path, query),
         "POST" => dispatch_post(app, path, &request.body),
         "PUT" => dispatch_put(app, path, &request.body),
         _ => Reply::Json(404, json!({"ok": false, "error": "not found"})),
     }
+}
+
+fn events_reply(app: &Arc<App>, query: &str) -> Reply {
+    let id = query_value(query, "id");
+    if presence::valid_web_id(&id).is_none() {
+        return Reply::Json(400, json!({"ok": false, "error": "client id is invalid"}));
+    }
+    Reply::Events(Arc::clone(app), id)
 }
 
 fn authorized(app: &App, request: &Incoming) -> bool {
@@ -577,7 +590,9 @@ fn dispatch_mcp(app: &App, request: &Incoming) -> Reply {
         .as_deref()
         .and_then(presence::valid_mcp_id)
         .unwrap_or("mcp");
-    app.presence.touch(mcp_id, Kind::Mcp);
+    if app.presence.touch(mcp_id, Kind::Mcp) {
+        app.hub.presence(&app.presence.snapshot());
+    }
     let text = String::from_utf8_lossy(&request.body);
     let mut state = lock_state(app);
     let WebState {
@@ -640,31 +655,50 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
             let Some(id) = presence::valid_web_id(id) else {
                 return Reply::Json(400, json!({"ok": false, "error": "client id is invalid"}));
             };
-            app.presence.touch(id, Kind::Web);
+            if app.presence.touch(id, Kind::Web) {
+                app.hub.presence(&app.presence.snapshot());
+            }
             Reply::Json(200, app.presence.snapshot())
         }
         "/api/file" => match files::create_file(&app.root, relative) {
-            Ok(path) => Reply::Json(200, json!({"path": path, "text": ""})),
+            Ok(path) => {
+                app.hub.file(&path, &files::content_revision(""));
+                app.hub.tree();
+                Reply::Json(200, json!({"path": path, "text": ""}))
+            }
             Err(err) => json_error(400, &err),
         },
         "/api/mkdir" => match files::make_dir(&app.root, relative) {
-            Ok(path) => Reply::Json(200, json!({"path": path, "kind": "dir"})),
+            Ok(path) => {
+                app.hub.tree();
+                Reply::Json(200, json!({"path": path, "kind": "dir"}))
+            }
             Err(err) => json_error(400, &err),
         },
         "/api/duplicate" => match files::duplicate_path(&app.root, relative) {
-            Ok((path, kind)) => Reply::Json(200, json!({"path": path, "kind": kind})),
+            Ok((path, kind)) => {
+                app.hub.tree();
+                Reply::Json(200, json!({"path": path, "kind": kind}))
+            }
             Err(err) => json_error(400, &err),
         },
         "/api/move" => {
             let from = body.get("from").and_then(Value::as_str).unwrap_or("");
             let to = body.get("to").and_then(Value::as_str).unwrap_or("");
             match files::move_path(&app.root, from, to) {
-                Ok((path, kind)) => Reply::Json(200, json!({"path": path, "kind": kind})),
+                Ok((path, kind)) => {
+                    app.hub.tree();
+                    Reply::Json(200, json!({"path": path, "kind": kind}))
+                }
                 Err(err) => json_error(400, &err),
             }
         }
         "/api/delete" => match files::delete_path(&app.root, relative) {
-            Ok(()) => Reply::Json(200, json!({"ok": true})),
+            Ok(()) => {
+                app.hub.file(relative, "missing");
+                app.hub.tree();
+                Reply::Json(200, json!({"ok": true}))
+            }
             Err(err) => json_error(400, &err),
         },
         "/api/query-results" => save_query_result(&app.root, &body),
@@ -698,10 +732,13 @@ fn dispatch_put(app: &App, path: &str, raw: &[u8]) -> Reply {
     let text = body.get("text").and_then(Value::as_str).unwrap_or("");
     let base = body.get("base").and_then(Value::as_str);
     match files::save_file(&app.root, relative, text, base) {
-        Ok(files::SaveFile::Stored(file)) => Reply::Json(
-            200,
-            json!({"ok": true, "path": file.path, "revision": file.revision}),
-        ),
+        Ok(files::SaveFile::Stored(file)) => {
+            app.hub.file(&file.path, &file.revision);
+            Reply::Json(
+                200,
+                json!({"ok": true, "path": file.path, "revision": file.revision}),
+            )
+        }
         Ok(files::SaveFile::Conflict(file)) => Reply::Json(
             409,
             json!({
@@ -795,6 +832,7 @@ fn run_script(app: Arc<App>, statements: Vec<String>, writer: impl Write + Send 
         if envelope.ok && changes_schema(statement) {
             state.shapes.clear();
             state.table_catalog = None;
+            app.hub.tables();
         }
         let mut result = public_result(
             statement,
@@ -1178,7 +1216,85 @@ fn write_reply(stream: &mut TcpStream, reply: Reply, keep_alive: bool) -> io::Re
             write_ndjson(stream, app, statements)?;
             Ok(false)
         }
+        Reply::Events(app, client_id) => {
+            write_events(stream, app, &client_id)?;
+            Ok(false)
+        }
     }
+}
+
+fn write_events(stream: &mut TcpStream, app: Arc<App>, client_id: &str) -> io::Result<()> {
+    let header = "\
+HTTP/1.1 200 OK\r\n\
+Content-Type: text/event-stream; charset=utf-8\r\n\
+Cache-Control: no-store\r\n\
+Transfer-Encoding: chunked\r\n\
+Connection: close\r\n\
+\r\n";
+    stream.write_all(header.as_bytes())?;
+    stream.flush()?;
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(60)));
+    let (sub, rx) = app.hub.subscribe();
+    let generation = app.presence.hold(client_id, Kind::Web);
+    app.hub.presence(&app.presence.snapshot());
+    let leave = EndStream {
+        app: Arc::clone(&app),
+        client_id: client_id.to_string(),
+        generation,
+        sub,
+    };
+    let result = stream_events(stream, &app, rx);
+    drop(leave);
+    result
+}
+
+struct EndStream {
+    app: Arc<App>,
+    client_id: String,
+    generation: u64,
+    sub: u64,
+}
+
+impl Drop for EndStream {
+    fn drop(&mut self) {
+        self.app.hub.unsubscribe(self.sub);
+        if self
+            .app
+            .presence
+            .release(&self.client_id, Kind::Web, self.generation)
+        {
+            self.app.hub.presence(&self.app.presence.snapshot());
+        }
+    }
+}
+
+fn stream_events(
+    stream: &mut TcpStream,
+    app: &App,
+    rx: std::sync::mpsc::Receiver<String>,
+) -> io::Result<()> {
+    write_chunk(stream, ": ping\n\n")?;
+    loop {
+        match rx.recv_timeout(Duration::from_secs(15)) {
+            Ok(frame) => write_chunk(stream, &frame)?,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                write_chunk(stream, ": ping\n\n")?;
+                if app.presence.sweep() {
+                    app.hub.presence(&app.presence.snapshot());
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    Ok(())
+}
+
+fn write_chunk(stream: &mut TcpStream, data: &str) -> io::Result<()> {
+    let bytes = data.as_bytes();
+    write!(stream, "{:X}\r\n", bytes.len())?;
+    stream.write_all(bytes)?;
+    stream.write_all(b"\r\n")?;
+    stream.flush()
 }
 
 fn write_bytes(
@@ -1899,6 +2015,78 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         drop(guard);
     }
 
+    #[test]
+    fn events_stream_reports_a_file_and_a_tree_change() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let token = server_token(addr);
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        write!(
+            stream,
+            "GET /api/events?id=web-window-a HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut buf = String::new();
+        let mut bytes = [0u8; 1024];
+        let deadline = Instant::now() + Duration::from_secs(4);
+        while Instant::now() < deadline && !buf.contains("event: presence") {
+            match stream.read(&mut bytes) {
+                Ok(0) => break,
+                Ok(n) => buf.push_str(&String::from_utf8_lossy(&bytes[..n])),
+                Err(err)
+                    if err.kind() == std::io::ErrorKind::WouldBlock
+                        || err.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    break
+                }
+                Err(err) => panic!("{err}"),
+            }
+        }
+        assert!(buf.contains("event: presence"), "{buf}");
+        assert!(buf.contains("\"label\":\"W1\""), "{buf}");
+        let created = http(addr, "POST", "/api/file", r#"{"path":"notes.dql"}"#);
+        assert!(created.contains("notes.dql"), "{created}");
+        while Instant::now() < deadline && !buf.contains("event: file") {
+            match stream.read(&mut bytes) {
+                Ok(0) => break,
+                Ok(n) => buf.push_str(&String::from_utf8_lossy(&bytes[..n])),
+                Err(err)
+                    if err.kind() == std::io::ErrorKind::WouldBlock
+                        || err.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    break
+                }
+                Err(err) => panic!("{err}"),
+            }
+        }
+        assert!(buf.contains("event: tree"), "{buf}");
+        assert!(buf.contains("event: file"), "{buf}");
+        assert!(buf.contains("notes.dql"), "{buf}");
+        std::fs::write(root.path().join("notes.dql"), "from outside\n").unwrap();
+        while Instant::now() < deadline && buf.matches("event: file").count() < 2 {
+            match stream.read(&mut bytes) {
+                Ok(0) => break,
+                Ok(n) => buf.push_str(&String::from_utf8_lossy(&bytes[..n])),
+                Err(err)
+                    if err.kind() == std::io::ErrorKind::WouldBlock
+                        || err.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    break
+                }
+                Err(err) => panic!("{err}"),
+            }
+        }
+        assert!(
+            buf.matches("event: file").count() >= 2,
+            "outside write was not announced\n{buf}"
+        );
+        drop(stream);
+        drop(guard);
+    }
+
     fn spawn_server(root: PathBuf) -> (SocketAddr, ServerGuard) {
         spawn_server_mcp(root, false)
     }
@@ -1911,6 +2099,7 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             mcp,
             token.clone(),
         ));
+        super::super::events::start(&app);
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         test_tokens()

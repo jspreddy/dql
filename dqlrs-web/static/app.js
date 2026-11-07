@@ -103,9 +103,9 @@ const state = {
   applyingDisk: false,
   adopting: false,
   adoptQueued: null,
-  watchTimer: 0,
   watchSeq: 0,
   notedExternal: null,
+  eventsLive: false,
   clientId: loadClientId(),
 };
 
@@ -957,7 +957,7 @@ async function boot() {
   try {
     const config = await api("/api/config");
     applyEnvironment(config);
-    startFileWatch();
+    startEvents();
     await refreshTree();
     if (location.hash === "#tables") {
       setMode("tables");
@@ -2062,18 +2062,107 @@ function setEditorText(text, options = {}) {
   state.suppressSave = false;
 }
 
-function startFileWatch() {
-  if (state.watchTimer) return;
-  const tick = () => {
-    void watchOpenFile();
-    void beatPresence();
-  };
-  tick();
-  state.watchTimer = setInterval(tick, 1000);
+function startEvents() {
+  if (state.eventsLive || state.eventsStarted) return;
+  state.eventsStarted = true;
+  void readEvents();
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") tick();
+    if (document.visibilityState === "visible" && !state.eventsLive) {
+      void catchUpFiles();
+    }
   });
-  window.addEventListener("focus", tick);
+}
+
+async function readEvents() {
+  let delay = 500;
+  let reconnecting = false;
+  while (state.eventsStarted) {
+    state.eventsLive = false;
+    try {
+      const response = await fetchServer(
+        "/api/events?id=" + encodeURIComponent(state.clientId),
+        { headers: { Accept: "text/event-stream" } },
+      );
+      if (response.status === 401) return;
+      if (!response.ok || !response.body) throw new Error("event stream " + response.status);
+      if (reconnecting) await catchUpFiles();
+      reconnecting = true;
+      state.eventsLive = true;
+      delay = 500;
+      await readEventStream(response.body);
+    } catch (error) {
+      if (error && error.serverAway) {
+        /* fetch already opened the retry dialog */
+      }
+    }
+    state.eventsLive = false;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    delay = Math.min(delay * 2, 8000);
+  }
+}
+
+async function readEventStream(body) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    let split = buffer.indexOf("\n\n");
+    while (split >= 0) {
+      handleEventFrame(buffer.slice(0, split));
+      buffer = buffer.slice(split + 2);
+      split = buffer.indexOf("\n\n");
+    }
+  }
+}
+
+function handleEventFrame(frame) {
+  let event = "message";
+  const data = [];
+  for (const line of frame.split("\n")) {
+    if (!line || line.startsWith(":")) continue;
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+  }
+  if (!data.length) return;
+  let payload = {};
+  try {
+    payload = JSON.parse(data.join("\n"));
+  } catch {
+    return;
+  }
+  if (event === "tree") {
+    refreshTree().catch((error) => reportError(error));
+  } else if (event === "tables") {
+    if (state.mode === "tables") loadTables({ background: true }).catch((error) => reportError(error));
+  } else if (event === "presence") {
+    renderPresence(payload.clients || []);
+  } else if (event === "file") {
+    void onFileEvent(payload);
+  }
+}
+
+async function catchUpFiles() {
+  try {
+    await refreshTree();
+  } catch (error) {
+    reportError(error);
+  }
+  await pullOpenFile();
+}
+
+async function onFileEvent(payload) {
+  const path = payload.path;
+  if (!path || state.disk?.path !== path || dataFile(path)) return;
+  if (state.saveFlight && state.saveFlight.path === path) return;
+  if (payload.revision && payload.revision === state.disk.revision) return;
+  if (payload.revision === "missing") {
+    await adoptExternal(path, { missing: true, text: "", revision: "missing", path }, state.fileEpoch);
+    return;
+  }
+  await pullOpenFile();
 }
 
 function watchIsCurrent(path, epoch, seen, watchId) {
@@ -2085,7 +2174,7 @@ function watchIsCurrent(path, epoch, seen, watchId) {
     && !state.applyingDisk;
 }
 
-async function watchOpenFile() {
+async function pullOpenFile() {
   const path = state.disk?.path;
   if (!path || dataFile(path) || state.applyingDisk || state.saveFlight || state.adopting) return;
   const epoch = state.fileEpoch;
@@ -2222,18 +2311,6 @@ document.querySelector("#patch-copy").addEventListener("click", async () => {
     button.textContent = "Copy patch";
   }, 1200);
 });
-
-async function beatPresence() {
-  try {
-    const payload = await api("/api/presence", {
-      method: "POST",
-      body: { id: state.clientId, kind: "web" },
-    });
-    renderPresence(payload.clients || []);
-  } catch (error) {
-    if (error && error.serverAway) return;
-  }
-}
 
 let presenceKey = "";
 let presenceTipAnchor = null;
