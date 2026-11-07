@@ -1301,8 +1301,7 @@ async function openFile(path) {
       showOpenFile(path);
       state.entries = [];
       showResults([]);
-      editor.dispatch({ effects: setLintIssues.of([]) });
-      paintLint([]);
+      applyLint([]);
       setMode("query");
       await Promise.all([refreshTree(), loadFileRows()]);
       return;
@@ -1707,10 +1706,19 @@ function scheduleLint() {
   state.lintTimer = setTimeout(() => lintEditor(generation), 400);
 }
 
+function applyLint(issues) {
+  const list = Array.isArray(issues) ? issues : [];
+  try {
+    editor.dispatch({ effects: setLintIssues.of(list) });
+  } catch {
+    // A lint report must not reject an editor update.
+  }
+  paintLint(list);
+}
+
 async function lintEditor(generation) {
   if (dataFile(state.path)) {
-    editor.dispatch({ effects: setLintIssues.of([]) });
-    paintLint([]);
+    applyLint([]);
     return;
   }
   const text = editorText();
@@ -1721,9 +1729,7 @@ async function lintEditor(generation) {
     return;
   }
   if (generation !== lintGeneration) return;
-  const issues = Array.isArray(report.issues) ? report.issues : [];
-  editor.dispatch({ effects: setLintIssues.of(issues) });
-  paintLint(issues);
+  applyLint(Array.isArray(report.issues) ? report.issues : []);
 }
 
 function paintLint(issues) {

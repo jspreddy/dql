@@ -423,15 +423,34 @@ function clampLintPos(value, limit) {
   return Math.max(0, Math.min(Math.trunc(number), limit));
 }
 
-// A range that starts at the document end cannot extend past it. CodeMirror
-// throws if mapPos is given a position greater than the changeset length.
 function clipLintIssue(issue, limit) {
-  const offset = clampLintPos(issue.offset, limit);
-  let end = clampLintPos(issue.end, limit);
+  const offset = clampLintPos(issue && issue.offset, limit);
+  let end = clampLintPos(issue && issue.end, limit);
   if (end <= offset && offset > 0) {
     return { ...issue, offset: offset - 1, end: offset };
   }
   return { ...issue, offset, end };
+}
+
+function clipLintIssues(issues, limit) {
+  if (!Array.isArray(issues)) return [];
+  return issues
+    .map((issue) => clipLintIssue(issue, limit))
+    .filter((issue) => issue.end > issue.offset);
+}
+
+// Lint is applied only by setLintIssues. A document edit drops the previous
+// report instead of mapping its positions, so a bad range cannot reject the edit.
+function lintFieldUpdate(current, transaction, apply, cleared) {
+  try {
+    for (const effect of transaction.effects) {
+      if (effect.is(setLintIssues)) return apply(effect.value, transaction.state.doc);
+    }
+    if (transaction.docChanged) return cleared;
+    return current;
+  } catch {
+    return cleared;
+  }
 }
 
 export const lintIssuesField = StateField.define({
@@ -439,34 +458,18 @@ export const lintIssuesField = StateField.define({
     return [];
   },
   update(issues, transaction) {
-    for (const effect of transaction.effects) {
-      if (effect.is(setLintIssues)) {
-        return effect.value
-          .map((issue) => clipLintIssue(issue, transaction.state.doc.length))
-          .filter((issue) => issue.end > issue.offset);
-      }
-    }
-    if (!transaction.docChanged) return issues;
-    const limit = transaction.startState.doc.length;
-    return issues.flatMap((issue) => {
-      const clipped = clipLintIssue(issue, limit);
-      const offset = transaction.changes.mapPos(clipped.offset, 1);
-      const end = transaction.changes.mapPos(clipped.end, 1);
-      if (end <= offset) return [];
-      return [{ ...issue, offset, end }];
-    });
+    return lintFieldUpdate(issues, transaction, (value, doc) => clipLintIssues(value, doc.length), []);
   },
 });
 
-function lintMarkSet(doc, issues) {
-  const sorted = issues
+function lintMarkSet(issues, doc) {
+  const sorted = clipLintIssues(issues, doc.length)
     .map((issue) => ({
-      from: Math.max(0, Math.min(issue.offset, doc.length)),
-      to: Math.max(0, Math.min(issue.end, doc.length)),
+      from: issue.offset,
+      to: issue.end,
       severity: issue.severity === "warning" ? "warning" : "error",
       message: String(issue.message || ""),
     }))
-    .filter((issue) => issue.to > issue.from)
     .sort((left, right) => left.from - right.from || left.to - right.to);
   const builder = new RangeSetBuilder();
   let cursor = 0;
@@ -487,11 +490,7 @@ const lintMarkField = StateField.define({
     return Decoration.none;
   },
   update(marks, transaction) {
-    for (const effect of transaction.effects) {
-      if (effect.is(setLintIssues)) return lintMarkSet(transaction.state.doc, effect.value);
-    }
-    if (transaction.docChanged) return marks.map(transaction.changes);
-    return marks;
+    return lintFieldUpdate(marks, transaction, lintMarkSet, Decoration.none);
   },
   provide: (field) => EditorView.decorations.from(field),
 });
@@ -522,18 +521,14 @@ const lintGutterField = StateField.define({
     return RangeSet.empty;
   },
   update(markers, transaction) {
-    for (const effect of transaction.effects) {
-      if (effect.is(setLintIssues)) return lintGutterSet(transaction.state.doc, effect.value);
-    }
-    return markers.map(transaction.changes);
+    return lintFieldUpdate(markers, transaction, lintGutterSet, RangeSet.empty);
   },
 });
 
-function lintGutterSet(doc, issues) {
+function lintGutterSet(issues, doc) {
   const byLine = new Map();
-  for (const issue of issues) {
-    if (typeof issue.offset !== "number" || issue.offset < 0) continue;
-    const line = doc.lineAt(Math.min(issue.offset, doc.length));
+  for (const issue of clipLintIssues(issues, doc.length)) {
+    const line = doc.lineAt(issue.offset);
     const severity = issue.severity === "warning" ? "warning" : "error";
     const existing = byLine.get(line.from);
     if (!existing || (existing.severity !== "error" && severity === "error")) {
