@@ -1,6 +1,8 @@
 import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
-import { openApp, replaceEditor, themeColor } from "../support/helpers.js";
+import fs from "node:fs";
+import path from "node:path";
+import { node, openApp, replaceEditor, themeColor } from "../support/helpers.js";
 
 const BROKEN = "SELEKT * FROM shelf;";
 const UNKNOWN = "SELECT * FROM lint_missing_shelf WHERE id = 'a';";
@@ -96,4 +98,45 @@ test("underlines a bad query, warns when the table is unknown, and clears a vali
   await expect(page.locator(".cm-lint-warning")).toHaveCount(0);
   await expect(page.locator("[data-testid='lint-gutter-error']")).toHaveCount(0);
   await expect(page.locator("[data-testid='lint-gutter-warning']")).toHaveCount(0);
+});
+
+test("lints on open, after save, and when a fetch replaces the file", async ({ page, app }, testInfo) => {
+  const broken = "SELEKT * FROM shelf;\n";
+  const lints = [];
+  const lintAfterSave = [];
+  let saved = false;
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() !== "POST" || url.pathname !== "/api/lint") return;
+    lints.push(request.postData() || "");
+    if (saved) lintAfterSave.push(1);
+  });
+  page.on("response", (response) => {
+    const url = new URL(response.url());
+    if (response.request().method() === "PUT" && url.pathname === "/api/file" && response.ok()) {
+      saved = true;
+    }
+  });
+
+  await replaceEditor(page, broken);
+  const status = page.locator("#lint-status");
+  await expect(status).toHaveText("1 error");
+  await expect.poll(() => lintAfterSave.length).toBeGreaterThan(0);
+  await page.screenshot({ path: playwrightArtifact(`lint-on-save-${testInfo.project.name}.png`) });
+
+  const opened = path.join(app.workspace, "queries/lint-open.dql");
+  fs.writeFileSync(opened, broken);
+  await expect(node(page, "queries/lint-open.dql")).toBeVisible();
+  const beforeOpen = lints.length;
+  await node(page, "queries/lint-open.dql").click();
+  await expect(page.locator("#file-name")).toHaveText("lint-open.dql");
+  await expect.poll(() => lints.length).toBeGreaterThan(beforeOpen);
+  await expect(status).toHaveText("1 error");
+  await page.screenshot({ path: playwrightArtifact(`lint-on-open-${testInfo.project.name}.png`) });
+
+  fs.writeFileSync(opened, CLEAN);
+  await expect(page.locator("#editor-content")).toContainText("SELECT * FROM shelf");
+  await expect(status).toBeHidden();
+  await expect(page.locator(".cm-lint-error")).toHaveCount(0);
+  await page.screenshot({ path: playwrightArtifact(`lint-on-fetch-${testInfo.project.name}.png`) });
 });

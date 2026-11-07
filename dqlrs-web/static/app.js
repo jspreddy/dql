@@ -1314,6 +1314,7 @@ async function openFile(path) {
     state.disk = { path: file.path || path, text: file.text, revision: file.revision };
     setEditorText(file.text);
     showOpenFile(file.path || path);
+    scheduleLint();
     state.entries = [];
     showResults([]);
     setMode("query");
@@ -1666,6 +1667,7 @@ async function flushSaveNow() {
     if (state.fileEpoch !== epoch || state.disk?.path !== path) return;
     state.disk = { path, text, revision: saved.revision || base };
     state.notedExternal = null;
+    scheduleLint();
     if (editorText() !== text) scheduleSave();
   } catch (error) {
     if (error.payload?.conflict && state.fileEpoch === epoch && state.disk?.path === path) {
@@ -2218,6 +2220,7 @@ async function adoptExternal(path, file, epoch) {
   if (!missing && diskText === edited) {
     state.disk = { path, text: diskText, revision: incomingRevision };
     state.notedExternal = null;
+    scheduleLint();
     return;
   }
   const unsaved = edited !== baseText;
@@ -2242,6 +2245,7 @@ async function adoptExternal(path, file, epoch) {
       state.notedExternal = incomingRevision;
       syncPatchRecall();
       showPatchModal(state.patches.length - 1);
+      scheduleLint();
       return;
     }
     clearTimeout(state.saveTimer);
@@ -2252,10 +2256,12 @@ async function adoptExternal(path, file, epoch) {
       state.saveFlight = null;
       setEditorText("");
       showOpenFile("");
+      scheduleLint();
       void refreshTree();
     } else {
       state.disk = { path, text: diskText, revision: incomingRevision };
       setEditorText(diskText, { keepCursor: true });
+      scheduleLint();
     }
   } finally {
     state.applyingDisk = false;
