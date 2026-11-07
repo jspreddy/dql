@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use regex::Regex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub const PAGE_SIZE: usize = 50;
@@ -19,7 +19,7 @@ pub struct TableShape {
     pub indexes: HashMap<String, (String, Option<String>)>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Column {
     pub name: String,
     pub table: Option<String>,
@@ -67,6 +67,8 @@ pub struct KeyRole {
 pub struct ListedTable {
     pub name: String,
     pub keys: Vec<KeyRole>,
+    /// `dynamodb`, `local`, or `temp`.
+    pub kind: String,
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
@@ -344,6 +346,35 @@ pub fn changes_schema(statement: &str) -> bool {
     SCHEMA_CHANGE.is_match(strip_comments(statement).trim())
 }
 
+/// Table names a successful create, drop, or alter changed.
+///
+/// One statement names one table. An empty list means the text is not one of
+/// those statements, so the caller does not announce a catalog change.
+pub fn changed_tables(statement: &str) -> Vec<String> {
+    use dql_parser::Statement;
+    if !changes_schema(statement) {
+        return Vec::new();
+    }
+    let text = strip_comments(statement);
+    let text = text.trim().trim_end_matches(';').trim();
+    if text.is_empty() {
+        return Vec::new();
+    }
+    let Ok(statement) = dql_parser::parse_statement(text) else {
+        return Vec::new();
+    };
+    match statement {
+        Statement::CreateTable { name, .. }
+        | Statement::CreateLocalTable { name, .. }
+        | Statement::CreateTempTable { name, .. }
+        | Statement::DropTable { name, .. }
+        | Statement::DropLocalTable { name, .. }
+        | Statement::DropTempTable { name, .. } => vec![name],
+        Statement::AlterTable { table, .. } => vec![table],
+        _ => Vec::new(),
+    }
+}
+
 pub fn safe_table_name(name: &str) -> bool {
     let mut chars = name.chars();
     match chars.next() {
@@ -378,7 +409,11 @@ fn load_table_catalog(
     let mut tables = Vec::new();
     for name in ls_names(&summary.message) {
         let keys = shapes.get(&name).map(keys_from_shape).unwrap_or_default();
-        tables.push(ListedTable { name, keys });
+        tables.push(ListedTable {
+            name,
+            keys,
+            kind: "dynamodb".to_string(),
+        });
     }
     Ok(tables)
 }
@@ -667,8 +702,10 @@ static READ_QUERY: LazyLock<Regex> = LazyLock::new(|| {
     )
     .expect("read query")
 });
-static SCHEMA_CHANGE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^(create|drop|alter)\s+table\b").expect("schema change"));
+static SCHEMA_CHANGE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)^(create|drop|alter)\s+(?:dynamodb\s+)?(?:localtable|temptable|table)\b")
+        .expect("schema change")
+});
 static EXPLAIN_INDEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"'index':\s+"([^"]+)""#).expect("explain index"));
 static CONSISTENT: LazyLock<Regex> =
@@ -682,6 +719,32 @@ static AS_ALIAS: LazyLock<Regex> =
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn local_and_temp_tables_change_the_catalog() {
+        assert!(changes_schema("CREATE LOCALTABLE users AS 'users.csv'"));
+        assert!(changes_schema("DROP TEMPTABLE IF EXISTS hot"));
+        assert!(changes_schema(
+            "CREATE DYNAMODB TABLE posts (id STRING HASH KEY)"
+        ));
+        assert!(changes_schema("DROP TABLE posts"));
+        assert!(!changes_schema("SELECT * FROM posts"));
+        assert_eq!(
+            changed_tables("CREATE LOCALTABLE users AS 'users.csv'"),
+            ["users"]
+        );
+        assert_eq!(changed_tables("DROP TEMPTABLE IF EXISTS hot"), ["hot"]);
+        assert_eq!(
+            changed_tables("CREATE DYNAMODB TABLE posts (id STRING HASH KEY)"),
+            ["posts"]
+        );
+        assert_eq!(changed_tables("DROP TABLE posts"), ["posts"]);
+        assert_eq!(
+            changed_tables("ALTER TABLE posts SET THROUGHPUT (1, 1)"),
+            ["posts"]
+        );
+        assert!(changed_tables("SELECT * FROM posts").is_empty());
+    }
 
     #[test]
     fn splits_on_semicolons_and_keeps_quotes() {

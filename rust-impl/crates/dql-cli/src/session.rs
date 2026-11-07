@@ -265,6 +265,16 @@ impl RuntimeEngine {
         }
     }
 
+    pub fn set_local_store(
+        &mut self,
+        store: Option<std::sync::Arc<dyn dql_engine::LocalDefinitionStore>>,
+    ) {
+        match self {
+            Self::Memory(engine) => engine.inner_mut().set_local_store(store),
+            Self::Remote(engine) => engine.inner_mut().set_local_store(store),
+        }
+    }
+
     pub fn table_cache(&self) -> Option<dql_engine::SharedTableCache> {
         match self {
             Self::Memory(engine) => engine.inner().table_cache().cloned(),
@@ -294,6 +304,14 @@ impl RuntimeEngine {
         match self {
             Self::Memory(engine) => engine.inner_mut().describe(table, refresh),
             Self::Remote(engine) => engine.inner_mut().describe(table, refresh),
+        }
+    }
+
+    /// `dynamodb`, `local`, or `temp`. Does not list or describe the catalog.
+    pub fn table_kind_name(&self, name: &str) -> &'static str {
+        match self {
+            Self::Memory(engine) => engine.inner().table_kind_name(name),
+            Self::Remote(engine) => engine.inner().table_kind_name(name),
         }
     }
 
@@ -471,6 +489,7 @@ impl Session {
             table_disk: None,
         };
         session.attach_table_cache();
+        session.attach_local_tables();
         Ok(session)
     }
 
@@ -508,6 +527,12 @@ impl Session {
         self.engine
             .set_table_cache(Some(cache.clone() as dql_engine::SharedTableCache));
         self.table_disk = Some(cache);
+    }
+
+    /// Load encrypted local-table definitions. Temp tables stay in this process.
+    pub fn attach_local_tables(&mut self) {
+        self.engine
+            .set_local_store(Some(crate::local_tables::open_store()));
     }
 
     /// Fetch the full table list and a definition for every table.

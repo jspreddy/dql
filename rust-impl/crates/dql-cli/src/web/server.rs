@@ -4,6 +4,7 @@
 //! The editor loads many scripts at once; overlapping keep-alive writes were
 //! leaving some of those responses unsent.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
@@ -20,9 +21,10 @@ use super::files::{self, PathError};
 use super::presence::{self, Kind};
 use super::query_cache;
 use super::shape::{
-    changes_schema, column_order, explain_index, parse_table_shape, read_query, safe_table_name,
+    changed_tables, column_order, explain_index, parse_table_shape, read_query, safe_table_name,
     split_statements, Column, ExecText, ListedTable, TableShape, PAGE_SIZE,
 };
+use super::structure;
 use crate::serve::protocol::{envelope_from_error, ServeEnvelope};
 use crate::session::Session;
 
@@ -32,20 +34,38 @@ const HEADER_LIMIT: usize = 64 * 1024;
 const BODY_LIMIT: usize = 2_000_000;
 const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
-struct WebState {
-    session: Session,
-    shapes: std::collections::HashMap<String, TableShape>,
-    table_catalog: Option<Vec<ListedTable>>,
-    mcp_initialized: bool,
+struct FetchedPage {
+    items: Vec<Value>,
+    columns: Vec<Column>,
+    shape: Option<TableShape>,
 }
 
-struct App {
-    root: PathBuf,
+struct HeldResult {
+    statement: String,
+    items: Vec<Value>,
+    columns: Vec<Column>,
+}
+
+struct WebState {
+    session: Session,
+    shapes: HashMap<String, TableShape>,
+    table_catalog: Option<Vec<ListedTable>>,
+    mcp_initialized: bool,
+    /// The table page most recently returned by `/api/rows`.
+    fetched_pages: HashMap<String, FetchedPage>,
+    /// Query results from this process that have not been read back from the cache.
+    held_results: HashMap<String, HeldResult>,
+    next_result: u64,
+}
+
+pub(crate) struct App {
+    pub(crate) root: PathBuf,
     endpoint: String,
     state: Mutex<WebState>,
     cancel: dql_engine::CancelFlag,
     identity: Mutex<Option<dql_engine::CallerIdentity>>,
     presence: presence::Book,
+    pub(crate) hub: super::events::Hub,
     mcp: bool,
     token: String,
 }
@@ -66,6 +86,7 @@ enum Reply {
     Json(u16, Value),
     Bytes(u16, &'static str, Vec<u8>),
     Ndjson(Arc<App>, Vec<String>),
+    Events(Arc<App>, String),
 }
 
 pub fn serve(
@@ -79,6 +100,7 @@ pub fn serve(
     let root = root.canonicalize()?;
     let token = crate::api_token::load()?;
     let app = Arc::new(App::new(session, root, mcp, token));
+    super::events::start(&app);
     let listener = TcpListener::bind(listen)?;
     let bound = listener.local_addr().unwrap_or(listen);
     println!("DQLRS Web  http://{bound}");
@@ -173,13 +195,17 @@ impl App {
             endpoint,
             state: Mutex::new(WebState {
                 session,
-                shapes: std::collections::HashMap::new(),
+                shapes: HashMap::new(),
                 table_catalog: None,
                 mcp_initialized: false,
+                fetched_pages: HashMap::new(),
+                held_results: HashMap::new(),
+                next_result: 0,
             }),
             cancel,
             identity: Mutex::new(None),
             presence: presence::Book::new(),
+            hub: super::events::Hub::new(),
             mcp,
             token,
         }
@@ -404,11 +430,20 @@ fn dispatch(app: &Arc<App>, request: &Incoming) -> Reply {
     }
     let query = request.query.as_str();
     match request.method.as_str() {
+        "GET" if path == "/api/events" => events_reply(app, query),
         "GET" => dispatch_get(app, path, query),
         "POST" => dispatch_post(app, path, &request.body),
         "PUT" => dispatch_put(app, path, &request.body),
         _ => Reply::Json(404, json!({"ok": false, "error": "not found"})),
     }
+}
+
+fn events_reply(app: &Arc<App>, query: &str) -> Reply {
+    let id = query_value(query, "id");
+    if presence::valid_web_id(&id).is_none() {
+        return Reply::Json(400, json!({"ok": false, "error": "client id is invalid"}));
+    }
+    Reply::Events(Arc::clone(app), id)
 }
 
 fn authorized(app: &App, request: &Incoming) -> bool {
@@ -453,6 +488,15 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
             Ok(node) => Reply::Json(200, serde_json::to_value(node).unwrap_or(Value::Null)),
             Err(err) => json_error(400, &err),
         },
+        "/api/structure" => structure_reply(app, query),
+        "/api/file-rows" => {
+            let relative = query_value(query, "path");
+            let page = query_value(query, "page").parse::<usize>().unwrap_or(0);
+            match files::tabular_page(&app.root, &relative, page, PAGE_SIZE) {
+                Ok(value) => Reply::Json(200, value),
+                Err(err) => json_error(400, &err),
+            }
+        }
         "/api/file" => {
             let relative = query_value(query, "path");
             match files::read_file(&app.root, &relative) {
@@ -491,12 +535,16 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
             Reply::Json(200, serde_json::to_value(hint).unwrap_or(Value::Null))
         }
         "/api/tables" => {
-            let pattern = query_value(query, "pattern");
-            let refresh = query_flag(query, "refresh");
-            let background = query_flag(query, "async");
             let mut state = lock_state(app);
-            let listed =
-                crate::meta::ls::web_table_list(&mut state.session, &pattern, refresh, background);
+            let name = query_value(query, "name");
+            let listed = if !name.is_empty() {
+                crate::meta::ls::web_table_by_name(&mut state.session, &name)
+            } else {
+                let pattern = query_value(query, "pattern");
+                let refresh = query_flag(query, "refresh");
+                let background = query_flag(query, "async");
+                crate::meta::ls::web_table_list(&mut state.session, &pattern, refresh, background)
+            };
             match listed {
                 Ok(listed) => Reply::Json(200, serde_json::to_value(listed).unwrap_or(Value::Null)),
                 Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
@@ -546,7 +594,9 @@ fn dispatch_mcp(app: &App, request: &Incoming) -> Reply {
         .as_deref()
         .and_then(presence::valid_mcp_id)
         .unwrap_or("mcp");
-    app.presence.touch(mcp_id, Kind::Mcp);
+    if app.presence.touch(mcp_id, Kind::Mcp) {
+        app.hub.presence(&app.presence.snapshot());
+    }
     let text = String::from_utf8_lossy(&request.body);
     let mut state = lock_state(app);
     let WebState {
@@ -609,31 +659,50 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
             let Some(id) = presence::valid_web_id(id) else {
                 return Reply::Json(400, json!({"ok": false, "error": "client id is invalid"}));
             };
-            app.presence.touch(id, Kind::Web);
+            if app.presence.touch(id, Kind::Web) {
+                app.hub.presence(&app.presence.snapshot());
+            }
             Reply::Json(200, app.presence.snapshot())
         }
         "/api/file" => match files::create_file(&app.root, relative) {
-            Ok(path) => Reply::Json(200, json!({"path": path, "text": ""})),
+            Ok(path) => {
+                app.hub.file(&path, &files::content_revision(""));
+                app.hub.tree();
+                Reply::Json(200, json!({"path": path, "text": ""}))
+            }
             Err(err) => json_error(400, &err),
         },
         "/api/mkdir" => match files::make_dir(&app.root, relative) {
-            Ok(path) => Reply::Json(200, json!({"path": path, "kind": "dir"})),
+            Ok(path) => {
+                app.hub.tree();
+                Reply::Json(200, json!({"path": path, "kind": "dir"}))
+            }
             Err(err) => json_error(400, &err),
         },
         "/api/duplicate" => match files::duplicate_path(&app.root, relative) {
-            Ok((path, kind)) => Reply::Json(200, json!({"path": path, "kind": kind})),
+            Ok((path, kind)) => {
+                app.hub.tree();
+                Reply::Json(200, json!({"path": path, "kind": kind}))
+            }
             Err(err) => json_error(400, &err),
         },
         "/api/move" => {
             let from = body.get("from").and_then(Value::as_str).unwrap_or("");
             let to = body.get("to").and_then(Value::as_str).unwrap_or("");
             match files::move_path(&app.root, from, to) {
-                Ok((path, kind)) => Reply::Json(200, json!({"path": path, "kind": kind})),
+                Ok((path, kind)) => {
+                    app.hub.tree();
+                    Reply::Json(200, json!({"path": path, "kind": kind}))
+                }
                 Err(err) => json_error(400, &err),
             }
         }
         "/api/delete" => match files::delete_path(&app.root, relative) {
-            Ok(()) => Reply::Json(200, json!({"ok": true})),
+            Ok(()) => {
+                app.hub.file(relative, "missing");
+                app.hub.tree();
+                Reply::Json(200, json!({"ok": true}))
+            }
             Err(err) => json_error(400, &err),
         },
         "/api/query-results" => save_query_result(&app.root, &body),
@@ -667,10 +736,13 @@ fn dispatch_put(app: &App, path: &str, raw: &[u8]) -> Reply {
     let text = body.get("text").and_then(Value::as_str).unwrap_or("");
     let base = body.get("base").and_then(Value::as_str);
     match files::save_file(&app.root, relative, text, base) {
-        Ok(files::SaveFile::Stored(file)) => Reply::Json(
-            200,
-            json!({"ok": true, "path": file.path, "revision": file.revision}),
-        ),
+        Ok(files::SaveFile::Stored(file)) => {
+            app.hub.file(&file.path, &file.revision);
+            Reply::Json(
+                200,
+                json!({"ok": true, "path": file.path, "revision": file.revision}),
+            )
+        }
         Ok(files::SaveFile::Conflict(file)) => Reply::Json(
             409,
             json!({
@@ -761,18 +833,32 @@ fn run_script(app: Arc<App>, statements: Vec<String>, writer: impl Write + Send 
         } else {
             None
         };
-        if envelope.ok && changes_schema(statement) {
-            state.shapes.clear();
-            state.table_catalog = None;
+        if envelope.ok {
+            let names = changed_tables(statement);
+            if !names.is_empty() {
+                for name in &names {
+                    state.shapes.remove(name);
+                }
+                state.table_catalog = None;
+                app.hub.tables(&names);
+            }
         }
-        let result = public_result(
+        let mut result = public_result(
             statement,
             &envelope,
-            columns,
+            columns.clone(),
             elapsed_ms,
             read_units,
             write_units,
         );
+        if envelope.ok && envelope.kind == "items" {
+            let id = state.remember_result(
+                statement,
+                envelope.items.clone().unwrap_or_default(),
+                columns.unwrap_or_default(),
+            );
+            result["id"] = json!(id);
+        }
         let ok = envelope.ok;
         if write_json(
             &mut *lock_writer(&writer),
@@ -850,6 +936,14 @@ fn table_rows(state: &mut WebState, name: &str, page: usize) -> Result<Value, St
     let window = items.get(start..end).unwrap_or(&[]);
     let shape = load_shape(state, name);
     let columns = column_order(window, shape.as_ref(), None, None);
+    state.fetched_pages.insert(
+        name.to_string(),
+        FetchedPage {
+            items: window.to_vec(),
+            columns: columns.clone(),
+            shape,
+        },
+    );
     Ok(json!({
         "name": name,
         "page": page,
@@ -858,6 +952,158 @@ fn table_rows(state: &mut WebState, name: &str, page: usize) -> Result<Value, St
         "columns": columns,
         "has_more": items.len() >= limit,
     }))
+}
+
+fn structure_reply(app: &App, query: &str) -> Reply {
+    let result = query_value(query, "result");
+    let table = query_value(query, "table");
+    let path = query_value(query, "path");
+    let chosen = [&result, &table, &path]
+        .iter()
+        .filter(|value| !value.is_empty())
+        .count();
+    if chosen != 1 {
+        return json_error(
+            400,
+            &PathError("pass one query result, table, or data file".to_string()),
+        );
+    }
+    if !path.is_empty() {
+        return match file_structure(&app.root, &path) {
+            Ok(value) => Reply::Json(200, value),
+            Err(err) => json_error(400, &err),
+        };
+    }
+    let mut state = lock_state(app);
+    if !table.is_empty() {
+        return match table_structure(&state, &table) {
+            Ok(value) => Reply::Json(200, value),
+            Err(message) => Reply::Json(400, json!({"ok": false, "error": message})),
+        };
+    }
+    match result_structure(&app.root, &mut state, &result) {
+        Ok(value) => Reply::Json(200, value),
+        Err(err) => json_error(400, &err),
+    }
+}
+
+fn file_structure(root: &Path, relative: &str) -> Result<Value, PathError> {
+    let (name, columns, items) = files::tabular_all(root, relative)?;
+    let described = structure::describe(&columns, &items);
+    Ok(structure::payload(
+        "file",
+        &name,
+        "",
+        items.len(),
+        false,
+        described,
+    ))
+}
+
+fn table_structure(state: &WebState, name: &str) -> Result<Value, String> {
+    let page = state
+        .fetched_pages
+        .get(name)
+        .ok_or_else(|| "table page is not loaded".to_string())?;
+    let columns = columns_with_shape_keys(&page.columns, page.shape.as_ref());
+    let described = structure::describe(&columns, &page.items);
+    Ok(structure::payload(
+        "table",
+        name,
+        "",
+        page.items.len(),
+        true,
+        described,
+    ))
+}
+
+fn columns_with_shape_keys(columns: &[Column], shape: Option<&TableShape>) -> Vec<Column> {
+    let mut columns = columns.to_vec();
+    let Some(shape) = shape else {
+        return columns;
+    };
+    let mut add = |name: &str, role: &str| {
+        if name.is_empty() || columns.iter().any(|column| column.name == name) {
+            return;
+        }
+        columns.push(Column {
+            name: name.to_string(),
+            table: Some(role.to_string()),
+            index: None,
+        });
+    };
+    add(&shape.hash_key, "hash");
+    if let Some(range) = &shape.range_key {
+        add(range, "range");
+    }
+    columns
+}
+
+fn result_structure(root: &Path, state: &mut WebState, id: &str) -> Result<Value, PathError> {
+    if let Some((statement, items, columns)) = state.held_result(id) {
+        return Ok(result_payload(&statement, &columns, &items));
+    }
+    let listed = query_cache::load_by_id(root, id)?;
+    let items = listed
+        .result
+        .get("items")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let columns = listed
+        .result
+        .get("columns")
+        .cloned()
+        .and_then(|value| serde_json::from_value::<Vec<Column>>(value).ok())
+        .unwrap_or_default();
+    Ok(result_payload(&listed.query, &columns, &items))
+}
+
+fn result_payload(statement: &str, columns: &[Column], items: &[Value]) -> Value {
+    let described = structure::describe(columns, items);
+    structure::payload(
+        "result",
+        &structure::result_title(statement),
+        statement,
+        items.len(),
+        false,
+        described,
+    )
+}
+
+impl WebState {
+    fn remember_result(
+        &mut self,
+        statement: &str,
+        items: Vec<Value>,
+        columns: Vec<Column>,
+    ) -> String {
+        self.next_result = self.next_result.saturating_add(1);
+        let id = format!("run-{}", self.next_result);
+        if self.next_result > 50 {
+            self.held_results
+                .remove(&format!("run-{}", self.next_result - 50));
+        }
+        self.held_results.insert(
+            id.clone(),
+            HeldResult {
+                statement: statement.to_string(),
+                items,
+                columns,
+            },
+        );
+        id
+    }
+
+    fn held_result(&self, id: &str) -> Option<(String, Vec<Value>, Vec<Column>)> {
+        self.held_results.get(id).map(|held| {
+            (
+                held.statement.clone(),
+                held.items.clone(),
+                held.columns.clone(),
+            )
+        })
+    }
 }
 
 fn serve_static(app: &App, path: &str) -> Reply {
@@ -979,7 +1225,85 @@ fn write_reply(stream: &mut TcpStream, reply: Reply, keep_alive: bool) -> io::Re
             write_ndjson(stream, app, statements)?;
             Ok(false)
         }
+        Reply::Events(app, client_id) => {
+            write_events(stream, app, &client_id)?;
+            Ok(false)
+        }
     }
+}
+
+fn write_events(stream: &mut TcpStream, app: Arc<App>, client_id: &str) -> io::Result<()> {
+    let header = "\
+HTTP/1.1 200 OK\r\n\
+Content-Type: text/event-stream; charset=utf-8\r\n\
+Cache-Control: no-store\r\n\
+Transfer-Encoding: chunked\r\n\
+Connection: close\r\n\
+\r\n";
+    stream.write_all(header.as_bytes())?;
+    stream.flush()?;
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(60)));
+    let (sub, rx) = app.hub.subscribe();
+    let generation = app.presence.hold(client_id, Kind::Web);
+    app.hub.presence(&app.presence.snapshot());
+    let leave = EndStream {
+        app: Arc::clone(&app),
+        client_id: client_id.to_string(),
+        generation,
+        sub,
+    };
+    let result = stream_events(stream, &app, rx);
+    drop(leave);
+    result
+}
+
+struct EndStream {
+    app: Arc<App>,
+    client_id: String,
+    generation: u64,
+    sub: u64,
+}
+
+impl Drop for EndStream {
+    fn drop(&mut self) {
+        self.app.hub.unsubscribe(self.sub);
+        if self
+            .app
+            .presence
+            .release(&self.client_id, Kind::Web, self.generation)
+        {
+            self.app.hub.presence(&self.app.presence.snapshot());
+        }
+    }
+}
+
+fn stream_events(
+    stream: &mut TcpStream,
+    app: &App,
+    rx: std::sync::mpsc::Receiver<String>,
+) -> io::Result<()> {
+    write_chunk(stream, ": ping\n\n")?;
+    loop {
+        match rx.recv_timeout(Duration::from_secs(15)) {
+            Ok(frame) => write_chunk(stream, &frame)?,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                write_chunk(stream, ": ping\n\n")?;
+                if app.presence.sweep() {
+                    app.hub.presence(&app.presence.snapshot());
+                }
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    Ok(())
+}
+
+fn write_chunk(stream: &mut TcpStream, data: &str) -> io::Result<()> {
+    let bytes = data.as_bytes();
+    write!(stream, "{:X}\r\n", bytes.len())?;
+    stream.write_all(bytes)?;
+    stream.write_all(b"\r\n")?;
+    stream.flush()
 }
 
 fn write_bytes(
@@ -1611,6 +1935,418 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         assert!(state.session.engine.cached_definition("comments").is_some());
     }
 
+    #[test]
+    fn structure_reads_the_whole_file_and_only_a_loaded_page() {
+        let root = tempfile::tempdir().unwrap();
+        let mut lines = vec!["{\"id\":\"a\",\"name\":\"ada\"}".to_string()];
+        for index in 1..50 {
+            lines.push(format!("{{\"id\":\"r{index}\"}}"));
+        }
+        lines.push("{\"id\":\"last\",\"extra\":true}".to_string());
+        fs::write(root.path().join("rows.json"), lines.join("\n") + "\n").unwrap();
+        fs::write(root.path().join("notes.dql"), "SELECT 1;\n").unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+
+        let unloaded = http(addr, "GET", "/api/structure?table=posts", "");
+        assert!(unloaded.contains("table page is not loaded"), "{unloaded}");
+        assert!(!unloaded.contains("\"columns\""), "{unloaded}");
+
+        let file = http_body(addr, "GET", "/api/structure?path=rows.json", "");
+        let file_json: serde_json::Value = serde_json::from_str(&file).expect(&file);
+        assert_eq!(file_json["kind"], "file");
+        assert_eq!(file_json["rows"], 51);
+        assert_eq!(file_json["paged"], false);
+        let extra = file_json["columns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|column| column["name"] == "extra")
+            .expect("extra column from the last row");
+        assert_eq!(extra["kinds"], serde_json::json!(["BOOL"]));
+        assert_eq!(extra["present"], 1);
+        assert_eq!(extra["total"], 51);
+        let name = file_json["columns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|column| column["name"] == "name")
+            .unwrap();
+        assert_eq!(name["present"], 1);
+        assert_eq!(name["kinds"], serde_json::json!(["STRING"]));
+
+        let setup = "CREATE TABLE posts (id STRING HASH KEY, sk NUMBER RANGE KEY); INSERT INTO posts (id, sk) VALUES ('a', 1), ('b', 2);";
+        let setup_body = format!("{{\"dql\":{}}}", serde_json::to_string(setup).unwrap());
+        let created = http_body(addr, "POST", "/api/run", &setup_body);
+        assert!(created.contains("\"ok\":true"), "{created}");
+        let page = http_body(addr, "GET", "/api/rows?table=posts&page=0", "");
+        assert!(page.contains("\"id\""), "{page}");
+        let structure = http_body(addr, "GET", "/api/structure?table=posts", "");
+        let structure_json: serde_json::Value = serde_json::from_str(&structure).expect(&structure);
+        assert_eq!(structure_json["kind"], "table");
+        assert_eq!(structure_json["paged"], true);
+        assert_eq!(structure_json["rows"], 2);
+        let id = structure_json["columns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|column| column["name"] == "id")
+            .unwrap();
+        assert_eq!(id["table"], "hash");
+        assert_eq!(id["kinds"], serde_json::json!(["STRING"]));
+        let sk = structure_json["columns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|column| column["name"] == "sk")
+            .unwrap();
+        assert_eq!(sk["table"], "range");
+        assert_eq!(sk["kinds"], serde_json::json!(["NUMBER"]));
+
+        let saved = super::query_cache::save(
+            root.path(),
+            "notes.dql",
+            "SCAN * FROM posts",
+            serde_json::json!({"items": [{"id": "a", "sk": 1}], "columns": [{"name": "id", "table": "hash"}, {"name": "sk", "table": "range"}]}),
+            true,
+        )
+        .unwrap();
+        let listed = super::query_cache::list(root.path(), "notes.dql").unwrap();
+        assert_eq!(listed.len(), 1);
+        let result_path = format!("/api/structure?result={}", listed[0].id);
+        let result = http_body(addr, "GET", &result_path, "");
+        let result_json: serde_json::Value = serde_json::from_str(&result).expect(&result);
+        assert_eq!(result_json["kind"], "result");
+        assert_eq!(result_json["title"], "posts");
+        assert_eq!(result_json["rows"], 1);
+        assert_eq!(result_json["paged"], false);
+        assert_eq!(result_json["statement"], "SCAN * FROM posts");
+        let _ = saved;
+        drop(guard);
+    }
+
+    #[test]
+    fn tree_lists_workspace_files_and_file_rows_pages_csv() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("queries")).unwrap();
+        fs::write(root.path().join("queries/edit.dql"), "SELECT 1;\n").unwrap();
+        fs::write(root.path().join("users.csv"), "id,name\na,ada\nb,grace\n").unwrap();
+        fs::write(root.path().join("notes.txt"), "hidden\n").unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+
+        let tree = http_body(addr, "GET", "/api/tree", "");
+        let tree_json: Value = serde_json::from_str(&tree).expect(&tree);
+        assert_eq!(tree_json["type"], "dir");
+        let names: Vec<&str> = tree_json["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|child| child["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["queries", "users.csv"]);
+        let queries = tree_json["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|child| child["name"] == "queries")
+            .unwrap();
+        assert_eq!(queries["children"][0]["path"], "queries/edit.dql");
+        assert!(!tree.contains("notes.txt"), "{tree}");
+
+        let rows = http_body(addr, "GET", "/api/file-rows?path=users.csv&page=0", "");
+        let rows_json: Value = serde_json::from_str(&rows).expect(&rows);
+        assert_eq!(rows_json["path"], "users.csv");
+        assert_eq!(rows_json["page"], 0);
+        assert_eq!(rows_json["has_more"], false);
+        assert_eq!(rows_json["items"][0]["name"], "ada");
+        assert_eq!(rows_json["items"][1]["id"], "b");
+        assert_eq!(rows_json["columns"][0]["name"], "id");
+
+        let rejected = http(addr, "GET", "/api/file-rows?path=queries/edit.dql", "");
+        assert!(rejected.contains("HTTP/1.1 400"), "{rejected}");
+        assert!(
+            rejected.contains("only .csv and .json files can be viewed as tables"),
+            "{rejected}"
+        );
+        drop(guard);
+    }
+
+    #[test]
+    fn search_finds_a_query_file() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("shelf.dql"), "SCAN * FROM shelf;\n").unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+
+        let found = http_body(addr, "GET", "/api/search?q=shelf", "");
+        let found_json: Value = serde_json::from_str(&found).expect(&found);
+        let hit = found_json["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["path"] == "shelf.dql")
+            .expect(&found);
+        assert_eq!(hit["kind"], "query");
+        assert_eq!(hit["title"], "SCAN * FROM shelf;");
+        assert_eq!(hit["detail"], "shelf.dql");
+
+        let empty = http_body(addr, "GET", "/api/search?q=", "");
+        let empty_json: Value = serde_json::from_str(&empty).expect(&empty);
+        assert!(
+            empty_json["items"].as_array().unwrap().is_empty(),
+            "{empty}"
+        );
+        drop(guard);
+    }
+
+    #[test]
+    fn tables_and_table_cache_follow_the_session() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let script = "CREATE TABLE posts (id STRING HASH KEY);";
+        let body = format!("{{\"dql\":{}}}", serde_json::to_string(script).unwrap());
+        let ran = http_body(addr, "POST", "/api/run", &body);
+        assert!(ran.contains("\"ok\":true"), "{ran}");
+
+        let listed = http_body(addr, "GET", "/api/tables", "");
+        let listed_json: Value = serde_json::from_str(&listed).expect(&listed);
+        let posts = listed_json["tables"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|table| table["name"] == "posts")
+            .expect(&listed);
+        assert_eq!(posts["kind"], "dynamodb");
+        assert_eq!(posts["keys"][0]["name"], "id");
+        assert_eq!(posts["keys"][0]["role"], "hash");
+
+        let filtered = http_body(addr, "GET", "/api/tables?pattern=zzzz", "");
+        let filtered_json: Value = serde_json::from_str(&filtered).expect(&filtered);
+        assert!(
+            filtered_json["tables"].as_array().unwrap().is_empty(),
+            "{filtered}"
+        );
+
+        let one = http_body(addr, "GET", "/api/tables?name=posts", "");
+        let one_json: Value = serde_json::from_str(&one).expect(&one);
+        assert_eq!(one_json["tables"].as_array().unwrap().len(), 1);
+        assert_eq!(one_json["tables"][0]["name"], "posts");
+        assert_eq!(one_json["tables"][0]["kind"], "dynamodb");
+        assert_eq!(one_json["tables"][0]["keys"][0]["name"], "id");
+        let missing = http_body(addr, "GET", "/api/tables?name=not_a_table", "");
+        let missing_json: Value = serde_json::from_str(&missing).expect(&missing);
+        assert!(
+            missing_json["tables"].as_array().unwrap().is_empty(),
+            "{missing}"
+        );
+
+        let cache = http_body(addr, "GET", "/api/table-cache", "");
+        let cache_json: Value = serde_json::from_str(&cache).expect(&cache);
+        assert_eq!(cache_json["text"], "No table list cached.");
+        assert_eq!(cache_json["fromCache"], false);
+        assert_eq!(cache_json["refreshing"], false);
+        drop(guard);
+    }
+
+    #[test]
+    fn query_results_round_trip_and_clear() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let created = http(addr, "POST", "/api/file", r#"{"path":"notes.dql"}"#);
+        assert!(created.contains("HTTP/1.1 200"), "{created}");
+
+        let missing = http(
+            addr,
+            "POST",
+            "/api/query-results",
+            r#"{"path":"notes.dql","query":"SELECT 1","result":{"ok":true}}"#,
+        );
+        assert!(missing.contains("HTTP/1.1 400"), "{missing}");
+        assert!(missing.contains("success must be a boolean"), "{missing}");
+
+        let saved = http_body(
+            addr,
+            "POST",
+            "/api/query-results",
+            r#"{"path":"notes.dql","query":"SELECT 1","success":true,"result":{"ok":true}}"#,
+        );
+        let saved_json: Value = serde_json::from_str(&saved).expect(&saved);
+        assert_eq!(saved_json["query"], "SELECT 1");
+        assert_eq!(saved_json["success"], true);
+        assert_eq!(saved_json["result"]["ok"], true);
+
+        let listed = http_body(addr, "GET", "/api/query-results?path=notes.dql", "");
+        let listed_json: Value = serde_json::from_str(&listed).expect(&listed);
+        assert_eq!(listed_json["results"].as_array().unwrap().len(), 1);
+        assert_eq!(listed_json["results"][0]["query"], "SELECT 1");
+        assert!(
+            listed_json["results"][0]["id"]
+                .as_str()
+                .unwrap()
+                .contains(':'),
+            "{listed}"
+        );
+
+        let cleared = http_body(
+            addr,
+            "POST",
+            "/api/query-results/clear",
+            r#"{"path":"notes.dql"}"#,
+        );
+        let cleared_json: Value = serde_json::from_str(&cleared).expect(&cleared);
+        assert_eq!(cleared_json["ok"], true);
+        assert_eq!(cleared_json["paths"][0], "notes.dql");
+
+        let empty = http_body(addr, "GET", "/api/query-results?path=notes.dql", "");
+        let empty_json: Value = serde_json::from_str(&empty).expect(&empty);
+        assert!(
+            empty_json["results"].as_array().unwrap().is_empty(),
+            "{empty}"
+        );
+        drop(guard);
+    }
+
+    #[test]
+    fn mkdir_duplicate_move_and_delete() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+
+        let made = http_body(addr, "POST", "/api/mkdir", r#"{"path":"queries"}"#);
+        let made_json: Value = serde_json::from_str(&made).expect(&made);
+        assert_eq!(made_json["path"], "queries");
+        assert_eq!(made_json["kind"], "dir");
+        assert!(root.path().join("queries").is_dir());
+
+        let again = http(addr, "POST", "/api/mkdir", r#"{"path":"queries"}"#);
+        assert!(again.contains("HTTP/1.1 400"), "{again}");
+        assert!(again.contains("already exists"), "{again}");
+        let escaped = http(addr, "POST", "/api/mkdir", r#"{"path":"../outside"}"#);
+        assert!(escaped.contains("HTTP/1.1 400"), "{escaped}");
+
+        let created = http(addr, "POST", "/api/file", r#"{"path":"queries/notes.dql"}"#);
+        assert!(created.contains("HTTP/1.1 200"), "{created}");
+        let copied = http_body(
+            addr,
+            "POST",
+            "/api/duplicate",
+            r#"{"path":"queries/notes.dql"}"#,
+        );
+        let copied_json: Value = serde_json::from_str(&copied).expect(&copied);
+        assert_eq!(copied_json["path"], "queries/notes copy.dql");
+        assert_eq!(copied_json["kind"], "file");
+        assert!(root.path().join("queries/notes copy.dql").is_file());
+
+        let busy = http(addr, "POST", "/api/delete", r#"{"path":"queries"}"#);
+        assert!(busy.contains("HTTP/1.1 400"), "{busy}");
+        assert!(busy.contains("not empty"), "{busy}");
+
+        let moved = http_body(
+            addr,
+            "POST",
+            "/api/move",
+            r#"{"from":"queries/notes copy.dql","to":"kept.dql"}"#,
+        );
+        let moved_json: Value = serde_json::from_str(&moved).expect(&moved);
+        assert_eq!(moved_json["path"], "kept.dql");
+        assert_eq!(moved_json["kind"], "file");
+        assert!(root.path().join("kept.dql").is_file());
+        assert!(!root.path().join("queries/notes copy.dql").exists());
+
+        let removed = http(
+            addr,
+            "POST",
+            "/api/delete",
+            r#"{"path":"queries/notes.dql"}"#,
+        );
+        assert!(removed.contains("HTTP/1.1 200"), "{removed}");
+        assert!(removed.contains("\"ok\":true"), "{removed}");
+        let folder = http(addr, "POST", "/api/delete", r#"{"path":"queries"}"#);
+        assert!(folder.contains("HTTP/1.1 200"), "{folder}");
+        let kept = http(addr, "POST", "/api/delete", r#"{"path":"kept.dql"}"#);
+        assert!(kept.contains("HTTP/1.1 200"), "{kept}");
+        assert!(!root.path().join("kept.dql").exists());
+        assert!(!root.path().join("queries").exists());
+
+        let missing = http(addr, "POST", "/api/delete", r#"{"path":"kept.dql"}"#);
+        assert!(missing.contains("HTTP/1.1 400"), "{missing}");
+        drop(guard);
+    }
+
+    #[test]
+    fn events_stream_reports_a_file_and_a_tree_change() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let token = server_token(addr);
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .unwrap();
+        write!(
+            stream,
+            "GET /api/events?id=web-window-a HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut buf = String::new();
+        let mut bytes = [0u8; 1024];
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.contains("event: presence")
+        });
+        assert!(buf.contains("event: presence"), "{buf}");
+        assert!(buf.contains("\"label\":\"W1\""), "{buf}");
+        let created = http(addr, "POST", "/api/file", r#"{"path":"notes.dql"}"#);
+        assert!(created.contains("notes.dql"), "{created}");
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.contains("event: file")
+        });
+        assert!(buf.contains("event: tree"), "{buf}");
+        assert!(buf.contains("event: file"), "{buf}");
+        assert!(buf.contains("notes.dql"), "{buf}");
+        std::fs::write(root.path().join("notes.dql"), "from outside\n").unwrap();
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.matches("event: file").count() >= 2
+        });
+        assert!(
+            buf.matches("event: file").count() >= 2,
+            "outside write was not announced\n{buf}"
+        );
+        let created_table = http_body(
+            addr,
+            "POST",
+            "/api/run",
+            r#"{"dql":"CREATE TABLE shelf (id STRING HASH KEY);"}"#,
+        );
+        assert!(created_table.contains("\"ok\":true"), "{created_table}");
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.contains("event: tables")
+        });
+        assert!(
+            buf.contains("event: tables\ndata: {\"tables\":[\"shelf\"]}"),
+            "tables event did not name the table\n{buf}"
+        );
+        drop(stream);
+        drop(guard);
+    }
+
+    fn read_until(
+        stream: &mut TcpStream,
+        buf: &mut String,
+        bytes: &mut [u8],
+        done: impl Fn(&str) -> bool,
+    ) {
+        let deadline = Instant::now() + Duration::from_secs(4);
+        while Instant::now() < deadline && !done(buf) {
+            match stream.read(bytes) {
+                Ok(0) => return,
+                Ok(n) => buf.push_str(&String::from_utf8_lossy(&bytes[..n])),
+                Err(err)
+                    if err.kind() == std::io::ErrorKind::WouldBlock
+                        || err.kind() == std::io::ErrorKind::TimedOut =>
+                {
+                    thread::sleep(Duration::from_millis(20));
+                }
+                Err(err) => panic!("{err}"),
+            }
+        }
+    }
+
     fn spawn_server(root: PathBuf) -> (SocketAddr, ServerGuard) {
         spawn_server_mcp(root, false)
     }
@@ -1623,6 +2359,7 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             mcp,
             token.clone(),
         ));
+        super::super::events::start(&app);
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         test_tokens()

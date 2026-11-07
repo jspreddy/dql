@@ -80,13 +80,18 @@ const state = {
   entries: [],
   page: 0,
   hasMore: false,
+  filePage: 0,
+  fileHasMore: false,
   suppressSave: false,
   dragPath: "",
   tablesRequest: 0,
+  listGeneration: 0,
+  tableListNote: "",
   cachePoll: 0,
   cacheStatusRequest: 0,
   listedTables: [],
   browserSchema: null,
+  fileSchema: null,
   schemaKind: "",
   environment: null,
   catalog: null,
@@ -100,7 +105,9 @@ const state = {
   applyingDisk: false,
   adopting: false,
   adoptQueued: null,
-  watchTimer: 0,
+  watchSeq: 0,
+  notedExternal: null,
+  eventsLive: false,
   clientId: loadClientId(),
 };
 
@@ -168,6 +175,7 @@ function saveHighlightOptions(options) {
 
 const highlightOptions = loadHighlightOptions();
 const highlightCompartment = new Compartment();
+const viewCompartment = new Compartment();
 const treeEl = document.querySelector("#tree");
 const editor = new EditorView({
   parent: document.querySelector("#editor"),
@@ -195,6 +203,7 @@ const editor = new EditorView({
       ])),
       dqlLanguage,
       highlightCompartment.of(queryHighlight(highlightOptions)),
+      viewCompartment.of([]),
       runFrame,
       runButtonLayer,
       // Below-layers paint earlier entries above later ones. Selection must
@@ -206,6 +215,9 @@ const editor = new EditorView({
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "false", id: "editor-content" }),
       Prec.highest(EditorView.theme({
+        ".cm-cursor, .cm-dropCursor": {
+          borderLeftColor: "var(--cursor)",
+        },
         ".cm-selectionBackground, &.cm-focused .cm-selectionLayer .cm-selectionBackground": {
           backgroundColor: "var(--selection) !important",
         },
@@ -580,13 +592,28 @@ window.addEventListener("keydown", (event) => {
   stopRun();
 });
 
+function dataFile(path) {
+  const name = String(path || "").split("/").pop().toLowerCase();
+  return name.endsWith(".csv") || name.endsWith(".json");
+}
+
+function setViewOnly(viewOnly) {
+  editor.dispatch({
+    effects: viewCompartment.reconfigure(viewOnly
+      ? [EditorState.readOnly.of(true), EditorView.editable.of(false)]
+      : []),
+  });
+  editor.dom.classList.toggle("is-view-only", viewOnly);
+}
+
 function setRunBusy(busy) {
   hideRunTip();
-  runButton.disabled = busy;
-  runButton.classList.toggle("hidden", busy);
+  const viewOnly = dataFile(state.path);
+  runButton.disabled = busy || viewOnly;
+  runButton.classList.toggle("hidden", busy || viewOnly);
   stopButton.classList.toggle("hidden", !busy);
   stopButton.disabled = !busy;
-  runFileButton.disabled = busy || !state.path;
+  runFileButton.disabled = busy || !state.path || dataFile(state.path);
   syncClearResults();
   const floating = editor.dom.querySelector(".run-float");
   if (floating) floating.disabled = busy;
@@ -603,14 +630,14 @@ async function stopRun() {
 }
 
 function runFromEditor() {
-  if (runButton.disabled) return true;
+  if (runButton.disabled || dataFile(state.path)) return true;
   armRunPane();
   runSelection();
   return true;
 }
 
 async function runFile() {
-  if (runButton.disabled || !state.path) return;
+  if (runButton.disabled || !state.path || dataFile(state.path)) return;
   await flushSave();
   await runDocuments([{ text: editorText(), path: state.path, base: 0 }]);
 }
@@ -841,12 +868,27 @@ document.querySelector("#table-search").addEventListener("input", () => {
   clearTimeout(state.searchTimer);
   state.searchTimer = setTimeout(loadTables, 250);
 });
+const groupTablesButton = document.querySelector("#group-tables");
+state.groupTables = localStorage.getItem("dqlrs-group-tables") === "1";
+groupTablesButton.setAttribute("aria-pressed", state.groupTables ? "true" : "false");
+groupTablesButton.addEventListener("click", () => {
+  state.groupTables = !state.groupTables;
+  localStorage.setItem("dqlrs-group-tables", state.groupTables ? "1" : "0");
+  groupTablesButton.setAttribute("aria-pressed", state.groupTables ? "true" : "false");
+  const list = document.querySelector("#table-list");
+  const kept = [...list.children].filter((node) => !node.classList.contains("table-row") && !node.classList.contains("table-group"));
+  list.replaceChildren(...kept);
+  paintTables(list, state.listedTables || []);
+});
 document.querySelector("#refresh-tables").addEventListener("click", () => {
   loadTables({ refresh: true, background: true });
 });
 document.querySelector("#page-prev").addEventListener("click", () => changePage(-1));
 document.querySelector("#page-next").addEventListener("click", () => changePage(1));
+document.querySelector("#file-page-prev").addEventListener("click", () => changeFilePage(-1));
+document.querySelector("#file-page-next").addEventListener("click", () => changeFilePage(1));
 const rowsSchemaBtn = document.querySelector("#rows-schema");
+const fileSchemaBtn = document.querySelector("#file-rows-schema");
 const schemaPop = document.querySelector("#schema-pop");
 const schemaPopTitle = document.querySelector("#schema-pop-title");
 const schemaPopKicker = document.querySelector("#schema-pop-kicker");
@@ -861,6 +903,7 @@ const rowPopTitle = document.querySelector("#row-pop-title");
 const rowPopKeys = document.querySelector("#row-pop-keys");
 const rowPopBody = document.querySelector("#row-pop-body");
 rowsSchemaBtn.addEventListener("click", () => openSchema(state.browserSchema, rowsSchemaBtn));
+fileSchemaBtn.addEventListener("click", () => openSchema(state.fileSchema, fileSchemaBtn));
 document.querySelector("#schema-pop-close").addEventListener("click", () => schemaPop.close());
 document.querySelector("#row-pop-close").addEventListener("click", () => rowPop.close());
 for (const dialog of [schemaPop, rowPop]) {
@@ -919,7 +962,7 @@ async function boot() {
   try {
     const config = await api("/api/config");
     applyEnvironment(config);
-    startFileWatch();
+    startEvents();
     await refreshTree();
     if (location.hash === "#tables") {
       setMode("tables");
@@ -1053,6 +1096,9 @@ function setMode(mode) {
   document.querySelector("#refresh-tables").classList.toggle("hidden", !tables);
   if (!tables) document.querySelector("#table-cache").classList.add("hidden");
   document.querySelector("#side-title").textContent = tables ? "Tables" : "Files";
+  const data = !tables && dataFile(state.path);
+  document.querySelector("#query-view").classList.toggle("is-data", data);
+  document.querySelector("#file-rows").classList.toggle("hidden", !data);
   closeComplete();
   if (tables) loadTables();
 }
@@ -1077,6 +1123,7 @@ function renderDir(node, isRoot) {
     const item = document.createElement("li");
     const open = child.type === "dir" && state.expanded.has(child.path);
     const editorFile = child.type === "file" && child.path === state.path;
+    const data = child.type === "file" && dataFile(child.path);
     const button = nodeButton(child.type === "dir" ? (open ? "▾" : "▸") : "", child.name, child.path === state.path);
     if (editorFile) {
       button.classList.add("is-open");
@@ -1087,6 +1134,7 @@ function renderDir(node, isRoot) {
     button.dataset.path = child.path;
     button.id = nodeDomId(child.path);
     button.dataset.testid = button.id;
+    if (data) button.append(fileKindMark(child.path));
     bindNode(button, child);
     item.append(button);
     if (open) item.append(renderDir(child, false));
@@ -1221,6 +1269,15 @@ function setRunningFile(path) {
   }
 }
 
+function fileKindMark(path) {
+  const mark = document.createElement("span");
+  const kind = path.toLowerCase().endsWith(".csv") ? "csv" : "json";
+  mark.className = "file-kind";
+  mark.dataset.kind = kind;
+  mark.textContent = kind;
+  return mark;
+}
+
 function nodeButton(twist, label, selected) {
   const button = document.createElement("button");
   button.type = "button";
@@ -1235,8 +1292,25 @@ function nodeButton(twist, label, selected) {
 async function openFile(path) {
   try {
     await flushSave();
+    if (dataFile(path)) {
+      state.fileEpoch += 1;
+      state.notedExternal = null;
+      state.disk = null;
+      state.filePage = 0;
+      state.fileHasMore = false;
+      showOpenFile(path);
+      state.entries = [];
+      showResults([]);
+      editor.dispatch({ effects: setLintIssues.of([]) });
+      paintLint([]);
+      setMode("query");
+      await Promise.all([refreshTree(), loadFileRows()]);
+      return;
+    }
+    setFileSchema(null);
     const file = await api("/api/file?path=" + encodeURIComponent(path));
     state.fileEpoch += 1;
+    state.notedExternal = null;
     state.disk = { path: file.path || path, text: file.text, revision: file.revision };
     setEditorText(file.text);
     showOpenFile(file.path || path);
@@ -1247,6 +1321,49 @@ async function openFile(path) {
   } catch (error) {
     reportError(error);
   }
+}
+
+async function loadFileRows() {
+  const path = state.path;
+  if (!dataFile(path)) return;
+  const body = document.querySelector("#file-rows-body");
+  document.querySelector("#file-rows-title").textContent = path.split("/").pop();
+  document.querySelector("#file-rows-meta").textContent = "50 rows at a time";
+  body.replaceChildren(note("Loading…", false));
+  setFileSchema(null);
+  try {
+    const payload = await api(
+      "/api/file-rows?path=" + encodeURIComponent(path) + "&page=" + state.filePage,
+    );
+    if (state.path !== path) return;
+    state.fileHasMore = Boolean(payload.has_more);
+    const start = payload.page * payload.page_size + (payload.items.length ? 1 : 0);
+    const end = payload.page * payload.page_size + payload.items.length;
+    document.querySelector("#file-page-label").textContent = payload.items.length
+      ? "Showing " + start + "–" + end
+      : "No rows";
+    document.querySelector("#file-page-prev").disabled = payload.page <= 0;
+    document.querySelector("#file-page-next").disabled = !state.fileHasMore;
+    const rows = payload.items || [];
+    body.replaceChildren(dataTable(rows, "file-rows-table", payload.columns));
+    body.scrollTop = 0;
+    setFileSchema(rows.length || (payload.columns || []).length ? {
+      path,
+      title: path.split("/").pop(),
+    } : null);
+  } catch (error) {
+    if (state.path === path) {
+      body.replaceChildren(note(error.message, true));
+      setFileSchema(null);
+    }
+  }
+}
+
+function changeFilePage(delta) {
+  const next = state.filePage + delta;
+  if (next < 0 || (delta > 0 && !state.fileHasMore)) return;
+  state.filePage = next;
+  loadFileRows();
 }
 
 async function createFile() {
@@ -1307,10 +1424,11 @@ async function moveEntry(path) {
 
 async function deleteEntry(path, kind) {
   const label = path.split("/").pop();
-  const message = kind === "dir" ? "Delete folder " + label + " and the .dql files inside it?" : "Delete " + label + "?";
+  const message = kind === "dir" ? "Delete folder " + label + "?" : "Delete " + label + "?";
   if (!window.confirm(message)) return;
   clearTimeout(state.saveTimer);
   state.fileEpoch += 1;
+  state.notedExternal = null;
   state.saveFlight = null;
   const removingOpen = state.path === path || (kind === "dir" && state.path.startsWith(path + "/"));
   if (removingOpen) {
@@ -1415,7 +1533,8 @@ function beginRename(path) {
 function menuItems(target) {
   const dir = target.type === "dir" ? target.path : parentOf(target.path || ".");
   const items = [];
-  if (target.type === "file") {
+  const data = target.type === "file" && dataFile(target.path);
+  if (target.type === "file" && !data) {
     items.push({ label: "Run file", icon: "forward", danger: true, run: () => runFileAt(target.path) }, "-");
   }
   if (target.type === "dir") {
@@ -1434,7 +1553,7 @@ function menuItems(target) {
     { label: "Rename", run: () => beginRename(target.path) },
     { label: "Move to…", run: () => moveEntry(target.path) },
   );
-  if (target.type === "file" || target.type === "dir") {
+  if ((target.type === "file" && !data) || target.type === "dir") {
     items.push({ label: "Clear results", run: () => clearFileResults(target.path) });
   }
   items.push(
@@ -1535,7 +1654,7 @@ function flushSave() {
 
 async function flushSaveNow() {
   clearTimeout(state.saveTimer);
-  if (!state.path || !state.disk || state.applyingDisk) return;
+  if (!state.path || !state.disk || state.applyingDisk || dataFile(state.path)) return;
   const text = editorText();
   if (text === state.disk.text) return;
   const path = state.path;
@@ -1546,6 +1665,7 @@ async function flushSaveNow() {
     const saved = await api("/api/file", { method: "PUT", body: { path, text, base } });
     if (state.fileEpoch !== epoch || state.disk?.path !== path) return;
     state.disk = { path, text, revision: saved.revision || base };
+    state.notedExternal = null;
     if (editorText() !== text) scheduleSave();
   } catch (error) {
     if (error.payload?.conflict && state.fileEpoch === epoch && state.disk?.path === path) {
@@ -1586,6 +1706,11 @@ function scheduleLint() {
 }
 
 async function lintEditor(generation) {
+  if (dataFile(state.path)) {
+    editor.dispatch({ effects: setLintIssues.of([]) });
+    paintLint([]);
+    return;
+  }
   const text = editorText();
   let report;
   try {
@@ -1721,10 +1846,16 @@ function showOpenFile(path) {
     text.className = "file-name-text";
     name.replaceChildren(text);
   }
+  const viewOnly = dataFile(state.path);
   text.textContent = state.path ? state.path.split("/").pop() : "No file open";
+  name.title = viewOnly ? "View only" : "";
   name.classList.toggle("is-open", Boolean(state.path));
-  runFileButton.classList.toggle("hidden", !state.path);
-  runFileButton.disabled = !state.path || runButton.disabled;
+  setViewOnly(viewOnly);
+  const running = !stopButton.classList.contains("hidden");
+  runButton.disabled = viewOnly || running;
+  runButton.classList.toggle("hidden", viewOnly || running);
+  runFileButton.classList.toggle("hidden", !state.path || viewOnly);
+  runFileButton.disabled = !state.path || viewOnly || runButton.disabled;
   if (!state.path) {
     state.entries = [];
     showResults([]);
@@ -1733,7 +1864,7 @@ function showOpenFile(path) {
 }
 
 function syncClearResults() {
-  const open = Boolean(state.path);
+  const open = Boolean(state.path) && !dataFile(state.path);
   clearResultsButton.classList.toggle("hidden", !open);
   clearResultsButton.disabled = !open || runButton.disabled;
 }
@@ -1909,7 +2040,7 @@ function renderActivePane() {
     block.className = "query-result" + (entry.success ? "" : " is-error");
     block.dataset.testid = "query-result";
     const body = document.createElement("div");
-    renderResults(resultList(entry.result), body, index === latestItems);
+    renderResults(resultList(entry.result), body, index === latestItems, entry.id || "");
     block.append(queryShell(entry.query, body));
     resultBody.append(block);
   });
@@ -1936,40 +2067,161 @@ function setEditorText(text, options = {}) {
   state.suppressSave = false;
 }
 
-function startFileWatch() {
-  if (state.watchTimer) return;
-  const tick = () => {
-    void watchOpenFile();
-    void beatPresence();
-  };
-  tick();
-  state.watchTimer = setInterval(tick, 1000);
+function startEvents() {
+  if (state.eventsLive || state.eventsStarted) return;
+  state.eventsStarted = true;
+  void readEvents();
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") tick();
+    if (document.visibilityState === "visible" && !state.eventsLive) {
+      void catchUpFiles();
+    }
   });
-  window.addEventListener("focus", tick);
 }
 
-async function watchOpenFile() {
+async function readEvents() {
+  let delay = 500;
+  let reconnecting = false;
+  while (state.eventsStarted) {
+    state.eventsLive = false;
+    try {
+      const response = await fetchServer(
+        "/api/events?id=" + encodeURIComponent(state.clientId),
+        { headers: { Accept: "text/event-stream" } },
+      );
+      if (response.status === 401) return;
+      if (!response.ok || !response.body) throw new Error("event stream " + response.status);
+      if (reconnecting) await catchUpFiles();
+      reconnecting = true;
+      state.eventsLive = true;
+      delay = 500;
+      await readEventStream(response.body);
+    } catch (error) {
+      if (error && error.serverAway) {
+        /* fetch already opened the retry dialog */
+      }
+    }
+    state.eventsLive = false;
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    delay = Math.min(delay * 2, 8000);
+  }
+}
+
+async function readEventStream(body) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    let split = buffer.indexOf("\n\n");
+    while (split >= 0) {
+      handleEventFrame(buffer.slice(0, split));
+      buffer = buffer.slice(split + 2);
+      split = buffer.indexOf("\n\n");
+    }
+  }
+}
+
+function handleEventFrame(frame) {
+  let event = "message";
+  const data = [];
+  for (const line of frame.split("\n")) {
+    if (!line || line.startsWith(":")) continue;
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+  }
+  if (!data.length) return;
+  let payload = {};
+  try {
+    payload = JSON.parse(data.join("\n"));
+  } catch {
+    return;
+  }
+  if (event === "tree") {
+    refreshTree().catch((error) => reportError(error));
+  } else if (event === "tables") {
+    const names = Array.isArray(payload.tables)
+      ? payload.tables.filter((name) => typeof name === "string" && name)
+      : [];
+    for (const name of names) {
+      refreshOneTable(name).catch((error) => reportError(error));
+    }
+  } else if (event === "presence") {
+    renderPresence(payload.clients || []);
+  } else if (event === "file") {
+    void onFileEvent(payload);
+  }
+}
+
+async function catchUpFiles() {
+  try {
+    await refreshTree();
+  } catch (error) {
+    reportError(error);
+  }
+  await pullOpenFile();
+}
+
+async function onFileEvent(payload) {
+  const path = payload.path;
+  if (!path || state.disk?.path !== path || dataFile(path)) return;
+  if (state.saveFlight && state.saveFlight.path === path) return;
+  if (payload.revision && payload.revision === state.disk.revision) return;
+  if (payload.revision === "missing") {
+    await adoptExternal(path, { missing: true, text: "", revision: "missing", path }, state.fileEpoch);
+    return;
+  }
+  await pullOpenFile();
+}
+
+function watchIsCurrent(path, epoch, seen, watchId) {
+  return state.watchSeq === watchId
+    && state.fileEpoch === epoch
+    && state.disk?.path === path
+    && state.disk?.revision === seen
+    && !state.saveFlight
+    && !state.applyingDisk;
+}
+
+async function pullOpenFile() {
   const path = state.disk?.path;
-  if (!path || state.applyingDisk || state.saveFlight || state.adopting) return;
+  if (!path || dataFile(path) || state.applyingDisk || state.saveFlight || state.adopting) return;
   const epoch = state.fileEpoch;
+  const seen = state.disk.revision;
+  const watchId = ++state.watchSeq;
   let file;
   try {
     file = await api("/api/file?path=" + encodeURIComponent(path));
   } catch (error) {
-    if (error.payload?.missing && state.fileEpoch === epoch && state.disk?.path === path) {
+    if (!watchIsCurrent(path, epoch, seen, watchId)) return;
+    if (error.payload?.missing) {
       await adoptExternal(path, { missing: true, text: "", revision: "missing", path }, epoch);
     }
     return;
   }
-  if (state.fileEpoch !== epoch || state.disk?.path !== path || state.saveFlight || state.applyingDisk) return;
-  if (!file.revision || file.revision === state.disk.revision) return;
+  if (!watchIsCurrent(path, epoch, seen, watchId)) return;
+  if (!file.revision || file.revision === seen) {
+    state.notedExternal = null;
+    return;
+  }
   await adoptExternal(path, file, epoch);
 }
 
 async function adoptExternal(path, file, epoch) {
   if (state.fileEpoch !== epoch || state.disk?.path !== path) return;
+  const missing = Boolean(file.missing);
+  const diskText = missing ? "" : String(file.text ?? "");
+  const incomingRevision = missing ? "missing" : String(file.revision || "");
+  const edited = editorText();
+  const baseText = state.disk?.text ?? "";
+  if (!missing && diskText === edited) {
+    state.disk = { path, text: diskText, revision: incomingRevision };
+    state.notedExternal = null;
+    return;
+  }
+  const unsaved = edited !== baseText;
+  if (unsaved && incomingRevision && incomingRevision === state.notedExternal) return;
   if (state.adopting) {
     state.adoptQueued = { path, file, epoch };
     return;
@@ -1977,26 +2229,23 @@ async function adoptExternal(path, file, epoch) {
   state.adopting = true;
   state.applyingDisk = true;
   try {
-    clearTimeout(state.saveTimer);
-    const edited = editorText();
-    const baseText = state.disk?.text ?? "";
-    const missing = Boolean(file.missing);
-    const diskText = missing ? "" : String(file.text ?? "");
-    if (!missing && diskText === edited) {
-      state.disk = { path, text: diskText, revision: file.revision };
-      return;
-    }
-    const unsaved = edited !== baseText;
     if (unsaved) {
-      const patch = unifiedDiff(baseText, edited, path);
+      const patch = unifiedDiff(baseText, diskText, path);
       state.patches.push({
         path,
-        patch: patch || "The unsaved editor text differed from the last copy on disk.\n",
+        patch: patch || (missing
+          ? "The file was removed on disk.\n"
+          : "The file changed on disk.\n"),
         missing,
       });
       if (state.patches.length > 20) state.patches.shift();
+      state.notedExternal = incomingRevision;
       syncPatchRecall();
+      showPatchModal(state.patches.length - 1);
+      return;
     }
+    clearTimeout(state.saveTimer);
+    state.notedExternal = null;
     if (missing) {
       state.fileEpoch += 1;
       state.disk = null;
@@ -2005,10 +2254,9 @@ async function adoptExternal(path, file, epoch) {
       showOpenFile("");
       void refreshTree();
     } else {
-      state.disk = { path, text: diskText, revision: file.revision };
-      setEditorText(diskText, { keepCursor: !unsaved });
+      state.disk = { path, text: diskText, revision: incomingRevision };
+      setEditorText(diskText, { keepCursor: true });
     }
-    if (unsaved) showPatchModal(state.patches.length - 1);
   } finally {
     state.applyingDisk = false;
     state.adopting = false;
@@ -2035,8 +2283,8 @@ function showPatchModal(index) {
   const note = document.querySelector("#patch-pop-note");
   title.textContent = entry.missing ? "File removed on disk" : "File changed on disk";
   note.textContent = entry.missing
-    ? entry.path + " was removed. The editor was closed. Your unsaved edits are this patch, kept in this tab."
-    : entry.path + " changed on disk. The editor now shows that copy. Your unsaved edits are this patch, kept in this tab.";
+    ? entry.path + " was removed. Your editor still has your unsaved edits. This patch is what was on disk, kept in this tab."
+    : entry.path + " changed on disk. Your editor still has your unsaved edits. This patch is that change, kept in this tab.";
   document.querySelector("#patch-pop-body").textContent = entry.patch;
   const many = state.patches.length > 1;
   document.querySelector(".patch-pop-nav").hidden = !many;
@@ -2073,18 +2321,6 @@ document.querySelector("#patch-copy").addEventListener("click", async () => {
     button.textContent = "Copy patch";
   }, 1200);
 });
-
-async function beatPresence() {
-  try {
-    const payload = await api("/api/presence", {
-      method: "POST",
-      body: { id: state.clientId, kind: "web" },
-    });
-    renderPresence(payload.clients || []);
-  } catch (error) {
-    if (error && error.serverAway) return;
-  }
-}
 
 let presenceKey = "";
 let presenceTipAnchor = null;
@@ -2679,7 +2915,7 @@ async function runDocuments(documents) {
   }
 }
 
-function renderResults(results, host, markTable = !host) {
+function renderResults(results, host, markTable = !host, resultId = "") {
   const target = host || resultBody;
   target.replaceChildren();
   if (!host) {
@@ -2711,6 +2947,7 @@ function renderResults(results, host, markTable = !host) {
       const last = markTable && item === dataItems[dataItems.length - 1];
       target.append(resultCard({
         source: "result",
+        resultId: resultId || item.id || "",
         title: tableName || "Result",
         statement: item.statement || "",
         rows,
@@ -2782,10 +3019,10 @@ function resultCard(snapshot, tableId) {
   name.className = "result-card-name";
   name.textContent = snapshot.title;
   title.append(name);
-  if (schemaColumns(snapshot.rows, snapshot.columns, snapshot.keys).length) {
+  if (snapshot.resultId && schemaColumns(snapshot.rows, snapshot.columns, snapshot.keys).length) {
     const button = schemaIconButton("Show result structure");
     button.classList.add("result-schema");
-    button.addEventListener("click", () => openSchema(snapshot, button));
+    button.addEventListener("click", () => openSchema({ resultId: snapshot.resultId }, button));
     title.append(button);
   }
   const meta = document.createElement("span");
@@ -3114,6 +3351,13 @@ function describeCard(description, note, cache) {
   title.className = "describe-name";
   title.textContent = description.name;
   head.append(title);
+  if (description.type && description.type !== "DYNAMODB") {
+    const kind = document.createElement("span");
+    kind.className = "table-kind";
+    kind.dataset.kind = description.type === "LOCALTABLE" ? "local" : "temp";
+    kind.textContent = description.type === "LOCALTABLE" ? "local" : "temp";
+    head.append(kind);
+  }
   const aside = document.createElement("div");
   aside.className = "describe-head-aside";
   if (cache) aside.append(cacheHint(cache));
@@ -3652,10 +3896,15 @@ function setBrowserSchema(snapshot) {
   if (!snapshot && rowsSchemaBtn.getAttribute("aria-expanded") === "true") schemaPop.close();
 }
 
+function setFileSchema(snapshot) {
+  state.fileSchema = snapshot;
+  syncSchemaButton(fileSchemaBtn, snapshot);
+  if (!snapshot && fileSchemaBtn.getAttribute("aria-expanded") === "true") schemaPop.close();
+}
+
 function syncSchemaButton(button, snapshot) {
-  const columns = snapshot ? schemaColumns(snapshot.rows, snapshot.columns, snapshot.keys) : [];
-  button.classList.toggle("hidden", !columns.length);
-  if (!columns.length) button.setAttribute("aria-expanded", "false");
+  button.classList.toggle("hidden", !snapshot);
+  if (!snapshot) button.setAttribute("aria-expanded", "false");
 }
 
 function schemaColumns(rows, columns, keys) {
@@ -3690,41 +3939,6 @@ function schemaColumns(rows, columns, keys) {
   return described.concat(extra.map((name) => ({ name })));
 }
 
-function valueKind(value) {
-  if (value === null || value === undefined) return "NULL";
-  if (typeof value === "boolean") return "BOOL";
-  if (typeof value === "number") return "NUMBER";
-  if (typeof value === "string") return "STRING";
-  if (Array.isArray(value)) return "LIST";
-  if (typeof value === "object") return "MAP";
-  return "STRING";
-}
-
-function inspectColumn(column, rows) {
-  const total = (rows || []).length;
-  let present = 0;
-  const kinds = [];
-  let sample;
-  for (const row of rows || []) {
-    if (!Object.prototype.hasOwnProperty.call(row, column.name)) continue;
-    present += 1;
-    const value = row[column.name];
-    const kind = valueKind(value);
-    if (kind !== "NULL" && !kinds.includes(kind)) kinds.push(kind);
-    if (sample === undefined && value !== null && value !== undefined) sample = value;
-  }
-  return {
-    column,
-    name: column.name,
-    kinds: kinds.length ? kinds : present ? ["NULL"] : [],
-    table: column.table || "",
-    index: column.index || "",
-    present,
-    total,
-    sample,
-  };
-}
-
 function roleLabels(column) {
   const labels = [];
   if (column.table === "hash") labels.push("Hash key");
@@ -3739,20 +3953,48 @@ function formatSample(value) {
   return typeof value === "object" ? JSON.stringify(value) : String(value);
 }
 
-function openSchema(snapshot, button) {
-  if (!snapshot) return;
-  const columns = schemaColumns(snapshot.rows, snapshot.columns, snapshot.keys);
-  if (!columns.length) return;
-  const inspected = columns.map((column) => inspectColumn(column, snapshot.rows));
-  const rowCount = (snapshot.rows || []).length;
-  const browser = snapshot.source === "browser";
-  state.schemaKind = snapshot.source || "result";
+async function openSchema(request, button) {
+  if (!request) return;
+  const params = new URLSearchParams();
+  if (request.resultId) params.set("result", request.resultId);
+  else if (request.table) params.set("table", request.table);
+  else if (request.path) params.set("path", request.path);
+  else return;
+  let payload;
+  try {
+    payload = await api("/api/structure?" + params.toString());
+  } catch (error) {
+    reportError(error);
+    return;
+  }
+  const columns = Array.isArray(payload.columns) ? payload.columns : [];
+  const inspected = columns.map((column) => ({
+    column: {
+      name: column.name,
+      table: column.table || "",
+      index: column.index || "",
+    },
+    name: column.name,
+    kinds: column.kinds || [],
+    present: column.present,
+    total: column.total,
+    sample: column.sample,
+  }));
+  const rowCount = Number(payload.rows) || 0;
+  const browser = payload.kind === "table";
+  const file = payload.kind === "file";
+  state.schemaKind = browser ? "browser" : (payload.kind || "result");
   for (const other of document.querySelectorAll(".schema-btn")) {
     other.setAttribute("aria-expanded", other === button ? "true" : "false");
   }
   schemaPopKicker.textContent = browser ? "Table structure" : "Result structure";
   schemaPopInfo.classList.toggle("hidden", browser);
-  schemaPopTitle.textContent = snapshot.title || (browser ? "Table" : "Result");
+  const info = file
+    ? "Based on every row in the file."
+    : "Based on this query result, not the entire table.";
+  schemaPopInfo.title = info;
+  schemaPopInfo.setAttribute("aria-label", info);
+  schemaPopTitle.textContent = payload.title || (browser ? "Table" : "Result");
   schemaPopSummary.textContent = inspected.length
     + (inspected.length === 1 ? " column" : " columns")
     + " · "
@@ -3762,15 +4004,9 @@ function openSchema(snapshot, button) {
   schemaPopKeys.replaceChildren();
   const keyChips = [];
   for (const item of inspected) {
-    if (item.table === "hash" || item.table === "range") {
-      keyChips.push({ name: item.name, role: item.table });
-    }
-  }
-  if (!keyChips.length) {
-    for (const key of snapshot.keys || []) {
-      if (key && (key.role === "hash" || key.role === "range")) {
-        keyChips.push({ name: key.name, role: key.role });
-      }
+    const role = item.column.table;
+    if (role === "hash" || role === "range") {
+      keyChips.push({ name: item.name, role });
     }
   }
   for (const key of keyChips) {
@@ -3783,11 +4019,13 @@ function openSchema(snapshot, button) {
     chip.append(label);
     schemaPopKeys.append(chip);
   }
-  fillSchemaQuery(browser ? "" : snapshot.statement);
+  fillSchemaQuery(browser || file ? "" : payload.statement);
   schemaPopBody.replaceChildren(schemaTable(inspected));
   schemaPopFoot.textContent = browser
     ? "Types come from this page and the keys already listed. No extra query was run."
-    : "Types come from this result. No extra query was run.";
+    : file
+      ? "Types come from the whole file. No extra query was run."
+      : "Types come from this result. No extra query was run.";
   schemaPop.showModal();
 }
 
@@ -3890,11 +4128,93 @@ function schemaPresent(present, total) {
   return wrap;
 }
 
+const tableFetchTokens = new Map();
+
+function byTableName(left, right) {
+  if (left.name < right.name) return -1;
+  if (left.name > right.name) return 1;
+  return 0;
+}
+
+function nameMatchesPattern(pattern, name) {
+  if (!pattern) return true;
+  const source = "^" + pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*").replaceAll("?", ".") + "$";
+  return new RegExp(source).test(name);
+}
+
+async function refreshOneTable(name) {
+  if (state.mode !== "tables") return;
+  state.listGeneration += 1;
+  const token = (tableFetchTokens.get(name) || 0) + 1;
+  tableFetchTokens.set(name, token);
+  let payload;
+  try {
+    payload = await api("/api/tables?name=" + encodeURIComponent(name));
+  } catch (error) {
+    if (tableFetchTokens.get(name) !== token) return;
+    reportError(error);
+    return;
+  }
+  if (tableFetchTokens.get(name) !== token || state.mode !== "tables") return;
+  const found = (payload.tables || []).find((table) => table.name === name) || null;
+  mergeListedTable(name, found);
+}
+
+function mergeListedTable(name, table) {
+  const pattern = document.querySelector("#table-search").value.trim();
+  const had = state.listedTables.some((row) => row.name === name);
+  const listed = state.listedTables.filter((row) => row.name !== name);
+  if (table && (had || nameMatchesPattern(pattern, name))) {
+    listed.push(table);
+    listed.sort(byTableName);
+  }
+  state.listedTables = listed;
+  if (!pattern) state.catalog = listed.slice();
+  else if (table) rememberCatalog(table);
+  else forgetCatalog(name);
+  const selectedGone = state.table === name && !listed.some((row) => row.name === name);
+  if (selectedGone) {
+    state.table = listed[0] ? listed[0].name : "";
+    state.page = 0;
+  }
+  paintTableList();
+  if (selectedGone) {
+    if (state.table) loadRows();
+    else clearRows();
+  }
+}
+
+function rememberCatalog(table) {
+  if (!Array.isArray(state.catalog)) return;
+  const next = state.catalog.filter((row) => row.name !== table.name);
+  next.push(table);
+  next.sort(byTableName);
+  state.catalog = next;
+}
+
+function forgetCatalog(name) {
+  if (!Array.isArray(state.catalog)) return;
+  state.catalog = state.catalog.filter((row) => row.name !== name);
+}
+
+function paintTableList() {
+  const list = document.querySelector("#table-list");
+  const pattern = document.querySelector("#table-search").value.trim();
+  list.replaceChildren();
+  if (state.tableListNote) list.append(sidebarMatchNote(state.tableListNote));
+  if (!state.listedTables.length) {
+    list.append(note(pattern ? "No tables match " + pattern : "No tables", false));
+    return;
+  }
+  paintTables(list, state.listedTables);
+}
+
 async function loadTables(options = {}) {
   const refresh = Boolean(options.refresh);
   const background = Boolean(options.background);
   const poll = Boolean(options.poll);
   const request = ++state.tablesRequest;
+  const generation = state.listGeneration;
   const pattern = document.querySelector("#table-search").value.trim();
   const list = document.querySelector("#table-list");
   const refreshButton = document.querySelector("#refresh-tables");
@@ -3910,39 +4230,25 @@ async function loadTables(options = {}) {
     if (refresh) query.set("refresh", "1");
     if (background) query.set("async", "1");
     const payload = await api("/api/tables?" + query.toString());
-    if (request !== state.tablesRequest) return;
+    if (request !== state.tablesRequest || generation !== state.listGeneration) return;
     renderCacheHint(payload.cache);
     watchCacheRefresh(payload.cache);
-    list.replaceChildren();
-    if (payload.note) list.append(sidebarMatchNote(payload.note));
-    if (!payload.tables.length) {
-      state.table = "";
-      state.listedTables = [];
-      list.append(note(pattern ? "No tables match " + pattern : "No tables", false));
+    state.tableListNote = payload.note || "";
+    state.listedTables = payload.tables || [];
+    if (!pattern) state.catalog = state.listedTables;
+    else if (refresh) state.catalog = null;
+    if (!state.listedTables.some((table) => table.name === state.table)) {
+      state.table = state.listedTables[0] ? state.listedTables[0].name : "";
+      state.page = 0;
+    }
+    paintTableList();
+    if (!state.table) {
       clearRows();
       return;
     }
-    state.listedTables = payload.tables;
-    if (!pattern) state.catalog = payload.tables;
-    else if (refresh) state.catalog = null;
-    if (!payload.tables.some((table) => table.name === state.table)) {
-      state.table = payload.tables[0].name;
-      state.page = 0;
-    }
-    for (const table of payload.tables) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.id = "table-" + table.name.replaceAll(/[^A-Za-z0-9_-]/g, "_");
-      button.className = "table-row" + (table.name === state.table ? " selected" : "");
-      const name = document.createElement("strong");
-      name.textContent = table.name;
-      button.append(name, tableKeyLine(table.keys));
-      button.addEventListener("click", () => selectTable(table.name));
-      list.append(button);
-    }
     await loadRows();
   } catch (error) {
-    if (request !== state.tablesRequest) return;
+    if (request !== state.tablesRequest || generation !== state.listGeneration) return;
     list.replaceChildren(note(error.message, true));
   } finally {
     if (request === state.tablesRequest) {
@@ -4009,6 +4315,57 @@ function watchCacheRefresh(cache) {
   clearTimeout(state.cachePoll);
   if (!cache || !cache.refreshing) return;
   state.cachePoll = setTimeout(() => loadTables({ poll: true }), 700);
+}
+
+function tableKind(table) {
+  return table.kind || "dynamodb";
+}
+
+function tableMarker(kind) {
+  if (kind !== "local" && kind !== "temp") return null;
+  const mark = document.createElement("span");
+  mark.className = "table-kind";
+  mark.dataset.kind = kind;
+  mark.textContent = kind;
+  return mark;
+}
+
+function tableButton(table) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.id = "table-" + table.name.replaceAll(/[^A-Za-z0-9_-]/g, "_");
+  button.className = "table-row" + (table.name === state.table ? " selected" : "");
+  const title = document.createElement("span");
+  title.className = "table-name";
+  const name = document.createElement("strong");
+  name.textContent = table.name;
+  title.append(name);
+  const marker = tableMarker(tableKind(table));
+  if (marker) title.append(marker);
+  button.append(title, tableKeyLine(table.keys));
+  button.addEventListener("click", () => selectTable(table.name));
+  return button;
+}
+
+function paintTables(list, tables) {
+  if (!state.groupTables) {
+    for (const table of tables) list.append(tableButton(table));
+    return;
+  }
+  const groups = [
+    ["local", "Local"],
+    ["temp", "Temp"],
+    ["dynamodb", "DynamoDB"],
+  ];
+  for (const [kind, label] of groups) {
+    const rows = tables.filter((table) => tableKind(table) === kind);
+    if (!rows.length) continue;
+    const head = document.createElement("div");
+    head.className = "table-group";
+    head.textContent = label;
+    list.append(head);
+    for (const table of rows) list.append(tableButton(table));
+  }
 }
 
 function selectTable(name) {
@@ -4217,14 +4574,10 @@ async function loadRows() {
     const rows = payload.items || [];
     body.replaceChildren(dataTable(rows, "rows-table", payload.columns));
     body.scrollTop = 0;
-    const listed = (state.listedTables || []).find((table) => table.name === state.table);
-    setBrowserSchema({
-      source: "browser",
+    setBrowserSchema(rows.length || (payload.columns || []).length ? {
+      table: payload.name || state.table,
       title: payload.name || state.table,
-      rows,
-      columns: payload.columns || [],
-      keys: listed ? listed.keys : [],
-    });
+    } : null);
   } catch (error) {
     body.replaceChildren(note(error.message, true));
     setBrowserSchema(null);

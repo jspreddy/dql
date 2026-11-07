@@ -124,29 +124,54 @@ pub fn web_table_list(
     let tables = report
         .rows
         .into_iter()
-        .map(|row| {
-            let meta = row.meta;
-            crate::web::shape::ListedTable {
-                keys: if meta.has_definition() {
-                    let mut keys = vec![crate::web::shape::KeyRole {
-                        name: meta.hash_key.clone(),
-                        role: "hash".to_string(),
-                    }];
-                    if let Some(range_key) = meta.range_key.clone() {
-                        keys.push(crate::web::shape::KeyRole {
-                            name: range_key,
-                            role: "range".to_string(),
-                        });
-                    }
-                    keys
-                } else {
-                    Vec::new()
-                },
-                name: meta.name,
-            }
-        })
+        .map(|row| listed_table(row.meta, row.kind.as_str()))
         .collect();
     Ok(listed_tables(tables, note, session, cache_text))
+}
+
+/// Describe one table by name. Does not list the rest of the catalog.
+pub fn web_table_by_name(
+    session: &mut Session,
+    name: &str,
+) -> Result<crate::web::shape::TableList, String> {
+    let name = name.trim();
+    if !crate::web::shape::safe_table_name(name) {
+        return Err(format!("invalid table name '{name}'"));
+    }
+    let table = session
+        .engine
+        .describe(name, false)
+        .map_err(|err| err.to_string())?;
+    let tables = match table {
+        Some(meta) => {
+            let kind = session.engine.table_kind_name(&meta.name);
+            vec![listed_table(meta, kind)]
+        }
+        None => Vec::new(),
+    };
+    Ok(listed_tables(tables, String::new(), session, String::new()))
+}
+
+fn listed_table(meta: TableMeta, kind: &str) -> crate::web::shape::ListedTable {
+    crate::web::shape::ListedTable {
+        kind: kind.to_string(),
+        keys: if meta.has_definition() {
+            let mut keys = vec![crate::web::shape::KeyRole {
+                name: meta.hash_key.clone(),
+                role: "hash".to_string(),
+            }];
+            if let Some(range_key) = meta.range_key.clone() {
+                keys.push(crate::web::shape::KeyRole {
+                    name: range_key,
+                    role: "range".to_string(),
+                });
+            }
+            keys
+        } else {
+            Vec::new()
+        },
+        name: meta.name,
+    }
 }
 
 fn missing_table(message: &str) -> bool {

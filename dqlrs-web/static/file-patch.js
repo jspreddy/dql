@@ -1,4 +1,4 @@
-// A unified diff of unsaved editor text. Kept in the browser only.
+// A unified diff kept in the browser only.
 
 export function unifiedDiff(before, after, path) {
   if (before === after) return "";

@@ -19,7 +19,7 @@ test("refreshes a clean editor when the file changes on disk", async ({ page, ap
   expect(disk).not.toContain("local unsaved");
 });
 
-test("keeps unsaved edits as a patch when the file changes on disk", async ({ page, app }, testInfo) => {
+test("keeps a dirty editor and shows the disk change once", async ({ page, app }, testInfo) => {
   await page.route("**/api/file", async (route) => {
     if (route.request().method() === "PUT") {
       await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -30,9 +30,9 @@ test("keeps unsaved edits as a patch when the file changes on disk", async ({ pa
   await replaceEditor(page, "-- editable\nSELECT 1;\n-- local unsaved\n");
   fs.writeFileSync(file, "-- editable\nSELECT 1;\n-- from mcp\n");
   await expect(page.locator("#patch-pop")).toBeVisible();
-  await expect(page.locator("#editor-content")).toContainText("from mcp");
-  await expect(page.locator("#editor-content")).not.toContainText("local unsaved");
-  await expect(page.locator("#patch-pop-body")).toContainText("+-- local unsaved");
+  await expect(page.locator("#editor-content")).toContainText("local unsaved");
+  await expect(page.locator("#editor-content")).not.toContainText("from mcp");
+  await expect(page.locator("#patch-pop-body")).toContainText("+-- from mcp");
   await expect(page.locator("#patch-pop-title")).toHaveText("File changed on disk");
   const disk = fs.readFileSync(file, "utf8");
   expect(disk).toContain("from mcp");
@@ -41,10 +41,33 @@ test("keeps unsaved edits as a patch when the file changes on disk", async ({ pa
   await page.locator("#patch-pop-close").click();
   await expect(page.locator("#patch-pop")).toBeHidden();
   await page.locator("#patch-recall").click();
-  await expect(page.locator("#patch-pop-body")).toContainText("local unsaved");
+  await expect(page.locator("#patch-pop-body")).toContainText("from mcp");
   await page.screenshot({ path: playwrightArtifact(`file-patch-modal-${testInfo.project.name}.png`) });
   await page.waitForTimeout(1800);
+  expect(fs.readFileSync(file, "utf8")).toContain("from mcp");
   expect(fs.readFileSync(file, "utf8")).not.toContain("local unsaved");
+  await expect(page.locator("#editor-content")).toContainText("local unsaved");
+  await expect(page.locator("#patch-recall")).toHaveText("Unsaved patch");
+});
+
+test("refetches a file when its hash changes and not before", async ({ page, app }) => {
+  let gets = 0;
+  await page.route(/\/api\/file\?/, async (route) => {
+    gets += 1;
+    await route.continue();
+  });
+  await page.waitForTimeout(1200);
+  expect(gets).toBe(0);
+  const file = path.join(app.workspace, "queries/edit.dql");
+  fs.writeFileSync(file, "-- editable\nSELECT 1;\n-- from disk\n");
+  await expect(page.locator("#editor-content")).toContainText("from disk");
+  expect(gets).toBeGreaterThan(0);
+  await expect(page.locator("#patch-pop")).toBeHidden();
+});
+
+test("shows a file added outside the editor", async ({ page, app }) => {
+  fs.writeFileSync(path.join(app.workspace, "queries/fresh.dql"), "SELECT 1;\n");
+  await expect(page.locator('[data-testid="node-queries__fresh.dql"]')).toBeVisible();
 });
 
 test("a second window picks up a saved edit without a patch", async ({ page, app }) => {
@@ -69,8 +92,9 @@ test("a dirty window does not overwrite another window's save", async ({ page, a
   await replaceEditor(other, "-- editable\nSELECT 1;\n-- other unsaved\n");
   await replaceEditor(page, "-- editable\nSELECT 1;\n-- from first\n");
   await expect(other.locator("#patch-pop")).toBeVisible();
-  await expect(other.locator("#patch-pop-body")).toContainText("other unsaved");
-  await expect(other.locator("#editor-content")).toContainText("from first");
+  await expect(other.locator("#patch-pop-body")).toContainText("from first");
+  await expect(other.locator("#editor-content")).toContainText("other unsaved");
+  await expect(other.locator("#editor-content")).not.toContainText("from first");
   const disk = fs.readFileSync(file, "utf8");
   expect(disk).toContain("from first");
   expect(disk).not.toContain("other unsaved");
@@ -143,17 +167,19 @@ test("lists each open web window on the title bar", async ({ page, app }, testIn
 });
 
 test("shows web and mcp clients as profile icons", async ({ page }, testInfo) => {
-  await page.route("**/api/presence", async (route) => {
+  const clients = {
+    clients: [
+      { id: "web-window-a", kind: "web", label: "W1", color: "#c2410c" },
+      { id: "web-window-b", kind: "web", label: "W2", color: "#0067a5" },
+      { id: "mcp", kind: "mcp", label: "M1", color: "#b45309" },
+    ],
+  };
+  const body = `event: presence\ndata: ${JSON.stringify(clients)}\n\n`;
+  await page.route("**/api/events**", async (route) => {
     await route.fulfill({
       status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        clients: [
-          { id: "web-window-a", kind: "web", label: "W1", color: "#c2410c" },
-          { id: "web-window-b", kind: "web", label: "W2", color: "#0067a5" },
-          { id: "mcp", kind: "mcp", label: "M1", color: "#b45309" },
-        ],
-      }),
+      headers: { "content-type": "text/event-stream", "cache-control": "no-store" },
+      body,
     });
   });
   await page.reload();
@@ -168,4 +194,70 @@ test("shows web and mcp clients as profile icons", async ({ page }, testInfo) =>
   await expect(page.locator("#presence-tip")).toContainText("3 clients connected");
   await expect(page.locator("#presence-tip")).toContainText("MCP: M1");
   await page.screenshot({ path: playwrightArtifact(`presence-web-mcp-${testInfo.project.name}.png`) });
+});
+
+test("a tables event names the table and updates that row", async ({ page, app }) => {
+  await page.addInitScript(() => {
+    window.__sseFrames = [];
+    const original = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const response = await original(input, init);
+      const url = typeof input === "string" ? input : input.url;
+      if (!String(url).includes("/api/events") || !response.body) return response;
+      const [stream, tap] = response.body.tee();
+      const reader = tap.getReader();
+      const decoder = new TextDecoder();
+      (async () => {
+        let buffer = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let split = buffer.indexOf("\n\n");
+          while (split >= 0) {
+            window.__sseFrames.push(buffer.slice(0, split));
+            buffer = buffer.slice(split + 2);
+            split = buffer.indexOf("\n\n");
+          }
+        }
+      })();
+      return new Response(stream, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    };
+  });
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await page.locator("#mode-tables").click();
+  await expect(page.locator("#tables-view")).toBeVisible();
+
+  const name = `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+  app.trackTable(name);
+  const tableGets = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/tables") tableGets.push(url.search);
+  });
+
+  const other = await page.context().newPage();
+  await openApp(other, app);
+  await replaceEditor(other, `CREATE TABLE ${name} (id STRING HASH KEY);\n`);
+  await other.locator("#run").click();
+  await expect(other.locator(".query-result").last()).toContainText(name);
+  await expect(page.locator(`#table-${name}`)).toBeVisible();
+  await expect(page.locator(`#table-${name}`)).toContainText("id");
+
+  const frames = await page.evaluate(() => window.__sseFrames.filter((frame) => frame.includes("event: tables")));
+  expect(frames.some((frame) => frame.includes(`"tables":["${name}"]`))).toBe(true);
+  expect(tableGets.some((search) => search.includes(`name=${name}`))).toBe(true);
+  expect(tableGets.every((search) => search.startsWith("?name="))).toBe(true);
+
+  await replaceEditor(other, `DROP TABLE ${name};\n`);
+  await other.locator("#run").click();
+  await expect(page.locator(`#table-${name}`)).toHaveCount(0);
+  const afterDrop = await page.evaluate(() => window.__sseFrames.filter((frame) => frame.includes("event: tables")));
+  expect(afterDrop.filter((frame) => frame.includes(`"tables":["${name}"]`)).length).toBeGreaterThanOrEqual(2);
+  await other.close();
 });

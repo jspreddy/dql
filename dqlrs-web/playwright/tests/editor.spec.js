@@ -74,6 +74,34 @@ test("saves the color theme in the browser and restores it", async ({ page }) =>
   await expect(page.locator("#theme-toggle")).toHaveAttribute("aria-pressed", after === "dark" ? "true" : "false");
 });
 
+test("switches the editor caret between black and white", async ({ page }) => {
+  const toggle = page.locator("#theme-toggle");
+  await expect(toggle).toBeVisible();
+  await page.locator("#editor").click();
+  const caret = page.locator(".cm-cursor").first();
+  await expect(caret).toBeAttached();
+
+  const black = "rgb(0, 0, 0)";
+  const white = "rgb(255, 255, 255)";
+  const caretColor = (theme) => (theme === "dark" ? white : black);
+  const before = await page.evaluate(() => document.documentElement.dataset.theme || "light");
+  await expect(caret).toHaveCSS("border-left-color", caretColor(before));
+  expect(await themeColor(page, "--cursor")).toBe(caretColor(before));
+
+  await toggle.click();
+  const after = before === "dark" ? "light" : "dark";
+  await expect(toggle).toHaveAttribute("aria-pressed", after === "dark" ? "true" : "false");
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe(after);
+  await expect(caret).toHaveCSS("border-left-color", caretColor(after));
+  expect(await themeColor(page, "--cursor")).toBe(caretColor(after));
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", before === "dark" ? "true" : "false");
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe(before);
+  await expect(caret).toHaveCSS("border-left-color", caretColor(before));
+  expect(await themeColor(page, "--cursor")).toBe(caretColor(before));
+});
+
 test("resizes the results pane from the top handle", async ({ page }) => {
   const results = page.locator("#results");
   const handle = page.locator("#results-resize");

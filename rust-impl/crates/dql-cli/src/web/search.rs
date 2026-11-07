@@ -259,7 +259,7 @@ fn collect_queries(
     statements: &mut Vec<SearchHit>,
     files: &mut Vec<SearchHit>,
 ) {
-    if node.kind == "file" {
+    if node.kind == "file" && node.path.to_ascii_lowercase().ends_with(".dql") {
         if let Ok(text) = files::read_text(root, &node.path) {
             let matched = statement_hits(&node.path, &text, needle);
             let file_matched = contains_ci(&node.path, needle) || contains_ci(&node.name, needle);

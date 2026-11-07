@@ -5,6 +5,7 @@ use crate::progress::ProgressSink;
 use crate::query_context::{query_context_from_read, LastQueryContext};
 use crate::table_cache::SharedTableCache;
 use crate::throttle::RateLimit;
+use crate::virtual_tables::{LocalColumn, LocalDefinitionStore, TableKind, VirtualCatalog};
 use crate::{
     help_page, BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation,
     ReadRequest, StatementResult, WRITE_PROGRESS_CHUNK,
@@ -20,6 +21,7 @@ use dql_parser::{
 };
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct Engine<B: DynamoBackend> {
@@ -41,6 +43,8 @@ pub struct Engine<B: DynamoBackend> {
     last_query_context: Option<LastQueryContext>,
     progress: ProgressSink,
     cancel: CancelFlag,
+    virtual_tables: VirtualCatalog,
+    local_store: Option<Arc<dyn LocalDefinitionStore>>,
 }
 
 impl<B: DynamoBackend> Engine<B> {
@@ -68,6 +72,30 @@ impl<B: DynamoBackend> Engine<B> {
             last_query_context: None,
             progress,
             cancel,
+            virtual_tables: VirtualCatalog::default(),
+            local_store: None,
+        }
+    }
+
+    /// Load encrypted local-table definitions and read their files.
+    pub fn set_local_store(&mut self, store: Option<Arc<dyn LocalDefinitionStore>>) {
+        let definitions = store.as_ref().map(|store| store.load()).unwrap_or_default();
+        self.local_store = store;
+        let mut loaded = false;
+        for definition in definitions {
+            match self.virtual_tables.restore(definition) {
+                Ok(()) => loaded = true,
+                Err(err) => eprintln!("dqlrs: {err}"),
+            }
+        }
+        if loaded {
+            self.persist_locals();
+        }
+    }
+
+    fn persist_locals(&self) {
+        if let Some(store) = &self.local_store {
+            store.save(&self.virtual_tables.local_definitions());
         }
     }
 
@@ -109,7 +137,9 @@ impl<B: DynamoBackend> Engine<B> {
     }
 
     pub fn list_tables(&self) -> Result<Vec<String>, EngineError> {
-        self.backend.list_tables()
+        let mut names = self.backend.list_tables()?;
+        self.merge_virtual_names(&mut names);
+        Ok(names)
     }
 
     /// Names from memory, then disk, then the backend.
@@ -189,6 +219,11 @@ impl<B: DynamoBackend> Engine<B> {
         table: &str,
         refresh: bool,
     ) -> Result<Option<TableMeta>, EngineError> {
+        if self.virtual_tables.contains(table) {
+            self.virtual_tables.reload_local(table)?;
+            self.last_read_from_cache = false;
+            return Ok(self.virtual_tables.meta(table));
+        }
         if !refresh {
             if let Some(meta) = self.cached_definition(table) {
                 self.last_read_from_cache = true;
@@ -304,7 +339,75 @@ impl<B: DynamoBackend> Engine<B> {
     }
 
     pub fn table_item_count(&self, table: &str) -> usize {
+        if self.virtual_tables.contains(table) {
+            return self.virtual_tables.item_count(table);
+        }
         self.backend.table_item_count(table)
+    }
+
+    fn merge_virtual_names(&self, names: &mut Vec<String>) {
+        for name in self.virtual_tables.names() {
+            if !names.iter().any(|existing| existing == &name) {
+                names.push(name);
+            }
+        }
+        names.sort();
+        names.dedup();
+    }
+
+    fn merged_names(&mut self, refresh: bool) -> Result<Vec<String>, EngineError> {
+        let mut names = self.cached_table_names(refresh)?;
+        self.merge_virtual_names(&mut names);
+        Ok(names)
+    }
+
+    fn lookup_meta(&self, table: &str) -> Result<TableMeta, EngineError> {
+        if let Some(meta) = self.virtual_tables.meta(table) {
+            return Ok(meta);
+        }
+        self.backend
+            .describe_table(table)?
+            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))
+    }
+
+    fn table_exists(&self, name: &str) -> Result<bool, EngineError> {
+        if self.virtual_tables.contains(name) {
+            return Ok(true);
+        }
+        Ok(self.backend.describe_table(name)?.is_some())
+    }
+
+    fn refresh_listed(&mut self, name: &str) {
+        let before = self.virtual_tables.column_signature(name);
+        if self.virtual_tables.reload_local(name).is_ok()
+            && self.virtual_tables.column_signature(name) != before
+        {
+            self.persist_locals();
+        }
+    }
+
+    /// `dynamodb`, `local`, or `temp` for one table. Does not list the catalog.
+    pub fn table_kind_name(&self, name: &str) -> &'static str {
+        self.row_kind(name).0.as_str()
+    }
+
+    fn row_kind(&self, name: &str) -> (TableKind, Option<String>) {
+        match self.virtual_tables.kind(name) {
+            Some(kind) => (kind, self.virtual_tables.schema_line(name)),
+            None => (TableKind::DynamoDb, None),
+        }
+    }
+
+    fn present_description(&self, table: &str, meta: &TableMeta, items: usize) -> String {
+        let text = crate::format_table_description(meta, items, 0);
+        match self.virtual_tables.kind(table) {
+            Some(kind) => decorate_description(
+                text,
+                kind,
+                &self.virtual_tables.schema_line(table).unwrap_or_default(),
+            ),
+            None => text,
+        }
     }
 
     pub fn with_allow_select_scan(mut self, allow_select_scan: bool) -> Self {
@@ -359,7 +462,11 @@ impl<B: DynamoBackend> Engine<B> {
         let mut last_capacity = None;
         for chunk in items.chunks(WRITE_PROGRESS_CHUNK) {
             self.cancel.check()?;
-            let response = self.backend.batch_write(table, chunk.to_vec())?;
+            let response = if self.virtual_tables.contains(table) {
+                self.virtual_tables.batch_write(table, chunk.to_vec())?
+            } else {
+                self.backend.batch_write(table, chunk.to_vec())?
+            };
             written += response.output;
             if let Some(capacity) = response.capacity {
                 self.capture_capacity(Some(capacity.clone()))?;
@@ -395,7 +502,12 @@ impl<B: DynamoBackend> Engine<B> {
         let mut last_capacity = None;
         for chunk in keys.chunks(WRITE_PROGRESS_CHUNK) {
             self.cancel.check()?;
-            let response = self.backend.delete_by_keys(table, chunk, condition)?;
+            let response = if self.virtual_tables.contains(table) {
+                self.virtual_tables
+                    .delete_by_keys(table, chunk, condition)?
+            } else {
+                self.backend.delete_by_keys(table, chunk, condition)?
+            };
             deleted += response.output;
             if let Some(capacity) = response.capacity {
                 self.capture_capacity(Some(capacity.clone()))?;
@@ -434,9 +546,13 @@ impl<B: DynamoBackend> Engine<B> {
         let mut updated_items = Vec::new();
         for chunk in keys.chunks(WRITE_PROGRESS_CHUNK) {
             self.cancel.check()?;
-            let response =
+            let response = if self.virtual_tables.contains(table) {
+                self.virtual_tables
+                    .update_by_keys(table, chunk, update, condition, return_items)?
+            } else {
                 self.backend
-                    .update_by_keys(table, chunk, update, condition, return_items)?;
+                    .update_by_keys(table, chunk, update, condition, return_items)?
+            };
             updated += response.output;
             if let Some(items) = response.updated_items {
                 updated_items.extend(items);
@@ -477,7 +593,24 @@ impl<B: DynamoBackend> Engine<B> {
             Statement::CreateTable { if_not_exists, .. } => {
                 self.create_table(statement, *if_not_exists)
             }
+            Statement::CreateLocalTable {
+                if_not_exists,
+                name,
+                path,
+            } => self.create_local_table(*if_not_exists, name, path),
+            Statement::CreateTempTable {
+                if_not_exists,
+                name,
+                query_text,
+                query,
+            } => self.create_temp_table(*if_not_exists, name, query_text, query),
             Statement::DropTable { if_exists, name } => self.drop_table(*if_exists, name),
+            Statement::DropLocalTable { if_exists, name } => {
+                self.drop_virtual(*if_exists, name, TableKind::Local)
+            }
+            Statement::DropTempTable { if_exists, name } => {
+                self.drop_virtual(*if_exists, name, TableKind::Temp)
+            }
             Statement::Insert {
                 table,
                 form,
@@ -573,6 +706,12 @@ impl<B: DynamoBackend> Engine<B> {
     ) -> Result<StatementResult, EngineError> {
         let meta = TableMeta::from_create_statement(statement)
             .map_err(|err| EngineError::Runtime(err.to_string()))?;
+        if self.virtual_tables.contains(&meta.name) {
+            return Err(EngineError::Runtime(format!(
+                "Table '{}' already exists",
+                meta.name
+            )));
+        }
         self.record("create_table", &meta.name);
         let response = self.backend.create_table(meta.clone(), if_not_exists)?;
         self.capture_capacity(response.capacity)?;
@@ -581,7 +720,125 @@ impl<B: DynamoBackend> Engine<B> {
         Ok(StatementResult::Status(response.output))
     }
 
+    fn create_local_table(
+        &mut self,
+        if_not_exists: bool,
+        name: &str,
+        path: &str,
+    ) -> Result<StatementResult, EngineError> {
+        self.record("create_table", name);
+        let taken = self.table_exists(name)?;
+        let message = self
+            .virtual_tables
+            .create_local(name, path, if_not_exists, taken)?;
+        self.persist_locals();
+        Ok(StatementResult::Status(message))
+    }
+
+    fn create_temp_table(
+        &mut self,
+        if_not_exists: bool,
+        name: &str,
+        query_text: &str,
+        query: &Statement,
+    ) -> Result<StatementResult, EngineError> {
+        self.record("create_table", name);
+        let taken = self.table_exists(name)?;
+        if taken && if_not_exists {
+            return Ok(StatementResult::Status(format!(
+                "Table '{name}' already exists"
+            )));
+        }
+        let preferred = self.temp_source_columns(query)?;
+        let result = self.run(query)?;
+        let items = match result {
+            StatementResult::Items(items) => items,
+            StatementResult::ItemsWithNote { items, .. } => items,
+            _ => {
+                return Err(EngineError::Runtime(
+                    "CREATE TEMPTABLE requires a SELECT or SCAN that returns rows".to_string(),
+                ))
+            }
+        };
+        let message = self.virtual_tables.create_temp(
+            name,
+            query_text,
+            items,
+            &preferred,
+            if_not_exists,
+            taken,
+        )?;
+        Ok(StatementResult::Status(message))
+    }
+
+    fn temp_source_columns(&mut self, query: &Statement) -> Result<Vec<LocalColumn>, EngineError> {
+        let (table, selection) = match query {
+            Statement::Select {
+                table, selection, ..
+            }
+            | Statement::Scan {
+                table, selection, ..
+            } => (table, selection),
+            _ => {
+                return Err(EngineError::Runtime(
+                    "CREATE TEMPTABLE requires SELECT or SCAN".to_string(),
+                ))
+            }
+        };
+        if matches!(selection, dql_parser::Selection::CountAll) {
+            return Err(EngineError::Runtime(
+                "CREATE TEMPTABLE cannot store COUNT(*)".to_string(),
+            ));
+        }
+        let Some(meta) = self.describe(table, false)? else {
+            return Ok(Vec::new());
+        };
+        let mut columns = crate::virtual_tables::columns_from_meta(&meta);
+        if let dql_parser::Selection::Items(items) = selection {
+            let wanted: Vec<String> = items
+                .iter()
+                .map(|item| {
+                    item.alias
+                        .clone()
+                        .unwrap_or_else(|| item.expression.clone())
+                })
+                .collect();
+            columns.retain(|column| wanted.iter().any(|name| name == &column.name));
+            for name in wanted {
+                if !columns.iter().any(|column| column.name == name) {
+                    columns.push(LocalColumn {
+                        name,
+                        data_type: "STRING".to_string(),
+                        key: String::new(),
+                    });
+                }
+            }
+        }
+        Ok(columns)
+    }
+
+    fn drop_virtual(
+        &mut self,
+        if_exists: bool,
+        name: &str,
+        kind: TableKind,
+    ) -> Result<StatementResult, EngineError> {
+        self.record("delete_table", name);
+        let message = self.virtual_tables.drop_kind(name, kind, if_exists)?;
+        if kind == TableKind::Local {
+            self.persist_locals();
+        }
+        Ok(StatementResult::Status(message))
+    }
+
     fn drop_table(&mut self, if_exists: bool, name: &str) -> Result<StatementResult, EngineError> {
+        if let Some(kind) = self.virtual_tables.kind(name) {
+            return Err(EngineError::Runtime(format!(
+                "'{name}' is a {}; use DROP {}",
+                kind.label(),
+                kind.label()
+            )));
+        }
         self.record("delete_table", name);
         let response = self.backend.delete_table(name, if_exists)?;
         self.capture_capacity(response.capacity)?;
@@ -673,9 +930,13 @@ impl<B: DynamoBackend> Engine<B> {
             &explain_kwargs_for_mutation(None, condition),
         );
         self.report_progress(0, None, "write");
-        let response = self
-            .backend
-            .delete_matching(table, condition, plan.as_ref(), options)?;
+        let response = if self.virtual_tables.contains(table) {
+            self.virtual_tables
+                .delete_matching(table, condition, plan.as_ref(), options)?
+        } else {
+            self.backend
+                .delete_matching(table, condition, plan.as_ref(), options)?
+        };
         self.capture_capacity(response.capacity)?;
         self.report_progress(
             response.output as u64,
@@ -720,9 +981,13 @@ impl<B: DynamoBackend> Engine<B> {
             &explain_kwargs_for_mutation(Some(update), condition),
         );
         self.report_progress(0, None, "write");
-        let response = self
-            .backend
-            .update_matching(table, update, condition, return_items)?;
+        let response = if self.virtual_tables.contains(table) {
+            self.virtual_tables
+                .update_matching(table, update, condition, return_items)?
+        } else {
+            self.backend
+                .update_matching(table, update, condition, return_items)?
+        };
         self.capture_capacity(response.capacity.clone())?;
         self.report_progress(
             response.output as u64,
@@ -842,19 +1107,20 @@ impl<B: DynamoBackend> Engine<B> {
             table,
             &explain_kwargs_for_projection(selection, options),
         );
-        let response = self
-            .backend
-            .batch_get_keys(table, &keys, options.consistent)?;
+        let response = if self.virtual_tables.contains(table) {
+            self.virtual_tables
+                .batch_get(table, &keys, options.consistent)?
+        } else {
+            self.backend
+                .batch_get_keys(table, &keys, options.consistent)?
+        };
         let capacity = response.capacity.clone();
         self.capture_capacity(capacity)?;
         finalize_read_result(response, selection, options.order_by.as_ref())
     }
 
     fn keys_in_items(&self, table: &str, keys_in: &[Vec<Value>]) -> Result<Vec<Item>, EngineError> {
-        let meta = self
-            .backend
-            .describe_table(table)?
-            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let meta = self.lookup_meta(table)?;
         keys_in_to_items(&meta, keys_in)
     }
 
@@ -912,7 +1178,11 @@ impl<B: DynamoBackend> Engine<B> {
             range_key,
             follow_up_batch_get: plan.follow_up_batch_get,
         };
-        let response = self.backend.execute_read(table, &request)?;
+        let response = if self.virtual_tables.contains(table) {
+            self.virtual_tables.read(table, &request)?
+        } else {
+            self.backend.execute_read(table, &request)?
+        };
         let capacity = response.capacity.clone();
         self.capture_capacity(capacity)?;
         finalize_read_result(response, selection, ordering.client_order_by.as_ref())
@@ -923,6 +1193,11 @@ impl<B: DynamoBackend> Engine<B> {
         table: &str,
         action: &dql_parser::AlterAction,
     ) -> Result<StatementResult, EngineError> {
+        if self.virtual_tables.contains(table) {
+            return Err(EngineError::Runtime(format!(
+                "'{table}' is not a DynamoDB table"
+            )));
+        }
         self.record("update_table", table);
         let response = self.backend.alter_table(table, action)?;
         self.capture_capacity(response.capacity)?;
@@ -961,21 +1236,29 @@ impl<B: DynamoBackend> Engine<B> {
                     let name = filtered[0].clone();
                     let fetch = refresh && !background;
                     self.record("describe_table", &name);
-                    let meta = if fetch {
-                        self.describe_for_ls(&name, true, metrics)?
+                    if self.virtual_tables.contains(&name) {
+                        self.refresh_listed(&name);
+                    }
+                    let meta = if self.virtual_tables.contains(&name) {
+                        Ok(self.virtual_tables.meta(&name))
+                    } else if fetch {
+                        self.describe_for_ls(&name, true, metrics)
                     } else {
                         match self.cached_definition(&name) {
-                            Some(meta) if !metrics => Some(meta),
-                            _ => self.describe_for_ls(&name, false, metrics)?,
+                            Some(meta) if !metrics => Ok(Some(meta)),
+                            _ => self.describe_for_ls(&name, false, metrics),
                         }
-                    }
+                    }?
                     .ok_or_else(|| EngineError::Runtime(format!("Table {name:?} not found")))?;
                     let item_count = self.table_item_count(&name);
+                    let (kind, schema) = self.row_kind(&name);
                     (
                         vec![LsRow {
                             meta,
                             item_count,
                             size_bytes: 0,
+                            kind,
+                            schema,
                         }],
                         merge_ls_note(match_note, hint),
                         true,
@@ -987,7 +1270,7 @@ impl<B: DynamoBackend> Engine<B> {
                 }
             }
         } else {
-            let names = self.cached_table_names(false)?;
+            let names = self.merged_names(false)?;
             let rows = self.ls_rows(&names);
             (rows, merge_ls_note(None, hint), false)
         };
@@ -1057,7 +1340,7 @@ impl<B: DynamoBackend> Engine<B> {
         &mut self,
         pattern: &str,
     ) -> Result<(Vec<String>, Option<String>), EngineError> {
-        let names = self.cached_table_names(false)?;
+        let names = self.merged_names(false)?;
         let exact: Vec<String> = names
             .iter()
             .filter(|name| glob_matches(pattern, name))
@@ -1077,18 +1360,28 @@ impl<B: DynamoBackend> Engine<B> {
     fn ls_rows(&mut self, names: &[String]) -> Vec<LsRow> {
         let mut rows = Vec::with_capacity(names.len());
         for name in names {
-            let meta = self
-                .cached_definition(name)
-                .unwrap_or_else(|| TableMeta::name_only(name));
+            let hosted = self.virtual_tables.contains(name);
+            let meta = if hosted {
+                self.refresh_listed(name);
+                self.virtual_tables
+                    .meta(name)
+                    .unwrap_or_else(|| TableMeta::name_only(name))
+            } else {
+                self.cached_definition(name)
+                    .unwrap_or_else(|| TableMeta::name_only(name))
+            };
             let item_count = if meta.has_definition() {
                 self.table_item_count(name)
             } else {
                 0
             };
+            let (kind, schema) = self.row_kind(name);
             rows.push(LsRow {
                 meta,
                 item_count,
                 size_bytes: 0,
+                kind,
+                schema,
             });
         }
         rows
@@ -1103,7 +1396,9 @@ impl<B: DynamoBackend> Engine<B> {
         let mut meta = self.describe(name, refresh)?;
         if metrics {
             if let Some(meta) = meta.as_mut() {
-                self.backend.attach_consumed_metrics(meta)?;
+                if !self.virtual_tables.contains(name) {
+                    self.backend.attach_consumed_metrics(meta)?;
+                }
             }
         }
         Ok(meta)
@@ -1147,7 +1442,7 @@ impl<B: DynamoBackend> Engine<B> {
         // Tables that have never been fetched stay name-only. The table browser,
         // search, and lint still read the saved snapshots and do not reload on their own.
         self.refresh_cached_definitions()?;
-        let mut names = self.cached_table_names(true)?;
+        let mut names = self.merged_names(true)?;
         let Some(pattern) = like else {
             names.sort();
             // An empty note marks the full list. The CLI turns it into the same
@@ -1182,7 +1477,7 @@ impl<B: DynamoBackend> Engine<B> {
         let meta = self
             .describe(table, true)?
             .ok_or_else(|| EngineError::Runtime(format!("Table {table:?} not found")))?;
-        let text = crate::format_table_description(&meta, self.table_item_count(table), 0);
+        let text = self.present_description(table, &meta, self.table_item_count(table));
         Ok(StatementResult::Schema(text))
     }
 
@@ -1194,6 +1489,10 @@ impl<B: DynamoBackend> Engine<B> {
         };
         let mut lines = Vec::new();
         for name in names {
+            if let Some(line) = self.virtual_tables.schema_line(&name) {
+                lines.push(line.trim_end_matches(';').to_string());
+                continue;
+            }
             let table = self
                 .backend
                 .describe_table(&name)?
@@ -1284,10 +1583,7 @@ impl<B: DynamoBackend> Engine<B> {
         condition: Option<&Condition>,
         options: &QueryOptions,
     ) -> Result<QueryPlan, EngineError> {
-        let meta = self
-            .backend
-            .describe_table(table)?
-            .ok_or_else(|| EngineError::Runtime(format!("Table '{table}' not found")))?;
+        let meta = self.lookup_meta(table)?;
         if let Some(condition) = condition {
             let _ =
                 render_condition(condition).map_err(|err| EngineError::Runtime(err.to_string()))?;
@@ -1332,11 +1628,32 @@ impl<B: DynamoBackend> Engine<B> {
     }
 }
 
+fn decorate_description(text: String, kind: TableKind, schema: &str) -> String {
+    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    if let Some(pos) = lines.iter().position(|line| line.starts_with("Name:")) {
+        lines.insert(pos + 1, format!("Type: {}", kind.label()));
+    }
+    if let Some(pos) = lines.iter().position(|line| line.starts_with("CREATE ")) {
+        lines.truncate(pos);
+        while lines.last().is_some_and(|line| line.is_empty()) {
+            lines.pop();
+        }
+    }
+    if !schema.is_empty() {
+        lines.push(String::new());
+        lines.push(schema.to_string());
+    }
+    lines.join("\n")
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LsRow {
     pub meta: TableMeta,
     pub item_count: usize,
     pub size_bytes: u64,
+    pub kind: TableKind,
+    /// `CREATE LOCALTABLE` or `CREATE TEMPTABLE` text. DynamoDB rows leave this empty.
+    pub schema: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1352,7 +1669,11 @@ impl LsReport {
     pub fn message(&self) -> String {
         let body = if self.detail {
             let row = &self.rows[0];
-            crate::format_table_description(&row.meta, row.item_count, row.size_bytes)
+            let text = crate::format_table_description(&row.meta, row.item_count, row.size_bytes);
+            match &row.schema {
+                Some(schema) => decorate_description(text, row.kind, schema),
+                None => text,
+            }
         } else {
             let rows: Vec<_> = self
                 .rows

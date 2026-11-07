@@ -413,7 +413,7 @@ fn cache_env_lock() -> std::sync::MutexGuard<'static, ()> {
     LOCK.lock().unwrap_or_else(|err| err.into_inner())
 }
 
-fn cache_root() -> PathBuf {
+pub(crate) fn cache_root() -> PathBuf {
     let _guard = cache_env_lock();
     cache_root_from_env()
 }

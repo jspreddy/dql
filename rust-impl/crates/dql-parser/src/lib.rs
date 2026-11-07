@@ -257,7 +257,29 @@ pub enum Statement {
         throughput: Option<Throughput>,
         global_indexes: Vec<GlobalIndex>,
     },
+    /// `CREATE LOCALTABLE name AS 'file.csv'`. The file is CSV or JSON.
+    CreateLocalTable {
+        if_not_exists: bool,
+        name: String,
+        path: String,
+    },
+    /// `CREATE TEMPTABLE name AS (SELECT ...)` or `AS (SCAN ...)`.
+    CreateTempTable {
+        if_not_exists: bool,
+        name: String,
+        /// Source text of the `SELECT` or `SCAN` inside the parentheses.
+        query_text: String,
+        query: Box<Statement>,
+    },
     DropTable {
+        if_exists: bool,
+        name: String,
+    },
+    DropLocalTable {
+        if_exists: bool,
+        name: String,
+    },
+    DropTempTable {
         if_exists: bool,
         name: String,
     },
@@ -351,7 +373,7 @@ pub enum FragmentStatus {
 
 pub fn parse_script(input: &str) -> Result<Vec<Statement>, ParseError> {
     let (tokens, offsets) = tokenize(input)?;
-    let mut parser = Parser::new(tokens, offsets, input.len());
+    let mut parser = Parser::new(tokens, offsets, input);
     let mut statements = Vec::new();
     parser.consume_semicolons();
     while !parser.is_eof() {
@@ -376,7 +398,7 @@ pub fn parse_statement(input: &str) -> Result<Statement, ParseError> {
 
 pub fn parse_value(input: &str) -> Result<Value, ParseError> {
     let (tokens, offsets) = tokenize(input)?;
-    let mut parser = Parser::new(tokens, offsets, input.len());
+    let mut parser = Parser::new(tokens, offsets, input);
     let value = parser.parse_value()?;
     if parser.is_eof() {
         Ok(value)
@@ -387,7 +409,7 @@ pub fn parse_value(input: &str) -> Result<Value, ParseError> {
 
 pub fn parse_selection(input: &str) -> Result<Selection, ParseError> {
     let (tokens, offsets) = tokenize(input)?;
-    let mut parser = Parser::new(tokens, offsets, input.len());
+    let mut parser = Parser::new(tokens, offsets, input);
     let selection = parser.parse_selection_until(|parser| parser.is_eof())?;
     if parser.is_eof() {
         Ok(selection)
@@ -398,7 +420,7 @@ pub fn parse_selection(input: &str) -> Result<Selection, ParseError> {
 
 pub fn parse_update_expr(input: &str) -> Result<UpdateExpr, ParseError> {
     let (tokens, offsets) = tokenize(input)?;
-    let mut parser = Parser::new(tokens, offsets, input.len());
+    let mut parser = Parser::new(tokens, offsets, input);
     let update = parser.parse_update_expr_until(|parser| parser.is_eof())?;
     if parser.is_eof() {
         Ok(update)
@@ -591,19 +613,19 @@ fn merge_query_options(mut base: QueryOptions, tail: QueryOptions) -> QueryOptio
     base
 }
 
-struct Parser {
+struct Parser<'a> {
     tokens: Vec<Token>,
     offsets: Vec<usize>,
-    input_len: usize,
+    input: &'a str,
     pos: usize,
 }
 
-impl Parser {
-    fn new(tokens: Vec<Token>, offsets: Vec<usize>, input_len: usize) -> Self {
+impl<'a> Parser<'a> {
+    fn new(tokens: Vec<Token>, offsets: Vec<usize>, input: &'a str) -> Self {
         Self {
             tokens,
             offsets,
-            input_len,
+            input,
             pos: 0,
         }
     }
@@ -649,14 +671,16 @@ impl Parser {
     }
 
     fn parse_create(&mut self) -> Result<Statement, ParseError> {
+        if self.accept_keyword("LOCALTABLE") {
+            return self.parse_create_local_table();
+        }
+        if self.accept_keyword("TEMPTABLE") {
+            return self.parse_create_temp_table();
+        }
+        // `CREATE DYNAMODB TABLE` is the same statement as `CREATE TABLE`.
+        let _dynamodb = self.accept_keyword("DYNAMODB");
         self.expect_keyword("TABLE")?;
-        let if_not_exists = if self.accept_keyword("IF") {
-            self.expect_keyword("NOT")?;
-            self.expect_keyword("EXISTS")?;
-            true
-        } else {
-            false
-        };
+        let if_not_exists = self.parse_if_not_exists()?;
         let name = self.expect_ident()?;
         self.expect_symbol('(')?;
         let mut attributes = Vec::new();
@@ -681,6 +705,67 @@ impl Parser {
             throughput,
             global_indexes,
         })
+    }
+
+    fn parse_create_local_table(&mut self) -> Result<Statement, ParseError> {
+        let if_not_exists = self.parse_if_not_exists()?;
+        let name = self.expect_ident()?;
+        self.expect_keyword("AS")?;
+        let path = self.expect_string()?;
+        Ok(Statement::CreateLocalTable {
+            if_not_exists,
+            name,
+            path,
+        })
+    }
+
+    fn parse_create_temp_table(&mut self) -> Result<Statement, ParseError> {
+        let if_not_exists = self.parse_if_not_exists()?;
+        let name = self.expect_ident()?;
+        self.expect_keyword("AS")?;
+        self.expect_symbol('(')?;
+        let query_start = self.pos;
+        let query = if self.accept_keyword("SELECT") {
+            self.parse_select()?
+        } else if self.accept_keyword("SCAN") {
+            self.parse_scan()?
+        } else {
+            return Err(self.error("expected SELECT or SCAN"));
+        };
+        let query_text = self.token_slice(query_start, self.pos);
+        self.expect_symbol(')')?;
+        Ok(Statement::CreateTempTable {
+            if_not_exists,
+            name,
+            query_text,
+            query: Box::new(query),
+        })
+    }
+
+    fn parse_if_not_exists(&mut self) -> Result<bool, ParseError> {
+        if self.accept_keyword("IF") {
+            self.expect_keyword("NOT")?;
+            self.expect_keyword("EXISTS")?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn parse_if_exists(&mut self) -> Result<bool, ParseError> {
+        if self.accept_keyword("IF") {
+            self.expect_keyword("EXISTS")?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Source text covering tokens `[start, end)`.
+    fn token_slice(&self, start: usize, end: usize) -> String {
+        let from = self.offsets.get(start).copied().unwrap_or(0);
+        let to = self.offsets.get(end).copied().unwrap_or(self.input.len());
+        self.input.get(from..to).unwrap_or("").trim().to_string()
     }
 
     fn parse_attribute(&mut self) -> Result<Attribute, ParseError> {
@@ -810,13 +895,20 @@ impl Parser {
     }
 
     fn parse_drop(&mut self) -> Result<Statement, ParseError> {
+        if self.accept_keyword("LOCALTABLE") {
+            let if_exists = self.parse_if_exists()?;
+            let name = self.expect_ident()?;
+            return Ok(Statement::DropLocalTable { if_exists, name });
+        }
+        if self.accept_keyword("TEMPTABLE") {
+            let if_exists = self.parse_if_exists()?;
+            let name = self.expect_ident()?;
+            return Ok(Statement::DropTempTable { if_exists, name });
+        }
+        // `DROP DYNAMODB TABLE` is the same statement as `DROP TABLE`.
+        let _dynamodb = self.accept_keyword("DYNAMODB");
         self.expect_keyword("TABLE")?;
-        let if_exists = if self.accept_keyword("IF") {
-            self.expect_keyword("EXISTS")?;
-            true
-        } else {
-            false
-        };
+        let if_exists = self.parse_if_exists()?;
         let name = self.expect_ident()?;
         Ok(Statement::DropTable { if_exists, name })
     }
@@ -1042,7 +1134,8 @@ impl Parser {
     }
 
     fn parse_query_options(&mut self, options: &mut QueryOptions) -> Result<(), ParseError> {
-        while !self.is_eof() && !self.peek_symbol(';') {
+        // `)` ends `CREATE TEMPTABLE name AS (SELECT ...)`.
+        while !self.is_eof() && !self.peek_symbol(';') && !self.peek_symbol(')') {
             if self.accept_keyword("USING") {
                 options.using_index = Some(self.parse_index_name()?);
             } else if self.accept_keyword("LIMIT") {
@@ -2045,7 +2138,7 @@ impl Parser {
         self.offsets
             .get(token_pos)
             .copied()
-            .unwrap_or(self.input_len)
+            .unwrap_or(self.input.len())
     }
 }
 
@@ -2259,6 +2352,56 @@ mod tests {
             }
             other => panic!("unexpected statement: {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_table_kinds() {
+        let dynamo = parse_statement("CREATE DYNAMODB TABLE posts (id STRING HASH KEY)").unwrap();
+        assert!(matches!(dynamo, Statement::CreateTable { name, .. } if name == "posts"));
+
+        let local =
+            parse_statement("CREATE LOCALTABLE IF NOT EXISTS users AS 'data/users.csv'").unwrap();
+        match local {
+            Statement::CreateLocalTable {
+                if_not_exists,
+                name,
+                path,
+            } => {
+                assert!(if_not_exists);
+                assert_eq!(name, "users");
+                assert_eq!(path, "data/users.csv");
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+
+        let temp = parse_statement("CREATE TEMPTABLE hot AS (SELECT * FROM posts WHERE id = 'a')")
+            .unwrap();
+        match temp {
+            Statement::CreateTempTable {
+                name,
+                query_text,
+                query,
+                ..
+            } => {
+                assert_eq!(name, "hot");
+                assert_eq!(query_text, "SELECT * FROM posts WHERE id = 'a'");
+                assert!(
+                    matches!(query.as_ref(), Statement::Select { table, .. } if table == "posts")
+                );
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+
+        let drop_local = parse_statement("DROP LOCALTABLE IF EXISTS users").unwrap();
+        assert!(matches!(
+            drop_local,
+            Statement::DropLocalTable { if_exists: true, name } if name == "users"
+        ));
+        let drop_dynamo = parse_statement("DROP DYNAMODB TABLE posts").unwrap();
+        assert!(matches!(
+            drop_dynamo,
+            Statement::DropTable { name, .. } if name == "posts"
+        ));
     }
 
     #[test]
