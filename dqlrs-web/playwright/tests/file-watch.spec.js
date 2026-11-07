@@ -19,7 +19,7 @@ test("refreshes a clean editor when the file changes on disk", async ({ page, ap
   expect(disk).not.toContain("local unsaved");
 });
 
-test("keeps unsaved edits as a patch when the file changes on disk", async ({ page, app }, testInfo) => {
+test("keeps a dirty editor and shows the disk change once", async ({ page, app }, testInfo) => {
   await page.route("**/api/file", async (route) => {
     if (route.request().method() === "PUT") {
       await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -30,9 +30,9 @@ test("keeps unsaved edits as a patch when the file changes on disk", async ({ pa
   await replaceEditor(page, "-- editable\nSELECT 1;\n-- local unsaved\n");
   fs.writeFileSync(file, "-- editable\nSELECT 1;\n-- from mcp\n");
   await expect(page.locator("#patch-pop")).toBeVisible();
-  await expect(page.locator("#editor-content")).toContainText("from mcp");
-  await expect(page.locator("#editor-content")).not.toContainText("local unsaved");
-  await expect(page.locator("#patch-pop-body")).toContainText("+-- local unsaved");
+  await expect(page.locator("#editor-content")).toContainText("local unsaved");
+  await expect(page.locator("#editor-content")).not.toContainText("from mcp");
+  await expect(page.locator("#patch-pop-body")).toContainText("+-- from mcp");
   await expect(page.locator("#patch-pop-title")).toHaveText("File changed on disk");
   const disk = fs.readFileSync(file, "utf8");
   expect(disk).toContain("from mcp");
@@ -41,10 +41,61 @@ test("keeps unsaved edits as a patch when the file changes on disk", async ({ pa
   await page.locator("#patch-pop-close").click();
   await expect(page.locator("#patch-pop")).toBeHidden();
   await page.locator("#patch-recall").click();
-  await expect(page.locator("#patch-pop-body")).toContainText("local unsaved");
+  await expect(page.locator("#patch-pop-body")).toContainText("from mcp");
   await page.screenshot({ path: playwrightArtifact(`file-patch-modal-${testInfo.project.name}.png`) });
   await page.waitForTimeout(1800);
+  expect(fs.readFileSync(file, "utf8")).toContain("from mcp");
   expect(fs.readFileSync(file, "utf8")).not.toContain("local unsaved");
+  await expect(page.locator("#editor-content")).toContainText("local unsaved");
+  await expect(page.locator("#patch-recall")).toHaveText("Unsaved patch");
+});
+
+test("a stale file poll does not revert a saved edit", async ({ page, app }) => {
+  const file = path.join(app.workspace, "queries/edit.dql");
+  const original = fs.readFileSync(file, "utf8");
+  let releaseStale = null;
+  let held = false;
+  await page.route(/\/api\/file\?/, async (route) => {
+    if (held) {
+      await route.continue();
+      return;
+    }
+    held = true;
+    await new Promise((resolve) => {
+      releaseStale = resolve;
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        path: "queries/edit.dql",
+        text: original,
+        revision: "stale",
+      }),
+    });
+  });
+  await expect.poll(() => releaseStale !== null).toBe(true);
+  const saved = page.waitForResponse((response) => {
+    const request = response.request();
+    return response.url().includes("/api/file") && request.method() === "PUT" && response.ok();
+  });
+  await replaceEditor(page, "-- editable\nSELECT 1;\n-- saved edit\n");
+  await saved;
+  const stale = page.waitForResponse(async (response) => {
+    if (response.request().method() !== "GET" || !response.url().includes("/api/file?")) return false;
+    const body = await response.text();
+    return body.includes('"revision":"stale"');
+  });
+  releaseStale();
+  await stale;
+  await expect(page.locator("#editor-content")).toContainText("saved edit");
+  await expect(page.locator("#patch-pop")).toBeHidden();
+  await page.waitForTimeout(1200);
+  await expect(page.locator("#editor-content")).toContainText("saved edit");
+  await expect(page.locator("#patch-pop")).toBeHidden();
+  const disk = fs.readFileSync(file, "utf8");
+  expect(disk).toContain("saved edit");
+  expect(disk).not.toBe(original);
 });
 
 test("a second window picks up a saved edit without a patch", async ({ page, app }) => {
@@ -69,8 +120,9 @@ test("a dirty window does not overwrite another window's save", async ({ page, a
   await replaceEditor(other, "-- editable\nSELECT 1;\n-- other unsaved\n");
   await replaceEditor(page, "-- editable\nSELECT 1;\n-- from first\n");
   await expect(other.locator("#patch-pop")).toBeVisible();
-  await expect(other.locator("#patch-pop-body")).toContainText("other unsaved");
-  await expect(other.locator("#editor-content")).toContainText("from first");
+  await expect(other.locator("#patch-pop-body")).toContainText("from first");
+  await expect(other.locator("#editor-content")).toContainText("other unsaved");
+  await expect(other.locator("#editor-content")).not.toContainText("from first");
   const disk = fs.readFileSync(file, "utf8");
   expect(disk).toContain("from first");
   expect(disk).not.toContain("other unsaved");

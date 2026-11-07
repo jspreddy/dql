@@ -104,6 +104,8 @@ const state = {
   adopting: false,
   adoptQueued: null,
   watchTimer: 0,
+  watchSeq: 0,
+  notedExternal: null,
   clientId: loadClientId(),
 };
 
@@ -1287,6 +1289,7 @@ async function openFile(path) {
     await flushSave();
     if (dataFile(path)) {
       state.fileEpoch += 1;
+      state.notedExternal = null;
       state.disk = null;
       state.filePage = 0;
       state.fileHasMore = false;
@@ -1302,6 +1305,7 @@ async function openFile(path) {
     setFileSchema(null);
     const file = await api("/api/file?path=" + encodeURIComponent(path));
     state.fileEpoch += 1;
+    state.notedExternal = null;
     state.disk = { path: file.path || path, text: file.text, revision: file.revision };
     setEditorText(file.text);
     showOpenFile(file.path || path);
@@ -1419,6 +1423,7 @@ async function deleteEntry(path, kind) {
   if (!window.confirm(message)) return;
   clearTimeout(state.saveTimer);
   state.fileEpoch += 1;
+  state.notedExternal = null;
   state.saveFlight = null;
   const removingOpen = state.path === path || (kind === "dir" && state.path.startsWith(path + "/"));
   if (removingOpen) {
@@ -1655,6 +1660,7 @@ async function flushSaveNow() {
     const saved = await api("/api/file", { method: "PUT", body: { path, text, base } });
     if (state.fileEpoch !== epoch || state.disk?.path !== path) return;
     state.disk = { path, text, revision: saved.revision || base };
+    state.notedExternal = null;
     if (editorText() !== text) scheduleSave();
   } catch (error) {
     if (error.payload?.conflict && state.fileEpoch === epoch && state.disk?.path === path) {
@@ -2070,26 +2076,53 @@ function startFileWatch() {
   window.addEventListener("focus", tick);
 }
 
+function watchIsCurrent(path, epoch, seen, watchId) {
+  return state.watchSeq === watchId
+    && state.fileEpoch === epoch
+    && state.disk?.path === path
+    && state.disk?.revision === seen
+    && !state.saveFlight
+    && !state.applyingDisk;
+}
+
 async function watchOpenFile() {
   const path = state.disk?.path;
   if (!path || dataFile(path) || state.applyingDisk || state.saveFlight || state.adopting) return;
   const epoch = state.fileEpoch;
+  const seen = state.disk.revision;
+  const watchId = ++state.watchSeq;
   let file;
   try {
     file = await api("/api/file?path=" + encodeURIComponent(path));
   } catch (error) {
-    if (error.payload?.missing && state.fileEpoch === epoch && state.disk?.path === path) {
+    if (!watchIsCurrent(path, epoch, seen, watchId)) return;
+    if (error.payload?.missing) {
       await adoptExternal(path, { missing: true, text: "", revision: "missing", path }, epoch);
     }
     return;
   }
-  if (state.fileEpoch !== epoch || state.disk?.path !== path || state.saveFlight || state.applyingDisk) return;
-  if (!file.revision || file.revision === state.disk.revision) return;
+  if (!watchIsCurrent(path, epoch, seen, watchId)) return;
+  if (!file.revision || file.revision === seen) {
+    state.notedExternal = null;
+    return;
+  }
   await adoptExternal(path, file, epoch);
 }
 
 async function adoptExternal(path, file, epoch) {
   if (state.fileEpoch !== epoch || state.disk?.path !== path) return;
+  const missing = Boolean(file.missing);
+  const diskText = missing ? "" : String(file.text ?? "");
+  const incomingRevision = missing ? "missing" : String(file.revision || "");
+  const edited = editorText();
+  const baseText = state.disk?.text ?? "";
+  if (!missing && diskText === edited) {
+    state.disk = { path, text: diskText, revision: incomingRevision };
+    state.notedExternal = null;
+    return;
+  }
+  const unsaved = edited !== baseText;
+  if (unsaved && incomingRevision && incomingRevision === state.notedExternal) return;
   if (state.adopting) {
     state.adoptQueued = { path, file, epoch };
     return;
@@ -2097,26 +2130,23 @@ async function adoptExternal(path, file, epoch) {
   state.adopting = true;
   state.applyingDisk = true;
   try {
-    clearTimeout(state.saveTimer);
-    const edited = editorText();
-    const baseText = state.disk?.text ?? "";
-    const missing = Boolean(file.missing);
-    const diskText = missing ? "" : String(file.text ?? "");
-    if (!missing && diskText === edited) {
-      state.disk = { path, text: diskText, revision: file.revision };
-      return;
-    }
-    const unsaved = edited !== baseText;
     if (unsaved) {
-      const patch = unifiedDiff(baseText, edited, path);
+      const patch = unifiedDiff(baseText, diskText, path);
       state.patches.push({
         path,
-        patch: patch || "The unsaved editor text differed from the last copy on disk.\n",
+        patch: patch || (missing
+          ? "The file was removed on disk.\n"
+          : "The file changed on disk.\n"),
         missing,
       });
       if (state.patches.length > 20) state.patches.shift();
+      state.notedExternal = incomingRevision;
       syncPatchRecall();
+      showPatchModal(state.patches.length - 1);
+      return;
     }
+    clearTimeout(state.saveTimer);
+    state.notedExternal = null;
     if (missing) {
       state.fileEpoch += 1;
       state.disk = null;
@@ -2125,10 +2155,9 @@ async function adoptExternal(path, file, epoch) {
       showOpenFile("");
       void refreshTree();
     } else {
-      state.disk = { path, text: diskText, revision: file.revision };
-      setEditorText(diskText, { keepCursor: !unsaved });
+      state.disk = { path, text: diskText, revision: incomingRevision };
+      setEditorText(diskText, { keepCursor: true });
     }
-    if (unsaved) showPatchModal(state.patches.length - 1);
   } finally {
     state.applyingDisk = false;
     state.adopting = false;
@@ -2155,8 +2184,8 @@ function showPatchModal(index) {
   const note = document.querySelector("#patch-pop-note");
   title.textContent = entry.missing ? "File removed on disk" : "File changed on disk";
   note.textContent = entry.missing
-    ? entry.path + " was removed. The editor was closed. Your unsaved edits are this patch, kept in this tab."
-    : entry.path + " changed on disk. The editor now shows that copy. Your unsaved edits are this patch, kept in this tab.";
+    ? entry.path + " was removed. Your editor still has your unsaved edits. This patch is what was on disk, kept in this tab."
+    : entry.path + " changed on disk. Your editor still has your unsaved edits. This patch is that change, kept in this tab.";
   document.querySelector("#patch-pop-body").textContent = entry.patch;
   const many = state.patches.length > 1;
   document.querySelector(".patch-pop-nav").hidden = !many;
