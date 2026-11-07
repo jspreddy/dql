@@ -2016,6 +2016,239 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
     }
 
     #[test]
+    fn tree_lists_workspace_files_and_file_rows_pages_csv() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("queries")).unwrap();
+        fs::write(root.path().join("queries/edit.dql"), "SELECT 1;\n").unwrap();
+        fs::write(root.path().join("users.csv"), "id,name\na,ada\nb,grace\n").unwrap();
+        fs::write(root.path().join("notes.txt"), "hidden\n").unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+
+        let tree = http_body(addr, "GET", "/api/tree", "");
+        let tree_json: Value = serde_json::from_str(&tree).expect(&tree);
+        assert_eq!(tree_json["type"], "dir");
+        let names: Vec<&str> = tree_json["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|child| child["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["queries", "users.csv"]);
+        let queries = tree_json["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|child| child["name"] == "queries")
+            .unwrap();
+        assert_eq!(queries["children"][0]["path"], "queries/edit.dql");
+        assert!(!tree.contains("notes.txt"), "{tree}");
+
+        let rows = http_body(addr, "GET", "/api/file-rows?path=users.csv&page=0", "");
+        let rows_json: Value = serde_json::from_str(&rows).expect(&rows);
+        assert_eq!(rows_json["path"], "users.csv");
+        assert_eq!(rows_json["page"], 0);
+        assert_eq!(rows_json["has_more"], false);
+        assert_eq!(rows_json["items"][0]["name"], "ada");
+        assert_eq!(rows_json["items"][1]["id"], "b");
+        assert_eq!(rows_json["columns"][0]["name"], "id");
+
+        let rejected = http(addr, "GET", "/api/file-rows?path=queries/edit.dql", "");
+        assert!(rejected.contains("HTTP/1.1 400"), "{rejected}");
+        assert!(
+            rejected.contains("only .csv and .json files can be viewed as tables"),
+            "{rejected}"
+        );
+        drop(guard);
+    }
+
+    #[test]
+    fn search_finds_a_query_file() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("shelf.dql"), "SCAN * FROM shelf;\n").unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+
+        let found = http_body(addr, "GET", "/api/search?q=shelf", "");
+        let found_json: Value = serde_json::from_str(&found).expect(&found);
+        let hit = found_json["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["path"] == "shelf.dql")
+            .expect(&found);
+        assert_eq!(hit["kind"], "query");
+        assert_eq!(hit["title"], "SCAN * FROM shelf;");
+        assert_eq!(hit["detail"], "shelf.dql");
+
+        let empty = http_body(addr, "GET", "/api/search?q=", "");
+        let empty_json: Value = serde_json::from_str(&empty).expect(&empty);
+        assert!(
+            empty_json["items"].as_array().unwrap().is_empty(),
+            "{empty}"
+        );
+        drop(guard);
+    }
+
+    #[test]
+    fn tables_and_table_cache_follow_the_session() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let script = "CREATE TABLE posts (id STRING HASH KEY);";
+        let body = format!("{{\"dql\":{}}}", serde_json::to_string(script).unwrap());
+        let ran = http_body(addr, "POST", "/api/run", &body);
+        assert!(ran.contains("\"ok\":true"), "{ran}");
+
+        let listed = http_body(addr, "GET", "/api/tables", "");
+        let listed_json: Value = serde_json::from_str(&listed).expect(&listed);
+        let posts = listed_json["tables"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|table| table["name"] == "posts")
+            .expect(&listed);
+        assert_eq!(posts["kind"], "dynamodb");
+        assert_eq!(posts["keys"][0]["name"], "id");
+        assert_eq!(posts["keys"][0]["role"], "hash");
+
+        let filtered = http_body(addr, "GET", "/api/tables?pattern=zzzz", "");
+        let filtered_json: Value = serde_json::from_str(&filtered).expect(&filtered);
+        assert!(
+            filtered_json["tables"].as_array().unwrap().is_empty(),
+            "{filtered}"
+        );
+
+        let cache = http_body(addr, "GET", "/api/table-cache", "");
+        let cache_json: Value = serde_json::from_str(&cache).expect(&cache);
+        assert_eq!(cache_json["text"], "No table list cached.");
+        assert_eq!(cache_json["fromCache"], false);
+        assert_eq!(cache_json["refreshing"], false);
+        drop(guard);
+    }
+
+    #[test]
+    fn query_results_round_trip_and_clear() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let created = http(addr, "POST", "/api/file", r#"{"path":"notes.dql"}"#);
+        assert!(created.contains("HTTP/1.1 200"), "{created}");
+
+        let missing = http(
+            addr,
+            "POST",
+            "/api/query-results",
+            r#"{"path":"notes.dql","query":"SELECT 1","result":{"ok":true}}"#,
+        );
+        assert!(missing.contains("HTTP/1.1 400"), "{missing}");
+        assert!(missing.contains("success must be a boolean"), "{missing}");
+
+        let saved = http_body(
+            addr,
+            "POST",
+            "/api/query-results",
+            r#"{"path":"notes.dql","query":"SELECT 1","success":true,"result":{"ok":true}}"#,
+        );
+        let saved_json: Value = serde_json::from_str(&saved).expect(&saved);
+        assert_eq!(saved_json["query"], "SELECT 1");
+        assert_eq!(saved_json["success"], true);
+        assert_eq!(saved_json["result"]["ok"], true);
+
+        let listed = http_body(addr, "GET", "/api/query-results?path=notes.dql", "");
+        let listed_json: Value = serde_json::from_str(&listed).expect(&listed);
+        assert_eq!(listed_json["results"].as_array().unwrap().len(), 1);
+        assert_eq!(listed_json["results"][0]["query"], "SELECT 1");
+        assert!(
+            listed_json["results"][0]["id"]
+                .as_str()
+                .unwrap()
+                .contains(':'),
+            "{listed}"
+        );
+
+        let cleared = http_body(
+            addr,
+            "POST",
+            "/api/query-results/clear",
+            r#"{"path":"notes.dql"}"#,
+        );
+        let cleared_json: Value = serde_json::from_str(&cleared).expect(&cleared);
+        assert_eq!(cleared_json["ok"], true);
+        assert_eq!(cleared_json["paths"][0], "notes.dql");
+
+        let empty = http_body(addr, "GET", "/api/query-results?path=notes.dql", "");
+        let empty_json: Value = serde_json::from_str(&empty).expect(&empty);
+        assert!(
+            empty_json["results"].as_array().unwrap().is_empty(),
+            "{empty}"
+        );
+        drop(guard);
+    }
+
+    #[test]
+    fn mkdir_duplicate_move_and_delete() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+
+        let made = http_body(addr, "POST", "/api/mkdir", r#"{"path":"queries"}"#);
+        let made_json: Value = serde_json::from_str(&made).expect(&made);
+        assert_eq!(made_json["path"], "queries");
+        assert_eq!(made_json["kind"], "dir");
+        assert!(root.path().join("queries").is_dir());
+
+        let again = http(addr, "POST", "/api/mkdir", r#"{"path":"queries"}"#);
+        assert!(again.contains("HTTP/1.1 400"), "{again}");
+        assert!(again.contains("already exists"), "{again}");
+        let escaped = http(addr, "POST", "/api/mkdir", r#"{"path":"../outside"}"#);
+        assert!(escaped.contains("HTTP/1.1 400"), "{escaped}");
+
+        let created = http(addr, "POST", "/api/file", r#"{"path":"queries/notes.dql"}"#);
+        assert!(created.contains("HTTP/1.1 200"), "{created}");
+        let copied = http_body(
+            addr,
+            "POST",
+            "/api/duplicate",
+            r#"{"path":"queries/notes.dql"}"#,
+        );
+        let copied_json: Value = serde_json::from_str(&copied).expect(&copied);
+        assert_eq!(copied_json["path"], "queries/notes copy.dql");
+        assert_eq!(copied_json["kind"], "file");
+        assert!(root.path().join("queries/notes copy.dql").is_file());
+
+        let busy = http(addr, "POST", "/api/delete", r#"{"path":"queries"}"#);
+        assert!(busy.contains("HTTP/1.1 400"), "{busy}");
+        assert!(busy.contains("not empty"), "{busy}");
+
+        let moved = http_body(
+            addr,
+            "POST",
+            "/api/move",
+            r#"{"from":"queries/notes copy.dql","to":"kept.dql"}"#,
+        );
+        let moved_json: Value = serde_json::from_str(&moved).expect(&moved);
+        assert_eq!(moved_json["path"], "kept.dql");
+        assert_eq!(moved_json["kind"], "file");
+        assert!(root.path().join("kept.dql").is_file());
+        assert!(!root.path().join("queries/notes copy.dql").exists());
+
+        let removed = http(
+            addr,
+            "POST",
+            "/api/delete",
+            r#"{"path":"queries/notes.dql"}"#,
+        );
+        assert!(removed.contains("HTTP/1.1 200"), "{removed}");
+        assert!(removed.contains("\"ok\":true"), "{removed}");
+        let folder = http(addr, "POST", "/api/delete", r#"{"path":"queries"}"#);
+        assert!(folder.contains("HTTP/1.1 200"), "{folder}");
+        let kept = http(addr, "POST", "/api/delete", r#"{"path":"kept.dql"}"#);
+        assert!(kept.contains("HTTP/1.1 200"), "{kept}");
+        assert!(!root.path().join("kept.dql").exists());
+        assert!(!root.path().join("queries").exists());
+
+        let missing = http(addr, "POST", "/api/delete", r#"{"path":"kept.dql"}"#);
+        assert!(missing.contains("HTTP/1.1 400"), "{missing}");
+        drop(guard);
+    }
+
+    #[test]
     fn events_stream_reports_a_file_and_a_tree_change() {
         let root = tempfile::tempdir().unwrap();
         let (addr, guard) = spawn_server(root.path().to_path_buf());
