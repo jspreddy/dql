@@ -2294,9 +2294,12 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         let created = http(addr, "POST", "/api/file", r#"{"path":"notes.dql"}"#);
         assert!(created.contains("notes.dql"), "{created}");
         read_until(&mut stream, &mut buf, &mut bytes, |text| {
-            text.contains("event: file")
+            text.contains("event: file") && text.contains("event: tree")
         });
-        assert!(buf.contains("event: tree"), "{buf}");
+        assert!(
+            buf.contains("event: tree"),
+            "tree event was not announced\n{buf}"
+        );
         assert!(buf.contains("event: file"), "{buf}");
         assert!(buf.contains("notes.dql"), "{buf}");
         std::fs::write(root.path().join("notes.dql"), "from outside\n").unwrap();
