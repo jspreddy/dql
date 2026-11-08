@@ -26,6 +26,13 @@ _DURATION_UNITS = {
 _TAG = re.compile(r"<(/?)([A-Za-z][\w:.-]*)([^>]*)>")
 _TITLE = re.compile(r"<title>([a-f0-9]{40})</title>")
 _NUMBER = r"[+-]?\d+(?:\.\d+)?"
+_SUMMARY_TEXT = re.compile(
+    r'(<text\b[^>]*font-family:monospace[^>]*>)(\s*)(.*?)(\s*)(</text>)',
+    re.DOTALL,
+)
+# git-graph sizes summary text as len(text) * font-size * 0.6.
+_SUMMARY_CHAR_WIDTH = 12.0 * 0.6
+_MESSAGE_MAX = 79
 
 
 def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -214,6 +221,52 @@ def fit_viewbox(svg: str) -> str:
     return svg
 
 
+def _clip_message(text: str) -> str:
+    if len(text) <= _MESSAGE_MAX:
+        return text
+    return text[: _MESSAGE_MAX - 3].rstrip() + "..."
+
+
+def _shrink_width(svg: str, delta: float) -> str:
+    if delta <= 0:
+        return svg
+    match = re.search(r'viewBox="([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+)"', svg)
+    if match is None:
+        return svg
+    min_x, min_y, width, height = (float(part) for part in match.groups())
+    width = max(width - delta, 1.0)
+    svg = re.sub(
+        r'viewBox="[^"]+"',
+        f'viewBox="{min_x:.2f} {min_y:.2f} {width:.2f} {height:.2f}"',
+        svg,
+        count=1,
+    )
+
+    def width_repl(found: re.Match[str]) -> str:
+        return f'width="{max(float(found.group(1)) - delta, 1.0):.2f}"'
+
+    return re.sub(r'\bwidth="([-\d.]+)"', width_repl, svg, count=1)
+
+
+def shorten_commit_messages(svg: str) -> str:
+    """Keep each commit subject under 80 characters and drop the unused width."""
+    longest = 0
+    clipped_longest = 0
+
+    def repl(match: re.Match[str]) -> str:
+        nonlocal longest, clipped_longest
+        body = match.group(3).strip()
+        clipped = _clip_message(body)
+        longest = max(longest, len(body))
+        clipped_longest = max(clipped_longest, len(clipped))
+        if clipped == body:
+            return match.group(0)
+        return f"{match.group(1)}\n{clipped}\n{match.group(5)}"
+
+    svg = _SUMMARY_TEXT.sub(repl, svg)
+    return _shrink_width(svg, (longest - clipped_longest) * _SUMMARY_CHAR_WIDTH)
+
+
 def render_svg(repo: Path, refs: list[str], count: int | None) -> str:
     command = ["git-graph", "--svg", "-m", "none", "-s", "round"]
     if count is not None:
@@ -329,6 +382,8 @@ def main(argv: list[str] | None = None) -> None:
     svg = render_svg(repo, refs, args.count)
     if args.cutoff is not None:
         svg = prune_svg_commits(svg, commits_before(repo, cutoff_before(repo, args.cutoff), refs))
+    svg = shorten_commit_messages(svg)
+    if args.cutoff is not None:
         svg = fit_viewbox(svg)
     svg_path = output_dir() / f"v-rust-branches-{secrets.token_hex(4)}.svg"
     svg_path.write_text(pad_svg(svg))
