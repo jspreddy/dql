@@ -956,6 +956,16 @@ body.side-resizing * {
   color: var(--amber-ink);
 }
 
+.tree .node .file-kind[data-kind="md"] {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.tree .node .file-kind[data-kind="html"] {
+  background: var(--blue-wash);
+  color: var(--blue-ink);
+}
+
 .cm-editor.is-view-only .cm-run-fill,
 .cm-editor.is-view-only .cm-run-button-layer {
   display: none;
@@ -2730,8 +2740,107 @@ body.results-resizing * {
 
 #query-view.is-data > .pane-head,
 #query-view.is-data > .editor,
-#query-view.is-data > .results {
+#query-view.is-data > .results,
+#query-view.is-doc > .pane-head,
+#query-view.is-doc > .editor,
+#query-view.is-doc > .results {
   display: none !important;
+}
+
+#doc-view {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+#doc-view:not(.hidden) { display: flex; }
+
+#doc-view .rows-head {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+#doc-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.doc-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.doc-markdown {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 28px 32px 64px;
+  color: var(--ink);
+  line-height: 1.55;
+  font-size: 14px;
+}
+
+.doc-markdown h1,
+.doc-markdown h2,
+.doc-markdown h3,
+.doc-markdown h4 {
+  line-height: 1.25;
+  margin: 1.2em 0 0.4em;
+}
+
+.doc-markdown h1 { font-size: 1.6rem; }
+.doc-markdown h2 { font-size: 1.25rem; }
+.doc-markdown h3 { font-size: 1.05rem; }
+
+.doc-markdown p { margin: 0.6em 0; }
+
+.doc-markdown a { color: var(--blue-ink); }
+
+.doc-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  background: var(--paper-2);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+
+.doc-markdown pre {
+  overflow: auto;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.doc-markdown pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.doc-markdown ul,
+.doc-markdown ol {
+  margin: 0.4em 0 0.8em;
+  padding-left: 1.4em;
+}
+
+.doc-markdown table { width: auto; margin: 0.8em 0; }
+
+.doc-markdown th,
+.doc-markdown td {
+  border: 1px solid var(--line);
+  padding: 4px 8px;
 }
 
 #file-rows {

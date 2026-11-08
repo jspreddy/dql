@@ -8,6 +8,74 @@ test.beforeEach(async ({ page, app }) => {
   await openApp(page, app);
 });
 
+test("renders markdown as formatted text and html as a live page", async ({ page, app }, testInfo) => {
+  fs.mkdirSync(path.join(app.workspace, "docs"));
+  fs.writeFileSync(
+    path.join(app.workspace, "docs/README.md"),
+    [
+      "# Harbor notes",
+      "",
+      "A paragraph with `code` and [the diagram](page.html).",
+      "",
+      "- pine",
+      "- court",
+      "",
+      "| Unit | City |",
+      "| --- | --- |",
+      "| 2A | Seattle |",
+      "",
+      "```sql",
+      "SELECT 1;",
+      "```",
+      "",
+      "<script>alert(1)</script>",
+      "",
+    ].join("\n"),
+  );
+  fs.writeFileSync(
+    path.join(app.workspace, "docs/page.html"),
+    [
+      "<!DOCTYPE html><html><body>",
+      "<h1 id=\"live\">waiting</h1>",
+      "<script>document.querySelector('#live').textContent = 'ran live';</script>",
+      "</body></html>",
+    ].join(""),
+  );
+  await page.reload();
+  await expect(node(page, "docs/README.md").locator(".file-kind")).toHaveText("md");
+  await expect(node(page, "docs/page.html").locator(".file-kind")).toHaveText("html");
+  await node(page, "docs/README.md").click();
+  await expect(page.locator("#doc-view")).toBeVisible();
+  await expect(page.locator("#doc-meta")).toHaveText("Formatted");
+  await expect(page.locator(".editor")).toBeHidden();
+  const article = page.locator(".doc-markdown");
+  await expect(article.locator("h1")).toHaveText("Harbor notes");
+  await expect(article.locator("p code")).toHaveText("code");
+  await expect(article.locator("li").first()).toHaveText("pine");
+  await expect(article.locator("td").nth(1)).toHaveText("Seattle");
+  await expect(article.locator("pre code")).toHaveText("SELECT 1;");
+  await expect(article.locator("script")).toHaveCount(0);
+  await expect(article).toContainText("<script>alert(1)</script>");
+  await expect(page.locator("#run")).toBeHidden();
+  await node(page, "docs/README.md").click({ button: "right" });
+  await expect(page.locator("#menu-run-file")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await page.screenshot({ path: playwrightArtifact(`markdown-view-${testInfo.project.name}.png`) });
+
+  await article.locator("a").click();
+  const frame = page.frameLocator(".doc-frame");
+  await expect(page.locator("#doc-meta")).toHaveText("Rendered page");
+  await expect(frame.locator("#live")).toHaveText("ran live");
+  await expect(page.locator(".editor")).toBeHidden();
+  await expect(page.locator(".doc-frame")).toHaveAttribute("sandbox", "allow-scripts allow-popups");
+  await page.screenshot({ path: playwrightArtifact(`html-view-${testInfo.project.name}.png`) });
+
+  await node(page, "queries/read.dql").click();
+  await expect(page.locator("#doc-view")).toBeHidden();
+  await expect(page.locator(".editor")).toBeVisible();
+  await expect(page.locator("#file-name")).toHaveText("read.dql");
+});
+
 test("resizes the left nav from the edge handle", async ({ page }) => {
   const side = page.locator("#side");
   const handle = page.locator("#side-resize");

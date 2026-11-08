@@ -592,9 +592,31 @@ window.addEventListener("keydown", (event) => {
   stopRun();
 });
 
-function dataFile(path) {
+function fileKind(path) {
   const name = String(path || "").split("/").pop().toLowerCase();
-  return name.endsWith(".csv") || name.endsWith(".json");
+  if (name.endsWith(".csv")) return "csv";
+  if (name.endsWith(".json")) return "json";
+  if (name.endsWith(".markdown") || name.endsWith(".md")) return "md";
+  if (name.endsWith(".html") || name.endsWith(".htm")) return "html";
+  return "";
+}
+
+function dataFile(path) {
+  const kind = fileKind(path);
+  return kind === "csv" || kind === "json";
+}
+
+function docFile(path) {
+  const kind = fileKind(path);
+  return kind === "md" || kind === "html";
+}
+
+function viewOnlyFile(path) {
+  return dataFile(path) || docFile(path);
+}
+
+function dqlFile(path) {
+  return String(path || "").split("/").pop().toLowerCase().endsWith(".dql");
 }
 
 function setViewOnly(viewOnly) {
@@ -608,12 +630,12 @@ function setViewOnly(viewOnly) {
 
 function setRunBusy(busy) {
   hideRunTip();
-  const viewOnly = dataFile(state.path);
+  const viewOnly = viewOnlyFile(state.path);
   runButton.disabled = busy || viewOnly;
   runButton.classList.toggle("hidden", busy || viewOnly);
   stopButton.classList.toggle("hidden", !busy);
   stopButton.disabled = !busy;
-  runFileButton.disabled = busy || !state.path || dataFile(state.path);
+  runFileButton.disabled = busy || !state.path || viewOnlyFile(state.path);
   syncClearResults();
   const floating = editor.dom.querySelector(".run-float");
   if (floating) floating.disabled = busy;
@@ -630,14 +652,14 @@ async function stopRun() {
 }
 
 function runFromEditor() {
-  if (runButton.disabled || dataFile(state.path)) return true;
+  if (runButton.disabled || viewOnlyFile(state.path)) return true;
   armRunPane();
   runSelection();
   return true;
 }
 
 async function runFile() {
-  if (runButton.disabled || !state.path || dataFile(state.path)) return;
+  if (runButton.disabled || !state.path || viewOnlyFile(state.path)) return;
   await flushSave();
   await runDocuments([{ text: editorText(), path: state.path, base: 0 }]);
 }
@@ -1097,8 +1119,13 @@ function setMode(mode) {
   if (!tables) document.querySelector("#table-cache").classList.add("hidden");
   document.querySelector("#side-title").textContent = tables ? "Tables" : "Files";
   const data = !tables && dataFile(state.path);
+  const doc = !tables && docFile(state.path);
   document.querySelector("#query-view").classList.toggle("is-data", data);
+  document.querySelector("#query-view").classList.toggle("is-doc", doc);
   document.querySelector("#file-rows").classList.toggle("hidden", !data);
+  document.querySelector("#doc-view").classList.toggle("hidden", !doc);
+  if (doc && state.disk && state.disk.path === state.path) showDocument(state.path, state.disk.text);
+  if (!doc) document.querySelector("#doc-body").replaceChildren();
   closeComplete();
   if (tables) loadTables();
 }
@@ -1123,7 +1150,7 @@ function renderDir(node, isRoot) {
     const item = document.createElement("li");
     const open = child.type === "dir" && state.expanded.has(child.path);
     const editorFile = child.type === "file" && child.path === state.path;
-    const data = child.type === "file" && dataFile(child.path);
+    const kind = child.type === "file" ? fileKind(child.path) : "";
     const button = nodeButton(child.type === "dir" ? (open ? "▾" : "▸") : "", child.name, child.path === state.path);
     if (editorFile) {
       button.classList.add("is-open");
@@ -1134,7 +1161,7 @@ function renderDir(node, isRoot) {
     button.dataset.path = child.path;
     button.id = nodeDomId(child.path);
     button.dataset.testid = button.id;
-    if (data) button.append(fileKindMark(child.path));
+    if (kind) button.append(fileKindMark(kind));
     bindNode(button, child);
     item.append(button);
     if (open) item.append(renderDir(child, false));
@@ -1269,9 +1296,8 @@ function setRunningFile(path) {
   }
 }
 
-function fileKindMark(path) {
+function fileKindMark(kind) {
   const mark = document.createElement("span");
-  const kind = path.toLowerCase().endsWith(".csv") ? "csv" : "json";
   mark.className = "file-kind";
   mark.dataset.kind = kind;
   mark.textContent = kind;
@@ -1306,6 +1332,19 @@ async function openFile(path) {
       await Promise.all([refreshTree(), loadFileRows()]);
       return;
     }
+    if (docFile(path)) {
+      const file = await api("/api/file?path=" + encodeURIComponent(path));
+      state.fileEpoch += 1;
+      state.notedExternal = null;
+      state.disk = { path: file.path || path, text: file.text, revision: file.revision };
+      showOpenFile(file.path || path);
+      state.entries = [];
+      showResults([]);
+      applyLint([]);
+      setMode("query");
+      await refreshTree();
+      return;
+    }
     setFileSchema(null);
     const file = await api("/api/file?path=" + encodeURIComponent(path));
     state.fileEpoch += 1;
@@ -1321,6 +1360,194 @@ async function openFile(path) {
   } catch (error) {
     reportError(error);
   }
+}
+
+function showDocument(path, text) {
+  const title = document.querySelector("#doc-title");
+  const meta = document.querySelector("#doc-meta");
+  const body = document.querySelector("#doc-body");
+  const name = String(path || "").split("/").pop();
+  const kind = fileKind(path);
+  title.textContent = name;
+  meta.textContent = kind === "html" ? "Rendered page" : "Formatted";
+  body.replaceChildren();
+  if (kind === "html") {
+    const frame = document.createElement("iframe");
+    frame.className = "doc-frame";
+    frame.setAttribute("sandbox", "allow-scripts allow-popups");
+    frame.setAttribute("referrerpolicy", "no-referrer");
+    frame.title = name;
+    frame.srcdoc = String(text ?? "");
+    body.append(frame);
+    return;
+  }
+  const article = document.createElement("article");
+  article.className = "doc-markdown";
+  article.innerHTML = renderMarkdown(text);
+  article.addEventListener("click", (event) => {
+    const link = event.target.closest("a");
+    if (!link) return;
+    const href = link.getAttribute("href") || "";
+    if (!href || href.startsWith("#") || /^(https?:|mailto:)/i.test(href)) return;
+    event.preventDefault();
+    const next = resolveWorkspaceHref(path, href);
+    if (next) openFile(next);
+  });
+  body.append(article);
+}
+
+function resolveWorkspaceHref(from, href) {
+  const clean = href.split("#")[0].split("?")[0];
+  if (!clean || clean.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(clean)) return "";
+  const base = parentOf(from);
+  const parts = (base === "." ? [] : base.split("/")).concat(clean.split("/"));
+  const stack = [];
+  for (const part of parts) {
+    if (!part || part === ".") continue;
+    if (part === "..") stack.pop();
+    else stack.push(part);
+  }
+  return stack.join("/");
+}
+
+function renderMarkdown(source) {
+  const lines = String(source ?? "").replace(/\r\n/g, "\n").split("\n");
+  const html = [];
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+    const fence = line.match(/^```(.*)$/);
+    if (fence) {
+      const body = [];
+      index += 1;
+      while (index < lines.length && !lines[index].startsWith("```")) {
+        body.push(lines[index]);
+        index += 1;
+      }
+      if (index < lines.length) index += 1;
+      html.push("<pre><code>" + escapeHtml(body.join("\n")) + "</code></pre>");
+      continue;
+    }
+    const heading = line.match(/^(#{1,6})\s+(.*)$/);
+    if (heading) {
+      const level = heading[1].length;
+      html.push("<h" + level + ">" + inlineMarkdown(heading[2]) + "</h" + level + ">");
+      index += 1;
+      continue;
+    }
+    if (isTableStart(lines, index)) {
+      const rows = [];
+      while (index < lines.length && lines[index].includes("|")) {
+        if (!isSeparatorRow(lines[index])) rows.push(splitTableRow(lines[index]));
+        index += 1;
+      }
+      html.push(renderTable(rows));
+      continue;
+    }
+    if (/^\s*[-*]\s+/.test(line)) {
+      const items = [];
+      while (index < lines.length && /^\s*[-*]\s+/.test(lines[index])) {
+        items.push(lines[index].replace(/^\s*[-*]\s+/, ""));
+        index += 1;
+      }
+      html.push("<ul>" + items.map((item) => "<li>" + inlineMarkdown(item) + "</li>").join("") + "</ul>");
+      continue;
+    }
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const items = [];
+      while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index])) {
+        items.push(lines[index].replace(/^\s*\d+\.\s+/, ""));
+        index += 1;
+      }
+      html.push("<ol>" + items.map((item) => "<li>" + inlineMarkdown(item) + "</li>").join("") + "</ol>");
+      continue;
+    }
+    const para = [];
+    while (index < lines.length && lines[index].trim() && !markdownBlockStart(lines, index)) {
+      para.push(lines[index].trim());
+      index += 1;
+    }
+    html.push("<p>" + inlineMarkdown(para.join(" ")) + "</p>");
+  }
+  return html.join("");
+}
+
+function markdownBlockStart(lines, index) {
+  const line = lines[index];
+  return /^```/.test(line)
+    || /^#{1,6}\s/.test(line)
+    || /^\s*[-*]\s+/.test(line)
+    || /^\s*\d+\.\s+/.test(line)
+    || isTableStart(lines, index);
+}
+
+function isTableStart(lines, index) {
+  return Boolean(lines[index] && lines[index].includes("|") && lines[index + 1] && isSeparatorRow(lines[index + 1]));
+}
+
+function isSeparatorRow(line) {
+  const cells = splitTableRow(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function splitTableRow(line) {
+  let text = line.trim();
+  if (text.startsWith("|")) text = text.slice(1);
+  if (text.endsWith("|")) text = text.slice(0, -1);
+  return text.split("|").map((cell) => cell.trim());
+}
+
+function renderTable(rows) {
+  if (!rows.length) return "";
+  const head = rows[0].map((cell) => "<th>" + inlineMarkdown(cell) + "</th>").join("");
+  const body = rows.slice(1).map((row) => {
+    return "<tr>" + row.map((cell) => "<td>" + inlineMarkdown(cell) + "</td>").join("") + "</tr>";
+  }).join("");
+  return "<table><thead><tr>" + head + "</tr></thead><tbody>" + body + "</tbody></table>";
+}
+
+function inlineMarkdown(text) {
+  const out = [];
+  const pattern = /(`[^`]+`)|\[([^\]]+)\]\(([^)\s]+)\)|\*\*([^*]+)\*\*/g;
+  let last = 0;
+  let match;
+  while ((match = pattern.exec(text))) {
+    out.push(escapeHtml(text.slice(last, match.index)));
+    if (match[1]) out.push("<code>" + escapeHtml(match[1].slice(1, -1)) + "</code>");
+    else if (match[2]) {
+      const href = safeHref(match[3]);
+      if (href) {
+        const external = /^(https?:|mailto:)/i.test(href);
+        const extra = external ? ' target="_blank" rel="noopener noreferrer"' : "";
+        out.push('<a href="' + escapeHtml(href) + '"' + extra + ">" + escapeHtml(match[2]) + "</a>");
+      } else out.push(escapeHtml(match[0]));
+    } else out.push("<strong>" + escapeHtml(match[4]) + "</strong>");
+    last = match.index + match[0].length;
+  }
+  out.push(escapeHtml(text.slice(last)));
+  return out.join("");
+}
+
+function safeHref(url) {
+  const value = String(url || "").trim();
+  if (!value || /[\s<>"']/.test(value)) return "";
+  if (value.startsWith("//")) return "";
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^(https?:|mailto:)/i.test(value)) return "";
+  return value;
+}
+
+function escapeHtml(text) {
+  return String(text ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[ch]);
 }
 
 async function loadFileRows() {
@@ -1533,8 +1760,8 @@ function beginRename(path) {
 function menuItems(target) {
   const dir = target.type === "dir" ? target.path : parentOf(target.path || ".");
   const items = [];
-  const data = target.type === "file" && dataFile(target.path);
-  if (target.type === "file" && !data) {
+  const passive = target.type === "file" && viewOnlyFile(target.path);
+  if (target.type === "file" && !passive) {
     items.push({ label: "Run file", icon: "forward", danger: true, run: () => runFileAt(target.path) }, "-");
   }
   if (target.type === "dir") {
@@ -1553,7 +1780,7 @@ function menuItems(target) {
     { label: "Rename", run: () => beginRename(target.path) },
     { label: "Move to…", run: () => moveEntry(target.path) },
   );
-  if ((target.type === "file" && !data) || target.type === "dir") {
+  if ((target.type === "file" && !passive) || target.type === "dir") {
     items.push({ label: "Clear results", run: () => clearFileResults(target.path) });
   }
   items.push(
@@ -1654,7 +1881,7 @@ function flushSave() {
 
 async function flushSaveNow() {
   clearTimeout(state.saveTimer);
-  if (!state.path || !state.disk || state.applyingDisk || dataFile(state.path)) return;
+  if (!state.path || !state.disk || state.applyingDisk || viewOnlyFile(state.path)) return;
   const text = editorText();
   if (text === state.disk.text) return;
   const path = state.path;
@@ -1717,7 +1944,7 @@ function applyLint(issues) {
 }
 
 async function lintEditor(generation) {
-  if (dataFile(state.path)) {
+  if (viewOnlyFile(state.path)) {
     applyLint([]);
     return;
   }
@@ -1854,7 +2081,7 @@ function showOpenFile(path) {
     text.className = "file-name-text";
     name.replaceChildren(text);
   }
-  const viewOnly = dataFile(state.path);
+  const viewOnly = viewOnlyFile(state.path);
   text.textContent = state.path ? state.path.split("/").pop() : "No file open";
   name.title = viewOnly ? "View only" : "";
   name.classList.toggle("is-open", Boolean(state.path));
@@ -1872,7 +2099,7 @@ function showOpenFile(path) {
 }
 
 function syncClearResults() {
-  const open = Boolean(state.path) && !dataFile(state.path);
+  const open = Boolean(state.path) && !viewOnlyFile(state.path);
   clearResultsButton.classList.toggle("hidden", !open);
   clearResultsButton.disabled = !open || runButton.disabled;
 }
@@ -2204,11 +2431,29 @@ async function pullOpenFile() {
   } catch (error) {
     if (!watchIsCurrent(path, epoch, seen, watchId)) return;
     if (error.payload?.missing) {
+      if (docFile(path)) {
+        state.fileEpoch += 1;
+        state.disk = null;
+        showOpenFile("");
+        setMode("query");
+        void refreshTree();
+        return;
+      }
       await adoptExternal(path, { missing: true, text: "", revision: "missing", path }, epoch);
     }
     return;
   }
   if (!watchIsCurrent(path, epoch, seen, watchId)) return;
+  if (docFile(path)) {
+    if (!file.revision || file.revision === seen) {
+      state.notedExternal = null;
+      return;
+    }
+    state.disk = { path, text: file.text, revision: file.revision };
+    state.notedExternal = null;
+    if (state.path === path) showDocument(path, file.text);
+    return;
+  }
   if (!file.revision || file.revision === seen) {
     state.notedExternal = null;
     return;
@@ -2765,7 +3010,7 @@ async function runSelection() {
 }
 
 async function runFolder(path) {
-  if (runButton.disabled) return;
+  if (!stopButton.classList.contains("hidden")) return;
   armRunPane();
   await flushSave();
   let documents = [];
@@ -2808,7 +3053,7 @@ function findTreeNode(node, path) {
 
 function dqlFilesUnder(node) {
   const children = node.children || [];
-  const files = children.filter((child) => child.type === "file");
+  const files = children.filter((child) => child.type === "file" && dqlFile(child.path));
   const nested = children.filter((child) => child.type === "dir").flatMap(dqlFilesUnder);
   return files.concat(nested);
 }

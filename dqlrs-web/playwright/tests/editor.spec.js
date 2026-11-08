@@ -520,6 +520,15 @@ test("runs every dql file in a folder from the context menu", async ({ page, app
       `SELECT * FROM ${name} WHERE id = 'c';`,
     ].join("\n"),
   );
+  fs.writeFileSync(
+    path.join(app.workspace, folder, "README.md"),
+    "# Skip\n\nSELECT * FROM should_not_run WHERE id = 'leak';\n",
+  );
+  fs.writeFileSync(
+    path.join(app.workspace, folder, "page.html"),
+    "<p>SELECT * FROM should_not_run WHERE id = 'html-leak';</p>\n",
+  );
+  fs.writeFileSync(path.join(app.workspace, folder, "rows.csv"), "id,label\nleak,nope\n");
   await page.reload();
   await expect(page.locator("#file-name")).toBeVisible();
   await node(page, `${folder}/one.dql`).click({ button: "right" });
@@ -531,6 +540,7 @@ test("runs every dql file in a folder from the context menu", async ({ page, app
   await expect(page.locator("#menu-clear-cache")).toHaveCount(0);
   await page.locator("#menu-run-folder").click();
   await expect(page.locator("#run")).toBeEnabled();
+  await expect(page.locator("#result-body")).not.toContainText("should_not_run");
   await node(page, `${folder}/one.dql`).click();
   await expect(page.locator(".query-result").last()).toContainText("from-a");
   await expect(page.locator(".query-result").filter({ hasText: "from-b" })).toHaveCount(0);

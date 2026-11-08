@@ -1,6 +1,7 @@
-//! Workspace tree of `.dql`, `.csv`, and `.json` files. Paths cannot escape the root.
+//! Workspace tree of `.dql`, `.csv`, `.json`, markdown, and HTML files.
+//! Paths cannot escape the root.
 //!
-//! The web UI can open all three. Writes, and the MCP file tools, stay on `.dql`.
+//! The web UI can open all of them. Writes, and the MCP file tools, stay on `.dql`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -171,7 +172,7 @@ pub fn delete_path(root: &Path, relative: &str) -> Result<(), PathError> {
     if path.is_file() {
         if !is_viewable(&path) {
             return Err(PathError(
-                "only .dql, .csv, and .json files can be deleted".to_string(),
+                "only .dql, .csv, .json, .md, and .html files can be deleted".to_string(),
             ));
         }
         fs::remove_file(path).map_err(|err| PathError(err.to_string()))?;
@@ -213,7 +214,7 @@ fn read_opened(root: &Path, relative: &str, viewable: bool) -> Result<String, Pa
     };
     if !allowed {
         let message = if viewable {
-            "only .dql, .csv, and .json files can be opened"
+            "only .dql, .csv, .json, .md, and .html files can be opened"
         } else {
             "only .dql files can be opened"
         };
@@ -349,7 +350,7 @@ pub fn relative_watch(root: &Path, path: &Path) -> Option<String> {
 pub fn viewable_relative(relative: &str) -> bool {
     matches!(
         name_extension(relative).as_deref(),
-        Some("dql" | "csv" | "json")
+        Some("dql" | "csv" | "json" | "md" | "markdown" | "html" | "htm")
     )
 }
 
@@ -484,14 +485,15 @@ fn dql_path(root: &Path, relative: &str) -> Result<PathBuf, PathError> {
     resolve_inside(root, &cleaned)
 }
 
-/// Destination for a move or rename. `.csv` and `.json` keep their extension.
+/// Destination for a move or rename. Tabular, markdown, and HTML names keep
+/// their extension. Other names go through `dql_path`, which appends `.dql`.
 fn placed_file(root: &Path, relative: &str) -> Result<PathBuf, PathError> {
     let cleaned = relative.trim().replace('\\', "/");
     let cleaned = cleaned.trim_start_matches('/').trim_end_matches('/');
     if cleaned.is_empty() {
         return Err(PathError("choose a file name".to_string()));
     }
-    if is_tabular_name(cleaned) {
+    if keeps_extension(cleaned) {
         return resolve_inside(root, cleaned);
     }
     dql_path(root, cleaned)
@@ -699,8 +701,18 @@ fn is_tabular_name(relative: &str) -> bool {
     matches!(name_extension(relative).as_deref(), Some("csv" | "json"))
 }
 
+fn keeps_extension(relative: &str) -> bool {
+    matches!(
+        name_extension(relative).as_deref(),
+        Some("csv" | "json" | "md" | "markdown" | "html" | "htm")
+    )
+}
+
 fn is_viewable(path: &Path) -> bool {
-    matches!(extension(path).as_str(), "dql" | "csv" | "json")
+    matches!(
+        extension(path).as_str(),
+        "dql" | "csv" | "json" | "md" | "markdown" | "html" | "htm"
+    )
 }
 
 fn extension(path: &Path) -> String {
@@ -811,6 +823,59 @@ mod tests {
         assert!(next["items"].as_array().unwrap().is_empty());
         assert_eq!(next["has_more"], false);
         assert!(tabular_page(root.path(), "queries/posts.dql", 0, 50).is_err());
+    }
+
+    #[test]
+    fn tree_shows_markdown_and_html_as_read_only_files() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("README.md"), "# Notes\n").unwrap();
+        fs::write(root.path().join("guide.markdown"), "hello\n").unwrap();
+        fs::write(root.path().join("diagram.html"), "<h1>Model</h1>\n").unwrap();
+        fs::write(root.path().join("page.htm"), "<p>Page</p>\n").unwrap();
+        fs::write(root.path().join("notes.txt"), "hidden\n").unwrap();
+        fs::create_dir(root.path().join("queries")).unwrap();
+        fs::write(root.path().join("queries/posts.dql"), "SCAN * FROM t;\n").unwrap();
+        let names: Vec<_> = tree(root.path())
+            .unwrap()
+            .children
+            .unwrap()
+            .into_iter()
+            .map(|child| child.name)
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "queries",
+                "diagram.html",
+                "guide.markdown",
+                "page.htm",
+                "README.md"
+            ]
+        );
+        assert!(viewable_relative("README.md"));
+        assert!(viewable_relative("Guide.MARKDOWN"));
+        assert!(viewable_relative("nested/diagram.html"));
+        assert!(viewable_relative("page.htm"));
+        assert!(!viewable_relative("notes.txt"));
+        assert_eq!(
+            read_file(root.path(), "README.md").unwrap().text,
+            "# Notes\n"
+        );
+        assert_eq!(
+            read_file(root.path(), "diagram.html").unwrap().text,
+            "<h1>Model</h1>\n"
+        );
+        assert!(read_text(root.path(), "README.md").is_err());
+        assert!(read_text(root.path(), "diagram.html").is_err());
+        assert!(save_file(root.path(), "README.md", "changed\n", None).is_err());
+        assert!(write_text(root.path(), "diagram.html", "<p>x</p>").is_err());
+        assert!(tabular_page(root.path(), "README.md", 0, 50).is_err());
+        assert!(tabular_page(root.path(), "diagram.html", 0, 50).is_err());
+        move_path(root.path(), "README.md", "queries/README.md").unwrap();
+        assert!(root.path().join("queries/README.md").is_file());
+        assert!(!root.path().join("queries/README.md.dql").exists());
+        move_path(root.path(), "diagram.html", "queries/diagram.html").unwrap();
+        assert!(root.path().join("queries/diagram.html").is_file());
     }
 
     #[test]
