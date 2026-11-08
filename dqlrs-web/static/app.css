@@ -3242,6 +3242,97 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
   cursor: default;
 }
 
+#confirm-pop {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+#confirm-pop::backdrop {
+  background: var(--shadow-modal);
+}
+
+.confirm-pop-card {
+  width: min(420px, calc(100vw - 32px));
+  padding: 22px 22px 18px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px var(--shadow-lg);
+  color: var(--text);
+}
+
+.confirm-pop-card h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+#confirm-pop-message {
+  margin: 8px 0 16px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.confirm-pop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+#confirm-cancel,
+#confirm-ok {
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+#confirm-cancel {
+  background: var(--chip);
+  color: var(--text);
+}
+
+#confirm-cancel:hover {
+  background: var(--chip-hover);
+}
+
+#confirm-cancel:focus-visible,
+#confirm-ok:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+#confirm-ok {
+  background: var(--teal);
+  color: var(--on-fill);
+}
+
+#confirm-ok:hover {
+  filter: brightness(1.05);
+}
+
+#confirm-ok.danger {
+  background: var(--danger-fill);
+}
+
+#confirm-ok.danger:hover {
+  background: var(--danger-hover);
+  filter: none;
+}
+
+#confirm-ok.danger:focus-visible {
+  background: var(--danger-hover);
+  filter: none;
+  outline-color: var(--danger-outline);
+}
+
 #schema-pop {
   border: 0;
   padding: 0;

@@ -2328,7 +2328,7 @@ async function moveEntry(path) {
 async function deleteEntry(path, kind) {
   const label = path.split("/").pop();
   const message = kind === "dir" ? "Delete folder " + label + "?" : "Delete " + label + "?";
-  if (!window.confirm(message)) return;
+  if (!(await confirmAction(message, { title: "Delete", okLabel: "Delete", danger: true }))) return;
   clearTimeout(state.saveTimer);
   state.fileEpoch += 1;
   state.notedExternal = null;
@@ -5474,6 +5474,43 @@ function reportError(error) {
   if (error && error.serverAway) return;
   window.alert(error.message);
 }
+
+const confirmPop = document.querySelector("#confirm-pop");
+const confirmTitle = document.querySelector("#confirm-pop-title");
+const confirmMessage = document.querySelector("#confirm-pop-message");
+const confirmOk = document.querySelector("#confirm-ok");
+const confirmCancel = document.querySelector("#confirm-cancel");
+let confirmPending = null;
+
+function settleConfirm(accepted) {
+  const pending = confirmPending;
+  confirmPending = null;
+  if (confirmPop.open) confirmPop.close();
+  if (pending) pending(accepted);
+}
+
+function confirmAction(message, { title = "Confirm", okLabel = "OK", danger = false } = {}) {
+  if (confirmPending) settleConfirm(false);
+  confirmTitle.textContent = title;
+  confirmMessage.textContent = message;
+  confirmOk.textContent = okLabel;
+  confirmOk.classList.toggle("danger", danger);
+  return new Promise((resolve) => {
+    confirmPending = resolve;
+    confirmPop.showModal();
+    confirmCancel.focus();
+  });
+}
+
+confirmOk.addEventListener("click", () => settleConfirm(true));
+confirmCancel.addEventListener("click", () => settleConfirm(false));
+confirmPop.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  settleConfirm(false);
+});
+confirmPop.addEventListener("click", (event) => {
+  if (event.target === confirmPop) settleConfirm(false);
+});
 
 const serverPop = document.querySelector("#server-pop");
 const serverStatus = document.querySelector("#server-pop-status");

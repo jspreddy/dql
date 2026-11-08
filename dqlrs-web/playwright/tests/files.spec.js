@@ -965,13 +965,35 @@ test("moves a file through the prompt and by dragging", async ({ page }) => {
   await expect(node(page, "empty/moved.dql")).toHaveCount(0);
 });
 
-test("deletes a file and an empty folder, and refuses a folder that has contents", async ({ page }) => {
+test("deletes a file and an empty folder, and refuses a folder that has contents", async ({ page }, testInfo) => {
   const dialogs = handleDialogs(page, async (dialog) => {
+    expect(dialog.type()).toBe("alert");
     await dialog.accept();
   });
 
   await node(page, "queries/read.dql").click({ button: "right" });
   await page.locator("#menu-delete").click();
+  const confirm = page.locator("#confirm-pop");
+  await expect(confirm).toBeVisible();
+  await expect(page.locator("#confirm-pop-title")).toHaveText("Delete");
+  await expect(page.locator("#confirm-pop-message")).toHaveText("Delete read.dql?");
+  await expect(page.locator(".confirm-pop-card")).toHaveCSS("background-color", await themeColor(page, "--paper"));
+  await expect(page.locator("#confirm-ok")).toHaveCSS("background-color", await themeColor(page, "--danger-fill"));
+  await page.screenshot({ path: playwrightArtifact(`confirm-dialog-${testInfo.project.name}.png`) });
+  await page.locator("#confirm-cancel").click();
+  await expect(confirm).toBeHidden();
+  await expect(node(page, "queries/read.dql")).toBeVisible();
+
+  await node(page, "queries/read.dql").click({ button: "right" });
+  await page.locator("#menu-delete").click();
+  await page.keyboard.press("Escape");
+  await expect(confirm).toBeHidden();
+  await expect(node(page, "queries/read.dql")).toBeVisible();
+
+  await node(page, "queries/read.dql").click({ button: "right" });
+  await page.locator("#menu-delete").click();
+  await page.locator("#confirm-ok").click();
+  await expect(confirm).toBeHidden();
   await expect(node(page, "queries/read.dql")).toHaveCount(0);
 
   await node(page, "empty").click({ button: "right" });
@@ -979,12 +1001,16 @@ test("deletes a file and an empty folder, and refuses a folder that has contents
   await expect(node(page, "empty copy")).toBeVisible();
   await node(page, "empty copy").click({ button: "right" });
   await page.locator("#menu-delete").click();
+  await expect(page.locator("#confirm-pop-message")).toHaveText("Delete folder empty copy?");
+  await page.locator("#confirm-ok").click();
   await expect(node(page, "empty copy")).toHaveCount(0);
 
   await node(page, "queries").click({ button: "right" });
   await page.locator("#menu-delete").click();
+  await page.locator("#confirm-ok").click();
   await node(page, "empty").click({ button: "right" });
   await page.locator("#menu-delete").click();
+  await page.locator("#confirm-ok").click();
   await expect.poll(() => dialogs.messages.filter((item) => item.message === "Folder is not empty, so unable to delete it from here.")).toHaveLength(2);
   await expect(node(page, "queries")).toBeVisible();
   await expect(node(page, "queries/edit.dql")).toBeVisible();
