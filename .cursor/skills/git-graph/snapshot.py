@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 import shutil
 import subprocess
 import sys
@@ -256,7 +257,7 @@ def main() -> None:
     allowed = allowed_commits(repo, tips, since)
     svg = filter_svg_by_commits(render_svg(repo, refs), allowed)
     svg = fit_viewbox(svg)
-    svg_path = output_dir() / "v-rust-branches.svg"
+    svg_path = output_dir() / f"v-rust-branches-{secrets.token_hex(4)}.svg"
     svg_path.write_text(pad_svg(svg))
     print(f"svg: {svg_path}")
 

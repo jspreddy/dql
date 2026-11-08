@@ -11,7 +11,7 @@ From the repository, run:
 python3 .cursor/skills/git-graph/snapshot.py
 ```
 
-The script prints `svg: <path>`. Show that SVG in Cursor chat.
+Each run writes a new SVG. The filename has a random part, so it does not replace an earlier graph. The script prints `svg: <path>`. Show that path's SVG in Cursor chat. Do not reuse an older graph file.
 
 Stop there when the script succeeds. Do not install `git-graph` or change the Rust toolchain on a successful run.
 
