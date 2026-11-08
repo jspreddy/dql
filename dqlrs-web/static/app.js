@@ -4927,8 +4927,9 @@ async function openSchema(request, button) {
     schemaPopSchema.replaceChildren();
     schemaPopBody.replaceChildren(schemaTable(inspected));
   }
+  schemaPopFoot.hidden = browser;
   schemaPopFoot.textContent = browser
-    ? "Types come from this page and the keys already listed. No extra query was run."
+    ? ""
     : file
       ? "Types come from the whole file. No extra query was run."
       : "Types come from this result. No extra query was run.";
@@ -5060,7 +5061,10 @@ function schemaResultSection(inspected) {
   section.dataset.testid = "schema-result";
   const heading = document.createElement("h3");
   heading.textContent = "Result structure";
-  section.append(heading, schemaTable(inspected));
+  const source = document.createElement("p");
+  source.className = "schema-section-note";
+  source.textContent = "Types and metrics come from the data fetched so far. No extra queries were run, so this is a partial structure.";
+  section.append(heading, source, schemaTable(inspected));
   return section;
 }
 
