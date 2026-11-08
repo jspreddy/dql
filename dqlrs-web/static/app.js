@@ -1760,7 +1760,7 @@ function closeMermaidScreen() {
   if (mermaidScreen?.open) mermaidScreen.close();
 }
 
-function mountMermaidScreen(svg) {
+function mountMermaidScreen(svg, source) {
   const clone = svg.cloneNode(true);
   clone.classList.remove("chain");
   for (const el of clone.querySelectorAll(".hot, .pinned")) {
@@ -1773,6 +1773,7 @@ function mountMermaidScreen(svg) {
   clone.style.width = "100%";
   clone.style.height = "100%";
   mermaidCanvas.replaceChildren(clone);
+  if (source && /^\s*(?:flowchart|graph)\b/m.test(source)) highlightCallChain(clone, source);
   const box = svg.viewBox.baseVal;
   const rendered = svg.getBoundingClientRect();
   mermaidScreenBase = {
@@ -1820,7 +1821,7 @@ function openMermaidScreen(block) {
   const svg = block.querySelector("svg");
   if (!svg || !mermaidScreen) return;
   mermaidScreenBlock = block;
-  mountMermaidScreen(svg);
+  mountMermaidScreen(svg, mermaidSources.get(block) || "");
   if (!mermaidScreen.open) mermaidScreen.showModal();
   fitMermaidScreen();
 }
@@ -1835,7 +1836,7 @@ function refreshOpenMermaidScreen() {
   const scale = mermaidScreenScale;
   const x = mermaidX;
   const y = mermaidY;
-  mountMermaidScreen(svg);
+  mountMermaidScreen(svg, mermaidSources.get(mermaidScreenBlock) || "");
   mermaidScreenScale = scale;
   mermaidX = x;
   mermaidY = y;
@@ -1867,6 +1868,16 @@ function attachMermaidExpand(block) {
   button.append(materialIcon("open_in_full"));
   button.addEventListener("click", () => openMermaidScreen(block));
   host.append(button);
+}
+
+function mermaidBackgroundEvent(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) return false;
+  if (target === mermaidStage || target === mermaidCanvas) return true;
+  if (!mermaidCanvas.contains(target)) return false;
+  const svg = mermaidCanvas.querySelector("svg");
+  if (target === svg || target.closest(".background")) return true;
+  return !target.closest("path, rect, circle, ellipse, line, polyline, polygon, text, tspan, foreignObject, image, use");
 }
 
 function endMermaidPan(event) {
@@ -1917,7 +1928,7 @@ if (mermaidScreen && mermaidStage && mermaidCanvas) {
     );
   }, { passive: false });
   mermaidStage.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || !mermaidScreen.open) return;
+    if (event.button !== 0 || !mermaidScreen.open || !mermaidBackgroundEvent(event)) return;
     event.preventDefault();
     mermaidPan = {
       id: event.pointerId,

@@ -3049,35 +3049,56 @@ body.results-resizing * {
   max-width: none;
 }
 
+.mermaid-screen-canvas svg path,
+.mermaid-screen-canvas svg rect,
+.mermaid-screen-canvas svg circle,
+.mermaid-screen-canvas svg ellipse,
+.mermaid-screen-canvas svg line,
+.mermaid-screen-canvas svg polyline,
+.mermaid-screen-canvas svg polygon,
+.mermaid-screen-canvas svg text,
+.mermaid-screen-canvas svg foreignObject {
+  cursor: default;
+}
+
+.mermaid-screen-canvas svg .node,
+.mermaid-screen-canvas svg .node rect,
+.mermaid-screen-canvas svg .node polygon,
+.mermaid-screen-canvas svg .node path,
+.mermaid-screen-canvas svg .node text,
+.mermaid-screen-canvas svg .node foreignObject {
+  cursor: pointer;
+}
+
 .doc-markdown .mermaid svg { max-width: 100%; height: auto; }
 
-.doc-markdown svg .node { cursor: pointer; }
+:is(.doc-markdown, #mermaid-screen) svg .node { cursor: pointer; }
 
-.doc-markdown svg.chain .node,
-.doc-markdown svg.chain path.flowchart-link,
-.doc-markdown svg.chain .edgeLabel {
+:is(.doc-markdown, #mermaid-screen) svg.chain .node,
+:is(.doc-markdown, #mermaid-screen) svg.chain path.flowchart-link,
+:is(.doc-markdown, #mermaid-screen) svg.chain .edgeLabel {
   opacity: 0.14;
   transition: opacity 120ms ease;
 }
 
-.doc-markdown svg.chain .node.hot,
-.doc-markdown svg.chain path.flowchart-link.hot,
-.doc-markdown svg.chain .edgeLabel.hot { opacity: 1; }
+:is(.doc-markdown, #mermaid-screen) svg.chain .node.hot,
+:is(.doc-markdown, #mermaid-screen) svg.chain path.flowchart-link.hot,
+:is(.doc-markdown, #mermaid-screen) svg.chain .edgeLabel.hot { opacity: 1; }
 
-.doc-markdown svg.chain path.flowchart-link.hot { stroke: #9a3412; }
+:is(.doc-markdown, #mermaid-screen) svg.chain path.flowchart-link.hot { stroke: #9a3412; }
 
-.doc-markdown svg .node.pinned > rect {
+:is(.doc-markdown, #mermaid-screen) svg .node.pinned > rect {
   fill: #9a3412 !important;
   stroke: #7c2d12 !important;
   stroke-width: 3px;
 }
 
-.doc-markdown svg .node.pinned .nodeLabel { color: #fffdf8 !important; }
+:is(.doc-markdown, #mermaid-screen) svg .node.pinned .nodeLabel { color: #fffdf8 !important; }
 
 @media (prefers-reduced-motion: reduce) {
-  .doc-markdown svg.chain .node,
-  .doc-markdown svg.chain path.flowchart-link,
-  .doc-markdown svg.chain .edgeLabel { transition: none; }
+  :is(.doc-markdown, #mermaid-screen) svg.chain .node,
+  :is(.doc-markdown, #mermaid-screen) svg.chain path.flowchart-link,
+  :is(.doc-markdown, #mermaid-screen) svg.chain .edgeLabel { transition: none; }
 }
 
 .doc-markdown ul,
