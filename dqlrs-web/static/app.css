@@ -3242,18 +3242,21 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
   cursor: default;
 }
 
-#confirm-pop {
+#confirm-pop,
+#prompt-pop {
   border: 0;
   padding: 0;
   background: transparent;
   color: var(--text);
 }
 
-#confirm-pop::backdrop {
+#confirm-pop::backdrop,
+#prompt-pop::backdrop {
   background: var(--shadow-modal);
 }
 
-.confirm-pop-card {
+.confirm-pop-card,
+.prompt-pop-card {
   width: min(420px, calc(100vw - 32px));
   padding: 22px 22px 18px;
   background: var(--paper);
@@ -3263,11 +3266,30 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
   color: var(--text);
 }
 
-.confirm-pop-card h2 {
+.confirm-pop-card h2,
+.prompt-pop-card h2 {
   margin: 0;
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+#prompt-pop-input {
+  width: 100%;
+  height: 32px;
+  margin: 12px 0 16px;
+  padding: 0 10px;
+  border: 1px solid var(--line-control);
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--text);
+}
+
+#prompt-pop-input:focus,
+#prompt-pop-input:focus-visible {
+  outline: none;
+  border-color: var(--teal);
 }
 
 #confirm-pop-message {
@@ -3278,14 +3300,17 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
   overflow-wrap: anywhere;
 }
 
-.confirm-pop-actions {
+.confirm-pop-actions,
+.prompt-pop-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
 
 #confirm-cancel,
-#confirm-ok {
+#confirm-ok,
+#prompt-cancel,
+#prompt-ok {
   height: 32px;
   padding: 0 14px;
   border: 0;
@@ -3294,27 +3319,33 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
   cursor: pointer;
 }
 
-#confirm-cancel {
+#confirm-cancel,
+#prompt-cancel {
   background: var(--chip);
   color: var(--text);
 }
 
-#confirm-cancel:hover {
+#confirm-cancel:hover,
+#prompt-cancel:hover {
   background: var(--chip-hover);
 }
 
 #confirm-cancel:focus-visible,
-#confirm-ok:focus-visible {
+#confirm-ok:focus-visible,
+#prompt-cancel:focus-visible,
+#prompt-ok:focus-visible {
   outline: 2px solid var(--teal);
   outline-offset: 2px;
 }
 
-#confirm-ok {
+#confirm-ok,
+#prompt-ok {
   background: var(--teal);
   color: var(--on-fill);
 }
 
-#confirm-ok:hover {
+#confirm-ok:hover,
+#prompt-ok:hover {
   filter: brightness(1.05);
 }
 

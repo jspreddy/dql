@@ -2274,7 +2274,11 @@ async function createFile() {
 }
 
 async function createNamedFile(dir) {
-  const entered = window.prompt(dir === "." ? "New file path" : "New file name", dir === "." ? "queries/notes.dql" : "notes.dql");
+  const entered = await promptAction(
+    dir === "." ? "New file path" : "New file name",
+    dir === "." ? "queries/notes.dql" : "notes.dql",
+    { okLabel: "Create" },
+  );
   if (!entered || !entered.trim()) return;
   const path = dir === "." ? entered.trim() : joinPath(dir, entered.trim());
   try {
@@ -2287,7 +2291,7 @@ async function createNamedFile(dir) {
 }
 
 async function createNamedFolder(dir) {
-  const entered = window.prompt("New folder name", "folder");
+  const entered = await promptAction("New folder name", "folder", { okLabel: "Create" });
   if (!entered || !entered.trim()) return;
   const path = dir === "." ? entered.trim() : joinPath(dir, entered.trim());
   try {
@@ -2316,7 +2320,7 @@ async function duplicateEntry(path) {
 }
 
 async function moveEntry(path) {
-  const entered = window.prompt("Move to", path);
+  const entered = await promptAction("Move to", path, { okLabel: "Move" });
   if (!entered || !entered.trim() || entered.trim() === path) return;
   try {
     await relocate(path, entered.trim());
@@ -5510,6 +5514,47 @@ confirmPop.addEventListener("cancel", (event) => {
 });
 confirmPop.addEventListener("click", (event) => {
   if (event.target === confirmPop) settleConfirm(false);
+});
+
+const promptPop = document.querySelector("#prompt-pop");
+const promptForm = document.querySelector("#prompt-pop-form");
+const promptTitle = document.querySelector("#prompt-pop-title");
+const promptInput = document.querySelector("#prompt-pop-input");
+const promptOk = document.querySelector("#prompt-ok");
+const promptCancel = document.querySelector("#prompt-cancel");
+let promptPending = null;
+
+function settlePrompt(value) {
+  const pending = promptPending;
+  promptPending = null;
+  if (promptPop.open) promptPop.close();
+  if (pending) pending(value);
+}
+
+function promptAction(message, defaultValue = "", { okLabel = "OK" } = {}) {
+  if (promptPending) settlePrompt(null);
+  promptTitle.textContent = message;
+  promptInput.value = defaultValue == null ? "" : String(defaultValue);
+  promptOk.textContent = okLabel;
+  return new Promise((resolve) => {
+    promptPending = resolve;
+    promptPop.showModal();
+    promptInput.focus();
+    promptInput.select();
+  });
+}
+
+promptForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  settlePrompt(promptInput.value);
+});
+promptCancel.addEventListener("click", () => settlePrompt(null));
+promptPop.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  settlePrompt(null);
+});
+promptPop.addEventListener("click", (event) => {
+  if (event.target === promptPop) settlePrompt(null);
 });
 
 const serverPop = document.querySelector("#server-pop");

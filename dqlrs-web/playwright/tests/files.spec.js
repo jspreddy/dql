@@ -816,19 +816,22 @@ test("context menu on a file offers the file actions", async ({ page }) => {
   await expect(page.locator("#file-menu")).toBeHidden();
 });
 
-test("sidebar background menu creates a file and a folder at the workspace root", async ({ page }) => {
-  const dialogs = handleDialogs(page, async (dialog) => {
-    expect(dialog.type()).toBe("prompt");
-    if (dialog.message().includes("file")) {
-      expect(dialog.defaultValue()).toBe("queries/notes.dql");
-      await dialog.accept("top.dql");
-      return;
-    }
-    expect(dialog.defaultValue()).toBe("folder");
-    await dialog.accept("extra");
-  });
+test("sidebar background menu creates a file and a folder at the workspace root", async ({ page }, testInfo) => {
+  await page.locator("#new-file").click();
+  const prompt = page.locator("#prompt-pop");
+  await expect(prompt).toBeVisible();
+  await expect(page.locator("#prompt-pop-title")).toHaveText("New file path");
+  await expect(page.locator("#prompt-pop-input")).toHaveValue("queries/notes.dql");
+  await expect(page.locator("#prompt-cancel")).toHaveCSS("background-color", await themeColor(page, "--chip"));
+  await expect(page.locator("#prompt-ok")).toHaveCSS("background-color", await themeColor(page, "--teal"));
+  await page.screenshot({ path: playwrightArtifact(`prompt-dialog-${testInfo.project.name}.png`) });
+  await page.keyboard.press("Escape");
+  await expect(prompt).toBeHidden();
+  await expect(node(page, "queries/notes.dql")).toHaveCount(0);
 
   await page.locator("#new-file").click();
+  await page.locator("#prompt-pop-input").fill("top.dql");
+  await page.locator("#prompt-ok").click();
   await expect(node(page, "top.dql")).toBeVisible();
   await expect(page.locator("#file-name")).toHaveText("top.dql");
 
@@ -840,8 +843,17 @@ test("sidebar background menu creates a file and a folder at the workspace root"
   await expect(page.locator("#menu-run-file")).toHaveCount(0);
   await expect(page.locator("#menu-duplicate")).toHaveCount(0);
   await page.locator("#menu-new-folder").click();
+  await expect(page.locator("#prompt-pop-title")).toHaveText("New folder name");
+  await expect(page.locator("#prompt-pop-input")).toHaveValue("folder");
+  await page.locator("#prompt-cancel").click();
+  await expect(prompt).toBeHidden();
+  await expect(node(page, "folder")).toHaveCount(0);
+
+  await page.locator(".side-head").click({ button: "right" });
+  await page.locator("#menu-new-folder").click();
+  await page.locator("#prompt-pop-input").fill("extra");
+  await page.locator("#prompt-ok").click();
   await expect(node(page, "extra")).toBeVisible();
-  await dialogs.stop();
 });
 
 test("runs the selected file from the context menu", async ({ page, app }, testInfo) => {
@@ -895,15 +907,15 @@ test("runs an empty folder from the context menu", async ({ page }) => {
 });
 
 test("creates a file inside a folder from the context menu", async ({ page }) => {
-  const dialogs = handleDialogs(page, async (dialog) => {
-    expect(dialog.defaultValue()).toBe("notes.dql");
-    await dialog.accept("made.dql");
-  });
   await node(page, "queries").click({ button: "right" });
   await page.locator("#menu-new-file").click();
+  await expect(page.locator("#prompt-pop-title")).toHaveText("New file name");
+  await expect(page.locator("#prompt-pop-input")).toHaveValue("notes.dql");
+  await page.locator("#prompt-pop-input").fill("made.dql");
+  await page.locator("#prompt-pop-input").press("Enter");
+  await expect(page.locator("#prompt-pop")).toBeHidden();
   await expect(node(page, "queries/made.dql")).toBeVisible();
   await expect(page.locator("#file-name")).toHaveText("made.dql");
-  await dialogs.stop();
 });
 
 test("duplicates a file and a folder", async ({ page }) => {
@@ -941,16 +953,23 @@ test("renames from a double-click and cancels with Escape", async ({ page }) => 
 });
 
 test("moves a file through the prompt and by dragging", async ({ page }) => {
-  const dialogs = handleDialogs(page, async (dialog) => {
-    expect(dialog.type()).toBe("prompt");
-    expect(dialog.defaultValue()).toBe("queries/read.dql");
-    await dialog.accept("empty/moved.dql");
-  });
   await node(page, "queries/read.dql").click({ button: "right" });
   await page.locator("#menu-move").click();
+  const prompt = page.locator("#prompt-pop");
+  await expect(prompt).toBeVisible();
+  await expect(page.locator("#prompt-pop-title")).toHaveText("Move to");
+  await expect(page.locator("#prompt-pop-input")).toHaveValue("queries/read.dql");
+  await expect(page.locator("#prompt-ok")).toHaveText("Move");
+  await page.mouse.click(8, 8);
+  await expect(prompt).toBeHidden();
+  await expect(node(page, "queries/read.dql")).toBeVisible();
+
+  await node(page, "queries/read.dql").click({ button: "right" });
+  await page.locator("#menu-move").click();
+  await page.locator("#prompt-pop-input").fill("empty/moved.dql");
+  await page.locator("#prompt-ok").click();
   await expect(node(page, "empty/moved.dql")).toBeVisible();
   await expect(node(page, "queries/read.dql")).toHaveCount(0);
-  await dialogs.stop();
 
   await node(page, "queries/edit.dql").dragTo(node(page, "empty"));
   await expect(node(page, "empty/edit.dql")).toBeVisible();
