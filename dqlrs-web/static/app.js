@@ -4920,15 +4920,7 @@ async function openSchema(request, button) {
   fillSchemaQuery(browser || file ? "" : payload.statement);
   if (browser) {
     schemaPopSchema.hidden = false;
-    schemaPopSchema.replaceChildren(
-      schemaTextSection(
-        "Create query",
-        "schema-create-query",
-        payload.createQuery,
-        "The schema cache does not have a create query for this table yet.",
-      ),
-      schemaDefinitionSection(payload.definition),
-    );
+    schemaPopSchema.replaceChildren(schemaDefinitionSection(payload.createQuery, payload.definition));
     schemaPopBody.replaceChildren(schemaResultSection(inspected));
   } else {
     schemaPopSchema.hidden = true;
@@ -4957,47 +4949,40 @@ function fillSchemaQuery(statement) {
   schemaPopQuery.hidden = false;
 }
 
-function schemaTextSection(title, testId, text, empty) {
-  const section = document.createElement("section");
-  section.className = "schema-section";
-  section.dataset.testid = testId;
-  const heading = document.createElement("h3");
-  heading.textContent = title;
-  section.append(heading);
-  if (testId === "schema-create-query") {
-    const source = document.createElement("p");
-    source.className = "schema-section-note";
-    source.textContent = "From the schema cache. This updates when the table definition changes.";
-    section.append(source);
-  }
-  const query = String(text || "").trim();
-  if (!query) {
-    const missing = document.createElement("p");
-    missing.className = "schema-section-empty";
-    missing.textContent = empty;
-    section.append(missing);
-    return section;
-  }
-  section.append(highlightedQuery(query, "schema-pop-query-text"));
-  return section;
-}
-
-function schemaDefinitionSection(rows) {
+function schemaDefinitionSection(createQuery, rows) {
   const section = document.createElement("section");
   section.className = "schema-section";
   section.dataset.testid = "schema-definition";
   const heading = document.createElement("h3");
-  heading.textContent = "Table definition";
-  section.append(heading);
+  heading.textContent = "Definition";
+  const source = document.createElement("p");
+  source.className = "schema-section-note";
+  source.textContent = "From the schema cache. This updates when the table definition changes.";
+  const query = document.createElement("div");
+  query.className = "schema-definition-query";
+  query.dataset.testid = "schema-create-query";
+  const text = String(createQuery || "").trim();
+  if (!text) {
+    const missing = document.createElement("p");
+    missing.className = "schema-section-empty";
+    missing.textContent = "The schema cache does not have a create query for this table yet.";
+    query.append(missing);
+  } else {
+    query.append(highlightedQuery(text, "schema-pop-query-text"));
+  }
+  const columns = document.createElement("div");
+  columns.className = "schema-definition-columns";
+  columns.dataset.testid = "schema-definition-columns";
   const listed = Array.isArray(rows) ? rows : [];
   if (!listed.length) {
     const missing = document.createElement("p");
     missing.className = "schema-section-empty";
     missing.textContent = "The schema cache does not have a definition for this table yet.";
-    section.append(missing);
-    return section;
+    columns.append(missing);
+  } else {
+    columns.append(definitionTable(listed));
   }
-  section.append(definitionTable(listed));
+  section.append(heading, source, query, columns);
   return section;
 }
 

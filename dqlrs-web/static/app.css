@@ -3616,6 +3616,10 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
 
 .schema-section .schema-pop-query-text { margin: 0; }
 
+.schema-definition-query { margin: 0 0 14px; }
+
+.schema-definition-query .schema-section-empty { margin-bottom: 0; }
+
 .schema-pop-body table,
 .schema-pop-schema table {
   width: max-content;
