@@ -42,6 +42,7 @@ test("renders markdown as formatted text and html as a live page", async ({ page
     ].join(""),
   );
   await page.reload();
+  await showTypes(page, ["md", "html"]);
   await expect(node(page, "docs/README.md").locator(".file-kind")).toHaveText("md");
   await expect(node(page, "docs/page.html").locator(".file-kind")).toHaveText("html");
   await node(page, "docs/README.md").click();
@@ -74,6 +75,50 @@ test("renders markdown as formatted text and html as a live page", async ({ page
   await expect(page.locator("#doc-view")).toBeHidden();
   await expect(page.locator(".editor")).toBeVisible();
   await expect(page.locator("#file-name")).toHaveText("read.dql");
+});
+
+test("resolves relative links from the file's folder", async ({ page, app }) => {
+  fs.mkdirSync(path.join(app.workspace, "docs/nested"), { recursive: true });
+  fs.writeFileSync(
+    path.join(app.workspace, "docs/README.md"),
+    ["# Docs", "", "See [the page](nested/page.html) and [the outside note](../outside.md).", ""].join("\n"),
+  );
+  fs.writeFileSync(path.join(app.workspace, "outside.md"), "# Outside\n");
+  fs.writeFileSync(path.join(app.workspace, "docs/nested/note.md"), "# Nested note\n");
+  fs.writeFileSync(
+    path.join(app.workspace, "docs/nested/page.html"),
+    [
+      "<!DOCTYPE html><html><body>",
+      "<h1 id=\"live\">waiting</h1>",
+      "<a id=\"up\" href=\"../README.md\">Up</a>",
+      "<a id=\"side\" href=\"note.md\">Note</a>",
+      "<a id=\"out\" href=\"https://example.com/away\">Away</a>",
+      "<script>document.querySelector('#live').textContent = 'ran';</script>",
+      "</body></html>",
+    ].join(""),
+  );
+  await page.reload();
+  await showTypes(page, ["md", "html"]);
+
+  await node(page, "docs/README.md").click();
+  await page.locator(".doc-markdown a", { hasText: "the outside note" }).click();
+  await expect(page.locator("#doc-title")).toHaveText("outside.md");
+  await expect(page.locator(".doc-markdown h1")).toHaveText("Outside");
+
+  await node(page, "docs/README.md").click();
+  await page.locator(".doc-markdown a", { hasText: "the page" }).click();
+  const frame = page.frameLocator(".doc-frame");
+  await expect(frame.locator("#live")).toHaveText("ran");
+  await expect(frame.locator("#out")).toHaveAttribute("href", "https://example.com/away");
+  await frame.locator("#side").click();
+  await expect(page.locator("#doc-title")).toHaveText("note.md");
+  await expect(page.locator(".doc-markdown h1")).toHaveText("Nested note");
+
+  await node(page, "docs/nested/page.html").click();
+  await frame.locator("#up").click();
+  await expect(page.locator("#doc-title")).toHaveText("README.md");
+  await expect(page.locator(".doc-markdown h1")).toHaveText("Docs");
+  await expect(node(page, "docs/README.md")).toHaveClass(/selected/);
 });
 
 test("resizes the left nav from the edge handle", async ({ page }) => {
@@ -129,6 +174,83 @@ test("shows nested files, an empty folder, and opens a file", async ({ page }) =
   await expect(node(page, "queries/read.dql")).toHaveClass(/selected/);
 });
 
+test("does not refetch the tree while opening files or folders", async ({ page, app }) => {
+  let treeFetches = 0;
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/tree") treeFetches += 1;
+  });
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  const afterBoot = treeFetches;
+  expect(afterBoot).toBeGreaterThan(0);
+
+  await node(page, "queries").click();
+  await expect(node(page, "queries/edit.dql")).toHaveCount(0);
+  await node(page, "queries").click();
+  await node(page, "queries/read.dql").click();
+  await expect(page.locator("#file-name")).toHaveText("read.dql");
+  await node(page, "queries/functions.dql").click();
+  await expect(page.locator("#file-name")).toHaveText("functions.dql");
+  await node(page, "empty").click();
+  expect(treeFetches).toBe(afterBoot);
+
+  await showTypes(page, ["md"]);
+  fs.writeFileSync(path.join(app.workspace, "arrived.md"), "# Arrived\n");
+  await expect(node(page, "arrived.md")).toBeVisible();
+  expect(treeFetches).toBeGreaterThan(afterBoot);
+});
+
+async function showTypes(page, types) {
+  for (const type of types) {
+    const pill = page.locator(`.file-filter[data-type="${type}"]`);
+    if ((await pill.getAttribute("aria-pressed")) !== "true") await pill.click();
+  }
+}
+
+test("filters files with toggleable type pills and remembers them", async ({ page, app }, testInfo) => {
+  fs.writeFileSync(path.join(app.workspace, "users.csv"), "id,name\na,ada\n");
+  fs.writeFileSync(path.join(app.workspace, "cities.json"), "[{\"id\":\"a\"}]\n");
+  fs.writeFileSync(path.join(app.workspace, "notes.md"), "# Notes\n");
+  fs.writeFileSync(path.join(app.workspace, "page.html"), "<h1>Page</h1>\n");
+  await page.reload();
+  const pills = page.locator(".file-filter");
+  await expect(pills).toHaveCount(5);
+  await expect(pills).toHaveText(["CSV", "JSON", "DQL", "Markdown", "HTML"]);
+  await expect(page.locator('.file-filter[data-type="dql"]')).toHaveAttribute("aria-pressed", "true");
+  for (const type of ["csv", "json", "md", "html"]) {
+    await expect(page.locator(`.file-filter[data-type="${type}"]`)).toHaveAttribute("aria-pressed", "false");
+  }
+  await expect(node(page, "queries/edit.dql")).toBeVisible();
+  await expect(node(page, "users.csv")).toHaveCount(0);
+  await expect(node(page, "cities.json")).toHaveCount(0);
+  await expect(node(page, "notes.md")).toHaveCount(0);
+  await expect(node(page, "page.html")).toHaveCount(0);
+
+  await showTypes(page, ["csv", "md"]);
+  await expect(node(page, "users.csv")).toBeVisible();
+  await expect(node(page, "notes.md")).toBeVisible();
+  await expect(node(page, "queries/edit.dql")).toBeVisible();
+  await expect(node(page, "cities.json")).toHaveCount(0);
+  await expect(node(page, "page.html")).toHaveCount(0);
+  await page.screenshot({ path: playwrightArtifact(`file-type-pills-${testInfo.project.name}.png`) });
+
+  await page.reload();
+  await expect(page.locator('.file-filter[data-type="csv"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('.file-filter[data-type="md"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('.file-filter[data-type="dql"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('.file-filter[data-type="json"]')).toHaveAttribute("aria-pressed", "false");
+  await expect(node(page, "users.csv")).toBeVisible();
+  await expect(node(page, "notes.md")).toBeVisible();
+  await expect(node(page, "cities.json")).toHaveCount(0);
+  const stored = await page.evaluate(() => localStorage.getItem("dqlrs-web.file-types"));
+  expect(JSON.parse(stored)).toEqual(["csv", "dql", "md"]);
+
+  await page.locator('.file-filter[data-type="dql"]').click();
+  await expect(node(page, "queries/edit.dql")).toHaveCount(0);
+  await expect(node(page, "users.csv")).toBeVisible();
+});
+
 async function expectUnderline(tab, primary) {
   const line = await tab.evaluate((el) => {
     const style = getComputedStyle(el, "::after");
@@ -146,6 +268,7 @@ test("shows csv and json files as tables", async ({ page, app }, testInfo) => {
   const many = ["id,n", ...Array.from({ length: 51 }, (_, index) => `r${index},${index}`)].join("\n") + "\n";
   fs.writeFileSync(path.join(app.workspace, "many.csv"), many);
   await page.reload();
+  await showTypes(page, ["csv", "json"]);
   await expect(node(page, "users.csv")).toBeVisible();
   await expect(node(page, "cities.json")).toBeVisible();
   await expect(node(page, "notes.txt")).toHaveCount(0);

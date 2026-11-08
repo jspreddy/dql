@@ -73,6 +73,7 @@ const state = {
   path: "",
   expanded: new Set(["."]),
   expandedOnce: false,
+  tree: null,
   saveTimer: 0,
   lintTimer: 0,
   searchTimer: 0,
@@ -136,6 +137,32 @@ function loadClientId() {
 
 const HIGHLIGHT_KEY = "dqlrs-web.highlight";
 const THEME_KEY = "dqlrs-web.theme";
+const FILE_TYPES_KEY = "dqlrs-web.file-types";
+const FILE_TYPE_FILTERS = [
+  { type: "csv", label: "CSV" },
+  { type: "json", label: "JSON" },
+  { type: "dql", label: "DQL" },
+  { type: "md", label: "Markdown" },
+  { type: "html", label: "HTML" },
+];
+
+function loadFileTypes() {
+  try {
+    const raw = localStorage.getItem(FILE_TYPES_KEY);
+    if (raw == null) return ["dql"];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return ["dql"];
+    const allowed = new Set(FILE_TYPE_FILTERS.map((item) => item.type));
+    return parsed.filter((type) => allowed.has(type));
+  } catch {
+    return ["dql"];
+  }
+}
+
+function saveFileTypes(types) {
+  const order = FILE_TYPE_FILTERS.map((item) => item.type);
+  localStorage.setItem(FILE_TYPES_KEY, JSON.stringify(order.filter((type) => types.has(type))));
+}
 const themeToggle = document.querySelector("#theme-toggle");
 
 function currentTheme() {
@@ -619,6 +646,10 @@ function dqlFile(path) {
   return String(path || "").split("/").pop().toLowerCase().endsWith(".dql");
 }
 
+function fileType(path) {
+  return fileKind(path) || (dqlFile(path) ? "dql" : "");
+}
+
 function setViewOnly(viewOnly) {
   editor.dispatch({
     effects: viewCompartment.reconfigure(viewOnly
@@ -978,6 +1009,19 @@ envPop.addEventListener("toggle", (event) => {
   void loadEnvironment();
 });
 
+state.fileTypes = new Set(loadFileTypes());
+for (const button of document.querySelectorAll(".file-filter")) {
+  button.setAttribute("aria-pressed", state.fileTypes.has(button.dataset.type) ? "true" : "false");
+  button.addEventListener("click", () => {
+    const type = button.dataset.type;
+    if (state.fileTypes.has(type)) state.fileTypes.delete(type);
+    else state.fileTypes.add(type);
+    button.setAttribute("aria-pressed", state.fileTypes.has(type) ? "true" : "false");
+    saveFileTypes(state.fileTypes);
+    paintTree();
+  });
+}
+
 boot();
 
 async function boot() {
@@ -1115,6 +1159,7 @@ function setMode(mode) {
   document.querySelector("#tree").classList.toggle("hidden", tables);
   document.querySelector("#tables-nav").classList.toggle("hidden", !tables);
   document.querySelector("#new-file").classList.toggle("hidden", tables);
+  document.querySelector("#file-filters").classList.toggle("hidden", tables);
   document.querySelector("#refresh-tables").classList.toggle("hidden", !tables);
   if (!tables) document.querySelector("#table-cache").classList.add("hidden");
   document.querySelector("#side-title").textContent = tables ? "Tables" : "Files";
@@ -1132,11 +1177,42 @@ function setMode(mode) {
 
 async function refreshTree() {
   const root = await api("/api/tree");
+  state.tree = root;
   if (!state.expandedOnce) {
     expandAll(root);
     state.expandedOnce = true;
   }
-  treeEl.replaceChildren(renderDir(root, true));
+  paintTree();
+}
+
+function paintTree() {
+  if (!state.tree) return;
+  treeEl.replaceChildren(renderDir(visibleTree(state.tree), true));
+}
+
+function visibleTree(node) {
+  const children = [];
+  for (const child of node.children || []) {
+    if (child.type === "file") {
+      if (state.fileTypes.has(fileType(child.path))) children.push(child);
+      continue;
+    }
+    const next = visibleTree(child);
+    const empty = !(child.children || []).length;
+    if (empty || (next.children || []).length) children.push(next);
+  }
+  return { ...node, children };
+}
+
+function markTreeSelection() {
+  for (const button of treeEl.querySelectorAll(".node")) {
+    const selected = button.dataset.path === state.path;
+    button.classList.toggle("selected", selected);
+    const current = button.dataset.kind === "file" && selected;
+    button.classList.toggle("is-open", current);
+    if (current) button.setAttribute("aria-current", "true");
+    else button.removeAttribute("aria-current");
+  }
 }
 
 function expandAll(node) {
@@ -1170,7 +1246,8 @@ function renderDir(node, isRoot) {
   if (isRoot && !(node.children || []).length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "No .dql files yet";
+    const workspaceHasFiles = (state.tree?.children || []).length > 0;
+    empty.textContent = workspaceHasFiles ? "No matching files" : "No .dql files yet";
     list.append(empty);
   }
   return list;
@@ -1233,7 +1310,8 @@ function bindNode(button, child) {
 function toggleDir(path) {
   if (state.expanded.has(path)) state.expanded.delete(path);
   else state.expanded.add(path);
-  refreshTree();
+  if (state.tree) paintTree();
+  else void refreshTree();
 }
 
 function parentOf(path) {
@@ -1329,7 +1407,8 @@ async function openFile(path) {
       showResults([]);
       applyLint([]);
       setMode("query");
-      await Promise.all([refreshTree(), loadFileRows()]);
+      markTreeSelection();
+      await loadFileRows();
       return;
     }
     if (docFile(path)) {
@@ -1342,7 +1421,7 @@ async function openFile(path) {
       showResults([]);
       applyLint([]);
       setMode("query");
-      await refreshTree();
+      markTreeSelection();
       return;
     }
     setFileSchema(null);
@@ -1356,7 +1435,8 @@ async function openFile(path) {
     state.entries = [];
     showResults([]);
     setMode("query");
-    await Promise.all([refreshTree(), loadFileResults(file.path || path)]);
+    markTreeSelection();
+    await loadFileResults(file.path || path);
   } catch (error) {
     reportError(error);
   }
@@ -1377,7 +1457,7 @@ function showDocument(path, text) {
     frame.setAttribute("sandbox", "allow-scripts allow-popups");
     frame.setAttribute("referrerpolicy", "no-referrer");
     frame.title = name;
-    frame.srcdoc = String(text ?? "");
+    frame.srcdoc = htmlWithDocBase(path, text);
     body.append(frame);
     return;
   }
@@ -1397,18 +1477,61 @@ function showDocument(path, text) {
 }
 
 function resolveWorkspaceHref(from, href) {
-  const clean = href.split("#")[0].split("?")[0];
-  if (!clean || clean.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(clean)) return "";
+  const clean = String(href || "").split("#")[0].split("?")[0].trim();
+  if (!clean || clean.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(clean)) return "";
   const base = parentOf(from);
-  const parts = (base === "." ? [] : base.split("/")).concat(clean.split("/"));
+  const parts = (clean.startsWith("/") ? [] : (base === "." ? [] : base.split("/"))).concat(clean.split("/"));
   const stack = [];
   for (const part of parts) {
     if (!part || part === ".") continue;
-    if (part === "..") stack.pop();
-    else stack.push(part);
+    if (part === "..") {
+      if (!stack.length) return "";
+      stack.pop();
+      continue;
+    }
+    stack.push(part);
   }
   return stack.join("/");
 }
+
+const docLinkBridge = `<script>
+document.addEventListener("click", function (event) {
+  var node = event.target;
+  var link = node && node.closest ? node.closest("a") : null;
+  if (!link) return;
+  var raw = link.getAttribute("href") || "";
+  if (!raw || raw.charAt(0) === "#") return;
+  if (raw.slice(0, 2) === "//" || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return;
+  var url;
+  try { url = new URL(link.href, document.baseURI); } catch (err) { return; }
+  if (url.pathname.indexOf("/doc/") !== 0) return;
+  event.preventDefault();
+  var path = "";
+  try { path = decodeURIComponent(url.pathname.slice(5)); } catch (err) { return; }
+  parent.postMessage({ type: "dql-doc-link", path: path }, "*");
+}, true);
+</script>`;
+
+function htmlWithDocBase(path, html) {
+  const source = String(html ?? "");
+  if (/<base[\s>]/i.test(source)) return source;
+  const dir = parentOf(path);
+  const prefix = dir === "." ? "" : dir.split("/").map((part) => encodeURIComponent(part)).join("/") + "/";
+  const head = `<base href="/doc/${prefix}">` + docLinkBridge;
+  if (/<head[^>]*>/i.test(source)) return source.replace(/<head[^>]*>/i, (tag) => tag + head);
+  if (/<html[^>]*>/i.test(source)) return source.replace(/<html[^>]*>/i, (tag) => tag + "<head>" + head + "</head>");
+  return "<head>" + head + "</head>" + source;
+}
+
+window.addEventListener("message", (event) => {
+  const frame = document.querySelector(".doc-frame");
+  if (!frame || event.source !== frame.contentWindow) return;
+  const data = event.data;
+  if (!data || data.type !== "dql-doc-link" || typeof data.path !== "string") return;
+  const next = data.path.replace(/^\/+/, "");
+  if (!next || next.split("/").some((part) => !part || part === "." || part === "..")) return;
+  openFile(next);
+});
 
 function renderMarkdown(source) {
   const lines = String(source ?? "").replace(/\r\n/g, "\n").split("\n");
@@ -1731,7 +1854,8 @@ function beginRename(path) {
     settled = true;
     const nextName = input.value.trim();
     if (!commit || !nextName || nextName === name || /[\\/]/.test(nextName)) {
-      await refreshTree();
+      if (state.tree) paintTree();
+      else await refreshTree();
       return;
     }
     try {

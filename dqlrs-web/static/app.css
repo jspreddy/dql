@@ -808,8 +808,48 @@ body.side-resizing * {
 .side-heading {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
   min-width: 0;
+}
+
+.file-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  font-weight: 600;
+}
+
+.side-head button.file-filter {
+  border: 0;
+  border-radius: 999px;
+  height: 18px;
+  padding: 0 6px;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  background: var(--hover);
+  color: var(--muted);
+}
+
+.side-head button.file-filter[aria-pressed="true"] {
+  background: var(--teal-wash);
+  color: var(--teal-ink);
+}
+
+.side-head button.file-filter[data-type="json"][aria-pressed="true"] {
+  background: var(--amber-bg);
+  color: var(--amber-ink);
+}
+
+.side-head button.file-filter[data-type="md"][aria-pressed="true"] {
+  background: var(--paper-2);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.side-head button.file-filter[data-type="html"][aria-pressed="true"] {
+  background: var(--blue-wash);
+  color: var(--blue-ink);
 }
 
 #refresh-tables {
