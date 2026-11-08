@@ -2,7 +2,7 @@
 
 Customers, products, warehouses, orders, invoices, and shipments share one table. A row's key prefix says which of those it is.
 
-This is the [AWS online shop example](https://github.com/aws-samples/amazon-dynamodb-design-patterns/tree/master/examples/an-online-shop). The script is [online-shop.dql](online-shop.dql). The rows are the final NoSQL Workbench model, [json/AnOnlineShop.json](json/AnOnlineShop.json).
+This is the [AWS online shop example](https://github.com/aws-samples/amazon-dynamodb-design-patterns/tree/master/examples/an-online-shop). The script is [online-shop.dql](online-shop.dql). Its inserts are the final NoSQL Workbench sample rows.
 
 ## Keys
 

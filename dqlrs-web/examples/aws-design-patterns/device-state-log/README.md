@@ -2,7 +2,7 @@
 
 Each row is one reading: a device, a state, a time, and the operator who recorded it. Escalated readings also name a supervisor.
 
-This is the [AWS device state log example](https://github.com/aws-samples/amazon-dynamodb-design-patterns/tree/master/examples/device-state-log). The script is [device-state-log.dql](device-state-log.dql). The rows are the final NoSQL Workbench model, [json/DeviceStateLog.json](json/DeviceStateLog.json).
+This is the [AWS device state log example](https://github.com/aws-samples/amazon-dynamodb-design-patterns/tree/master/examples/device-state-log). The script is [device-state-log.dql](device-state-log.dql). Its inserts are the final NoSQL Workbench sample rows.
 
 ## Keys
 

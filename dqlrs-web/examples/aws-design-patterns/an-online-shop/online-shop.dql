@@ -1,6 +1,6 @@
 -- Online shop in one table, from the AWS sample
 -- amazon-dynamodb-design-patterns examples/an-online-shop.
--- The rows are the final NoSQL Workbench model in json/AnOnlineShop.json.
+-- The inserts are the final NoSQL Workbench sample rows.
 -- PK and SK carry a prefix: c# customer, p# product, w# warehouse,
 -- o# order, i# invoice, sh# shipment, shp# shipment line.
 -- GSI1 finds orders for a product, an invoice, or a shipment.
