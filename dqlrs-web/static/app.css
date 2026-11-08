@@ -3292,6 +3292,16 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
   border-color: var(--teal);
 }
 
+.confirm-pop-path {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.confirm-pop-path[hidden] { display: none; }
+
 #confirm-pop-message {
   margin: 8px 0 16px;
   color: var(--text);

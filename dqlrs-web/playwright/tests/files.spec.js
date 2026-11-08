@@ -995,6 +995,7 @@ test("deletes a file and an empty folder, and refuses a folder that has contents
   const confirm = page.locator("#confirm-pop");
   await expect(confirm).toBeVisible();
   await expect(page.locator("#confirm-pop-title")).toHaveText("Delete");
+  await expect(page.locator("#confirm-pop-path")).toHaveText("queries/read.dql");
   await expect(page.locator("#confirm-pop-message")).toHaveText("Delete read.dql?");
   await expect(page.locator(".confirm-pop-card")).toHaveCSS("background-color", await themeColor(page, "--paper"));
   await expect(page.locator("#confirm-ok")).toHaveCSS("background-color", await themeColor(page, "--danger-fill"));
@@ -1020,12 +1021,14 @@ test("deletes a file and an empty folder, and refuses a folder that has contents
   await expect(node(page, "empty copy")).toBeVisible();
   await node(page, "empty copy").click({ button: "right" });
   await page.locator("#menu-delete").click();
+  await expect(page.locator("#confirm-pop-path")).toHaveText("empty copy");
   await expect(page.locator("#confirm-pop-message")).toHaveText("Delete folder empty copy?");
   await page.locator("#confirm-ok").click();
   await expect(node(page, "empty copy")).toHaveCount(0);
 
   await node(page, "queries").click({ button: "right" });
   await page.locator("#menu-delete").click();
+  await expect(page.locator("#confirm-pop-path")).toHaveText("queries");
   await page.locator("#confirm-ok").click();
   await node(page, "empty").click({ button: "right" });
   await page.locator("#menu-delete").click();

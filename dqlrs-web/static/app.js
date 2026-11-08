@@ -2332,7 +2332,7 @@ async function moveEntry(path) {
 async function deleteEntry(path, kind) {
   const label = path.split("/").pop();
   const message = kind === "dir" ? "Delete folder " + label + "?" : "Delete " + label + "?";
-  if (!(await confirmAction(message, { title: "Delete", okLabel: "Delete", danger: true }))) return;
+  if (!(await confirmAction(message, { title: "Delete", path, okLabel: "Delete", danger: true }))) return;
   clearTimeout(state.saveTimer);
   state.fileEpoch += 1;
   state.notedExternal = null;
@@ -5481,6 +5481,7 @@ function reportError(error) {
 
 const confirmPop = document.querySelector("#confirm-pop");
 const confirmTitle = document.querySelector("#confirm-pop-title");
+const confirmPath = document.querySelector("#confirm-pop-path");
 const confirmMessage = document.querySelector("#confirm-pop-message");
 const confirmOk = document.querySelector("#confirm-ok");
 const confirmCancel = document.querySelector("#confirm-cancel");
@@ -5493,9 +5494,11 @@ function settleConfirm(accepted) {
   if (pending) pending(accepted);
 }
 
-function confirmAction(message, { title = "Confirm", okLabel = "OK", danger = false } = {}) {
+function confirmAction(message, { title = "Confirm", path = "", okLabel = "OK", danger = false } = {}) {
   if (confirmPending) settleConfirm(false);
   confirmTitle.textContent = title;
+  confirmPath.textContent = path;
+  confirmPath.hidden = !path;
   confirmMessage.textContent = message;
   confirmOk.textContent = okLabel;
   confirmOk.classList.toggle("danger", danger);
