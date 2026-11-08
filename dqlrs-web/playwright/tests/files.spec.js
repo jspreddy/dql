@@ -80,22 +80,8 @@ test("renders markdown as formatted text and html as a live page", async ({ page
 });
 
 test("renders a mermaid diagram in a markdown file", async ({ page, app }, testInfo) => {
-  const mermaidRoot = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "node_modules", "mermaid");
-  await page.route("https://cdn.jsdelivr.net/npm/mermaid@12/**", async (route) => {
-    const url = new URL(route.request().url());
-    const rel = decodeURIComponent(url.pathname.replace(/^\/npm\/mermaid@12\//, ""));
-    const file = path.join(mermaidRoot, rel);
-    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) {
-      await route.abort();
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: "text/javascript",
-      headers: { "access-control-allow-origin": "*" },
-      body: fs.readFileSync(file),
-    });
-  });
+  const requested = [];
+  page.on("request", (request) => requested.push(request.url()));
   fs.mkdirSync(path.join(app.workspace, "docs"));
   fs.writeFileSync(
     path.join(app.workspace, "docs/diagram.md"),
@@ -123,6 +109,8 @@ test("renders a mermaid diagram in a markdown file", async ({ page, app }, testI
   await node(page, "docs/diagram.md").click();
   const diagram = page.locator(".doc-markdown pre.mermaid svg");
   await expect(diagram).toBeVisible();
+  expect(requested.some((url) => url.includes("/vendor/mermaid.js"))).toBe(true);
+  expect(requested.some((url) => url.includes("jsdelivr.net"))).toBe(false);
   const parser = diagram.locator("g.node", { hasText: "parse" });
   const note = diagram.locator("g.node", { hasText: "note" });
   const link = diagram.locator("path.flowchart-link").first();

@@ -1554,14 +1554,13 @@ window.addEventListener("message", (event) => {
   openFile(next);
 });
 
-const MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@12/dist/mermaid.esm.min.mjs";
 const mermaidSources = new WeakMap();
 let mermaidModule = null;
 let mermaidTicket = 0;
 
 async function loadMermaid() {
   if (!mermaidModule) {
-    const mod = await import(MERMAID_URL);
+    const mod = await import("mermaid");
     mermaidModule = mod.default;
   }
   return mermaidModule;

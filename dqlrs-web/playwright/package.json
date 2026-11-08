@@ -6,7 +6,6 @@
     "test": "playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "1.56.1",
-    "mermaid": "^12.3.0"
+    "@playwright/test": "1.56.1"
   }
 }
