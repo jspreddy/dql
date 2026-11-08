@@ -162,7 +162,7 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   );
   await pressMod(page, "A");
   await page.locator("#run").click();
-  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "51 affected" })).toBeVisible();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "51 rows inserted" })).toBeVisible();
 
   await page.locator("#table-search").evaluate((input, value) => {
     input.value = value;
@@ -216,7 +216,7 @@ test("table column headers stay put while rows scroll", async ({ page, app }) =>
   );
   await pressMod(page, "A");
   await page.locator("#run").click();
-  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "40 affected" })).toBeVisible();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "40 rows inserted" })).toBeVisible();
 
   await page.locator("#table-search").evaluate((input, value) => {
     input.value = value;
@@ -786,6 +786,35 @@ test("scrolls a wide result table sideways inside the card", async ({ page, app 
   await card.screenshot({
     path: playwrightArtifact(`result-table-scroll-end-${testInfo.project.name}.png`),
   });
+});
+
+test("names insert, update, delete, count, and drop results", async ({ page, app }) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, n NUMBER);`,
+      `INSERT INTO ${name} (id, n) VALUES ('a', 1), ('b', 2);`,
+      `UPDATE ${name} SET n = 9 WHERE id = 'a';`,
+      `DELETE FROM ${name} WHERE id = 'b';`,
+      `SCAN count(*) FROM ${name};`,
+      `DROP TABLE ${name};`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await openResultPane(page, "history");
+  const notes = page.locator('[data-testid="result-note"]');
+  await expect(notes.filter({ hasText: "2 rows inserted" })).toHaveCount(1);
+  await expect(notes.filter({ hasText: "one row updated" })).toHaveCount(1);
+  await expect(notes.filter({ hasText: "one row deleted" })).toHaveCount(1);
+  await expect(notes.filter({ hasText: /^one row$/ })).toHaveCount(1);
+  await expect(notes.filter({ hasText: "one table dropped" })).toHaveCount(1);
+  await expect(notes.filter({ hasText: "did not exist" })).toHaveCount(1);
 });
 
 function uniqueTable() {

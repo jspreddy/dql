@@ -1304,7 +1304,7 @@ test("shows a progress bar and a running gutter mark for a throttled insert", as
   await expect(page.locator("#run")).toBeVisible();
   await expect(page.locator("#run")).toBeEnabled();
   await expect(page.locator("#stop")).toBeHidden();
-  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "30 affected" })).toBeVisible();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "30 rows inserted" })).toBeVisible();
   await expect(page.locator('[data-testid="run-status-error"]')).toHaveCount(0);
 });
 
@@ -1351,7 +1351,7 @@ test("places a play button on the left of the run box and runs that range", asyn
   );
   await page.locator(".cm-line", { hasText: "DROP TABLE" }).dragTo(page.locator(".cm-line", { hasText: "VALUES" }));
   await page.locator("#run").click();
-  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "1 affected" })).toBeVisible();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "one row inserted" })).toBeVisible();
 
   await page.locator(".cm-line", { hasText: "INSERT INTO" }).dragTo(page.locator(".cm-line", { hasText: "SELECT * FROM" }));
   await page.locator(".run-float").click();

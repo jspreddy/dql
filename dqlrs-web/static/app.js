@@ -4267,10 +4267,45 @@ function explainPlan(steps) {
 
 function resultLabel(item) {
   if (!item.ok) return item.error || item.message || "failed";
-  if (item.kind === "affected") return (item.affected ?? 0) + " affected";
-  if (item.kind === "status" || item.kind === "schema" || item.kind === "text") return item.message || item.kind;
+  if (item.kind === "affected") return affectedLabel(item);
+  if (item.kind === "status" || item.kind === "schema" || item.kind === "text") {
+    return droppedLabel(item) || item.message || item.kind;
+  }
   if (item.kind === "items") return ((item.items || []).length) + " rows";
   return item.message || "ok";
+}
+
+function affectedLabel(item) {
+  const count = Number(item.affected ?? 0);
+  const statement = String(item.statement || "").trim();
+  const verb = (statement.match(/^(insert|delete|update|select|scan)\b/i) || [])[1];
+  const action = verb ? verb.toLowerCase() : "";
+  if (action === "insert") return `${amountPhrase(count, "row", "rows")} inserted`;
+  if (action === "delete") return `${amountPhrase(count, "row", "rows")} deleted`;
+  if (action === "update") return `${amountPhrase(count, "row", "rows")} updated`;
+  if ((action === "select" || action === "scan") && /\bcount\s*\(\s*\*\s*\)/i.test(statement)) {
+    return amountPhrase(count, "row", "rows");
+  }
+  return `${count} affected`;
+}
+
+function droppedLabel(item) {
+  const statement = String(item.statement || "").trim();
+  if (!/^drop\b/i.test(statement)) return "";
+  if (!/^Dropped\b/.test(String(item.message || ""))) return "";
+  const names = statement
+    .replace(/^drop\s+(?:localtable|temptable|dynamodb\s+table|table)\s+(?:if\s+exists\s+)?/i, "")
+    .replace(/;+\s*$/, "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+  return `${amountPhrase(Math.max(names.length, 1), "table", "tables")} dropped`;
+}
+
+function amountPhrase(count, singular, plural) {
+  const amount = Number.isFinite(count) ? count : 0;
+  if (amount === 1) return `one ${singular}`;
+  return `${amount} ${plural}`;
 }
 
 function describeCard(description, note, cache) {
