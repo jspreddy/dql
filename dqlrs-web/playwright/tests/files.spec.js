@@ -162,6 +162,22 @@ test("resizes the left nav from the edge handle", async ({ page }) => {
   expect(Math.abs(reset.width - 220)).toBeLessThan(8);
 });
 
+test("keeps the title icons on one row and the type pills below", async ({ page }, testInfo) => {
+  const title = await page.locator("#side-title").boundingBox();
+  const collapse = await page.locator("#collapse-tree").boundingBox();
+  const expand = await page.locator("#expand-tree").boundingBox();
+  const add = await page.locator("#new-file").boundingBox();
+  const filters = await page.locator("#file-filters").boundingBox();
+  const tree = await page.locator("#tree").boundingBox();
+  const centers = [title, collapse, expand, add].map((box) => box.y + box.height / 2);
+  expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(2);
+  expect(expand.x).toBeGreaterThan(collapse.x + collapse.width - 1);
+  expect(add.x).toBeGreaterThan(expand.x + expand.width - 1);
+  expect(filters.y).toBeGreaterThan(title.y + title.height);
+  expect(tree.y - (filters.y + filters.height)).toBeGreaterThanOrEqual(6);
+  await page.screenshot({ path: playwrightArtifact(`tree-title-${testInfo.project.name}.png`) });
+});
+
 test("starts with folders collapsed and folds them from the title bar", async ({ page }, testInfo) => {
   await page.reload();
   await expect(page.locator("#file-name")).toHaveText("edit.dql");

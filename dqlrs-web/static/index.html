@@ -101,37 +101,39 @@
       <div class="side-head">
         <span class="side-heading">
           <span id="side-title">Files</span>
-          <span id="tree-fold" class="tree-fold">
-            <button type="button" id="collapse-tree" title="Collapse all folders" aria-label="Collapse all folders">
+          <span id="side-tools" class="side-tools">
+            <span id="tree-fold" class="tree-fold">
+              <button type="button" id="collapse-tree" title="Collapse all folders" aria-label="Collapse all folders">
+                <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                  <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M3.5 6.6 8 2.8l4.5 3.8M3.5 11.2 8 7.4l4.5 3.8"/>
+                </svg>
+              </button>
+              <button type="button" id="expand-tree" title="Expand all folders" aria-label="Expand all folders">
+                <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                  <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M3.5 4.8 8 8.6l4.5-3.8M3.5 9.4 8 13.2l4.5-3.8"/>
+                </svg>
+              </button>
+            </span>
+            <button type="button" id="new-file" title="New .dql file" aria-label="New .dql file">+</button>
+            <button type="button" id="refresh-tables" class="hidden" title="Refresh the cached table list in the background" aria-label="Refresh cached tables">
               <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M3.5 6.6 8 2.8l4.5 3.8M3.5 11.2 8 7.4l4.5 3.8"/>
+                <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M13.2 8A5.2 5.2 0 1 1 11.6 4.3"/>
+                <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M13.4 2.2v3.1H10.3"/>
               </svg>
             </button>
-            <button type="button" id="expand-tree" title="Expand all folders" aria-label="Expand all folders">
-              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M3.5 4.8 8 8.6l4.5-3.8M3.5 9.4 8 13.2l4.5-3.8"/>
-              </svg>
-            </button>
-          </span>
-          <span id="file-filters" class="file-filters" role="group" aria-label="Filter by file type">
-            <button type="button" class="file-filter" data-type="csv" aria-pressed="false">CSV</button>
-            <button type="button" class="file-filter" data-type="json" aria-pressed="false">JSON</button>
-            <button type="button" class="file-filter" data-type="dql" aria-pressed="true">DQL</button>
-            <button type="button" class="file-filter" data-type="md" aria-pressed="false">Markdown</button>
-            <button type="button" class="file-filter" data-type="html" aria-pressed="false">HTML</button>
-          </span>
-          <button type="button" id="refresh-tables" class="hidden" title="Refresh the cached table list in the background" aria-label="Refresh cached tables">
-            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-              <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M13.2 8A5.2 5.2 0 1 1 11.6 4.3"/>
-              <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M13.4 2.2v3.1H10.3"/>
-            </svg>
-          </button>
-          <span id="table-cache" class="table-cache hidden" tabindex="0">
-            <span class="table-cache-age"></span>
-            <span class="table-cache-tip" role="tooltip"></span>
+            <span id="table-cache" class="table-cache hidden" tabindex="0">
+              <span class="table-cache-age"></span>
+              <span class="table-cache-tip" role="tooltip"></span>
+            </span>
           </span>
         </span>
-        <button type="button" id="new-file" title="New .dql file">+</button>
+        <span id="file-filters" class="file-filters" role="group" aria-label="Filter by file type">
+          <button type="button" class="file-filter" data-type="csv" aria-pressed="false">CSV</button>
+          <button type="button" class="file-filter" data-type="json" aria-pressed="false">JSON</button>
+          <button type="button" class="file-filter" data-type="dql" aria-pressed="true">DQL</button>
+          <button type="button" class="file-filter" data-type="md" aria-pressed="false">Markdown</button>
+          <button type="button" class="file-filter" data-type="html" aria-pressed="false">HTML</button>
+        </span>
       </div>
       <div id="tree" class="tree"></div>
       <div id="tables-nav" class="tables-nav hidden">
