@@ -81,6 +81,50 @@ test("renders markdown as formatted text and html as a live page", async ({ page
   await expect(page.locator("#file-name")).toHaveText("read.dql");
 });
 
+test("uses Noto Sans for interface text and keeps code in the monospace font", async ({ page, app }, testInfo) => {
+  fs.writeFileSync(
+    path.join(app.workspace, "font.md"),
+    ["# Harbor", "", "A paragraph of interface text with `code`.", "", "```mermaid", "flowchart LR", "  a[read]", "```", ""].join("\n"),
+  );
+  await page.reload();
+  await showTypes(page, ["md"]);
+  await reveal(page, "font.md");
+  await node(page, "font.md").click();
+  await expect(page.locator(".doc-markdown > p")).toHaveText("A paragraph of interface text with code.");
+  await page.evaluate(() => document.fonts.ready);
+  const fonts = await page.evaluate(() => {
+    const family = (selector) => getComputedStyle(document.querySelector(selector)).fontFamily;
+    return {
+      token: getComputedStyle(document.documentElement).getPropertyValue("--font").trim(),
+      mono: getComputedStyle(document.documentElement).getPropertyValue("--mono").trim(),
+      body: family("body"),
+      button: family("#mode-query"),
+      input: family("#title-search"),
+      markdown: family(".doc-markdown > p"),
+      code: family(".doc-markdown code"),
+      loaded: document.fonts.check('13px "Noto Sans"'),
+    };
+  });
+  expect(fonts.token).toBe('"Noto Sans", "Segoe UI", system-ui, sans-serif');
+  expect(fonts.mono).toBe('ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace');
+  expect(fonts.loaded).toBe(true);
+  for (const family of [fonts.body, fonts.button, fonts.input, fonts.markdown]) {
+    expect(family).toContain("Noto Sans");
+  }
+  expect(fonts.code).not.toContain("Noto Sans");
+  expect(fonts.code).toContain("ui-monospace");
+  const diagramLabel = await page.locator(".doc-markdown .nodeLabel").evaluate((el) => getComputedStyle(el).fontFamily);
+  expect(diagramLabel).not.toContain("Noto Sans");
+  expect(diagramLabel.toLowerCase()).toContain("trebuchet");
+  await page.screenshot({ path: playwrightArtifact(`noto-sans-${testInfo.project.name}.png`) });
+
+  await reveal(page, "queries/read.dql");
+  await node(page, "queries/read.dql").click();
+  const editor = await page.locator(".cm-scroller").evaluate((el) => getComputedStyle(el).fontFamily);
+  expect(editor).not.toContain("Noto Sans");
+  expect(editor).toContain("ui-monospace");
+});
+
 test("renders a mermaid diagram in a markdown file", async ({ page, app }, testInfo) => {
   const requested = [];
   page.on("request", (request) => requested.push(request.url()));

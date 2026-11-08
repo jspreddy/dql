@@ -1,5 +1,5 @@
 :root {
-  --font: "Segoe UI", system-ui, sans-serif;
+  --font: "Noto Sans", "Segoe UI", system-ui, sans-serif;
   --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --row: 22px;
 }
