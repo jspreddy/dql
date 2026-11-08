@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 BASE = "origin/v-rust"
-DEFAULT_COUNT = 50
+DEFAULT_COUNT = 100
 DEFAULT_CUTOFF = "1w"
 _DURATION = re.compile(r"^(\d+)([wdhms])?$", re.IGNORECASE)
 _DURATION_UNITS = {

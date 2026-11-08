@@ -1,6 +1,6 @@
 ---
 name: git-graph
-description: Render one SVG of remote branches on top of origin/v-rust. Use when the user asks for a git graph, a branch picture, or changes above v-rust. The script defaults to 50 commits and 1 week, whichever comes first. Pass -n/--count when the user names a commit limit and -d/--cutoff when the user names a date or a cutoff. Both limits can be passed together. Run only when asked.
+description: Render one SVG of remote branches on top of origin/v-rust. Use when the user asks for a git graph, a branch picture, or changes above v-rust. The script defaults to 100 commits and 1 week, whichever comes first. Pass -n/--count when the user names a commit limit and -d/--cutoff when the user names a date or a cutoff. Both limits can be passed together. Run only when asked.
 ---
 
 # Git graph
@@ -17,7 +17,7 @@ That will create an svg file and print its path. Show the file in the chat windo
 
 Pass an option only when the user provides values.
 
-With no flags, the script uses `-n 50 -d 1w`. It stops at 50 commits or one week before `origin/v-rust`, whichever comes first.
+With no flags, the script uses `-n 100 -d 1w`. It stops at 100 commits or one week before `origin/v-rust`, whichever comes first.
 
 - `-n` / `--count` is the commit count. It limits how many commits snapshot script draws.
 
