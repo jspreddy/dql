@@ -3072,6 +3072,11 @@ body.results-resizing * {
 
 .doc-markdown .mermaid svg { max-width: 100%; height: auto; }
 
+:is(.doc-markdown, #mermaid-screen) .nodeLabel,
+:is(.doc-markdown, #mermaid-screen) .nodeLabel p {
+  overflow-wrap: anywhere;
+}
+
 :is(.doc-markdown, #mermaid-screen) svg .node { cursor: pointer; }
 
 :is(.doc-markdown, #mermaid-screen) svg.chain .node,

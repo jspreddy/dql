@@ -258,6 +258,65 @@ test("renders a mermaid diagram in a markdown file", async ({ page, app }, testI
   await expect(screen).toBeHidden();
 });
 
+test("wraps mermaid node text inside a taller box", async ({ page, app }, testInfo) => {
+  fs.mkdirSync(path.join(app.workspace, "docs"));
+  fs.writeFileSync(
+    path.join(app.workspace, "docs/wrap.md"),
+    [
+      "# Wrap",
+      "",
+      "```mermaid",
+      "flowchart LR",
+      "  a[\"Alpha is a short title\"]",
+      "  b[\"This label has several words that wrap and the last line might be clipped by the box\"]",
+      "  c[\"OneVeryLongUnbrokenTokenThatCannotWrapNaturallyAndShouldStillFit\"]",
+      "```",
+      "",
+    ].join("\n"),
+  );
+  await page.reload();
+  await showTypes(page, ["md"]);
+  await reveal(page, "docs/wrap.md");
+  await node(page, "docs/wrap.md").click();
+  const diagram = page.locator(".doc-markdown pre.mermaid");
+  const longNode = diagram.locator("g.node", { hasText: "StillFit" });
+  await expect(longNode).toBeVisible();
+  await expect(longNode).toContainText("OneVeryLongUnbrokenTokenThatCannotWrapNaturallyAndShouldStillFit");
+  const pageFit = await labelFits(longNode);
+  expect(pageFit.height).toBeGreaterThan(80);
+  expect(pageFit.pastRight).toBeLessThan(0);
+  expect(pageFit.pastBottom).toBeLessThan(0);
+  expect(pageFit.clipped).toBe(false);
+  await diagram.screenshot({ path: playwrightArtifact(`mermaid-wrap-${testInfo.project.name}.png`) });
+
+  await page.locator(".doc-markdown .mermaid-expand").click();
+  const screenNode = page.locator("#mermaid-screen-canvas g.node", { hasText: "StillFit" });
+  await expect(screenNode).toBeVisible();
+  const screenFit = await labelFits(screenNode);
+  expect(screenFit.height).toBeGreaterThan(40);
+  expect(screenFit.pastRight).toBeLessThan(0);
+  expect(screenFit.pastBottom).toBeLessThan(0);
+  expect(screenFit.clipped).toBe(false);
+  await page.keyboard.press("Escape");
+});
+
+async function labelFits(locator) {
+  return locator.evaluate((node) => {
+    const shape = node.querySelector("rect");
+    const label = node.querySelector(".nodeLabel");
+    const frame = node.querySelector("foreignObject");
+    const inner = frame?.firstElementChild;
+    const box = shape.getBoundingClientRect();
+    const text = label.getBoundingClientRect();
+    return {
+      height: box.height,
+      pastRight: text.right - box.right,
+      pastBottom: text.bottom - box.bottom,
+      clipped: inner ? inner.scrollHeight > frame.clientHeight + 1 : false,
+    };
+  });
+}
+
 test("resolves relative links from the file's folder", async ({ page, app }) => {
   fs.mkdirSync(path.join(app.workspace, "docs/nested"), { recursive: true });
   fs.writeFileSync(
