@@ -2344,18 +2344,21 @@ function renderLint(host) {
   host.append(panel);
 }
 
-function fastForwardIcon() {
+function materialIcon(name, className) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "ff-icon");
+  svg.setAttribute("class", className ? `icon ${className}` : "icon");
+  svg.setAttribute("viewBox", "0 0 24 24");
   svg.setAttribute("width", "14");
   svg.setAttribute("height", "14");
-  svg.setAttribute("viewBox", "0 0 16 16");
   svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("fill", "currentColor");
-  path.setAttribute("d", "M1.6 3.1 7.2 8 1.6 12.9Zm6.8 0L14 8 8.4 12.9Z");
-  svg.append(path);
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `/vendor/icons/${name}.svg#icon`);
+  svg.append(use);
   return svg;
+}
+
+function fastForwardIcon() {
+  return materialIcon("fast_forward", "ff-icon");
 }
 
 function showOpenFile(path) {
@@ -3688,24 +3691,7 @@ function schemaIconButton(label) {
   button.setAttribute("aria-haspopup", "dialog");
   button.setAttribute("aria-controls", "schema-pop");
   button.setAttribute("aria-expanded", "false");
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("width", "14");
-  svg.setAttribute("height", "14");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("aria-hidden", "true");
-  const frame = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  frame.setAttribute("fill", "none");
-  frame.setAttribute("stroke", "currentColor");
-  frame.setAttribute("stroke-width", "1.4");
-  frame.setAttribute("stroke-linejoin", "round");
-  frame.setAttribute("d", "M2.5 3.2h11v9.6h-11z");
-  const grid = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  grid.setAttribute("fill", "none");
-  grid.setAttribute("stroke", "currentColor");
-  grid.setAttribute("stroke-width", "1.4");
-  grid.setAttribute("d", "M2.5 6.4h11M6.7 3.2v9.6");
-  svg.append(frame, grid);
-  button.append(svg);
+  button.append(materialIcon("table_chart"));
   return button;
 }
 
@@ -4126,17 +4112,7 @@ function cacheIcon() {
   const icon = document.createElement("span");
   icon.className = "describe-cache-icon";
   icon.setAttribute("aria-hidden", "true");
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  const mark = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  mark.setAttribute("fill", "none");
-  mark.setAttribute("stroke", "currentColor");
-  mark.setAttribute("stroke-width", "1.4");
-  mark.setAttribute("stroke-linecap", "round");
-  mark.setAttribute("stroke-linejoin", "round");
-  mark.setAttribute("d", "M8 2.6a5.4 5.4 0 1 1 0 10.8A5.4 5.4 0 0 1 8 2.6ZM8 4.9V8l2.1 1.3");
-  svg.append(mark);
-  icon.append(svg);
+  icon.append(materialIcon("schedule"));
   return icon;
 }
 
@@ -4179,16 +4155,7 @@ function matchMark() {
   const icon = document.createElement("span");
   icon.className = "describe-match-mark";
   icon.setAttribute("aria-hidden", "true");
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "currentColor");
-  path.setAttribute("stroke-width", "1.4");
-  path.setAttribute("stroke-linecap", "round");
-  path.setAttribute("d", "M7.1 3.1a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7ZM10.1 10.1 13 13");
-  svg.append(path);
-  icon.append(svg);
+  icon.append(materialIcon("search"));
   return icon;
 }
 
@@ -4383,23 +4350,7 @@ function keyIcon(role, title) {
   icon.title = title;
   icon.setAttribute("role", "img");
   icon.setAttribute("aria-label", title);
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 12 12");
-  svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "currentColor");
-  path.setAttribute("stroke-width", "1.3");
-  path.setAttribute("stroke-linecap", "round");
-  path.setAttribute("stroke-linejoin", "round");
-  path.setAttribute(
-    "d",
-    role === "hash"
-      ? "M4.2 1.2v9.6M7.8 1.2v9.6M1.3 4.2h9.4M1.3 7.8h9.4"
-      : "M6 1.3v9.4M6 1.3 3.7 3.6M6 1.3l2.3 2.3M6 10.7 3.7 8.4M6 10.7l2.3-2.3",
-  );
-  svg.append(path);
-  icon.append(svg);
+  icon.append(materialIcon(role === "hash" ? "tag" : "swap_vert"));
   return icon;
 }
 
@@ -4938,26 +4889,7 @@ function rowPeekButton(row, columns) {
   button.setAttribute("aria-label", "Show row JSON");
   button.setAttribute("aria-haspopup", "dialog");
   button.setAttribute("aria-controls", "row-pop");
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("width", "14");
-  svg.setAttribute("height", "14");
-  svg.setAttribute("aria-hidden", "true");
-  const outline = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  outline.setAttribute("fill", "none");
-  outline.setAttribute("stroke", "currentColor");
-  outline.setAttribute("stroke-width", "1.4");
-  outline.setAttribute("stroke-linejoin", "round");
-  outline.setAttribute("d", "M1.4 8s2.5-4.2 6.6-4.2S14.6 8 14.6 8s-2.5 4.2-6.6 4.2S1.4 8 1.4 8z");
-  const pupil = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-  pupil.setAttribute("cx", "8");
-  pupil.setAttribute("cy", "8");
-  pupil.setAttribute("r", "1.7");
-  pupil.setAttribute("fill", "none");
-  pupil.setAttribute("stroke", "currentColor");
-  pupil.setAttribute("stroke-width", "1.4");
-  svg.append(outline, pupil);
-  button.append(svg);
+  button.append(materialIcon("visibility"));
   button.addEventListener("click", (event) => {
     event.stopPropagation();
     openRowJson(row, columns);

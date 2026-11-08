@@ -800,6 +800,8 @@ body.side-resizing * {
   cursor: pointer;
 }
 
+.icon { display: block; flex: none; }
+
 .ff-icon { display: block; flex: none; }
 
 #run-file:hover { background: var(--danger-wash); }
