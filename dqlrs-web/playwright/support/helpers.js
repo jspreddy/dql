@@ -12,6 +12,15 @@ export function node(page, filePath) {
   return page.locator(`[data-testid="${id}"]`);
 }
 
+export async function reveal(page, filePath) {
+  const parts = String(filePath).split("/");
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    const dir = parts.slice(0, i + 1).join("/");
+    const child = parts.slice(0, i + 2).join("/");
+    if (await node(page, child).count() === 0) await node(page, dir).click();
+  }
+}
+
 export async function themeColor(page, name) {
   return page.evaluate((variable) => {
     const probe = document.createElement("span");
@@ -39,6 +48,7 @@ export async function openResultPane(page, pane) {
 export async function openApp(page, app) {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await reveal(page, "queries/edit.dql");
 }
 
 export async function replaceEditor(page, text) {

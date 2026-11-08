@@ -72,7 +72,6 @@ const state = {
   mode: "query",
   path: "",
   expanded: new Set(["."]),
-  expandedOnce: false,
   tree: null,
   saveTimer: 0,
   lintTimer: 0,
@@ -1035,8 +1034,8 @@ async function boot() {
       state.booted = true;
       return;
     }
-    const file = treeEl.querySelector('.node[data-kind="file"]');
-    if (file) file.click();
+    const file = state.tree ? firstFile(visibleTree(state.tree)) : null;
+    if (file) await openFile(file.path);
     state.booted = true;
   } catch (error) {
     reportError(error);
@@ -1159,6 +1158,7 @@ function setMode(mode) {
   document.querySelector("#tree").classList.toggle("hidden", tables);
   document.querySelector("#tables-nav").classList.toggle("hidden", !tables);
   document.querySelector("#new-file").classList.toggle("hidden", tables);
+  document.querySelector("#tree-fold").classList.toggle("hidden", tables);
   document.querySelector("#file-filters").classList.toggle("hidden", tables);
   document.querySelector("#refresh-tables").classList.toggle("hidden", !tables);
   if (!tables) document.querySelector("#table-cache").classList.add("hidden");
@@ -1178,10 +1178,6 @@ function setMode(mode) {
 async function refreshTree() {
   const root = await api("/api/tree");
   state.tree = root;
-  if (!state.expandedOnce) {
-    expandAll(root);
-    state.expandedOnce = true;
-  }
   paintTree();
 }
 
@@ -1215,10 +1211,32 @@ function markTreeSelection() {
   }
 }
 
+function firstFile(node) {
+  for (const child of node.children || []) {
+    if (child.type === "file") return child;
+    const nested = firstFile(child);
+    if (nested) return nested;
+  }
+  return null;
+}
+
 function expandAll(node) {
   if (node.type === "dir") state.expanded.add(node.path);
   for (const child of node.children || []) expandAll(child);
 }
+
+function collapseTree() {
+  state.expanded = new Set(["."]);
+  paintTree();
+}
+
+function expandTree() {
+  if (state.tree) expandAll(state.tree);
+  paintTree();
+}
+
+document.querySelector("#collapse-tree").addEventListener("click", collapseTree);
+document.querySelector("#expand-tree").addEventListener("click", expandTree);
 
 function renderDir(node, isRoot) {
   const list = document.createElement("ul");

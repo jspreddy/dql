@@ -813,6 +813,29 @@ body.side-resizing * {
   min-width: 0;
 }
 
+.tree-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+#collapse-tree,
+#expand-tree {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+#collapse-tree svg,
+#expand-tree svg { display: block; }
+
+#collapse-tree:hover,
+#expand-tree:hover { color: var(--ink); }
+
 .file-filters {
   display: flex;
   flex-wrap: wrap;

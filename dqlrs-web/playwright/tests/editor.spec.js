@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
-import { lineByText, lineOverlaps, mod, node, openApp, openResultPane, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
+import { lineByText, lineOverlaps, mod, node, openApp, openResultPane, pressMod, replaceEditor, reveal, themeColor } from "../support/helpers.js";
 
 // dragTo jumps in one move. Chrome sometimes delivers that move after mouseup,
 // so the gesture collapses to a cursor. Step the pointer while the button is down.
@@ -371,6 +371,7 @@ test("saves highlight toggles and switches write bands to a gutter bar", async (
   expect(stored).toEqual({ minimalWrite: true, evenOdd: false });
 
   await page.reload();
+  await reveal(page, "queries/read.dql");
   await page.locator("#settings-toggle").click();
   await expect(page.locator("#settings-pop")).toBeVisible();
   await expect(page.locator("#opt-minimal-write")).toBeChecked();
@@ -531,6 +532,7 @@ test("runs every dql file in a folder from the context menu", async ({ page, app
   fs.writeFileSync(path.join(app.workspace, folder, "rows.csv"), "id,label\nleak,nope\n");
   await page.reload();
   await expect(page.locator("#file-name")).toBeVisible();
+  await reveal(page, `${folder}/one.dql`);
   await node(page, `${folder}/one.dql`).click({ button: "right" });
   await expect(page.locator("#menu-run-folder")).toHaveCount(0);
   await page.locator("#file-name").click();
@@ -547,6 +549,7 @@ test("runs every dql file in a folder from the context menu", async ({ page, app
   await node(page, `${folder}/two.dql`).click();
   await expect(page.locator(".query-result").filter({ hasText: "from-b" })).toHaveCount(1);
   await expect(page.locator(".query-result").filter({ hasText: "from-a" })).toHaveCount(0);
+  await reveal(page, `${folder}/nested/three.dql`);
   await node(page, `${folder}/nested/three.dql`).click();
   await expect(page.locator(".query-result").filter({ hasText: "from-c" })).toHaveCount(1);
   await expect(page.locator(".query-result").filter({ hasText: "from-b" })).toHaveCount(0);
@@ -596,9 +599,11 @@ test("clears stored results for each file under a right-clicked folder", async (
   await expect.poll(() => results().length).toBe(1);
   expectSealed(results()[0], [kept, "CREATE"]);
 
+  await reveal(page, `${folder}/one.dql`);
   await node(page, `${folder}/one.dql`).click();
   await expect(page.locator("#file-name")).toHaveText("one.dql");
   await expect(page.locator(".query-result")).toHaveCount(0);
+  await reveal(page, "queries/edit.dql");
   await node(page, "queries/edit.dql").click();
   await expect(page.locator(".query-result")).toHaveCount(1);
 });
@@ -691,6 +696,7 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   await page.locator("#run").click();
   await expect(page.locator(".query-result")).toHaveCount(1);
   await expect(page.locator("#result-count")).toHaveText("1 result");
+  await reveal(page, "queries/edit.dql");
   await node(page, "queries/edit.dql").click({ button: "right" });
   await page.locator("#menu-clear-results").click();
   await expect(page.locator(".query-result")).toHaveCount(0);

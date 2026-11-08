@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
-import { handleDialogs, node, openApp, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
+import { handleDialogs, node, openApp, pressMod, replaceEditor, reveal, themeColor } from "../support/helpers.js";
 
 test.beforeEach(async ({ page, app }) => {
   await openApp(page, app);
@@ -43,6 +43,7 @@ test("renders markdown as formatted text and html as a live page", async ({ page
   );
   await page.reload();
   await showTypes(page, ["md", "html"]);
+  await reveal(page, "docs/README.md");
   await expect(node(page, "docs/README.md").locator(".file-kind")).toHaveText("md");
   await expect(node(page, "docs/page.html").locator(".file-kind")).toHaveText("html");
   await node(page, "docs/README.md").click();
@@ -71,6 +72,7 @@ test("renders markdown as formatted text and html as a live page", async ({ page
   await expect(page.locator(".doc-frame")).toHaveAttribute("sandbox", "allow-scripts allow-popups");
   await page.screenshot({ path: playwrightArtifact(`html-view-${testInfo.project.name}.png`) });
 
+  await reveal(page, "queries/read.dql");
   await node(page, "queries/read.dql").click();
   await expect(page.locator("#doc-view")).toBeHidden();
   await expect(page.locator(".editor")).toBeVisible();
@@ -99,12 +101,14 @@ test("resolves relative links from the file's folder", async ({ page, app }) => 
   );
   await page.reload();
   await showTypes(page, ["md", "html"]);
+  await reveal(page, "docs/README.md");
 
   await node(page, "docs/README.md").click();
   await page.locator(".doc-markdown a", { hasText: "the outside note" }).click();
   await expect(page.locator("#doc-title")).toHaveText("outside.md");
   await expect(page.locator(".doc-markdown h1")).toHaveText("Outside");
 
+  await reveal(page, "docs/README.md");
   await node(page, "docs/README.md").click();
   await page.locator(".doc-markdown a", { hasText: "the page" }).click();
   const frame = page.frameLocator(".doc-frame");
@@ -114,6 +118,7 @@ test("resolves relative links from the file's folder", async ({ page, app }) => 
   await expect(page.locator("#doc-title")).toHaveText("note.md");
   await expect(page.locator(".doc-markdown h1")).toHaveText("Nested note");
 
+  await reveal(page, "docs/nested/page.html");
   await node(page, "docs/nested/page.html").click();
   await frame.locator("#up").click();
   await expect(page.locator("#doc-title")).toHaveText("README.md");
@@ -157,6 +162,32 @@ test("resizes the left nav from the edge handle", async ({ page }) => {
   expect(Math.abs(reset.width - 220)).toBeLessThan(8);
 });
 
+test("starts with folders collapsed and folds them from the title bar", async ({ page }, testInfo) => {
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await expect(node(page, "queries")).toBeVisible();
+  await expect(node(page, "empty")).toBeVisible();
+  await expect(node(page, "queries/edit.dql")).toHaveCount(0);
+  await page.screenshot({ path: playwrightArtifact(`tree-collapsed-${testInfo.project.name}.png`) });
+  await expect(page.locator("#collapse-tree")).toBeVisible();
+  await expect(page.locator("#expand-tree")).toBeVisible();
+
+  await page.locator("#expand-tree").click();
+  await expect(node(page, "queries/edit.dql")).toBeVisible();
+  await expect(node(page, "queries/read.dql")).toBeVisible();
+  await expect(node(page, "queries/functions.dql")).toBeVisible();
+  await page.screenshot({ path: playwrightArtifact(`tree-expanded-${testInfo.project.name}.png`) });
+
+  await page.locator("#collapse-tree").click();
+  await expect(node(page, "queries")).toBeVisible();
+  await expect(node(page, "queries/edit.dql")).toHaveCount(0);
+
+  await page.locator("#mode-tables").click();
+  await expect(page.locator("#tree-fold")).toBeHidden();
+  await page.locator("#mode-query").click();
+  await expect(page.locator("#collapse-tree")).toBeVisible();
+});
+
 test("shows nested files, an empty folder, and opens a file", async ({ page }) => {
   await expect(node(page, "empty")).toBeVisible();
   await expect(node(page, "queries")).toBeVisible();
@@ -185,6 +216,8 @@ test("does not refetch the tree while opening files or folders", async ({ page, 
   const afterBoot = treeFetches;
   expect(afterBoot).toBeGreaterThan(0);
 
+  await page.locator("#expand-tree").click();
+  await expect(node(page, "queries/edit.dql")).toBeVisible();
   await node(page, "queries").click();
   await expect(node(page, "queries/edit.dql")).toHaveCount(0);
   await node(page, "queries").click();
@@ -221,6 +254,7 @@ test("filters files with toggleable type pills and remembers them", async ({ pag
   for (const type of ["csv", "json", "md", "html"]) {
     await expect(page.locator(`.file-filter[data-type="${type}"]`)).toHaveAttribute("aria-pressed", "false");
   }
+  await reveal(page, "queries/edit.dql");
   await expect(node(page, "queries/edit.dql")).toBeVisible();
   await expect(node(page, "users.csv")).toHaveCount(0);
   await expect(node(page, "cities.json")).toHaveCount(0);
@@ -382,6 +416,7 @@ test("shows csv and json files as tables", async ({ page, app }, testInfo) => {
   await expect(page.locator('#schema-table tbody tr[data-column="n"] .schema-sample')).toHaveText("0");
   await page.keyboard.press("Escape");
 
+  await reveal(page, "queries/read.dql");
   await node(page, "queries/read.dql").click();
   await expect(page.locator("#file-name")).toHaveText("read.dql");
   await expect(page.locator("#file-rows")).toBeHidden();
@@ -519,6 +554,7 @@ test("runs the selected file from the context menu", async ({ page, app }, testI
   }, { path: file, text });
   if (error) throw new Error(error);
   await page.reload();
+  await reveal(page, "queries/read.dql");
   await node(page, "queries/read.dql").click();
   await expect(page.locator("#file-name")).toHaveText("read.dql");
   await node(page, file).click({ button: "right" });

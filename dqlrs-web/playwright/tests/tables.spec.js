@@ -14,7 +14,7 @@ test("opens the table browser from the #tables hash", async ({ page, app }) => {
   const heading = await page.locator(".side-heading").evaluate((row) =>
     [...row.children].map((child) => child.id),
   );
-  expect(heading).toEqual(["side-title", "file-filters", "refresh-tables", "table-cache"]);
+  expect(heading).toEqual(["side-title", "tree-fold", "file-filters", "refresh-tables", "table-cache"]);
   await expect(page.locator("#tree")).toBeHidden();
   await expect(page.locator("#tables-nav")).toBeVisible();
   await expect(page.locator(".side #table-list")).toBeVisible();
