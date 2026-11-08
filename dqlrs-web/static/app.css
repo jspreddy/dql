@@ -3024,13 +3024,23 @@ body.results-resizing * {
 }
 
 .mermaid-screen-stage {
+  position: relative;
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
 
 .mermaid-screen-stage.is-panning { cursor: grabbing; }
+
+.mermaid-screen-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
 
 .mermaid-screen-canvas svg {
   display: block;

@@ -1752,6 +1752,8 @@ let mermaidScreenBlock = null;
 let mermaidScreenScale = 1;
 let mermaidScreenFit = 1;
 let mermaidScreenBase = { w: 1, h: 1 };
+let mermaidX = 0;
+let mermaidY = 0;
 let mermaidPan = null;
 
 function closeMermaidScreen() {
@@ -1774,38 +1776,35 @@ function mountMermaidScreen(svg) {
   };
 }
 
-function applyMermaidScale(next) {
+function paintMermaid() {
+  mermaidCanvas.style.width = `${mermaidScreenBase.w * mermaidScreenScale}px`;
+  mermaidCanvas.style.height = `${mermaidScreenBase.h * mermaidScreenScale}px`;
+  mermaidCanvas.style.transform = `translate(${mermaidX}px, ${mermaidY}px)`;
+  const fit = mermaidScreenFit || mermaidScreenScale;
+  mermaidZoomLabel.textContent = `${Math.round((mermaidScreenScale / fit) * 100)}%`;
+}
+
+function zoomMermaidAt(next, originX, originY) {
   const scale = Math.min(8, Math.max(0.15, next));
-  const prevW = mermaidCanvas.offsetWidth || mermaidScreenBase.w * mermaidScreenScale;
-  const prevH = mermaidCanvas.offsetHeight || mermaidScreenBase.h * mermaidScreenScale;
-  const marginLeft = parseFloat(mermaidCanvas.style.marginLeft) || 0;
-  const marginTop = parseFloat(mermaidCanvas.style.marginTop) || 0;
-  const cx = mermaidStage.scrollLeft + mermaidStage.clientWidth / 2 - marginLeft;
-  const cy = mermaidStage.scrollTop + mermaidStage.clientHeight / 2 - marginTop;
-  const relX = prevW > 0 ? cx / prevW : 0.5;
-  const relY = prevH > 0 ? cy / prevH : 0.5;
+  const ratio = scale / mermaidScreenScale;
+  mermaidX = originX - (originX - mermaidX) * ratio;
+  mermaidY = originY - (originY - mermaidY) * ratio;
   mermaidScreenScale = scale;
-  const width = mermaidScreenBase.w * scale;
-  const height = mermaidScreenBase.h * scale;
-  mermaidCanvas.style.width = `${width}px`;
-  mermaidCanvas.style.height = `${height}px`;
-  const extraX = Math.max(0, mermaidStage.clientWidth - width);
-  const extraY = Math.max(0, mermaidStage.clientHeight - height);
-  mermaidCanvas.style.marginLeft = `${extraX / 2}px`;
-  mermaidCanvas.style.marginRight = `${extraX / 2}px`;
-  mermaidCanvas.style.marginTop = `${extraY / 2}px`;
-  mermaidCanvas.style.marginBottom = `${extraY / 2}px`;
-  mermaidStage.scrollLeft = relX * width - mermaidStage.clientWidth / 2 + extraX / 2;
-  mermaidStage.scrollTop = relY * height - mermaidStage.clientHeight / 2 + extraY / 2;
-  const fit = mermaidScreenFit || scale;
-  mermaidZoomLabel.textContent = `${Math.round((scale / fit) * 100)}%`;
+  paintMermaid();
+}
+
+function zoomMermaidBy(factor) {
+  zoomMermaidAt(mermaidScreenScale * factor, mermaidStage.clientWidth / 2, mermaidStage.clientHeight / 2);
 }
 
 function fitMermaidScreen() {
   const availW = Math.max(mermaidStage.clientWidth - 48, 1);
   const availH = Math.max(mermaidStage.clientHeight - 48, 1);
   mermaidScreenFit = Math.min(availW / mermaidScreenBase.w, availH / mermaidScreenBase.h);
-  applyMermaidScale(mermaidScreenFit);
+  mermaidScreenScale = mermaidScreenFit;
+  mermaidX = (mermaidStage.clientWidth - mermaidScreenBase.w * mermaidScreenScale) / 2;
+  mermaidY = (mermaidStage.clientHeight - mermaidScreenBase.h * mermaidScreenScale) / 2;
+  paintMermaid();
 }
 
 function openMermaidScreen(block) {
@@ -1825,12 +1824,13 @@ function refreshOpenMermaidScreen() {
     return;
   }
   const scale = mermaidScreenScale;
-  const left = mermaidStage.scrollLeft;
-  const top = mermaidStage.scrollTop;
+  const x = mermaidX;
+  const y = mermaidY;
   mountMermaidScreen(svg);
-  applyMermaidScale(scale);
-  mermaidStage.scrollLeft = left;
-  mermaidStage.scrollTop = top;
+  mermaidScreenScale = scale;
+  mermaidX = x;
+  mermaidY = y;
+  paintMermaid();
 }
 
 function attachMermaidExpand(block) {
@@ -1867,51 +1867,64 @@ function endMermaidPan(event) {
 }
 
 if (mermaidScreen && mermaidStage && mermaidCanvas) {
-  document.querySelector("#mermaid-zoom-in")?.addEventListener("click", () => {
-    applyMermaidScale(mermaidScreenScale * 1.25);
-  });
-  document.querySelector("#mermaid-zoom-out")?.addEventListener("click", () => {
-    applyMermaidScale(mermaidScreenScale / 1.25);
-  });
+  document.querySelector("#mermaid-zoom-in")?.addEventListener("click", () => zoomMermaidBy(1.25));
+  document.querySelector("#mermaid-zoom-out")?.addEventListener("click", () => zoomMermaidBy(1 / 1.25));
   document.querySelector("#mermaid-zoom-fit")?.addEventListener("click", () => fitMermaidScreen());
   document.querySelector("#mermaid-screen-close")?.addEventListener("click", () => closeMermaidScreen());
   mermaidScreen.addEventListener("close", () => {
     mermaidScreenBlock = null;
     mermaidCanvas.replaceChildren();
   });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !mermaidScreen.open) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeMermaidScreen();
+  }, true);
   mermaidScreen.addEventListener("keydown", (event) => {
-    if (event.key === "+" || event.key === "=") {
+    if (event.key === "Escape") {
       event.preventDefault();
-      applyMermaidScale(mermaidScreenScale * 1.25);
+      event.stopPropagation();
+      closeMermaidScreen();
+    } else if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      zoomMermaidBy(1.25);
     } else if (event.key === "-" || event.key === "_") {
       event.preventDefault();
-      applyMermaidScale(mermaidScreenScale / 1.25);
+      zoomMermaidBy(1 / 1.25);
     } else if (event.key === "0") {
       event.preventDefault();
       fitMermaidScreen();
     }
   });
-  mermaidStage.addEventListener("wheel", (event) => {
+  mermaidScreen.addEventListener("wheel", (event) => {
     if (!mermaidScreen.open) return;
     event.preventDefault();
-    applyMermaidScale(mermaidScreenScale * Math.exp(-event.deltaY * 0.0015));
+    const rect = mermaidStage.getBoundingClientRect();
+    zoomMermaidAt(
+      mermaidScreenScale * Math.exp(-event.deltaY * 0.0015),
+      event.clientX - rect.left,
+      event.clientY - rect.top,
+    );
   }, { passive: false });
   mermaidStage.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || !mermaidScreen.open) return;
+    event.preventDefault();
     mermaidPan = {
       id: event.pointerId,
       x: event.clientX,
       y: event.clientY,
-      left: mermaidStage.scrollLeft,
-      top: mermaidStage.scrollTop,
+      left: mermaidX,
+      top: mermaidY,
     };
     mermaidStage.classList.add("is-panning");
     mermaidStage.setPointerCapture(event.pointerId);
   });
   mermaidStage.addEventListener("pointermove", (event) => {
     if (!mermaidPan || event.pointerId !== mermaidPan.id) return;
-    mermaidStage.scrollLeft = mermaidPan.left - (event.clientX - mermaidPan.x);
-    mermaidStage.scrollTop = mermaidPan.top - (event.clientY - mermaidPan.y);
+    mermaidX = mermaidPan.left + (event.clientX - mermaidPan.x);
+    mermaidY = mermaidPan.top + (event.clientY - mermaidPan.y);
+    paintMermaid();
   });
   mermaidStage.addEventListener("pointerup", endMermaidPan);
   mermaidStage.addEventListener("pointercancel", endMermaidPan);
