@@ -1,0 +1,135 @@
+-- Harbor & Pine: staff, work orders, parts, and notes in one table.
+-- A building holds its staff and the jobs opened there.
+-- A work order holds the parts used and the notes left on it.
+-- by-assignee is one person's queue.
+-- by-status is the open board, in due-date order.
+
+DROP TABLE IF EXISTS hp_service;
+
+CREATE TABLE hp_service (
+  pk STRING HASH KEY,
+  sk STRING RANGE KEY
+) GLOBAL INDEX ('by-assignee', assignee STRING, sk STRING)
+  GLOBAL INDEX ('by-status', status STRING, due STRING);
+
+INSERT INTO hp_service (
+  pk='BLDG#pine',
+  sk='STAFF#mina',
+  kind='staff',
+  name='Mina Alvarez',
+  role='lead',
+  phone='+1-206-555-0190',
+  on_call=TRUE
+);
+
+INSERT INTO hp_service (
+  pk='BLDG#pine',
+  sk='STAFF#owen',
+  kind='staff',
+  name='Owen Blake',
+  role='tech',
+  phone='+1-503-555-0166',
+  on_call=FALSE
+);
+
+-- Open jobs sort by due date inside the building.
+INSERT INTO hp_service (
+  pk='BLDG#pine',
+  sk='WO#2026-07-02#w-9',
+  kind='work_order',
+  wo_id='w-9',
+  title='Replace the bath fan',
+  unit_id='UNIT#2a',
+  unit_name='2A',
+  assignee='mina',
+  status='open',
+  due='2026-07-02',
+  priority='high',
+  opened_by='guest'
+);
+
+INSERT INTO hp_service (
+  pk='BLDG#pine',
+  sk='WO#2026-07-18#w-12',
+  kind='work_order',
+  wo_id='w-12',
+  title='Paint the stair landing',
+  unit_id='UNIT#4b',
+  unit_name='4B',
+  assignee='owen',
+  status='open',
+  due='2026-07-18',
+  priority='low',
+  opened_by='manager'
+);
+
+INSERT INTO hp_service (
+  pk='BLDG#harbor',
+  sk='WO#2026-06-28#w-4',
+  kind='work_order',
+  wo_id='w-4',
+  title='Reset the keypad',
+  unit_id='UNIT#1',
+  unit_name='1',
+  assignee='mina',
+  status='done',
+  due='2026-06-28',
+  priority='high',
+  opened_by='guest',
+  closed_on='2026-06-28'
+);
+
+-- Parts and notes live under the job, so one query loads the ticket.
+INSERT INTO hp_service (
+  pk='WO#w-9',
+  sk='PART#fan-110',
+  kind='part',
+  wo_id='w-9',
+  sku='FAN-110',
+  label='Bath fan, 110 CFM',
+  qty=1,
+  cents=6400
+);
+
+INSERT INTO hp_service (
+  pk='WO#w-9',
+  sk='PART#screw-8',
+  kind='part',
+  wo_id='w-9',
+  sku='SCR-8',
+  label='Mounting screws',
+  qty=4,
+  cents=180
+);
+
+INSERT INTO hp_service (
+  pk='WO#w-9',
+  sk='NOTE#1',
+  kind='note',
+  wo_id='w-9',
+  author='mina',
+  body='Guest says it rattles after 10 minutes.',
+  at='2026-06-30T18:12:00Z'
+);
+
+-- Jobs opened at Pine Court.
+SELECT sk, title, assignee, status, due
+FROM hp_service
+WHERE pk = 'BLDG#pine' AND begins_with(sk, 'WO#');
+
+-- The open board, earliest due date first.
+SELECT sk, title, assignee, unit_name, due
+FROM hp_service
+WHERE status = 'open' AND begins_with(sk, 'WO#')
+USING by-status;
+
+-- Mina's queue, including the job she already closed.
+SELECT sk, title, status, due, unit_name
+FROM hp_service
+WHERE assignee = 'mina' AND begins_with(sk, 'WO#')
+USING by-assignee;
+
+-- Everything filed on work order w-9.
+SELECT sk, kind, label, body, qty, cents
+FROM hp_service
+WHERE pk = 'WO#w-9';
