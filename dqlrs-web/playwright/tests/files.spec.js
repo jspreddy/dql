@@ -79,6 +79,72 @@ test("renders markdown as formatted text and html as a live page", async ({ page
   await expect(page.locator("#file-name")).toHaveText("read.dql");
 });
 
+test("renders a mermaid diagram in a markdown file", async ({ page, app }, testInfo) => {
+  const mermaidRoot = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "node_modules", "mermaid");
+  await page.route("https://cdn.jsdelivr.net/npm/mermaid@12/**", async (route) => {
+    const url = new URL(route.request().url());
+    const rel = decodeURIComponent(url.pathname.replace(/^\/npm\/mermaid@12\//, ""));
+    const file = path.join(mermaidRoot, rel);
+    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) {
+      await route.abort();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "text/javascript",
+      headers: { "access-control-allow-origin": "*" },
+      body: fs.readFileSync(file),
+    });
+  });
+  fs.mkdirSync(path.join(app.workspace, "docs"));
+  fs.writeFileSync(
+    path.join(app.workspace, "docs/diagram.md"),
+    [
+      "# Shop flow",
+      "",
+      "A paragraph beside the diagram.",
+      "",
+      "```mermaid",
+      "flowchart LR",
+      "  reader[read] --> parser[parse]",
+      "  parser --> engine[run]",
+      "  aside[note]",
+      "```",
+      "",
+      "```sql",
+      "SELECT 1;",
+      "```",
+      "",
+    ].join("\n"),
+  );
+  await page.reload();
+  await showTypes(page, ["md"]);
+  await reveal(page, "docs/diagram.md");
+  await node(page, "docs/diagram.md").click();
+  const diagram = page.locator(".doc-markdown pre.mermaid svg");
+  await expect(diagram).toBeVisible();
+  const parser = diagram.locator("g.node", { hasText: "parse" });
+  const note = diagram.locator("g.node", { hasText: "note" });
+  const link = diagram.locator("path.flowchart-link").first();
+  await expect(parser).toBeVisible();
+  await expect(page.locator(".doc-markdown pre code")).toHaveText("SELECT 1;");
+  await parser.hover();
+  await expect(diagram).toHaveClass(/chain/);
+  await expect(parser).toHaveClass(/hot/);
+  await expect(diagram.locator("g.node", { hasText: "read" })).toHaveClass(/hot/);
+  await expect(diagram.locator("g.node", { hasText: "run" })).toHaveClass(/hot/);
+  await expect(note).not.toHaveClass(/hot/);
+  await expect(link).toHaveClass(/hot/);
+  await parser.click();
+  await expect(parser).toHaveClass(/pinned/);
+  await page.locator(".doc-markdown h1").hover();
+  await expect(diagram).toHaveClass(/chain/);
+  await expect(parser).toHaveClass(/pinned/);
+  await parser.click();
+  await expect(parser).not.toHaveClass(/pinned/);
+  await page.screenshot({ path: playwrightArtifact(`mermaid-view-${testInfo.project.name}.png`) });
+});
+
 test("resolves relative links from the file's folder", async ({ page, app }) => {
   fs.mkdirSync(path.join(app.workspace, "docs/nested"), { recursive: true });
   fs.writeFileSync(

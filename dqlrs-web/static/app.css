@@ -2923,6 +2923,45 @@ body.results-resizing * {
   padding: 0;
 }
 
+.doc-markdown pre.mermaid {
+  margin: 0.8em 0;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  overflow: visible;
+}
+
+.doc-markdown .mermaid svg { max-width: 100%; height: auto; }
+
+.doc-markdown svg .node { cursor: pointer; }
+
+.doc-markdown svg.chain .node,
+.doc-markdown svg.chain path.flowchart-link,
+.doc-markdown svg.chain .edgeLabel {
+  opacity: 0.14;
+  transition: opacity 120ms ease;
+}
+
+.doc-markdown svg.chain .node.hot,
+.doc-markdown svg.chain path.flowchart-link.hot,
+.doc-markdown svg.chain .edgeLabel.hot { opacity: 1; }
+
+.doc-markdown svg.chain path.flowchart-link.hot { stroke: #9a3412; }
+
+.doc-markdown svg .node.pinned > rect {
+  fill: #9a3412 !important;
+  stroke: #7c2d12 !important;
+  stroke-width: 3px;
+}
+
+.doc-markdown svg .node.pinned .nodeLabel { color: #fffdf8 !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-markdown svg.chain .node,
+  .doc-markdown svg.chain path.flowchart-link,
+  .doc-markdown svg.chain .edgeLabel { transition: none; }
+}
+
 .doc-markdown ul,
 .doc-markdown ol {
   margin: 0.4em 0 0.8em;

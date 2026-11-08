@@ -171,6 +171,8 @@ function currentTheme() {
 function applyTheme(theme, persist) {
   const dark = theme === "dark";
   document.documentElement.dataset.theme = dark ? "dark" : "light";
+  const openDoc = document.querySelector(".doc-markdown");
+  if (openDoc) void renderMermaidDiagrams(openDoc);
   if (!themeToggle) return;
   themeToggle.setAttribute("aria-pressed", dark ? "true" : "false");
   themeToggle.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
@@ -1492,6 +1494,7 @@ function showDocument(path, text) {
     if (next) openFile(next);
   });
   body.append(article);
+  void renderMermaidDiagrams(article);
 }
 
 function resolveWorkspaceHref(from, href) {
@@ -1551,6 +1554,146 @@ window.addEventListener("message", (event) => {
   openFile(next);
 });
 
+const MERMAID_URL = "https://cdn.jsdelivr.net/npm/mermaid@12/dist/mermaid.esm.min.mjs";
+const mermaidSources = new WeakMap();
+let mermaidModule = null;
+let mermaidTicket = 0;
+
+async function loadMermaid() {
+  if (!mermaidModule) {
+    const mod = await import(MERMAID_URL);
+    mermaidModule = mod.default;
+  }
+  return mermaidModule;
+}
+
+async function renderMermaidDiagrams(article) {
+  if (!article) return;
+  const blocks = [...article.querySelectorAll("pre.mermaid")];
+  if (!blocks.length) return;
+  const ticket = ++mermaidTicket;
+  for (const block of blocks) {
+    if (!mermaidSources.has(block)) mermaidSources.set(block, block.textContent);
+  }
+  let mermaid;
+  try {
+    mermaid = await loadMermaid();
+  } catch {
+    return;
+  }
+  if (ticket !== mermaidTicket || !article.isConnected) return;
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: currentTheme() === "dark" ? "dark" : "neutral",
+    securityLevel: "strict",
+  });
+  for (const block of blocks) {
+    const source = mermaidSources.get(block) || "";
+    block.removeAttribute("data-processed");
+    block.textContent = source;
+    try {
+      await mermaid.run({ nodes: [block] });
+    } catch {
+      block.textContent = source;
+      continue;
+    }
+    if (ticket !== mermaidTicket || !article.isConnected) return;
+    const svg = block.querySelector("svg");
+    if (svg && /^\s*(?:flowchart|graph)\b/m.test(source)) highlightCallChain(svg, source);
+  }
+}
+
+function highlightCallChain(svg, source) {
+  const edges = [];
+  for (const line of source.split("\n")) {
+    const match = line.match(/^\s*(\w+)(?:\[[^\]]*\])?\s+-->\s*(?:\|[^|]*\|\s*)?(\w+)/);
+    if (match) edges.push([match[1], match[2]]);
+  }
+  const nodeEls = new Map();
+  for (const node of svg.querySelectorAll("g.node")) {
+    const match = node.id.match(/-flowchart-(.+)-\d+$/);
+    if (match) nodeEls.set(match[1], node);
+  }
+  const outgoing = new Map();
+  const incoming = new Map();
+  for (const id of nodeEls.keys()) {
+    outgoing.set(id, []);
+    incoming.set(id, []);
+  }
+  const edgeEls = edges.map(([from, to]) => {
+    outgoing.get(from)?.push(to);
+    incoming.get(to)?.push(from);
+    const marker = `L_${from}_${to}_`;
+    return {
+      from,
+      to,
+      path: [...svg.querySelectorAll("path.flowchart-link")].find((path) => path.id.includes(marker)),
+      label: svg.querySelector(`.edgeLabel .label[data-id^="${marker}"]`)?.closest(".edgeLabel"),
+    };
+  });
+
+  function walk(start, neighbors) {
+    const seen = new Set();
+    const stack = [...(neighbors.get(start) || [])];
+    while (stack.length) {
+      const id = stack.pop();
+      if (seen.has(id)) continue;
+      seen.add(id);
+      stack.push(...(neighbors.get(id) || []));
+    }
+    return seen;
+  }
+
+  function clear() {
+    svg.classList.remove("chain");
+    for (const el of svg.querySelectorAll(".hot, .pinned")) {
+      el.classList.remove("hot");
+      el.classList.remove("pinned");
+    }
+  }
+
+  let pinned = null;
+
+  function nodeIdFrom(event) {
+    const node = event.target.closest("g.node");
+    if (!node) return null;
+    const match = node.id.match(/-flowchart-(.+)-\d+$/);
+    return match ? match[1] : null;
+  }
+
+  function show(id) {
+    if (!nodeEls.has(id)) return;
+    clear();
+    const hot = walk(id, incoming);
+    for (const next of walk(id, outgoing)) hot.add(next);
+    hot.add(id);
+    svg.classList.add("chain");
+    for (const nodeId of hot) nodeEls.get(nodeId)?.classList.add("hot");
+    if (pinned) nodeEls.get(pinned)?.classList.add("pinned");
+    for (const edge of edgeEls) {
+      if (!hot.has(edge.from) || !hot.has(edge.to)) continue;
+      edge.path?.classList.add("hot");
+      edge.label?.classList.add("hot");
+    }
+  }
+
+  svg.addEventListener("mouseover", (event) => {
+    if (pinned) return;
+    const id = nodeIdFrom(event);
+    if (id) show(id);
+  });
+  svg.addEventListener("mouseleave", () => {
+    if (!pinned) clear();
+  });
+  svg.addEventListener("click", (event) => {
+    const id = nodeIdFrom(event);
+    if (!id) return;
+    pinned = pinned === id ? null : id;
+    if (pinned) show(pinned);
+    else show(id);
+  });
+}
+
 function renderMarkdown(source) {
   const lines = String(source ?? "").replace(/\r\n/g, "\n").split("\n");
   const html = [];
@@ -1570,7 +1713,9 @@ function renderMarkdown(source) {
         index += 1;
       }
       if (index < lines.length) index += 1;
-      html.push("<pre><code>" + escapeHtml(body.join("\n")) + "</code></pre>");
+      const lang = fence[1].trim().split(/\s+/)[0].toLowerCase();
+      const code = escapeHtml(body.join("\n"));
+      html.push(lang === "mermaid" ? '<pre class="mermaid">' + code + "</pre>" : "<pre><code>" + code + "</code></pre>");
       continue;
     }
     const heading = line.match(/^(#{1,6})\s+(.*)$/);
