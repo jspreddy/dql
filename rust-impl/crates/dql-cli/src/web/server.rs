@@ -1018,24 +1018,103 @@ fn table_structure(state: &mut WebState, name: &str) -> Result<Value, String> {
         return Ok(value);
     };
     object.insert("createQuery".to_string(), json!(create_query));
-    object.insert("definition".to_string(), json!(definition));
+    object.insert("definition".to_string(), definition);
     Ok(value)
 }
 
-/// Create query and pretty definition from the schema cache only.
+/// Formatted create query and attribute rows from the schema cache only.
 ///
 /// `cached_definition` reads the in-memory snapshot or the saved cache. It does
 /// not describe the table, so a structure view never refreshes the database.
 /// Creating a table stores the snapshot, and describing the table replaces it
 /// with the current definition. The next structure view shows that snapshot.
-fn cached_table_schema(session: &mut crate::session::Session, name: &str) -> (String, String) {
+fn cached_table_schema(session: &mut crate::session::Session, name: &str) -> (String, Value) {
     let Some(meta) = session.engine.cached_definition(name) else {
-        return (String::new(), String::new());
+        return (String::new(), json!([]));
     };
     if !meta.has_definition() {
-        return (String::new(), String::new());
+        return (String::new(), json!([]));
     }
-    (meta.schema_dql(), meta.schema_dql_formatted())
+    (meta.schema_dql_formatted(), json!(definition_rows(&meta)))
+}
+
+fn definition_rows(meta: &dql_models::TableMeta) -> Vec<Value> {
+    let mut names = Vec::new();
+    if !meta.hash_key.is_empty() {
+        names.push(meta.hash_key.clone());
+    }
+    if let Some(range) = &meta.range_key {
+        if !names.iter().any(|name| name == range) {
+            names.push(range.clone());
+        }
+    }
+    let mut rest: Vec<String> = meta
+        .attrs
+        .keys()
+        .filter(|name| !names.iter().any(|kept| kept == *name))
+        .cloned()
+        .collect();
+    rest.sort();
+    names.extend(rest);
+    names
+        .into_iter()
+        .filter_map(|name| {
+            let field = meta.attrs.get(&name)?;
+            let role = if name == meta.hash_key {
+                "hash"
+            } else if meta.range_key.as_deref() == Some(name.as_str()) {
+                "range"
+            } else if meta
+                .global_indexes
+                .values()
+                .any(|index| index.hash_key.name == name)
+            {
+                "index-hash"
+            } else if meta.global_indexes.values().any(|index| {
+                index.range_key.as_ref().map(|field| field.name.as_str()) == Some(name.as_str())
+            }) || meta
+                .local_indexes
+                .values()
+                .any(|index| index.range_key.as_deref() == Some(name.as_str()))
+            {
+                "index-range"
+            } else {
+                ""
+            };
+            let mut indexes = Vec::new();
+            for index in meta.local_indexes.values() {
+                if index.range_key.as_deref() == Some(name.as_str()) {
+                    indexes.push(index.name.clone());
+                }
+            }
+            for index in meta.global_indexes.values() {
+                let on_hash = index.hash_key.name == name;
+                let on_range = index.range_key.as_ref().map(|field| field.name.as_str())
+                    == Some(name.as_str());
+                if on_hash || on_range {
+                    indexes.push(index.name.clone());
+                }
+            }
+            indexes.sort();
+            indexes.dedup();
+            Some(json!({
+                "name": name,
+                "type": attribute_type_label(&field.data_type),
+                "role": role,
+                "index": indexes.join(", "),
+            }))
+        })
+        .collect()
+}
+
+fn attribute_type_label(data_type: &dql_parser::AttributeType) -> String {
+    match data_type {
+        dql_parser::AttributeType::String => "STRING".to_string(),
+        dql_parser::AttributeType::Number => "NUMBER".to_string(),
+        dql_parser::AttributeType::Binary => "BINARY".to_string(),
+        dql_parser::AttributeType::Bool => "BOOL".to_string(),
+        dql_parser::AttributeType::Other(value) => value.clone(),
+    }
 }
 
 fn columns_with_shape_keys(columns: &[Column], shape: Option<&TableShape>) -> Vec<Column> {
@@ -2025,18 +2104,27 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         assert_eq!(sk["kinds"], serde_json::json!(["NUMBER"]));
         let create_query = structure_json["createQuery"].as_str().unwrap_or("");
         assert!(
-            create_query.contains("CREATE TABLE posts")
-                && create_query.contains("id STRING HASH KEY"),
+            create_query.contains("CREATE TABLE posts ("),
             "{create_query}"
         );
-        assert!(!create_query.contains('\n'), "{create_query}");
-        let definition = structure_json["definition"].as_str().unwrap_or("");
-        assert!(definition.contains("CREATE TABLE posts ("), "{definition}");
         assert!(
-            definition.contains("\n  id STRING HASH KEY,"),
-            "{definition}"
+            create_query.contains("\n  id STRING HASH KEY,"),
+            "{create_query}"
         );
-        assert!(definition.contains("sk NUMBER RANGE KEY"), "{definition}");
+        assert!(
+            create_query.contains("sk NUMBER RANGE KEY"),
+            "{create_query}"
+        );
+        let definition = structure_json["definition"]
+            .as_array()
+            .expect("definition rows");
+        assert_eq!(definition.len(), 2);
+        assert_eq!(definition[0]["name"], "id");
+        assert_eq!(definition[0]["type"], "STRING");
+        assert_eq!(definition[0]["role"], "hash");
+        assert_eq!(definition[1]["name"], "sk");
+        assert_eq!(definition[1]["type"], "NUMBER");
+        assert_eq!(definition[1]["role"], "range");
 
         let saved = super::query_cache::save(
             root.path(),

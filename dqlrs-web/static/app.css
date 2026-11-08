@@ -3616,7 +3616,8 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
 
 .schema-section .schema-pop-query-text { margin: 0; }
 
-.schema-pop-body table {
+.schema-pop-body table,
+.schema-pop-schema table {
   width: max-content;
   min-width: 100%;
   border-collapse: separate;
@@ -3624,7 +3625,9 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
 }
 
 .schema-pop-body th,
-.schema-pop-body td {
+.schema-pop-body td,
+.schema-pop-schema th,
+.schema-pop-schema td {
   padding: 8px 10px;
   border-bottom: 1px solid var(--schema-line);
   text-align: left;
@@ -3633,16 +3636,21 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
 }
 
 .schema-pop-body th:not(:last-child),
-.schema-pop-body td:not(:last-child) {
+.schema-pop-body td:not(:last-child),
+.schema-pop-schema th:not(:last-child),
+.schema-pop-schema td:not(:last-child) {
   width: 1%;
 }
 
 .schema-pop-body th:last-child,
-.schema-pop-body td:last-child {
+.schema-pop-body td:last-child,
+.schema-pop-schema th:last-child,
+.schema-pop-schema td:last-child {
   width: 99%;
 }
 
-.schema-pop-body thead th {
+.schema-pop-body thead th,
+.schema-pop-schema thead th {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -3654,9 +3662,11 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
   text-transform: uppercase;
 }
 
-.schema-pop-body tbody tr:last-child td { border-bottom: 0; }
+.schema-pop-body tbody tr:last-child td,
+.schema-pop-schema tbody tr:last-child td { border-bottom: 0; }
 
-.schema-pop-body tbody tr:hover td { background: var(--schema-hover); }
+.schema-pop-body tbody tr:hover td,
+.schema-pop-schema tbody tr:hover td { background: var(--schema-hover); }
 
 .schema-name {
   font-family: var(--mono);

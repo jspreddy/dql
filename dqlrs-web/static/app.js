@@ -4927,12 +4927,7 @@ async function openSchema(request, button) {
         payload.createQuery,
         "The schema cache does not have a create query for this table yet.",
       ),
-      schemaTextSection(
-        "Table definition",
-        "schema-definition",
-        payload.definition,
-        "The schema cache does not have a definition for this table yet.",
-      ),
+      schemaDefinitionSection(payload.definition),
     );
     schemaPopBody.replaceChildren(schemaResultSection(inspected));
   } else {
@@ -4987,6 +4982,93 @@ function schemaTextSection(title, testId, text, empty) {
   return section;
 }
 
+function schemaDefinitionSection(rows) {
+  const section = document.createElement("section");
+  section.className = "schema-section";
+  section.dataset.testid = "schema-definition";
+  const heading = document.createElement("h3");
+  heading.textContent = "Table definition";
+  section.append(heading);
+  const listed = Array.isArray(rows) ? rows : [];
+  if (!listed.length) {
+    const missing = document.createElement("p");
+    missing.className = "schema-section-empty";
+    missing.textContent = "The schema cache does not have a definition for this table yet.";
+    section.append(missing);
+    return section;
+  }
+  section.append(definitionTable(listed));
+  return section;
+}
+
+function definitionTable(rows) {
+  const table = document.createElement("table");
+  table.className = "schema-grid";
+  const head = document.createElement("tr");
+  for (const label of ["Column", "Type", "Role", "Index"]) {
+    const cell = document.createElement("th");
+    cell.scope = "col";
+    cell.textContent = label;
+    head.append(cell);
+  }
+  const thead = document.createElement("thead");
+  thead.append(head);
+  const body = document.createElement("tbody");
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    tr.dataset.column = row.name;
+    const name = document.createElement("td");
+    name.className = "schema-name";
+    name.textContent = row.name || "";
+    const type = document.createElement("td");
+    const types = document.createElement("span");
+    types.className = "schema-types";
+    types.append(schemaTypeChip(row.type || "empty", row.type || "—"));
+    type.append(types);
+    const role = schemaRoleCell(definitionColumn(row));
+    const index = document.createElement("td");
+    if (row.index) {
+      index.textContent = row.index;
+    } else {
+      const empty = document.createElement("span");
+      empty.className = "schema-role-muted";
+      empty.textContent = "—";
+      index.append(empty);
+    }
+    tr.append(name, type, role, index);
+    body.append(tr);
+  }
+  table.append(thead, body);
+  return table;
+}
+
+function definitionColumn(row) {
+  if (row.role === "hash" || row.role === "range") return { table: row.role, index: "" };
+  if (row.role === "index-hash") return { table: "", index: "hash" };
+  if (row.role === "index-range") return { table: "", index: "range" };
+  return { table: "", index: "" };
+}
+
+function schemaRoleCell(column) {
+  const role = document.createElement("td");
+  const labels = roleLabels(column);
+  if (labels.length) {
+    const line = document.createElement("span");
+    line.className = "schema-role";
+    for (const icon of keyIcons(column)) line.append(icon);
+    const text = document.createElement("span");
+    text.textContent = labels.join(", ");
+    line.append(text);
+    role.append(line);
+  } else {
+    const empty = document.createElement("span");
+    empty.className = "schema-role-muted";
+    empty.textContent = "—";
+    role.append(empty);
+  }
+  return role;
+}
+
 function schemaResultSection(inspected) {
   const section = document.createElement("section");
   section.className = "schema-section";
@@ -5026,22 +5108,7 @@ function schemaTable(inspected) {
       types.append(schemaTypeChip("empty", "—"));
     }
     type.append(types);
-    const role = document.createElement("td");
-    const labels = roleLabels(item.column);
-    if (labels.length) {
-      const line = document.createElement("span");
-      line.className = "schema-role";
-      for (const icon of keyIcons(item.column)) line.append(icon);
-      const text = document.createElement("span");
-      text.textContent = labels.join(", ");
-      line.append(text);
-      role.append(line);
-    } else {
-      const empty = document.createElement("span");
-      empty.className = "schema-role-muted";
-      empty.textContent = "—";
-      role.append(empty);
-    }
+    const role = schemaRoleCell(item.column);
     const present = document.createElement("td");
     present.append(schemaPresent(item.present, item.total));
     const sample = document.createElement("td");
