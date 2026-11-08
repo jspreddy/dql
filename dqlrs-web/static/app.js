@@ -1301,8 +1301,7 @@ async function openFile(path) {
       showOpenFile(path);
       state.entries = [];
       showResults([]);
-      editor.dispatch({ effects: setLintIssues.of([]) });
-      paintLint([]);
+      applyLint([]);
       setMode("query");
       await Promise.all([refreshTree(), loadFileRows()]);
       return;
@@ -1314,6 +1313,7 @@ async function openFile(path) {
     state.disk = { path: file.path || path, text: file.text, revision: file.revision };
     setEditorText(file.text);
     showOpenFile(file.path || path);
+    scheduleLint();
     state.entries = [];
     showResults([]);
     setMode("query");
@@ -1666,6 +1666,7 @@ async function flushSaveNow() {
     if (state.fileEpoch !== epoch || state.disk?.path !== path) return;
     state.disk = { path, text, revision: saved.revision || base };
     state.notedExternal = null;
+    scheduleLint();
     if (editorText() !== text) scheduleSave();
   } catch (error) {
     if (error.payload?.conflict && state.fileEpoch === epoch && state.disk?.path === path) {
@@ -1705,10 +1706,19 @@ function scheduleLint() {
   state.lintTimer = setTimeout(() => lintEditor(generation), 400);
 }
 
+function applyLint(issues) {
+  const list = Array.isArray(issues) ? issues : [];
+  try {
+    editor.dispatch({ effects: setLintIssues.of(list) });
+  } catch (error) {
+    console.error(error);
+  }
+  paintLint(list);
+}
+
 async function lintEditor(generation) {
   if (dataFile(state.path)) {
-    editor.dispatch({ effects: setLintIssues.of([]) });
-    paintLint([]);
+    applyLint([]);
     return;
   }
   const text = editorText();
@@ -1719,9 +1729,7 @@ async function lintEditor(generation) {
     return;
   }
   if (generation !== lintGeneration) return;
-  const issues = Array.isArray(report.issues) ? report.issues : [];
-  editor.dispatch({ effects: setLintIssues.of(issues) });
-  paintLint(issues);
+  applyLint(Array.isArray(report.issues) ? report.issues : []);
 }
 
 function paintLint(issues) {
@@ -2218,6 +2226,7 @@ async function adoptExternal(path, file, epoch) {
   if (!missing && diskText === edited) {
     state.disk = { path, text: diskText, revision: incomingRevision };
     state.notedExternal = null;
+    scheduleLint();
     return;
   }
   const unsaved = edited !== baseText;
@@ -2242,6 +2251,7 @@ async function adoptExternal(path, file, epoch) {
       state.notedExternal = incomingRevision;
       syncPatchRecall();
       showPatchModal(state.patches.length - 1);
+      scheduleLint();
       return;
     }
     clearTimeout(state.saveTimer);
@@ -2252,10 +2262,12 @@ async function adoptExternal(path, file, epoch) {
       state.saveFlight = null;
       setEditorText("");
       showOpenFile("");
+      scheduleLint();
       void refreshTree();
     } else {
       state.disk = { path, text: diskText, revision: incomingRevision };
       setEditorText(diskText, { keepCursor: true });
+      scheduleLint();
     }
   } finally {
     state.applyingDisk = false;

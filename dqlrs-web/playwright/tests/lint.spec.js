@@ -1,6 +1,8 @@
 import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
-import { openApp, replaceEditor, themeColor } from "../support/helpers.js";
+import fs from "node:fs";
+import path from "node:path";
+import { node, openApp, replaceEditor, themeColor } from "../support/helpers.js";
 
 const BROKEN = "SELEKT * FROM shelf;";
 const UNKNOWN = "SELECT * FROM lint_missing_shelf WHERE id = 'a';";
@@ -96,4 +98,96 @@ test("underlines a bad query, warns when the table is unknown, and clears a vali
   await expect(page.locator(".cm-lint-warning")).toHaveCount(0);
   await expect(page.locator("[data-testid='lint-gutter-error']")).toHaveCount(0);
   await expect(page.locator("[data-testid='lint-gutter-warning']")).toHaveCount(0);
+});
+
+test("lints on open, after save, and when a fetch replaces the file", async ({ page, app }, testInfo) => {
+  const broken = "SELEKT * FROM shelf;\n";
+  const lints = [];
+  const lintAfterSave = [];
+  let saved = false;
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() !== "POST" || url.pathname !== "/api/lint") return;
+    lints.push(request.postData() || "");
+    if (saved) lintAfterSave.push(1);
+  });
+  page.on("response", (response) => {
+    const url = new URL(response.url());
+    if (response.request().method() === "PUT" && url.pathname === "/api/file" && response.ok()) {
+      saved = true;
+    }
+  });
+
+  await replaceEditor(page, broken);
+  const status = page.locator("#lint-status");
+  await expect(status).toHaveText("1 error");
+  await expect.poll(() => lintAfterSave.length).toBeGreaterThan(0);
+  await page.screenshot({ path: playwrightArtifact(`lint-on-save-${testInfo.project.name}.png`) });
+
+  const opened = path.join(app.workspace, "queries/lint-open.dql");
+  fs.writeFileSync(opened, broken);
+  await expect(node(page, "queries/lint-open.dql")).toBeVisible();
+  const beforeOpen = lints.length;
+  await node(page, "queries/lint-open.dql").click();
+  await expect(page.locator("#file-name")).toHaveText("lint-open.dql");
+  await expect.poll(() => lints.length).toBeGreaterThan(beforeOpen);
+  await expect(status).toHaveText("1 error");
+  await page.screenshot({ path: playwrightArtifact(`lint-on-open-${testInfo.project.name}.png`) });
+
+  fs.writeFileSync(opened, CLEAN);
+  await expect(page.locator("#editor-content")).toContainText("SELECT * FROM shelf");
+  await expect(status).toBeHidden();
+  await expect(page.locator(".cm-lint-error")).toHaveCount(0);
+  await page.screenshot({ path: playwrightArtifact(`lint-on-fetch-${testInfo.project.name}.png`) });
+});
+
+test("a lint throw does not block editing recent.dql", async ({ page }, testInfo) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(String(error)));
+  await replaceEditor(page, "SCAN * FROM nb_posts;\n");
+  await replaceEditor(page, "SCAN * FROM");
+  await expect(page.locator("#lint-status")).toBeVisible();
+  await expect(page.locator(".cm-lint-error, .cm-lint-warning")).not.toHaveCount(0);
+  await page.locator("#editor-content").click();
+  await page.keyboard.press("End");
+  await page.keyboard.type(" nb_posts");
+  const edited = await page.evaluate(() => ({
+    text: document.querySelector("#editor-content")?.innerText || "",
+    marks: document.querySelectorAll(".cm-lint-error, .cm-lint-warning").length,
+  }));
+  expect(edited.text).toContain("SCAN * FROM nb_posts");
+  expect(edited.marks).toBeGreaterThan(0);
+  expect(errors).toEqual([]);
+  await page.screenshot({ path: playwrightArtifact(`lint-edit-recent-${testInfo.project.name}.png`) });
+});
+
+test("a thrown lint update is logged and the edit still applies", async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    const { EditorState } = await import("/vendor/codemirror-state.js");
+    const { lintExtension, setLintIssues } = await import("/dql-mode.js");
+    const logs = [];
+    const original = console.error;
+    console.error = (...args) => {
+      logs.push(args.map((arg) => (arg instanceof Error ? arg.message : String(arg))).join(" "));
+      original.apply(console, args);
+    };
+    const issue = {
+      get offset() {
+        throw new RangeError("Position 30 is out of range for changeset of length 29");
+      },
+      end: 4,
+      severity: "error",
+      message: "boom",
+    };
+    try {
+      let state = EditorState.create({ doc: "SCAN * FROM", extensions: lintExtension });
+      state = state.update({ effects: setLintIssues.of([issue]) }).state;
+      state = state.update({ changes: { from: state.doc.length, insert: " x" } }).state;
+      return { doc: state.doc.toString(), logs };
+    } finally {
+      console.error = original;
+    }
+  });
+  expect(result.doc).toBe("SCAN * FROM x");
+  expect(result.logs.join("\n")).toContain("Position 30 is out of range");
 });

@@ -340,7 +340,17 @@ fn push_issue(
     offset: usize,
     end: usize,
 ) {
-    let end = end.max(offset.saturating_add(1));
+    let limit = utf16_len(full_text);
+    let mut offset = offset.min(limit);
+    let mut end = end.min(limit);
+    if end <= offset {
+        if offset == 0 {
+            end = if limit == 0 { 0 } else { 1 };
+        } else {
+            offset -= 1;
+            end = offset + 1;
+        }
+    }
     let (line, column) = if full_text.is_empty() {
         (1, 1)
     } else {
@@ -539,6 +549,41 @@ mod tests {
             .iter()
             .map(|issue| issue.message.as_str())
             .collect()
+    }
+
+    #[test]
+    fn issue_ranges_stay_inside_the_script() {
+        let mut session = session(true);
+        let samples = [
+            "SCAN * FROM nb_posts;\n",
+            "SCAN * FROM nb_posts",
+            "SELEKT * FROM shelf",
+            "SCAN * FROM",
+            "SELECT",
+            "SCAN * FROM nb_posts WHERE\n",
+        ];
+        for text in samples {
+            let report = lint_script(&mut session, text);
+            let limit = utf16_len(text);
+            for issue in &report.issues {
+                assert!(
+                    issue.offset <= limit && issue.end <= limit,
+                    "{text:?} offset {} end {} limit {limit}: {}",
+                    issue.offset,
+                    issue.end,
+                    issue.message
+                );
+                if !text.is_empty() {
+                    assert!(
+                        issue.end > issue.offset,
+                        "{text:?} empty range {}..{}: {}",
+                        issue.offset,
+                        issue.end,
+                        issue.message
+                    );
+                }
+            }
+        }
     }
 
     #[test]
