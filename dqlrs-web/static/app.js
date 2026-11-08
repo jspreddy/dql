@@ -4278,15 +4278,25 @@ function resultLabel(item) {
 function affectedLabel(item) {
   const count = Number(item.affected ?? 0);
   const statement = String(item.statement || "").trim();
-  const verb = (statement.match(/^(insert|delete|update|select|scan)\b/i) || [])[1];
+  const verb = (statement.match(/^(insert|delete|update|select|scan|load)\b/i) || [])[1];
   const action = verb ? verb.toLowerCase() : "";
   if (action === "insert") return `${amountPhrase(count, "row", "rows")} inserted`;
   if (action === "delete") return `${amountPhrase(count, "row", "rows")} deleted`;
   if (action === "update") return `${amountPhrase(count, "row", "rows")} updated`;
+  if (action === "load") return `${amountPhrase(count, "row", "rows")} loaded`;
+  if (isSaveStatement(statement)) return `${amountPhrase(count, "row", "rows")} saved`;
   if ((action === "select" || action === "scan") && /\bcount\s*\(\s*\*\s*\)/i.test(statement)) {
     return amountPhrase(count, "row", "rows");
   }
   return `${count} affected`;
+}
+
+function isSaveStatement(statement) {
+  const text = String(statement || "")
+    .replace(/--[^\n]*/g, " ")
+    .replace(/'(?:[^']|\\')*'/g, " '' ")
+    .replace(/"(?:[^"]|\\")*"/g, ' "" ');
+  return /\bsave\s+(?:''|""|[^\s=;]+)/i.test(text);
 }
 
 function droppedLabel(item) {

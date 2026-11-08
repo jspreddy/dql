@@ -59,7 +59,8 @@ test("saves JSON and CSV in the process directory and loads both back", async ({
   await expect(page.locator("#result-table")).toContainText("7");
   await openResultPane(page, "history");
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
-  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "2 affected" })).toHaveCount(3);
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "2 rows saved" })).toHaveCount(2);
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "2 rows loaded" })).toHaveCount(1);
 
   const jsonPath = path.join(app.cwd, "saved.json");
   const csvPath = path.join(app.cwd, "saved.csv");
@@ -93,7 +94,7 @@ test("saves JSON and CSV in the process directory and loads both back", async ({
   await expect(page.locator("#result-table")).toContainText("beta");
   await openResultPane(page, "history");
   await expect(page.locator(".query-result").last().locator('[data-testid="result-note"].error')).toHaveCount(0);
-  await expect(page.locator(".query-result").nth(-2).locator('[data-testid="result-note"]').filter({ hasText: "2 affected" })).toHaveCount(1);
+  await expect(page.locator(".query-result").nth(-2).locator('[data-testid="result-note"]').filter({ hasText: "2 rows loaded" })).toHaveCount(1);
 });
 
 test("saves and loads an absolute path", async ({ page, app }) => {
@@ -171,6 +172,38 @@ test("SAVE CREATE PARENTS writes into a new directory", async ({ page, app }) =>
       { id: "b", name: "beta", qty: 7 },
     ]),
   );
+});
+
+test("names one saved row and one loaded row, and a failed load stays an error", async ({ page, app }) => {
+  const source = uniqueTable();
+  const loaded = uniqueTable();
+  app.trackTable(source);
+  app.trackTable(loaded);
+
+  await runEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${source};`,
+      `CREATE TABLE ${source} (id STRING HASH KEY);`,
+      `INSERT INTO ${source} (id) VALUES ('a');`,
+      `SCAN * FROM ${source} SAVE 'one.json';`,
+      `CREATE TABLE ${loaded} (id STRING HASH KEY);`,
+      `LOAD 'one.json' INTO ${loaded};`,
+      `LOAD 'missing-one.json' INTO ${loaded};`,
+    ].join("\n"),
+  );
+
+  await openResultPane(page, "history");
+  const notes = page.locator('[data-testid="result-note"]');
+  const saved = notes.filter({ hasText: "one row saved" });
+  const loadedNote = notes.filter({ hasText: "one row loaded" });
+  const failed = notes.filter({ hasText: "failed to open 'missing-one.json'" });
+  await expect(saved).toHaveCount(1);
+  await expect(saved).toHaveClass(/ok/);
+  await expect(loadedNote).toHaveCount(1);
+  await expect(loadedNote).toHaveClass(/ok/);
+  await expect(failed).toHaveCount(1);
+  await expect(failed).toHaveClass(/error/);
 });
 
 test("SAVE reports a missing parent directory", async ({ page, app }) => {
