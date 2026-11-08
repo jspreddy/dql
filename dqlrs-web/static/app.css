@@ -923,12 +923,17 @@ body.side-resizing * {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border: 1px solid var(--line-control);
+  border-radius: 4px;
+  background: var(--paper);
   color: var(--muted);
 }
 
 #group-tables svg { display: block; }
 
 #group-tables[aria-pressed="true"] {
+  border: 1px solid var(--line-control);
+  border-radius: 4px;
   background: var(--teal-wash);
   color: var(--teal-ink);
 }
