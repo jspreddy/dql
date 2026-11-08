@@ -892,17 +892,13 @@ body.side-resizing * {
   color: var(--teal-ink);
 }
 
+.side-head button.file-filter[data-type="csv"][aria-pressed="true"],
 .side-head button.file-filter[data-type="json"][aria-pressed="true"] {
   background: var(--amber-bg);
   color: var(--amber-ink);
 }
 
-.side-head button.file-filter[data-type="md"][aria-pressed="true"] {
-  background: var(--paper-2);
-  color: var(--ink);
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-
+.side-head button.file-filter[data-type="md"][aria-pressed="true"],
 .side-head button.file-filter[data-type="html"][aria-pressed="true"] {
   background: var(--blue-wash);
   color: var(--blue-ink);
@@ -1047,16 +1043,13 @@ body.side-resizing * {
   color: var(--teal-ink);
 }
 
+.tree .node .file-kind[data-kind="csv"],
 .tree .node .file-kind[data-kind="json"] {
   background: var(--amber-bg);
   color: var(--amber-ink);
 }
 
-.tree .node .file-kind[data-kind="md"] {
-  background: var(--hover);
-  color: var(--ink);
-}
-
+.tree .node .file-kind[data-kind="md"],
 .tree .node .file-kind[data-kind="html"] {
   background: var(--blue-wash);
   color: var(--blue-ink);

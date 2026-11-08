@@ -331,13 +331,37 @@ test("filters files with toggleable type pills and remembers them", async ({ pag
   await expect(node(page, "notes.md")).toHaveCount(0);
   await expect(node(page, "page.html")).toHaveCount(0);
 
-  await showTypes(page, ["csv", "md"]);
+  await showTypes(page, ["csv", "json", "md", "html"]);
   await expect(node(page, "users.csv")).toBeVisible();
+  await expect(node(page, "cities.json")).toBeVisible();
   await expect(node(page, "notes.md")).toBeVisible();
+  await expect(node(page, "page.html")).toBeVisible();
   await expect(node(page, "queries/edit.dql")).toBeVisible();
+  const colors = await page.evaluate(() => {
+    const read = (selector) => {
+      const style = getComputedStyle(document.querySelector(selector));
+      return [style.backgroundColor, style.color];
+    };
+    return {
+      csvPill: read('.file-filter[data-type="csv"]'),
+      jsonPill: read('.file-filter[data-type="json"]'),
+      csvTag: read('[data-testid="node-users.csv"] .file-kind'),
+      jsonTag: read('[data-testid="node-cities.json"] .file-kind'),
+      mdPill: read('.file-filter[data-type="md"]'),
+      htmlPill: read('.file-filter[data-type="html"]'),
+      mdTag: read('[data-testid="node-notes.md"] .file-kind'),
+      htmlTag: read('[data-testid="node-page.html"] .file-kind'),
+    };
+  });
+  expect(colors.csvPill).toEqual(colors.jsonPill);
+  expect(colors.csvTag).toEqual(colors.jsonTag);
+  expect(colors.mdPill).toEqual(colors.htmlPill);
+  expect(colors.mdTag).toEqual(colors.htmlTag);
+  await page.screenshot({ path: playwrightArtifact(`file-type-pills-${testInfo.project.name}.png`) });
+  await page.locator('.file-filter[data-type="json"]').click();
+  await page.locator('.file-filter[data-type="html"]').click();
   await expect(node(page, "cities.json")).toHaveCount(0);
   await expect(node(page, "page.html")).toHaveCount(0);
-  await page.screenshot({ path: playwrightArtifact(`file-type-pills-${testInfo.project.name}.png`) });
 
   await page.reload();
   await expect(page.locator('.file-filter[data-type="csv"]')).toHaveAttribute("aria-pressed", "true");
