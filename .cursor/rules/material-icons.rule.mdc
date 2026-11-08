@@ -1,0 +1,21 @@
+---
+alwaysApply: true
+---
+
+# Material icons
+
+Use icons from [google/material-design-icons](https://github.com/google/material-design-icons). Do not clone that repository and do not copy its icon set. Copy a single outlined 24px SVG into `dqlrs-web/static/vendor/icons/` only when the web app needs that icon.
+
+Search the upstream tree for `src/<category>/<name>/materialiconsoutlined/24px.svg`. Categories include `action`, `alert`, `av`, `communication`, `content`, `device`, `editor`, `file`, `hardware`, `image`, `maps`, `navigation`, `notification`, and `toggle`.
+
+Save the file as `dqlrs-web/static/vendor/icons/<name>.svg`. Keep the upstream path data. Set the root `id` to `icon`, drop `width` and `height`, and set the drawn shapes' `fill` to `currentColor` (`fill="none"` stays). These files are Apache-2.0.
+
+Reference a copied icon. Do not paste a new hand-drawn path.
+
+```html
+<svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+  <use href="/vendor/icons/<name>.svg#icon"></use>
+</svg>
+```
+
+In script, call `materialIcon(name)` in `dqlrs-web/static/app.js`.

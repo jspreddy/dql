@@ -1,0 +1,136 @@
+-- Harbor & Pine: buildings, units, and listings in one table.
+-- pk is the parent. sk is the child, prefixed by what it is.
+-- A building holds its units. A unit holds its listings.
+-- city finds listings without knowing the building.
+-- status finds listings that are still for rent.
+
+DROP TABLE IF EXISTS hp_portfolio;
+
+CREATE TABLE hp_portfolio (
+  pk STRING HASH KEY,
+  sk STRING RANGE KEY
+) GLOBAL INDEX ('by-city', city STRING, sk STRING)
+  GLOBAL INDEX ('by-status', status STRING, sk STRING);
+
+-- Pine Court, Capitol Hill, Seattle.
+INSERT INTO hp_portfolio (
+  pk='BLDG#pine',
+  sk='PROFILE',
+  kind='building',
+  name='Pine Court',
+  city='Seattle',
+  neighborhood='Capitol Hill',
+  units=3,
+  year_built=1928,
+  manager='Mina Alvarez'
+);
+
+INSERT INTO hp_portfolio (
+  pk='BLDG#pine',
+  sk='UNIT#2a',
+  kind='unit',
+  name='2A',
+  city='Seattle',
+  beds=1,
+  baths=1,
+  sqft=540,
+  floor=2,
+  status='listed'
+);
+
+INSERT INTO hp_portfolio (
+  pk='BLDG#pine',
+  sk='UNIT#4b',
+  kind='unit',
+  name='4B',
+  city='Seattle',
+  beds=2,
+  baths=1,
+  sqft=780,
+  floor=4,
+  status='occupied'
+);
+
+-- The live listing hangs off the unit, and carries city so by-city can see it.
+INSERT INTO hp_portfolio (
+  pk='UNIT#2a',
+  sk='LISTING#summer',
+  kind='listing',
+  name='Pine Court 2A, summer',
+  city='Seattle',
+  status='active',
+  beds=1,
+  nightly_cents=18900,
+  min_nights=2,
+  cleaning_cents=7500,
+  available_from='2026-06-01'
+);
+
+-- Kept so the status index has a row that is not for rent.
+INSERT INTO hp_portfolio (
+  pk='UNIT#4b',
+  sk='LISTING#winter',
+  kind='listing',
+  name='Pine Court 4B, winter',
+  city='Seattle',
+  status='closed',
+  beds=2,
+  nightly_cents=24000,
+  closed_on='2026-03-12'
+);
+
+-- Harbor House, a different building in Portland.
+INSERT INTO hp_portfolio (
+  pk='BLDG#harbor',
+  sk='PROFILE',
+  kind='building',
+  name='Harbor House',
+  city='Portland',
+  neighborhood='Pearl',
+  units=2,
+  year_built=2004,
+  manager='Owen Blake'
+);
+
+INSERT INTO hp_portfolio (
+  pk='BLDG#harbor',
+  sk='UNIT#1',
+  kind='unit',
+  name='1',
+  city='Portland',
+  beds=0,
+  baths=1,
+  sqft=410,
+  floor=1,
+  status='listed'
+);
+
+INSERT INTO hp_portfolio (
+  pk='UNIT#1',
+  sk='LISTING#fall',
+  kind='listing',
+  name='Harbor House studio, fall',
+  city='Portland',
+  status='active',
+  beds=0,
+  nightly_cents=14200,
+  min_nights=3,
+  cleaning_cents=6000,
+  available_from='2026-09-04'
+);
+
+-- Units that belong to Pine Court.
+SELECT name, beds, sqft, status
+FROM hp_portfolio
+WHERE pk = 'BLDG#pine' AND begins_with(sk, 'UNIT#');
+
+-- Listings posted for one unit.
+SELECT name, status, nightly_cents
+FROM hp_portfolio
+WHERE pk = 'UNIT#2a' AND begins_with(sk, 'LISTING#');
+
+-- Active listings in Seattle, without scanning the other city.
+SELECT sk, name, beds, nightly_cents
+FROM hp_portfolio
+WHERE city = 'Seattle' AND begins_with(sk, 'LISTING#') AND status = 'active'
+USING by-city;

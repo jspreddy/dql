@@ -11,6 +11,9 @@
       }
     } catch (e) {}
   </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap" />
   <link rel="stylesheet" href="/theme.css" />
   <link rel="stylesheet" href="/app.css" />
   <script type="importmap">
@@ -26,7 +29,8 @@
       "@marijn/find-cluster-break": "/vendor/find-cluster-break.js",
       "crelt": "/vendor/crelt.js",
       "style-mod": "/vendor/style-mod.js",
-      "w3c-keyname": "/vendor/w3c-keyname.js"
+      "w3c-keyname": "/vendor/w3c-keyname.js",
+      "mermaid": "/vendor/mermaid.js"
     }
   }
   </script>
@@ -47,22 +51,12 @@
     <div class="header-tools">
       <div id="presence" class="presence" role="list" aria-label="Connected clients"></div>
       <div class="header-toggles">
-        <button type="button" id="settings-toggle" class="theme-toggle" popovertarget="settings-pop" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-pop" aria-label="Settings" title="Settings">
-          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-            <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M2.2 4.2h11.6M2.2 8h11.6M2.2 11.8h11.6"/>
-            <circle cx="6" cy="4.2" r="1.45" fill="var(--bar)" stroke="currentColor" stroke-width="1.4"/>
-            <circle cx="10.4" cy="8" r="1.45" fill="var(--bar)" stroke="currentColor" stroke-width="1.4"/>
-            <circle cx="5.2" cy="11.8" r="1.45" fill="var(--bar)" stroke="currentColor" stroke-width="1.4"/>
-          </svg>
+        <button type="button" id="settings-toggle" class="theme-toggle" popovertarget="settings-pop" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-pop" aria-label="Settings" data-tip="Settings">
+          <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/settings.svg#icon"></use></svg>
         </button>
-        <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false" aria-label="Switch to dark mode" title="Dark mode">
-          <svg class="theme-moon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-            <path fill="currentColor" d="M9.6 1.4a6.2 6.2 0 1 0 5 9.6 5 5 0 0 1-5-9.6Z"/>
-          </svg>
-          <svg class="theme-sun" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-            <circle cx="8" cy="8" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
-            <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.3 3.3l1.1 1.1M11.6 11.6l1.1 1.1M12.7 3.3l-1.1 1.1M4.4 11.6l-1.1 1.1"/>
-          </svg>
+        <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false" aria-label="Switch to dark mode" data-tip="Dark mode">
+          <svg class="icon theme-moon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/dark_mode.svg#icon"></use></svg>
+          <svg class="icon theme-sun" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/light_mode.svg#icon"></use></svg>
         </button>
       </div>
       <button type="button" class="endpoint" id="endpoint" data-kind="local">localhost:8000</button>
@@ -101,32 +95,46 @@
       <div class="side-head">
         <span class="side-heading">
           <span id="side-title">Files</span>
-          <button type="button" id="refresh-tables" class="hidden" title="Refresh the cached table list in the background" aria-label="Refresh cached tables">
-            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-              <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M13.2 8A5.2 5.2 0 1 1 11.6 4.3"/>
-              <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M13.4 2.2v3.1H10.3"/>
-            </svg>
-          </button>
-          <span id="table-cache" class="table-cache hidden" tabindex="0">
-            <span class="table-cache-age"></span>
-            <span class="table-cache-tip" role="tooltip"></span>
+          <span id="side-tools" class="side-tools">
+            <span id="tree-fold" class="tree-fold">
+              <button type="button" id="collapse-tree" data-tip="Collapse all folders" aria-label="Collapse all folders">
+                <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/keyboard_double_arrow_up.svg#icon"></use></svg>
+              </button>
+              <button type="button" id="expand-tree" data-tip="Expand all folders" aria-label="Expand all folders">
+                <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/keyboard_double_arrow_down.svg#icon"></use></svg>
+              </button>
+            </span>
+            <button type="button" id="new-file" data-tip="New .dql file" aria-label="New .dql file">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/add.svg#icon"></use></svg>
+            </button>
+            <button type="button" id="refresh-tables" class="hidden" data-tip="Refresh the cached table list in the background" aria-label="Refresh cached tables">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/refresh.svg#icon"></use></svg>
+            </button>
+            <span id="table-cache" class="table-cache hidden" tabindex="0">
+              <span class="table-cache-age"></span>
+              <span class="table-cache-tip" role="tooltip"></span>
+            </span>
           </span>
         </span>
-        <button type="button" id="new-file" title="New .dql file">+</button>
+        <span id="file-filters" class="file-filters" role="group" aria-label="Filter by file type">
+          <button type="button" class="file-filter" data-type="csv" aria-pressed="false">CSV</button>
+          <button type="button" class="file-filter" data-type="json" aria-pressed="false">JSON</button>
+          <button type="button" class="file-filter" data-type="dql" aria-pressed="true">DQL</button>
+          <button type="button" class="file-filter" data-type="md" aria-pressed="false">Markdown</button>
+          <button type="button" class="file-filter" data-type="html" aria-pressed="false">HTML</button>
+        </span>
       </div>
       <div id="tree" class="tree"></div>
       <div id="tables-nav" class="tables-nav hidden">
         <div class="search-row">
-          <input id="table-search" type="search" placeholder="catalog" spellcheck="false" aria-label="Filter tables" title="Same matching as ls. A glob lists those tables. Otherwise similar names and related keys." />
-          <button type="button" id="group-tables" title="Group by table type" aria-label="Group by table type" aria-pressed="false">
-            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-              <path fill="none" stroke="currentColor" stroke-width="1.4" d="M2 3.2h5.2v4.2H2zM8.8 3.2H14v4.2H8.8zM5.4 8.6h5.2v4.2H5.4z"/>
-            </svg>
+          <input id="table-search" type="search" placeholder="catalog" spellcheck="false" aria-label="Filter tables" data-tip="Same matching as ls. A glob lists those tables. Otherwise similar names and related keys." />
+          <button type="button" id="group-tables" data-tip="Group by table type" aria-label="Group by table type" aria-pressed="false">
+            <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/grid_view.svg#icon"></use></svg>
           </button>
         </div>
         <div id="table-list" class="table-list"></div>
       </div>
-      <div id="side-resize" class="side-resize" role="separator" aria-orientation="vertical" aria-label="Resize navigation" title="Drag to resize the left nav" tabindex="0">
+      <div id="side-resize" class="side-resize" role="separator" aria-orientation="vertical" aria-label="Resize navigation" data-tip="Drag to resize the left nav" tabindex="0">
         <span class="side-grip" aria-hidden="true"></span>
       </div>
     </aside>
@@ -138,18 +146,14 @@
             <span id="file-name">No file open</span>
             <button type="button" id="patch-recall" class="patch-recall hidden">Unsaved patch</button>
             <button type="button" id="lint-status" class="lint-status hidden" aria-live="polite"></button>
-            <button type="button" id="run-file" class="hidden" title="Run this file">
-              <svg class="ff-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                <path fill="currentColor" d="M1.6 3.1 7.2 8 1.6 12.9Zm6.8 0L14 8 8.4 12.9Z"/>
-              </svg>
+            <button type="button" id="run-file" class="hidden" data-tip="Run this file">
+              <svg class="icon ff-icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/fast_forward.svg#icon"></use></svg>
               Run file
             </button>
           </span>
           <div class="run-box">
             <button type="button" id="run" class="primary" aria-label="Run selection">
-              <svg class="run-play" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                <path fill="currentColor" d="M5.2 3.1 12.4 8 5.2 12.9Z"/>
-              </svg>
+              <svg class="icon run-play" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/play_arrow.svg#icon"></use></svg>
               <span id="run-shortcut" class="run-shortcut"><span class="key-mod">Ctrl</span> + Enter</span>
             </button>
             <button type="button" id="stop" class="stop hidden">Stop</button>
@@ -160,7 +164,7 @@
         </div>
         <section class="results" id="results">
           <div class="results-bar">
-            <div id="results-resize" class="results-resize" role="separator" aria-orientation="horizontal" aria-label="Resize results" title="Drag to resize results" tabindex="0">
+            <div id="results-resize" class="results-resize" role="separator" aria-orientation="horizontal" aria-label="Resize results" data-tip="Drag to resize results" tabindex="0">
               <span class="results-grip" aria-hidden="true"></span>
             </div>
             <div class="pane-head results-head">
@@ -177,10 +181,8 @@
                 <span id="result-meta" class="meta"></span>
                 <span class="results-chip">
                   <span id="result-count">0 results</span>
-                  <button type="button" id="clear-results" class="hidden" aria-label="Clear results" title="Clear results">
-                    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-                      <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M2.8 4.2h10.4M6.1 4.1V2.8h3.8v1.3M4.3 4.2l.7 9h6l.7-9M6.7 6.5v4.2M9.3 6.5v4.2"/>
-                    </svg>
+                  <button type="button" id="clear-results" class="hidden" aria-label="Clear results" data-tip="Clear results">
+                    <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/delete.svg#icon"></use></svg>
                   </button>
                 </span>
               </span>
@@ -192,11 +194,8 @@
           <div class="rows-head">
             <span class="rows-heading">
               <span id="file-rows-title"></span>
-              <button type="button" id="file-rows-schema" class="schema-btn hidden" title="Show result structure" aria-label="Show result structure" aria-haspopup="dialog" aria-controls="schema-pop" aria-expanded="false">
-                <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                  <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M2.5 3.2h11v9.6h-11z"/>
-                  <path fill="none" stroke="currentColor" stroke-width="1.4" d="M2.5 6.4h11M6.7 3.2v9.6"/>
-                </svg>
+              <button type="button" id="file-rows-schema" class="schema-btn hidden" data-tip="Show result structure" aria-label="Show result structure" aria-haspopup="dialog" aria-controls="schema-pop" aria-expanded="false">
+                <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/table_chart.svg#icon"></use></svg>
               </button>
             </span>
             <span id="file-rows-meta" class="meta"></span>
@@ -210,16 +209,20 @@
             </span>
           </div>
         </section>
+        <section id="doc-view" class="doc-view hidden" aria-label="Document">
+          <div class="rows-head">
+            <span id="doc-title"></span>
+            <span id="doc-meta" class="meta"></span>
+          </div>
+          <div id="doc-body" class="doc-body"></div>
+        </section>
       </section>
       <section id="tables-view" class="view hidden">
         <div class="rows-head">
           <span class="rows-heading">
             <span id="rows-title"></span>
-            <button type="button" id="rows-schema" class="schema-btn hidden" title="Show table structure" aria-label="Show table structure" aria-haspopup="dialog" aria-controls="schema-pop" aria-expanded="false">
-              <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                <path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" d="M2.5 3.2h11v9.6h-11z"/>
-                <path fill="none" stroke="currentColor" stroke-width="1.4" d="M2.5 6.4h11M6.7 3.2v9.6"/>
-              </svg>
+            <button type="button" id="rows-schema" class="schema-btn hidden" data-tip="Show table structure" aria-label="Show table structure" aria-haspopup="dialog" aria-controls="schema-pop" aria-expanded="false">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/table_chart.svg#icon"></use></svg>
             </button>
           </span>
           <span id="rows-meta" class="meta"></span>
@@ -241,11 +244,8 @@
         <div class="schema-pop-heading">
           <div class="schema-pop-kicker-row">
             <span id="schema-pop-kicker" class="schema-pop-kicker"></span>
-            <button type="button" id="schema-pop-info" class="schema-pop-info hidden" title="Based on this query result, not the entire table." aria-label="Based on this query result, not the entire table.">
-              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-                <circle cx="7" cy="7" r="5.2" fill="none" stroke="currentColor" stroke-width="1.4"/>
-                <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M7 6.3v3.4M7 4.4v.2"/>
-              </svg>
+            <button type="button" id="schema-pop-info" class="schema-pop-info hidden" data-tip="Based on this query result, not the entire table." aria-label="Based on this query result, not the entire table.">
+              <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/info.svg#icon"></use></svg>
             </button>
           </div>
           <div class="schema-pop-title-row">
@@ -255,10 +255,8 @@
           <div id="schema-pop-query" class="schema-pop-query" hidden></div>
           <p id="schema-pop-summary" class="schema-pop-summary"></p>
         </div>
-        <button type="button" id="schema-pop-close" title="Close" aria-label="Close structure">
-          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-            <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M2 2l8 8M10 2l-8 8"/>
-          </svg>
+        <button type="button" id="schema-pop-close" data-tip="Close" aria-label="Close structure">
+          <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
       <div id="schema-pop-body" class="schema-pop-body"></div>
@@ -273,10 +271,8 @@
           <h2 id="row-pop-title">Row</h2>
           <div id="row-pop-keys" class="row-pop-keys"></div>
         </div>
-        <button type="button" id="row-pop-close" title="Close" aria-label="Close row">
-          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-            <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M2 2l8 8M10 2l-8 8"/>
-          </svg>
+        <button type="button" id="row-pop-close" data-tip="Close" aria-label="Close row">
+          <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
       <div id="row-pop-body" class="row-pop-body"></div>
@@ -287,10 +283,8 @@
     <div class="patch-pop-card">
       <header class="patch-pop-head">
         <h2 id="patch-pop-title">File changed on disk</h2>
-        <button type="button" id="patch-pop-close" title="Close" aria-label="Close unsaved patch">
-          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-            <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M2 2l8 8M10 2l-8 8"/>
-          </svg>
+        <button type="button" id="patch-pop-close" data-tip="Close" aria-label="Close unsaved patch">
+          <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
       <p id="patch-pop-note"></p>
@@ -312,7 +306,46 @@
       <button type="button" id="server-retry">Retry</button>
     </div>
   </dialog>
-  <div id="lint-tip" class="lint-tip" role="tooltip" hidden></div>
+  <dialog id="confirm-pop" aria-labelledby="confirm-pop-title" aria-describedby="confirm-pop-message">
+    <div class="confirm-pop-card">
+      <h2 id="confirm-pop-title">Confirm</h2>
+      <p id="confirm-pop-path" class="confirm-pop-path" hidden></p>
+      <p id="confirm-pop-message"></p>
+      <div class="confirm-pop-actions">
+        <button type="button" id="confirm-cancel">Cancel</button>
+        <button type="button" id="confirm-ok">OK</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="prompt-pop" aria-labelledby="prompt-pop-title">
+    <form class="prompt-pop-card" id="prompt-pop-form">
+      <h2 id="prompt-pop-title">Name</h2>
+      <input id="prompt-pop-input" type="text" autocomplete="off" spellcheck="false">
+      <div class="prompt-pop-actions">
+        <button type="button" id="prompt-cancel">Cancel</button>
+        <button type="submit" id="prompt-ok">OK</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="mermaid-screen" aria-label="Diagram full screen">
+    <div class="mermaid-screen-bar">
+      <button type="button" id="mermaid-zoom-out" aria-label="Zoom out" data-tip="Zoom out">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/zoom_out.svg#icon"></use></svg>
+      </button>
+      <span id="mermaid-zoom-label" class="mermaid-zoom-label">100%</span>
+      <button type="button" id="mermaid-zoom-in" aria-label="Zoom in" data-tip="Zoom in">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/zoom_in.svg#icon"></use></svg>
+      </button>
+      <button type="button" id="mermaid-zoom-fit" aria-label="Fit diagram" data-tip="Fit">Fit</button>
+      <button type="button" id="mermaid-screen-close" aria-label="Exit full screen" data-tip="Exit full screen">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
+      </button>
+    </div>
+    <div id="mermaid-screen-stage" class="mermaid-screen-stage">
+      <div id="mermaid-screen-canvas" class="mermaid-screen-canvas"></div>
+    </div>
+  </dialog>
+  <div id="lint-tip" class="lint-tip" role="tooltip" popover="manual" hidden></div>
   <div id="presence-tip" class="presence-tip" role="tooltip" hidden></div>
   <div id="run-tip" class="run-tip" role="tooltip" hidden>Run selection</div>
   <script type="module" src="/app.js"></script>

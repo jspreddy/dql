@@ -278,7 +278,7 @@ class RunButtonMarker {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "run-float";
-    button.title = "Run selection";
+    button.dataset.tip = "Run selection";
     button.setAttribute("aria-label", "Run selection");
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("viewBox", "0 0 12 12");
@@ -360,7 +360,7 @@ class RunStatusMarker extends GutterMarker {
     const mark = document.createElement("span");
     mark.className = "run-status run-status-" + this.status;
     const label = this.status === "running" ? "Running" : this.status === "ok" ? "Succeeded" : "Failed";
-    mark.title = label;
+    mark.dataset.tip = label;
     mark.setAttribute("role", "img");
     mark.setAttribute("aria-label", label);
     mark.dataset.testid = "run-status-" + this.status;
@@ -488,7 +488,7 @@ function lintMarkSet(issues, doc) {
     if (issue.to <= from) continue;
     builder.add(from, issue.to, Decoration.mark({
       class: issue.severity === "warning" ? "cm-lint-warning" : "cm-lint-error",
-      attributes: { title: issue.message },
+      attributes: { "data-tip": issue.message },
     }));
     cursor = issue.to;
   }
@@ -525,7 +525,7 @@ class LintGutterMarker extends GutterMarker {
   toDOM() {
     const mark = document.createElement("span");
     mark.className = "lint-gutter lint-gutter-" + this.severity;
-    mark.title = this.message;
+    mark.dataset.tip = this.message;
     mark.dataset.testid = "lint-gutter-" + this.severity;
     mark.textContent = this.severity === "warning" ? "!" : "●";
     return mark;

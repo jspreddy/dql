@@ -1,0 +1,66 @@
+-- Memory copies of the reads the desk actually does.
+-- Run 00-portfolio.dql, 10-stays.dql, and 20-service.dql first.
+--
+-- A temp table is those rows, kept in memory for every tab of this server.
+-- It is not written to disk, and it is gone when the process exits.
+-- The first column is the hash key, so the follow-up reads are a single key.
+
+DROP TEMPTABLE IF EXISTS hp_mem_seattle_listings;
+DROP TEMPTABLE IF EXISTS hp_mem_ada_trips;
+DROP TEMPTABLE IF EXISTS hp_mem_unit_2a_nights;
+DROP TEMPTABLE IF EXISTS hp_mem_open_jobs;
+DROP TEMPTABLE IF EXISTS hp_mem_mina_queue;
+
+-- Listings still for rent in Seattle.
+CREATE TEMPTABLE hp_mem_seattle_listings AS (
+  SELECT sk, name, beds, nightly_cents, min_nights
+  FROM hp_portfolio
+  WHERE city = 'Seattle' AND begins_with(sk, 'LISTING#') AND status = 'active'
+  USING by-city
+);
+
+-- One guest's reservations, in arrival order.
+CREATE TEMPTABLE hp_mem_ada_trips AS (
+  SELECT sk, building, unit_id, arrive, depart, status, nightly_cents
+  FROM hp_stays
+  WHERE pk = 'GUEST#ada' AND begins_with(sk, 'RES#')
+);
+
+-- Nights already taken on unit 2A.
+CREATE TEMPTABLE hp_mem_unit_2a_nights AS (
+  SELECT sk, guest_name, res_id, status
+  FROM hp_stays
+  WHERE pk = 'UNIT#2a' AND begins_with(sk, 'NIGHT#')
+);
+
+-- Open work, earliest due date first.
+CREATE TEMPTABLE hp_mem_open_jobs AS (
+  SELECT sk, title, assignee, unit_name, due, priority
+  FROM hp_service
+  WHERE status = 'open' AND begins_with(sk, 'WO#')
+  USING by-status
+);
+
+-- One person's queue.
+CREATE TEMPTABLE hp_mem_mina_queue AS (
+  SELECT sk, title, status, due, unit_name
+  FROM hp_service
+  WHERE assignee = 'mina' AND begins_with(sk, 'WO#')
+  USING by-assignee
+);
+
+-- After this, the desk reads the memory tables by key.
+SELECT * FROM hp_mem_seattle_listings WHERE sk = 'LISTING#summer';
+
+SCAN building, arrive, depart, status
+FROM hp_mem_ada_trips;
+
+SELECT guest_name, res_id
+FROM hp_mem_unit_2a_nights
+WHERE sk = 'NIGHT#2026-07-03#r-184';
+
+SCAN * FROM hp_mem_open_jobs;
+
+SELECT title, status, due
+FROM hp_mem_mina_queue
+WHERE sk = 'WO#2026-07-02#w-9';

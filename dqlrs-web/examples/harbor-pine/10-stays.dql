@@ -1,0 +1,182 @@
+-- Harbor & Pine: guests, reservations, nights, and charges in one table.
+-- A guest holds a profile and that guest's reservations.
+-- A unit holds one row per occupied night, so the calendar is one query.
+-- A reservation holds its charges.
+-- by-unit finds a guest's reservation from the unit.
+-- by-status finds booked stays in arrival order.
+
+DROP TABLE IF EXISTS hp_stays;
+
+CREATE TABLE hp_stays (
+  pk STRING HASH KEY,
+  sk STRING RANGE KEY
+) GLOBAL INDEX ('by-unit', unit_id STRING, sk STRING)
+  GLOBAL INDEX ('by-status', status STRING, arrive STRING);
+
+INSERT INTO hp_stays (
+  pk='GUEST#ada',
+  sk='PROFILE',
+  kind='guest',
+  name='Ada Okonkwo',
+  email='ada@example.com',
+  phone='+1-206-555-0148',
+  city='Seattle',
+  trips=2
+);
+
+INSERT INTO hp_stays (
+  pk='GUEST#kenji',
+  sk='PROFILE',
+  kind='guest',
+  name='Kenji Sato',
+  email='kenji@example.com',
+  city='Portland',
+  trips=1
+);
+
+-- Ada's two trips. sk sorts by arrival, so the guest timeline is the key.
+INSERT INTO hp_stays (
+  pk='GUEST#ada',
+  sk='RES#2026-07-03#r-184',
+  kind='reservation',
+  res_id='r-184',
+  unit_id='UNIT#2a',
+  building='Pine Court',
+  arrive='2026-07-03',
+  depart='2026-07-06',
+  nights=3,
+  status='booked',
+  guests=2,
+  nightly_cents=18900,
+  currency='USD'
+);
+
+INSERT INTO hp_stays (
+  pk='GUEST#ada',
+  sk='RES#2026-11-20#r-203',
+  kind='reservation',
+  res_id='r-203',
+  unit_id='UNIT#1',
+  building='Harbor House',
+  arrive='2026-11-20',
+  depart='2026-11-23',
+  nights=3,
+  status='held',
+  guests=1,
+  nightly_cents=14200,
+  currency='USD'
+);
+
+INSERT INTO hp_stays (
+  pk='GUEST#kenji',
+  sk='RES#2026-08-14#r-190',
+  kind='reservation',
+  res_id='r-190',
+  unit_id='UNIT#2a',
+  building='Pine Court',
+  arrive='2026-08-14',
+  depart='2026-08-16',
+  nights=2,
+  status='booked',
+  guests=1,
+  nightly_cents=18900,
+  currency='USD'
+);
+
+-- The same stays, written under the unit, one item per night.
+INSERT INTO hp_stays (
+  pk='UNIT#2a',
+  sk='NIGHT#2026-07-03#r-184',
+  kind='night',
+  res_id='r-184',
+  guest_id='GUEST#ada',
+  guest_name='Ada Okonkwo',
+  status='booked',
+  arrive='2026-07-03'
+);
+
+INSERT INTO hp_stays (
+  pk='UNIT#2a',
+  sk='NIGHT#2026-07-04#r-184',
+  kind='night',
+  res_id='r-184',
+  guest_id='GUEST#ada',
+  guest_name='Ada Okonkwo',
+  status='booked',
+  arrive='2026-07-03'
+);
+
+INSERT INTO hp_stays (
+  pk='UNIT#2a',
+  sk='NIGHT#2026-07-05#r-184',
+  kind='night',
+  res_id='r-184',
+  guest_id='GUEST#ada',
+  guest_name='Ada Okonkwo',
+  status='booked',
+  arrive='2026-07-03'
+);
+
+INSERT INTO hp_stays (
+  pk='UNIT#2a',
+  sk='NIGHT#2026-08-14#r-190',
+  kind='night',
+  res_id='r-190',
+  guest_id='GUEST#kenji',
+  guest_name='Kenji Sato',
+  status='booked',
+  arrive='2026-08-14'
+);
+
+INSERT INTO hp_stays (
+  pk='UNIT#2a',
+  sk='NIGHT#2026-08-15#r-190',
+  kind='night',
+  res_id='r-190',
+  guest_id='GUEST#kenji',
+  guest_name='Kenji Sato',
+  status='booked',
+  arrive='2026-08-14'
+);
+
+-- Charges hang off the reservation, not the guest.
+INSERT INTO hp_stays (
+  pk='RES#r-184',
+  sk='CHARGE#cleaning',
+  kind='charge',
+  res_id='r-184',
+  label='Cleaning',
+  cents=7500,
+  currency='USD'
+);
+
+INSERT INTO hp_stays (
+  pk='RES#r-184',
+  sk='CHARGE#tax',
+  kind='charge',
+  res_id='r-184',
+  label='Occupancy tax',
+  cents=5103,
+  currency='USD'
+);
+
+-- One guest's trips, newest arrival last because sk is the arrival date.
+SELECT sk, building, arrive, depart, status, nightly_cents
+FROM hp_stays
+WHERE pk = 'GUEST#ada' AND begins_with(sk, 'RES#');
+
+-- Which nights unit 2A is already taken.
+SELECT sk, guest_name, res_id
+FROM hp_stays
+WHERE pk = 'UNIT#2a' AND begins_with(sk, 'NIGHT#');
+
+-- Every booked reservation, in arrival order, from the status index.
+SELECT sk, unit_id, arrive, depart, guests
+FROM hp_stays
+WHERE status = 'booked' AND begins_with(sk, 'RES#')
+USING by-status;
+
+-- What this stay costs beyond the nightly rate.
+SELECT label, cents
+FROM hp_stays
+WHERE pk = 'RES#r-184' AND begins_with(sk, 'CHARGE#');

@@ -1,0 +1,77 @@
+-- Time-based versions, from the AWS sample
+-- amazon-dynamodb-design-patterns examples/version-control/time-based-version.
+-- Each state is a row whose sort key is the timestamp.
+-- Metadata stays on SK = 'Metadata', which does not begin with a digit.
+-- The latest state is the newest timestamp.
+
+DROP TABLE IF EXISTS aws_vc_time;
+
+CREATE TABLE aws_vc_time (
+  PK STRING HASH KEY,
+  SK STRING RANGE KEY
+);
+
+INSERT INTO aws_vc_time (
+  PK='Equipment#1',
+  SK='Metadata',
+  Name='EquipmentName',
+  FactoryID='F#12345',
+  LineID='L#12345'
+);
+
+INSERT INTO aws_vc_time (
+  PK='Equipment#1',
+  SK='2020-11-10T09:00:00',
+  State='WARNING1'
+);
+
+INSERT INTO aws_vc_time (
+  PK='Equipment#1',
+  SK='2020-11-10T10:30:00',
+  State='NORMAL'
+);
+
+INSERT INTO aws_vc_time (
+  PK='Equipment#1',
+  SK='2020-11-11T08:15:00',
+  State='WARNING2'
+);
+
+INSERT INTO aws_vc_time (
+  PK='Equipment#2',
+  SK='Metadata',
+  Name='PackingLine',
+  FactoryID='F#12345',
+  LineID='L#67890'
+);
+
+INSERT INTO aws_vc_time (
+  PK='Equipment#2',
+  SK='2020-11-12T07:00:00',
+  State='NORMAL'
+);
+
+-- The equipment row itself.
+SELECT Name, FactoryID, LineID
+FROM aws_vc_time
+WHERE PK = 'Equipment#1' AND SK = 'Metadata';
+
+-- Newest state for Equipment#1.
+SELECT SK, State
+FROM aws_vc_time
+WHERE PK = 'Equipment#1' AND begins_with(SK, '2')
+ORDER BY SK DESC
+LIMIT 1;
+
+-- Full history, oldest first.
+SELECT SK, State
+FROM aws_vc_time
+WHERE PK = 'Equipment#1' AND begins_with(SK, '2')
+ORDER BY SK ASC;
+
+-- Newest state for Equipment#2.
+SELECT SK, State
+FROM aws_vc_time
+WHERE PK = 'Equipment#2' AND begins_with(SK, '2')
+ORDER BY SK DESC
+LIMIT 1;

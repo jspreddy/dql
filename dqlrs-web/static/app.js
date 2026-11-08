@@ -72,7 +72,7 @@ const state = {
   mode: "query",
   path: "",
   expanded: new Set(["."]),
-  expandedOnce: false,
+  tree: null,
   saveTimer: 0,
   lintTimer: 0,
   searchTimer: 0,
@@ -136,7 +136,34 @@ function loadClientId() {
 
 const HIGHLIGHT_KEY = "dqlrs-web.highlight";
 const THEME_KEY = "dqlrs-web.theme";
+const FILE_TYPES_KEY = "dqlrs-web.file-types";
+const FILE_TYPE_FILTERS = [
+  { type: "csv", label: "CSV" },
+  { type: "json", label: "JSON" },
+  { type: "dql", label: "DQL" },
+  { type: "md", label: "Markdown" },
+  { type: "html", label: "HTML" },
+];
+
+function loadFileTypes() {
+  try {
+    const raw = localStorage.getItem(FILE_TYPES_KEY);
+    if (raw == null) return ["dql"];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return ["dql"];
+    const allowed = new Set(FILE_TYPE_FILTERS.map((item) => item.type));
+    return parsed.filter((type) => allowed.has(type));
+  } catch {
+    return ["dql"];
+  }
+}
+
+function saveFileTypes(types) {
+  const order = FILE_TYPE_FILTERS.map((item) => item.type);
+  localStorage.setItem(FILE_TYPES_KEY, JSON.stringify(order.filter((type) => types.has(type))));
+}
 const themeToggle = document.querySelector("#theme-toggle");
+let lintTipAnchor = null;
 
 function currentTheme() {
   return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
@@ -145,10 +172,12 @@ function currentTheme() {
 function applyTheme(theme, persist) {
   const dark = theme === "dark";
   document.documentElement.dataset.theme = dark ? "dark" : "light";
+  const openDoc = document.querySelector(".doc-markdown");
+  if (openDoc) void renderMermaidDiagrams(openDoc);
   if (!themeToggle) return;
   themeToggle.setAttribute("aria-pressed", dark ? "true" : "false");
   themeToggle.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
-  themeToggle.title = dark ? "Light mode" : "Dark mode";
+  setTip(themeToggle, dark ? "Light mode" : "Dark mode");
   if (persist) localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
 }
 
@@ -276,7 +305,62 @@ const editor = new EditorView({
 });
 editorReady = true;
 const lintTip = document.querySelector("#lint-tip");
-let lintTipAnchor = null;
+
+const RICH_TIP = ".presence-icon, #run, .table-cache, .describe-cache";
+
+function setTip(el, text) {
+  if (!el) return;
+  const value = String(text || "");
+  el.removeAttribute("title");
+  if (!value) {
+    delete el.dataset.tip;
+    if (lintTipAnchor === el) hideLintTip();
+    return;
+  }
+  el.dataset.tip = value;
+  if (lintTipAnchor === el) placeLintTip(el);
+}
+
+function claimTip(el) {
+  if (!el || el.nodeType !== 1 || el.tagName === "IFRAME") return;
+  if (el.tagName !== "HTML" && el.tagName !== "BODY" && el.hasAttribute("title")) {
+    const text = el.getAttribute("title") || "";
+    el.removeAttribute("title");
+    if (text) el.dataset.tip = text;
+    else delete el.dataset.tip;
+  }
+  if (!el.querySelectorAll) return;
+  for (const titled of el.querySelectorAll("[title]")) claimTip(titled);
+  for (const svgTitle of el.querySelectorAll("svg > title")) {
+    const svg = svgTitle.parentElement;
+    const label = svgTitle.textContent || "";
+    svgTitle.remove();
+    if (label && svg) svg.dataset.tip = label;
+  }
+}
+
+function absorbTitle(node) {
+  if (!node || !node.closest) return;
+  const el = node.closest("[title]");
+  if (el) claimTip(el);
+  const svg = node.closest("svg");
+  const svgTitle = svg && svg.querySelector(":scope > title");
+  if (svgTitle) claimTip(svg);
+}
+
+const tipWatcher = new MutationObserver((records) => {
+  for (const record of records) {
+    if (record.type === "attributes") claimTip(record.target);
+    for (const node of record.addedNodes) claimTip(node);
+  }
+});
+tipWatcher.observe(document.body, {
+  subtree: true,
+  childList: true,
+  attributes: true,
+  attributeFilter: ["title"],
+});
+claimTip(document.body);
 
 function lintHoverTarget(node) {
   if (!node || !node.closest || !editor.dom.contains(node)) return null;
@@ -288,21 +372,36 @@ function lintHoverTarget(node) {
 }
 
 function lintHoverText(target) {
-  if (target.classList.contains("lint-gutter")) return target.getAttribute("title") || "";
+  if (target.classList.contains("lint-gutter")) return target.dataset.tip || "";
   return [...target.querySelectorAll(".cm-lint-error, .cm-lint-warning")]
-    .map((mark) => mark.getAttribute("title") || "")
+    .map((mark) => mark.dataset.tip || "")
     .filter(Boolean)
     .join("\n");
 }
 
+function tipText(target) {
+  if (target.classList.contains("cm-line") || target.classList.contains("lint-gutter")) return lintHoverText(target);
+  return target.dataset.tip || "";
+}
+
+function tipAnchor(node) {
+  if (!node || !node.closest) return null;
+  if (node.closest("#lint-tip, #presence-tip, #run-tip, " + RICH_TIP)) return null;
+  const host = node.closest("[data-tip]");
+  if (host) return host;
+  return lintHoverTarget(node);
+}
+
 function hideLintTip() {
   lintTipAnchor = null;
-  if (lintTip) lintTip.hidden = true;
+  if (!lintTip) return;
+  lintTip.hidden = true;
+  if (lintTip.matches(":popover-open")) lintTip.hidePopover();
 }
 
 function placeLintTip(target) {
   if (!lintTip) return;
-  const text = lintHoverText(target);
+  const text = tipText(target);
   if (!text) {
     hideLintTip();
     return;
@@ -311,6 +410,7 @@ function placeLintTip(target) {
     lintTip.textContent = text;
     lintTip.hidden = false;
     lintTipAnchor = target;
+    if (!lintTip.matches(":popover-open")) lintTip.showPopover();
   }
   const rect = target.getBoundingClientRect();
   const tip = lintTip.getBoundingClientRect();
@@ -322,20 +422,31 @@ function placeLintTip(target) {
   lintTip.style.left = `${left}px`;
 }
 
-editor.dom.addEventListener("mouseover", (event) => {
-  const target = lintHoverTarget(event.target);
+document.addEventListener("pointerover", (event) => {
+  absorbTitle(event.target);
+  const target = tipAnchor(event.target);
   if (!target) {
-    hideLintTip();
+    if (lintTipAnchor && !lintTipAnchor.contains(event.target)) hideLintTip();
     return;
   }
   placeLintTip(target);
+}, true);
+document.addEventListener("pointerout", (event) => {
+  if (!lintTipAnchor || !lintTipAnchor.contains(event.target)) return;
+  if (lintTipAnchor.contains(event.relatedTarget)) return;
+  hideLintTip();
+}, true);
+document.addEventListener("focusin", (event) => {
+  absorbTitle(event.target);
+  const target = tipAnchor(event.target);
+  if (!target || target.classList.contains("cm-line")) return;
+  placeLintTip(target);
 });
-editor.dom.addEventListener("mouseout", (event) => {
-  if (!lintHoverTarget(event.target)) return;
-  if (lintHoverTarget(event.relatedTarget)) return;
+document.addEventListener("focusout", (event) => {
+  if (!lintTipAnchor || lintTipAnchor.contains(event.relatedTarget)) return;
   hideLintTip();
 });
-editor.scrollDOM.addEventListener("scroll", hideLintTip, { passive: true });
+window.addEventListener("scroll", hideLintTip, true);
 
 const resultBody = document.querySelector("#result-body");
 const runProgress = document.querySelector("#run-progress");
@@ -571,7 +682,7 @@ runButton.addEventListener("pointerenter", () => {
 runButton.addEventListener("pointerleave", hideRunTip);
 runButton.addEventListener("pointerdown", hideRunTip);
 runButton.addEventListener("blur", hideRunTip);
-stopButton.title = "Stop running query (Esc)";
+setTip(stopButton, "Stop running query (Esc)");
 stopButton.setAttribute("aria-keyshortcuts", "Escape");
 runButton.addEventListener("click", () => {
   armRunPane();
@@ -592,9 +703,35 @@ window.addEventListener("keydown", (event) => {
   stopRun();
 });
 
-function dataFile(path) {
+function fileKind(path) {
   const name = String(path || "").split("/").pop().toLowerCase();
-  return name.endsWith(".csv") || name.endsWith(".json");
+  if (name.endsWith(".csv")) return "csv";
+  if (name.endsWith(".json")) return "json";
+  if (name.endsWith(".markdown") || name.endsWith(".md")) return "md";
+  if (name.endsWith(".html") || name.endsWith(".htm")) return "html";
+  return "";
+}
+
+function dataFile(path) {
+  const kind = fileKind(path);
+  return kind === "csv" || kind === "json";
+}
+
+function docFile(path) {
+  const kind = fileKind(path);
+  return kind === "md" || kind === "html";
+}
+
+function viewOnlyFile(path) {
+  return dataFile(path) || docFile(path);
+}
+
+function dqlFile(path) {
+  return String(path || "").split("/").pop().toLowerCase().endsWith(".dql");
+}
+
+function fileType(path) {
+  return fileKind(path) || (dqlFile(path) ? "dql" : "");
 }
 
 function setViewOnly(viewOnly) {
@@ -608,12 +745,12 @@ function setViewOnly(viewOnly) {
 
 function setRunBusy(busy) {
   hideRunTip();
-  const viewOnly = dataFile(state.path);
+  const viewOnly = viewOnlyFile(state.path);
   runButton.disabled = busy || viewOnly;
   runButton.classList.toggle("hidden", busy || viewOnly);
   stopButton.classList.toggle("hidden", !busy);
   stopButton.disabled = !busy;
-  runFileButton.disabled = busy || !state.path || dataFile(state.path);
+  runFileButton.disabled = busy || !state.path || viewOnlyFile(state.path);
   syncClearResults();
   const floating = editor.dom.querySelector(".run-float");
   if (floating) floating.disabled = busy;
@@ -630,14 +767,14 @@ async function stopRun() {
 }
 
 function runFromEditor() {
-  if (runButton.disabled || dataFile(state.path)) return true;
+  if (runButton.disabled || viewOnlyFile(state.path)) return true;
   armRunPane();
   runSelection();
   return true;
 }
 
 async function runFile() {
-  if (runButton.disabled || !state.path || dataFile(state.path)) return;
+  if (runButton.disabled || !state.path || viewOnlyFile(state.path)) return;
   await flushSave();
   await runDocuments([{ text: editorText(), path: state.path, base: 0 }]);
 }
@@ -956,6 +1093,19 @@ envPop.addEventListener("toggle", (event) => {
   void loadEnvironment();
 });
 
+state.fileTypes = new Set(loadFileTypes());
+for (const button of document.querySelectorAll(".file-filter")) {
+  button.setAttribute("aria-pressed", state.fileTypes.has(button.dataset.type) ? "true" : "false");
+  button.addEventListener("click", () => {
+    const type = button.dataset.type;
+    if (state.fileTypes.has(type)) state.fileTypes.delete(type);
+    else state.fileTypes.add(type);
+    button.setAttribute("aria-pressed", state.fileTypes.has(type) ? "true" : "false");
+    saveFileTypes(state.fileTypes);
+    paintTree();
+  });
+}
+
 boot();
 
 async function boot() {
@@ -969,8 +1119,8 @@ async function boot() {
       state.booted = true;
       return;
     }
-    const file = treeEl.querySelector('.node[data-kind="file"]');
-    if (file) file.click();
+    const file = state.tree ? firstFile(visibleTree(state.tree)) : null;
+    if (file) await openFile(file.path);
     state.booted = true;
   } catch (error) {
     reportError(error);
@@ -982,7 +1132,7 @@ function applyEnvironment(config) {
   state.environment = environment;
   const label = environment.label || config.endpoint || "";
   endpointButton.textContent = label;
-  endpointButton.title = label;
+  setTip(endpointButton, label);
   endpointButton.dataset.kind = environment.kind || "local";
   if (environment.kind === "aws") {
     endpointButton.setAttribute("popovertarget", "env-pop");
@@ -1093,23 +1243,66 @@ function setMode(mode) {
   document.querySelector("#tree").classList.toggle("hidden", tables);
   document.querySelector("#tables-nav").classList.toggle("hidden", !tables);
   document.querySelector("#new-file").classList.toggle("hidden", tables);
+  document.querySelector("#tree-fold").classList.toggle("hidden", tables);
+  document.querySelector("#file-filters").classList.toggle("hidden", tables);
   document.querySelector("#refresh-tables").classList.toggle("hidden", !tables);
   if (!tables) document.querySelector("#table-cache").classList.add("hidden");
   document.querySelector("#side-title").textContent = tables ? "Tables" : "Files";
   const data = !tables && dataFile(state.path);
+  const doc = !tables && docFile(state.path);
   document.querySelector("#query-view").classList.toggle("is-data", data);
+  document.querySelector("#query-view").classList.toggle("is-doc", doc);
   document.querySelector("#file-rows").classList.toggle("hidden", !data);
+  document.querySelector("#doc-view").classList.toggle("hidden", !doc);
+  if (doc && state.disk && state.disk.path === state.path) showDocument(state.path, state.disk.text);
+  if (!doc) document.querySelector("#doc-body").replaceChildren();
   closeComplete();
   if (tables) loadTables();
 }
 
 async function refreshTree() {
   const root = await api("/api/tree");
-  if (!state.expandedOnce) {
-    expandAll(root);
-    state.expandedOnce = true;
+  state.tree = root;
+  paintTree();
+}
+
+function paintTree() {
+  if (!state.tree) return;
+  treeEl.replaceChildren(renderDir(visibleTree(state.tree), true));
+}
+
+function visibleTree(node) {
+  const children = [];
+  for (const child of node.children || []) {
+    if (child.type === "file") {
+      if (state.fileTypes.has(fileType(child.path))) children.push(child);
+      continue;
+    }
+    const next = visibleTree(child);
+    const empty = !(child.children || []).length;
+    if (empty || (next.children || []).length) children.push(next);
   }
-  treeEl.replaceChildren(renderDir(root, true));
+  return { ...node, children };
+}
+
+function markTreeSelection() {
+  for (const button of treeEl.querySelectorAll(".node")) {
+    const selected = button.dataset.path === state.path;
+    button.classList.toggle("selected", selected);
+    const current = button.dataset.kind === "file" && selected;
+    button.classList.toggle("is-open", current);
+    if (current) button.setAttribute("aria-current", "true");
+    else button.removeAttribute("aria-current");
+  }
+}
+
+function firstFile(node) {
+  for (const child of node.children || []) {
+    if (child.type === "file") return child;
+    const nested = firstFile(child);
+    if (nested) return nested;
+  }
+  return null;
 }
 
 function expandAll(node) {
@@ -1117,14 +1310,32 @@ function expandAll(node) {
   for (const child of node.children || []) expandAll(child);
 }
 
+function collapseTree() {
+  state.expanded = new Set(["."]);
+  paintTree();
+}
+
+function expandTree() {
+  if (state.tree) expandAll(state.tree);
+  paintTree();
+}
+
+document.querySelector("#collapse-tree").addEventListener("click", collapseTree);
+document.querySelector("#expand-tree").addEventListener("click", expandTree);
+
 function renderDir(node, isRoot) {
   const list = document.createElement("ul");
   for (const child of node.children || []) {
     const item = document.createElement("li");
     const open = child.type === "dir" && state.expanded.has(child.path);
     const editorFile = child.type === "file" && child.path === state.path;
-    const data = child.type === "file" && dataFile(child.path);
-    const button = nodeButton(child.type === "dir" ? (open ? "▾" : "▸") : "", child.name, child.path === state.path);
+    const kind = child.type === "file" ? fileType(child.path) : "";
+    const label = child.type === "dir"
+      ? nodeNameLabel(child.name, "folder")
+      : child.type === "file"
+        ? nodeNameLabel(child.name, FILE_TYPE_ICONS[kind] || "insert_drive_file", kind)
+        : child.name;
+    const button = nodeButton(child.type === "dir" ? (open ? "▾" : "▸") : "", label, child.path === state.path);
     if (editorFile) {
       button.classList.add("is-open");
       button.setAttribute("aria-current", "true");
@@ -1134,7 +1345,6 @@ function renderDir(node, isRoot) {
     button.dataset.path = child.path;
     button.id = nodeDomId(child.path);
     button.dataset.testid = button.id;
-    if (data) button.append(fileKindMark(child.path));
     bindNode(button, child);
     item.append(button);
     if (open) item.append(renderDir(child, false));
@@ -1143,7 +1353,8 @@ function renderDir(node, isRoot) {
   if (isRoot && !(node.children || []).length) {
     const empty = document.createElement("div");
     empty.className = "empty";
-    empty.textContent = "No .dql files yet";
+    const workspaceHasFiles = (state.tree?.children || []).length > 0;
+    empty.textContent = workspaceHasFiles ? "No matching files" : "No .dql files yet";
     list.append(empty);
   }
   return list;
@@ -1206,7 +1417,8 @@ function bindNode(button, child) {
 function toggleDir(path) {
   if (state.expanded.has(path)) state.expanded.delete(path);
   else state.expanded.add(path);
-  refreshTree();
+  if (state.tree) paintTree();
+  else void refreshTree();
 }
 
 function parentOf(path) {
@@ -1252,7 +1464,7 @@ function nodeDomId(path) {
 function runningFileMark() {
   const mark = document.createElement("span");
   mark.className = "node-running";
-  mark.title = "Running";
+  setTip(mark, "Running");
   mark.setAttribute("aria-label", "Running");
   return mark;
 }
@@ -1269,13 +1481,21 @@ function setRunningFile(path) {
   }
 }
 
-function fileKindMark(path) {
-  const mark = document.createElement("span");
-  const kind = path.toLowerCase().endsWith(".csv") ? "csv" : "json";
-  mark.className = "file-kind";
-  mark.dataset.kind = kind;
-  mark.textContent = kind;
-  return mark;
+const FILE_TYPE_ICONS = {
+  csv: "code",
+  json: "code",
+  md: "description",
+  html: "html",
+  dql: "terminal",
+};
+
+function nodeNameLabel(name, icon, kind) {
+  const label = document.createElement("span");
+  label.className = "node-name";
+  const mark = materialIcon(icon, "node-type");
+  if (kind) mark.dataset.kind = kind;
+  label.append(mark, document.createTextNode(name));
+  return label;
 }
 
 function nodeButton(twist, label, selected) {
@@ -1285,7 +1505,7 @@ function nodeButton(twist, label, selected) {
   const marker = document.createElement("span");
   marker.className = "twist";
   marker.textContent = twist || " ";
-  button.append(marker, document.createTextNode(label));
+  button.append(marker, label instanceof Node ? label : document.createTextNode(label));
   return button;
 }
 
@@ -1303,7 +1523,21 @@ async function openFile(path) {
       showResults([]);
       applyLint([]);
       setMode("query");
-      await Promise.all([refreshTree(), loadFileRows()]);
+      markTreeSelection();
+      await loadFileRows();
+      return;
+    }
+    if (docFile(path)) {
+      const file = await api("/api/file?path=" + encodeURIComponent(path));
+      state.fileEpoch += 1;
+      state.notedExternal = null;
+      state.disk = { path: file.path || path, text: file.text, revision: file.revision };
+      showOpenFile(file.path || path);
+      state.entries = [];
+      showResults([]);
+      applyLint([]);
+      setMode("query");
+      markTreeSelection();
       return;
     }
     setFileSchema(null);
@@ -1317,10 +1551,679 @@ async function openFile(path) {
     state.entries = [];
     showResults([]);
     setMode("query");
-    await Promise.all([refreshTree(), loadFileResults(file.path || path)]);
+    markTreeSelection();
+    await loadFileResults(file.path || path);
   } catch (error) {
     reportError(error);
   }
+}
+
+function showDocument(path, text) {
+  const title = document.querySelector("#doc-title");
+  const meta = document.querySelector("#doc-meta");
+  const body = document.querySelector("#doc-body");
+  const name = String(path || "").split("/").pop();
+  const kind = fileKind(path);
+  title.textContent = name;
+  meta.textContent = kind === "html" ? "Rendered page" : "Formatted";
+  closeMermaidScreen();
+  body.replaceChildren();
+  if (kind === "html") {
+    const frame = document.createElement("iframe");
+    frame.className = "doc-frame";
+    frame.setAttribute("sandbox", "allow-scripts allow-popups");
+    frame.setAttribute("referrerpolicy", "no-referrer");
+    frame.title = name;
+    frame.srcdoc = htmlWithDocBase(path, text);
+    body.append(frame);
+    return;
+  }
+  const article = document.createElement("article");
+  article.className = "doc-markdown";
+  article.innerHTML = renderMarkdown(text);
+  article.addEventListener("click", (event) => {
+    const link = event.target.closest("a");
+    if (!link) return;
+    const href = link.getAttribute("href") || "";
+    if (!href || href.startsWith("#") || /^(https?:|mailto:)/i.test(href)) return;
+    event.preventDefault();
+    const next = resolveWorkspaceHref(path, href);
+    if (next) openFile(next);
+  });
+  body.append(article);
+  void renderMermaidDiagrams(article);
+}
+
+function resolveWorkspaceHref(from, href) {
+  const clean = String(href || "").split("#")[0].split("?")[0].trim();
+  if (!clean || clean.startsWith("//") || /^[a-z][a-z0-9+.-]*:/i.test(clean)) return "";
+  const base = parentOf(from);
+  const parts = (clean.startsWith("/") ? [] : (base === "." ? [] : base.split("/"))).concat(clean.split("/"));
+  const stack = [];
+  for (const part of parts) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (!stack.length) return "";
+      stack.pop();
+      continue;
+    }
+    stack.push(part);
+  }
+  return stack.join("/");
+}
+
+const docLinkBridge = `<script>
+document.addEventListener("click", function (event) {
+  var node = event.target;
+  var link = node && node.closest ? node.closest("a") : null;
+  if (!link) return;
+  var raw = link.getAttribute("href") || "";
+  if (!raw || raw.charAt(0) === "#") return;
+  if (raw.slice(0, 2) === "//" || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return;
+  var url;
+  try { url = new URL(link.href, document.baseURI); } catch (err) { return; }
+  if (url.pathname.indexOf("/doc/") !== 0) return;
+  event.preventDefault();
+  var path = "";
+  try { path = decodeURIComponent(url.pathname.slice(5)); } catch (err) { return; }
+  parent.postMessage({ type: "dql-doc-link", path: path }, "*");
+}, true);
+</script>`;
+
+function htmlWithDocBase(path, html) {
+  const source = String(html ?? "");
+  if (/<base[\s>]/i.test(source)) return source;
+  const dir = parentOf(path);
+  const prefix = dir === "." ? "" : dir.split("/").map((part) => encodeURIComponent(part)).join("/") + "/";
+  const head = `<base href="/doc/${prefix}">` + docLinkBridge;
+  if (/<head[^>]*>/i.test(source)) return source.replace(/<head[^>]*>/i, (tag) => tag + head);
+  if (/<html[^>]*>/i.test(source)) return source.replace(/<html[^>]*>/i, (tag) => tag + "<head>" + head + "</head>");
+  return "<head>" + head + "</head>" + source;
+}
+
+window.addEventListener("message", (event) => {
+  const frame = document.querySelector(".doc-frame");
+  if (!frame || event.source !== frame.contentWindow) return;
+  const data = event.data;
+  if (!data || data.type !== "dql-doc-link" || typeof data.path !== "string") return;
+  const next = data.path.replace(/^\/+/, "");
+  if (!next || next.split("/").some((part) => !part || part === "." || part === "..")) return;
+  openFile(next);
+});
+
+const mermaidSources = new WeakMap();
+let mermaidModule = null;
+let mermaidTicket = 0;
+
+async function loadMermaid() {
+  if (!mermaidModule) {
+    const mod = await import("mermaid");
+    mermaidModule = mod.default;
+  }
+  return mermaidModule;
+}
+
+function cssToken(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function mermaidThemeVariables() {
+  const scale = [
+    cssToken("--paper"),
+    cssToken("--teal-wash"),
+    cssToken("--blue-wash"),
+    cssToken("--amber-bg"),
+    cssToken("--teal-soft"),
+    cssToken("--paper-2"),
+    cssToken("--selected"),
+    cssToken("--hover"),
+  ];
+  const inks = [cssToken("--teal-ink"), cssToken("--blue-ink"), cssToken("--amber-ink"), cssToken("--text-secondary")];
+  const text = cssToken("--text");
+  const variables = {
+    background: cssToken("--canvas"),
+    mainBkg: cssToken("--paper"),
+    secondBkg: cssToken("--paper-2"),
+    primaryColor: cssToken("--paper"),
+    secondaryColor: cssToken("--blue-wash"),
+    tertiaryColor: cssToken("--amber-bg"),
+    primaryBorderColor: cssToken("--line-control"),
+    secondaryBorderColor: cssToken("--blue-ink"),
+    tertiaryBorderColor: cssToken("--amber-ink"),
+    primaryTextColor: text,
+    secondaryTextColor: text,
+    tertiaryTextColor: text,
+    textColor: text,
+    nodeTextColor: text,
+    titleColor: text,
+    lineColor: cssToken("--text-secondary"),
+    defaultLinkColor: cssToken("--text-secondary"),
+    nodeBkg: cssToken("--paper"),
+    nodeBorder: cssToken("--line-control"),
+    clusterBkg: cssToken("--teal-wash"),
+    clusterBorder: cssToken("--teal-ink"),
+    edgeLabelBackground: cssToken("--paper"),
+    actorBkg: cssToken("--blue-wash"),
+    actorBorder: cssToken("--blue-ink"),
+    actorTextColor: text,
+    actorLineColor: cssToken("--muted"),
+    signalColor: cssToken("--text-secondary"),
+    signalTextColor: text,
+    labelBoxBkgColor: cssToken("--paper"),
+    labelBoxBorderColor: cssToken("--line-control"),
+    labelTextColor: text,
+    noteBkgColor: cssToken("--amber-bg"),
+    noteBorderColor: cssToken("--amber-ink"),
+    noteTextColor: text,
+    activationBkgColor: cssToken("--teal-wash"),
+    activationBorderColor: cssToken("--teal-ink"),
+    sequenceNumberColor: cssToken("--on-fill"),
+    sectionBkgColor: cssToken("--teal-soft"),
+    altSectionBkgColor: cssToken("--paper-2"),
+    gridColor: cssToken("--line"),
+    todayLineColor: cssToken("--amber-ink"),
+    taskBkgColor: cssToken("--blue-wash"),
+    taskBorderColor: cssToken("--blue-ink"),
+    activeTaskBkgColor: cssToken("--teal-wash"),
+    activeTaskBorderColor: cssToken("--teal-ink"),
+    doneTaskBkgColor: cssToken("--paper-2"),
+    doneTaskBorderColor: cssToken("--line-control"),
+    critBkgColor: cssToken("--danger-wash"),
+    critBorderColor: cssToken("--danger"),
+    useGradient: true,
+    gradientStart: cssToken("--line-control"),
+    gradientStop: cssToken("--line"),
+    dropShadow: `drop-shadow(1px 2px 2px ${cssToken("--shadow-pop")})`,
+    filterColor: cssToken("--shadow"),
+  };
+  scale.forEach((color, index) => {
+    variables[`cScale${index}`] = color;
+    variables[`cScaleLabel${index}`] = text;
+    variables[`pie${index + 1}`] = inks[index % inks.length];
+  });
+  return variables;
+}
+
+const mermaidScreen = document.querySelector("#mermaid-screen");
+const mermaidStage = document.querySelector("#mermaid-screen-stage");
+const mermaidCanvas = document.querySelector("#mermaid-screen-canvas");
+const mermaidZoomLabel = document.querySelector("#mermaid-zoom-label");
+let mermaidScreenBlock = null;
+let mermaidScreenScale = 1;
+let mermaidScreenFit = 1;
+let mermaidScreenBase = { w: 1, h: 1 };
+let mermaidX = 0;
+let mermaidY = 0;
+let mermaidPan = null;
+
+function closeMermaidScreen() {
+  if (mermaidScreen?.open) mermaidScreen.close();
+}
+
+function mountMermaidScreen(svg, source) {
+  const clone = svg.cloneNode(true);
+  clone.classList.remove("chain");
+  for (const el of clone.querySelectorAll(".hot, .pinned")) {
+    el.classList.remove("hot");
+    el.classList.remove("pinned");
+  }
+  // Mermaid sets an inline max-width to the viewBox size. That beats the
+  // stylesheet, so the canvas can grow while the drawing stays put.
+  clone.style.maxWidth = "none";
+  clone.style.width = "100%";
+  clone.style.height = "100%";
+  mermaidCanvas.replaceChildren(clone);
+  if (source && /^\s*(?:flowchart|graph)\b/m.test(source)) highlightCallChain(clone, source);
+  const box = svg.viewBox.baseVal;
+  const rendered = svg.getBoundingClientRect();
+  mermaidScreenBase = {
+    w: box?.width || rendered.width || 1,
+    h: box?.height || rendered.height || 1,
+  };
+}
+
+function paintMermaid() {
+  mermaidCanvas.style.width = `${mermaidScreenBase.w * mermaidScreenScale}px`;
+  mermaidCanvas.style.height = `${mermaidScreenBase.h * mermaidScreenScale}px`;
+  mermaidCanvas.style.transform = `translate(${mermaidX}px, ${mermaidY}px)`;
+  const fit = mermaidScreenFit || mermaidScreenScale;
+  mermaidZoomLabel.textContent = `${Math.round((mermaidScreenScale / fit) * 100)}%`;
+}
+
+function zoomMermaidAt(next, originX, originY) {
+  // The percent label is relative to the fitted size. Clamp against that,
+  // not a fixed viewBox scale: a small diagram is fitted above 8, so a
+  // cap of 8 froze the wheel near 80%.
+  const fit = mermaidScreenFit || mermaidScreenScale || 1;
+  const scale = Math.min(fit * 32, Math.max(fit * 0.1, next));
+  const ratio = scale / mermaidScreenScale;
+  mermaidX = originX - (originX - mermaidX) * ratio;
+  mermaidY = originY - (originY - mermaidY) * ratio;
+  mermaidScreenScale = scale;
+  paintMermaid();
+}
+
+function zoomMermaidBy(factor) {
+  zoomMermaidAt(mermaidScreenScale * factor, mermaidStage.clientWidth / 2, mermaidStage.clientHeight / 2);
+}
+
+function fitMermaidScreen() {
+  const availW = Math.max(mermaidStage.clientWidth - 48, 1);
+  const availH = Math.max(mermaidStage.clientHeight - 48, 1);
+  mermaidScreenFit = Math.min(availW / mermaidScreenBase.w, availH / mermaidScreenBase.h);
+  mermaidScreenScale = mermaidScreenFit;
+  mermaidX = (mermaidStage.clientWidth - mermaidScreenBase.w * mermaidScreenScale) / 2;
+  mermaidY = (mermaidStage.clientHeight - mermaidScreenBase.h * mermaidScreenScale) / 2;
+  paintMermaid();
+}
+
+function openMermaidScreen(block) {
+  const svg = block.querySelector("svg");
+  if (!svg || !mermaidScreen) return;
+  mermaidScreenBlock = block;
+  mountMermaidScreen(svg, mermaidSources.get(block) || "");
+  if (!mermaidScreen.open) mermaidScreen.showModal();
+  fitMermaidScreen();
+}
+
+function refreshOpenMermaidScreen() {
+  if (!mermaidScreen?.open) return;
+  const svg = mermaidScreenBlock?.isConnected ? mermaidScreenBlock.querySelector("svg") : null;
+  if (!svg) {
+    closeMermaidScreen();
+    return;
+  }
+  const scale = mermaidScreenScale;
+  const x = mermaidX;
+  const y = mermaidY;
+  mountMermaidScreen(svg, mermaidSources.get(mermaidScreenBlock) || "");
+  mermaidScreenScale = scale;
+  mermaidX = x;
+  mermaidY = y;
+  paintMermaid();
+}
+
+function attachMermaidExpand(block) {
+  const svg = block.querySelector("svg");
+  const frame = block.parentElement?.classList.contains("mermaid-frame") ? block.parentElement : null;
+  if (!svg) {
+    frame?.querySelector(".mermaid-expand")?.remove();
+    return;
+  }
+  let host = frame;
+  if (!host) {
+    host = document.createElement("div");
+    host.className = "mermaid-frame";
+    block.replaceWith(host);
+    host.append(block);
+  }
+  if (host.querySelector(".mermaid-expand")) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "mermaid-expand";
+  button.setAttribute("aria-label", "View diagram full screen");
+  button.setAttribute("aria-haspopup", "dialog");
+  button.setAttribute("aria-controls", "mermaid-screen");
+  setTip(button, "Full screen");
+  button.append(materialIcon("open_in_full"));
+  button.addEventListener("click", () => openMermaidScreen(block));
+  host.append(button);
+}
+
+function mermaidBackgroundEvent(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) return false;
+  if (target === mermaidStage || target === mermaidCanvas) return true;
+  if (!mermaidCanvas.contains(target)) return false;
+  const svg = mermaidCanvas.querySelector("svg");
+  if (target === svg || target.closest(".background")) return true;
+  return !target.closest("path, rect, circle, ellipse, line, polyline, polygon, text, tspan, foreignObject, image, use");
+}
+
+function endMermaidPan(event) {
+  if (!mermaidPan || (event && event.pointerId !== mermaidPan.id)) return;
+  mermaidPan = null;
+  mermaidStage.classList.remove("is-panning");
+}
+
+if (mermaidScreen && mermaidStage && mermaidCanvas) {
+  document.querySelector("#mermaid-zoom-in")?.addEventListener("click", () => zoomMermaidBy(1.25));
+  document.querySelector("#mermaid-zoom-out")?.addEventListener("click", () => zoomMermaidBy(1 / 1.25));
+  document.querySelector("#mermaid-zoom-fit")?.addEventListener("click", () => fitMermaidScreen());
+  document.querySelector("#mermaid-screen-close")?.addEventListener("click", () => closeMermaidScreen());
+  mermaidScreen.addEventListener("close", () => {
+    mermaidScreenBlock = null;
+    mermaidCanvas.replaceChildren();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !mermaidScreen.open) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeMermaidScreen();
+  }, true);
+  mermaidScreen.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeMermaidScreen();
+    } else if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      zoomMermaidBy(1.25);
+    } else if (event.key === "-" || event.key === "_") {
+      event.preventDefault();
+      zoomMermaidBy(1 / 1.25);
+    } else if (event.key === "0") {
+      event.preventDefault();
+      fitMermaidScreen();
+    }
+  });
+  mermaidScreen.addEventListener("wheel", (event) => {
+    if (!mermaidScreen.open) return;
+    event.preventDefault();
+    const rect = mermaidStage.getBoundingClientRect();
+    zoomMermaidAt(
+      mermaidScreenScale * Math.exp(-event.deltaY * 0.0015),
+      event.clientX - rect.left,
+      event.clientY - rect.top,
+    );
+  }, { passive: false });
+  mermaidStage.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !mermaidScreen.open || !mermaidBackgroundEvent(event)) return;
+    event.preventDefault();
+    mermaidPan = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      left: mermaidX,
+      top: mermaidY,
+    };
+    mermaidStage.classList.add("is-panning");
+    mermaidStage.setPointerCapture(event.pointerId);
+  });
+  mermaidStage.addEventListener("pointermove", (event) => {
+    if (!mermaidPan || event.pointerId !== mermaidPan.id) return;
+    mermaidX = mermaidPan.left + (event.clientX - mermaidPan.x);
+    mermaidY = mermaidPan.top + (event.clientY - mermaidPan.y);
+    paintMermaid();
+  });
+  mermaidStage.addEventListener("pointerup", endMermaidPan);
+  mermaidStage.addEventListener("pointercancel", endMermaidPan);
+}
+
+async function renderMermaidDiagrams(article) {
+  if (!article) return;
+  const blocks = [...article.querySelectorAll("pre.mermaid")];
+  if (!blocks.length) return;
+  const ticket = ++mermaidTicket;
+  for (const block of blocks) {
+    if (!mermaidSources.has(block)) mermaidSources.set(block, block.textContent);
+  }
+  let mermaid;
+  try {
+    mermaid = await loadMermaid();
+  } catch {
+    return;
+  }
+  if (ticket !== mermaidTicket || !article.isConnected) return;
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: "base",
+    securityLevel: "strict",
+    themeVariables: mermaidThemeVariables(),
+    htmlLabels: false,
+    flowchart: {
+      wrappingWidth: 120,
+    },
+  });
+  for (const block of blocks) {
+    const source = mermaidSources.get(block) || "";
+    block.removeAttribute("data-processed");
+    block.textContent = source;
+    try {
+      await mermaid.run({ nodes: [block] });
+    } catch {
+      block.textContent = source;
+      continue;
+    }
+    if (ticket !== mermaidTicket || !article.isConnected) return;
+    const svg = block.querySelector("svg");
+    attachMermaidExpand(block);
+    if (svg && /^\s*(?:flowchart|graph)\b/m.test(source)) highlightCallChain(svg, source);
+  }
+  if (ticket === mermaidTicket && article.isConnected) refreshOpenMermaidScreen();
+}
+
+function highlightCallChain(svg, source) {
+  const edges = [];
+  for (const line of source.split("\n")) {
+    const match = line.match(/^\s*(\w+)(?:\[[^\]]*\])?\s+-->\s*(?:\|[^|]*\|\s*)?(\w+)/);
+    if (match) edges.push([match[1], match[2]]);
+  }
+  const nodeEls = new Map();
+  for (const node of svg.querySelectorAll("g.node")) {
+    const match = node.id.match(/-flowchart-(.+)-\d+$/);
+    if (match) nodeEls.set(match[1], node);
+  }
+  const outgoing = new Map();
+  const incoming = new Map();
+  for (const id of nodeEls.keys()) {
+    outgoing.set(id, []);
+    incoming.set(id, []);
+  }
+  const edgeEls = edges.map(([from, to]) => {
+    outgoing.get(from)?.push(to);
+    incoming.get(to)?.push(from);
+    const marker = `L_${from}_${to}_`;
+    return {
+      from,
+      to,
+      path: [...svg.querySelectorAll("path.flowchart-link")].find((path) => path.id.includes(marker)),
+      label: svg.querySelector(`.edgeLabel .label[data-id^="${marker}"]`)?.closest(".edgeLabel"),
+    };
+  });
+
+  function walk(start, neighbors) {
+    const seen = new Set();
+    const stack = [...(neighbors.get(start) || [])];
+    while (stack.length) {
+      const id = stack.pop();
+      if (seen.has(id)) continue;
+      seen.add(id);
+      stack.push(...(neighbors.get(id) || []));
+    }
+    return seen;
+  }
+
+  function clear() {
+    svg.classList.remove("chain");
+    for (const el of svg.querySelectorAll(".hot, .pinned")) {
+      el.classList.remove("hot");
+      el.classList.remove("pinned");
+    }
+  }
+
+  let pinned = null;
+
+  function nodeIdFrom(event) {
+    const node = event.target.closest("g.node");
+    if (!node) return null;
+    const match = node.id.match(/-flowchart-(.+)-\d+$/);
+    return match ? match[1] : null;
+  }
+
+  function show(id) {
+    if (!nodeEls.has(id)) return;
+    clear();
+    const hot = walk(id, incoming);
+    for (const next of walk(id, outgoing)) hot.add(next);
+    hot.add(id);
+    svg.classList.add("chain");
+    for (const nodeId of hot) nodeEls.get(nodeId)?.classList.add("hot");
+    if (pinned) nodeEls.get(pinned)?.classList.add("pinned");
+    for (const edge of edgeEls) {
+      if (!hot.has(edge.from) || !hot.has(edge.to)) continue;
+      edge.path?.classList.add("hot");
+      edge.label?.classList.add("hot");
+    }
+  }
+
+  svg.addEventListener("mouseover", (event) => {
+    if (pinned) return;
+    const id = nodeIdFrom(event);
+    if (id) show(id);
+  });
+  svg.addEventListener("mouseleave", () => {
+    if (!pinned) clear();
+  });
+  svg.addEventListener("click", (event) => {
+    const id = nodeIdFrom(event);
+    if (!id) return;
+    pinned = pinned === id ? null : id;
+    if (pinned) show(pinned);
+    else show(id);
+  });
+}
+
+function renderMarkdown(source) {
+  const lines = String(source ?? "").replace(/\r\n/g, "\n").split("\n");
+  const html = [];
+  let index = 0;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+    const fence = line.match(/^```(.*)$/);
+    if (fence) {
+      const body = [];
+      index += 1;
+      while (index < lines.length && !lines[index].startsWith("```")) {
+        body.push(lines[index]);
+        index += 1;
+      }
+      if (index < lines.length) index += 1;
+      const lang = fence[1].trim().split(/\s+/)[0].toLowerCase();
+      const code = escapeHtml(body.join("\n"));
+      html.push(lang === "mermaid" ? '<pre class="mermaid">' + code + "</pre>" : "<pre><code>" + code + "</code></pre>");
+      continue;
+    }
+    const heading = line.match(/^(#{1,6})\s+(.*)$/);
+    if (heading) {
+      const level = heading[1].length;
+      html.push("<h" + level + ">" + inlineMarkdown(heading[2]) + "</h" + level + ">");
+      index += 1;
+      continue;
+    }
+    if (isTableStart(lines, index)) {
+      const rows = [];
+      while (index < lines.length && lines[index].includes("|")) {
+        if (!isSeparatorRow(lines[index])) rows.push(splitTableRow(lines[index]));
+        index += 1;
+      }
+      html.push(renderTable(rows));
+      continue;
+    }
+    if (/^\s*[-*]\s+/.test(line)) {
+      const items = [];
+      while (index < lines.length && /^\s*[-*]\s+/.test(lines[index])) {
+        items.push(lines[index].replace(/^\s*[-*]\s+/, ""));
+        index += 1;
+      }
+      html.push("<ul>" + items.map((item) => "<li>" + inlineMarkdown(item) + "</li>").join("") + "</ul>");
+      continue;
+    }
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const items = [];
+      while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index])) {
+        items.push(lines[index].replace(/^\s*\d+\.\s+/, ""));
+        index += 1;
+      }
+      html.push("<ol>" + items.map((item) => "<li>" + inlineMarkdown(item) + "</li>").join("") + "</ol>");
+      continue;
+    }
+    const para = [];
+    while (index < lines.length && lines[index].trim() && !markdownBlockStart(lines, index)) {
+      para.push(lines[index].trim());
+      index += 1;
+    }
+    html.push("<p>" + inlineMarkdown(para.join(" ")) + "</p>");
+  }
+  return html.join("");
+}
+
+function markdownBlockStart(lines, index) {
+  const line = lines[index];
+  return /^```/.test(line)
+    || /^#{1,6}\s/.test(line)
+    || /^\s*[-*]\s+/.test(line)
+    || /^\s*\d+\.\s+/.test(line)
+    || isTableStart(lines, index);
+}
+
+function isTableStart(lines, index) {
+  return Boolean(lines[index] && lines[index].includes("|") && lines[index + 1] && isSeparatorRow(lines[index + 1]));
+}
+
+function isSeparatorRow(line) {
+  const cells = splitTableRow(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function splitTableRow(line) {
+  let text = line.trim();
+  if (text.startsWith("|")) text = text.slice(1);
+  if (text.endsWith("|")) text = text.slice(0, -1);
+  return text.split("|").map((cell) => cell.trim());
+}
+
+function renderTable(rows) {
+  if (!rows.length) return "";
+  const head = rows[0].map((cell) => "<th>" + inlineMarkdown(cell) + "</th>").join("");
+  const body = rows.slice(1).map((row) => {
+    return "<tr>" + row.map((cell) => "<td>" + inlineMarkdown(cell) + "</td>").join("") + "</tr>";
+  }).join("");
+  return "<table><thead><tr>" + head + "</tr></thead><tbody>" + body + "</tbody></table>";
+}
+
+function inlineMarkdown(text) {
+  const out = [];
+  const pattern = /(`[^`]+`)|\[([^\]]+)\]\(([^)\s]+)\)|\*\*([^*]+)\*\*/g;
+  let last = 0;
+  let match;
+  while ((match = pattern.exec(text))) {
+    out.push(escapeHtml(text.slice(last, match.index)));
+    if (match[1]) out.push("<code>" + escapeHtml(match[1].slice(1, -1)) + "</code>");
+    else if (match[2]) {
+      const href = safeHref(match[3]);
+      if (href) {
+        const external = /^(https?:|mailto:)/i.test(href);
+        const extra = external ? ' target="_blank" rel="noopener noreferrer"' : "";
+        out.push('<a href="' + escapeHtml(href) + '"' + extra + ">" + escapeHtml(match[2]) + "</a>");
+      } else out.push(escapeHtml(match[0]));
+    } else out.push("<strong>" + escapeHtml(match[4]) + "</strong>");
+    last = match.index + match[0].length;
+  }
+  out.push(escapeHtml(text.slice(last)));
+  return out.join("");
+}
+
+function safeHref(url) {
+  const value = String(url || "").trim();
+  if (!value || /[\s<>"']/.test(value)) return "";
+  if (value.startsWith("//")) return "";
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value) && !/^(https?:|mailto:)/i.test(value)) return "";
+  return value;
+}
+
+function escapeHtml(text) {
+  return String(text ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[ch]);
 }
 
 async function loadFileRows() {
@@ -1371,7 +2274,11 @@ async function createFile() {
 }
 
 async function createNamedFile(dir) {
-  const entered = window.prompt(dir === "." ? "New file path" : "New file name", dir === "." ? "queries/notes.dql" : "notes.dql");
+  const entered = await promptAction(
+    dir === "." ? "New file path" : "New file name",
+    dir === "." ? "queries/notes.dql" : "notes.dql",
+    { okLabel: "Create" },
+  );
   if (!entered || !entered.trim()) return;
   const path = dir === "." ? entered.trim() : joinPath(dir, entered.trim());
   try {
@@ -1384,7 +2291,7 @@ async function createNamedFile(dir) {
 }
 
 async function createNamedFolder(dir) {
-  const entered = window.prompt("New folder name", "folder");
+  const entered = await promptAction("New folder name", "folder", { okLabel: "Create" });
   if (!entered || !entered.trim()) return;
   const path = dir === "." ? entered.trim() : joinPath(dir, entered.trim());
   try {
@@ -1413,7 +2320,7 @@ async function duplicateEntry(path) {
 }
 
 async function moveEntry(path) {
-  const entered = window.prompt("Move to", path);
+  const entered = await promptAction("Move to", path, { okLabel: "Move" });
   if (!entered || !entered.trim() || entered.trim() === path) return;
   try {
     await relocate(path, entered.trim());
@@ -1425,7 +2332,7 @@ async function moveEntry(path) {
 async function deleteEntry(path, kind) {
   const label = path.split("/").pop();
   const message = kind === "dir" ? "Delete folder " + label + "?" : "Delete " + label + "?";
-  if (!window.confirm(message)) return;
+  if (!(await confirmAction(message, { title: "Delete", path, okLabel: "Delete", danger: true }))) return;
   clearTimeout(state.saveTimer);
   state.fileEpoch += 1;
   state.notedExternal = null;
@@ -1504,7 +2411,8 @@ function beginRename(path) {
     settled = true;
     const nextName = input.value.trim();
     if (!commit || !nextName || nextName === name || /[\\/]/.test(nextName)) {
-      await refreshTree();
+      if (state.tree) paintTree();
+      else await refreshTree();
       return;
     }
     try {
@@ -1533,8 +2441,8 @@ function beginRename(path) {
 function menuItems(target) {
   const dir = target.type === "dir" ? target.path : parentOf(target.path || ".");
   const items = [];
-  const data = target.type === "file" && dataFile(target.path);
-  if (target.type === "file" && !data) {
+  const passive = target.type === "file" && viewOnlyFile(target.path);
+  if (target.type === "file" && !passive) {
     items.push({ label: "Run file", icon: "forward", danger: true, run: () => runFileAt(target.path) }, "-");
   }
   if (target.type === "dir") {
@@ -1553,7 +2461,7 @@ function menuItems(target) {
     { label: "Rename", run: () => beginRename(target.path) },
     { label: "Move to…", run: () => moveEntry(target.path) },
   );
-  if ((target.type === "file" && !data) || target.type === "dir") {
+  if ((target.type === "file" && !passive) || target.type === "dir") {
     items.push({ label: "Clear results", run: () => clearFileResults(target.path) });
   }
   items.push(
@@ -1654,7 +2562,7 @@ function flushSave() {
 
 async function flushSaveNow() {
   clearTimeout(state.saveTimer);
-  if (!state.path || !state.disk || state.applyingDisk || dataFile(state.path)) return;
+  if (!state.path || !state.disk || state.applyingDisk || viewOnlyFile(state.path)) return;
   const text = editorText();
   if (text === state.disk.text) return;
   const path = state.path;
@@ -1717,7 +2625,7 @@ function applyLint(issues) {
 }
 
 async function lintEditor(generation) {
-  if (dataFile(state.path)) {
+  if (viewOnlyFile(state.path)) {
     applyLint([]);
     return;
   }
@@ -1741,7 +2649,7 @@ function paintLint(issues) {
       lintStatus.classList.add("hidden");
       lintStatus.classList.remove("is-warning");
       lintStatus.textContent = "";
-      lintStatus.removeAttribute("title");
+      setTip(lintStatus, "");
     } else {
       const lead = errors[0] || issues[0];
       lintStatus.classList.toggle("is-warning", errors.length === 0);
@@ -1751,7 +2659,7 @@ function paintLint(issues) {
       if (errors.length && warnings) lintStatus.textContent = `${errorLabel}, ${warningLabel}`;
       else if (errors.length) lintStatus.textContent = errorLabel;
       else lintStatus.textContent = warningLabel;
-      lintStatus.title = lead.message || lintStatus.textContent;
+      setTip(lintStatus, lead.message || lintStatus.textContent);
     }
   }
   if (resultPane === "lint") renderActivePane();
@@ -1831,18 +2739,21 @@ function renderLint(host) {
   host.append(panel);
 }
 
-function fastForwardIcon() {
+function materialIcon(name, className) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("class", "ff-icon");
+  svg.setAttribute("class", className ? `icon ${className}` : "icon");
+  svg.setAttribute("viewBox", "0 0 24 24");
   svg.setAttribute("width", "14");
   svg.setAttribute("height", "14");
-  svg.setAttribute("viewBox", "0 0 16 16");
   svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("fill", "currentColor");
-  path.setAttribute("d", "M1.6 3.1 7.2 8 1.6 12.9Zm6.8 0L14 8 8.4 12.9Z");
-  svg.append(path);
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `/vendor/icons/${name}.svg#icon`);
+  svg.append(use);
   return svg;
+}
+
+function fastForwardIcon() {
+  return materialIcon("fast_forward", "ff-icon");
 }
 
 function showOpenFile(path) {
@@ -1854,9 +2765,9 @@ function showOpenFile(path) {
     text.className = "file-name-text";
     name.replaceChildren(text);
   }
-  const viewOnly = dataFile(state.path);
+  const viewOnly = viewOnlyFile(state.path);
   text.textContent = state.path ? state.path.split("/").pop() : "No file open";
-  name.title = viewOnly ? "View only" : "";
+  setTip(name, viewOnly ? "View only" : "");
   name.classList.toggle("is-open", Boolean(state.path));
   setViewOnly(viewOnly);
   const running = !stopButton.classList.contains("hidden");
@@ -1872,7 +2783,7 @@ function showOpenFile(path) {
 }
 
 function syncClearResults() {
-  const open = Boolean(state.path) && !dataFile(state.path);
+  const open = Boolean(state.path) && !viewOnlyFile(state.path);
   clearResultsButton.classList.toggle("hidden", !open);
   clearResultsButton.disabled = !open || runButton.disabled;
 }
@@ -2204,11 +3115,29 @@ async function pullOpenFile() {
   } catch (error) {
     if (!watchIsCurrent(path, epoch, seen, watchId)) return;
     if (error.payload?.missing) {
+      if (docFile(path)) {
+        state.fileEpoch += 1;
+        state.disk = null;
+        showOpenFile("");
+        setMode("query");
+        void refreshTree();
+        return;
+      }
       await adoptExternal(path, { missing: true, text: "", revision: "missing", path }, epoch);
     }
     return;
   }
   if (!watchIsCurrent(path, epoch, seen, watchId)) return;
+  if (docFile(path)) {
+    if (!file.revision || file.revision === seen) {
+      state.notedExternal = null;
+      return;
+    }
+    state.disk = { path, text: file.text, revision: file.revision };
+    state.notedExternal = null;
+    if (state.path === path) showDocument(path, file.text);
+    return;
+  }
   if (!file.revision || file.revision === seen) {
     state.notedExternal = null;
     return;
@@ -2765,7 +3694,7 @@ async function runSelection() {
 }
 
 async function runFolder(path) {
-  if (runButton.disabled) return;
+  if (!stopButton.classList.contains("hidden")) return;
   armRunPane();
   await flushSave();
   let documents = [];
@@ -2808,7 +3737,7 @@ function findTreeNode(node, path) {
 
 function dqlFilesUnder(node) {
   const children = node.children || [];
-  const files = children.filter((child) => child.type === "file");
+  const files = children.filter((child) => child.type === "file" && dqlFile(child.path));
   const nested = children.filter((child) => child.type === "dir").flatMap(dqlFilesUnder);
   return files.concat(nested);
 }
@@ -3061,7 +3990,7 @@ function statChip(text, testId, label) {
   const chip = document.createElement("span");
   chip.className = "result-card-stat";
   chip.dataset.testid = testId;
-  chip.title = label;
+  setTip(chip, label);
   chip.textContent = text;
   return chip;
 }
@@ -3130,7 +4059,7 @@ function queryToggle(query, host) {
   button.type = "button";
   button.className = "result-query-toggle";
   button.dataset.testid = "result-query-toggle";
-  button.title = "Show query";
+  setTip(button, "Show query");
   button.setAttribute("aria-label", "Show query");
   button.setAttribute("aria-expanded", "false");
   button.addEventListener("click", (event) => {
@@ -3142,7 +4071,7 @@ function queryToggle(query, host) {
     button.closest(".result-shell").classList.toggle("is-query-open", open);
     button.setAttribute("aria-expanded", open ? "true" : "false");
     const label = open ? "Hide query" : "Show query";
-    button.title = label;
+    setTip(button, label);
     button.setAttribute("aria-label", label);
   });
   return button;
@@ -3152,29 +4081,12 @@ function schemaIconButton(label) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "schema-btn";
-  button.title = label;
+  setTip(button, label);
   button.setAttribute("aria-label", label);
   button.setAttribute("aria-haspopup", "dialog");
   button.setAttribute("aria-controls", "schema-pop");
   button.setAttribute("aria-expanded", "false");
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("width", "14");
-  svg.setAttribute("height", "14");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("aria-hidden", "true");
-  const frame = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  frame.setAttribute("fill", "none");
-  frame.setAttribute("stroke", "currentColor");
-  frame.setAttribute("stroke-width", "1.4");
-  frame.setAttribute("stroke-linejoin", "round");
-  frame.setAttribute("d", "M2.5 3.2h11v9.6h-11z");
-  const grid = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  grid.setAttribute("fill", "none");
-  grid.setAttribute("stroke", "currentColor");
-  grid.setAttribute("stroke-width", "1.4");
-  grid.setAttribute("d", "M2.5 6.4h11M6.7 3.2v9.6");
-  svg.append(frame, grid);
-  button.append(svg);
+  button.append(materialIcon("table_chart"));
   return button;
 }
 
@@ -3595,17 +4507,7 @@ function cacheIcon() {
   const icon = document.createElement("span");
   icon.className = "describe-cache-icon";
   icon.setAttribute("aria-hidden", "true");
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  const mark = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  mark.setAttribute("fill", "none");
-  mark.setAttribute("stroke", "currentColor");
-  mark.setAttribute("stroke-width", "1.4");
-  mark.setAttribute("stroke-linecap", "round");
-  mark.setAttribute("stroke-linejoin", "round");
-  mark.setAttribute("d", "M8 2.6a5.4 5.4 0 1 1 0 10.8A5.4 5.4 0 0 1 8 2.6ZM8 4.9V8l2.1 1.3");
-  svg.append(mark);
-  icon.append(svg);
+  icon.append(materialIcon("schedule"));
   return icon;
 }
 
@@ -3621,7 +4523,7 @@ function sidebarMatchNote(text) {
   const note = document.createElement("p");
   note.className = "table-match-note";
   note.dataset.testid = "intelligent-match";
-  note.title = text;
+  setTip(note, text);
   const kind = String(text).match(/so showing (similar names and related keys|similar names|related keys)\.$/);
   note.textContent = kind ? kind[1][0].toUpperCase() + kind[1].slice(1) : text;
   return note;
@@ -3648,16 +4550,7 @@ function matchMark() {
   const icon = document.createElement("span");
   icon.className = "describe-match-mark";
   icon.setAttribute("aria-hidden", "true");
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "currentColor");
-  path.setAttribute("stroke-width", "1.4");
-  path.setAttribute("stroke-linecap", "round");
-  path.setAttribute("d", "M7.1 3.1a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7ZM10.1 10.1 13 13");
-  svg.append(path);
-  icon.append(svg);
+  icon.append(materialIcon("search"));
   return icon;
 }
 
@@ -3849,26 +4742,10 @@ function keyIcon(role, title) {
   const icon = document.createElement("span");
   icon.className = "key-icon";
   icon.dataset.key = role;
-  icon.title = title;
+  setTip(icon, title);
   icon.setAttribute("role", "img");
   icon.setAttribute("aria-label", title);
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 12 12");
-  svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "currentColor");
-  path.setAttribute("stroke-width", "1.3");
-  path.setAttribute("stroke-linecap", "round");
-  path.setAttribute("stroke-linejoin", "round");
-  path.setAttribute(
-    "d",
-    role === "hash"
-      ? "M4.2 1.2v9.6M7.8 1.2v9.6M1.3 4.2h9.4M1.3 7.8h9.4"
-      : "M6 1.3v9.4M6 1.3 3.7 3.6M6 1.3l2.3 2.3M6 10.7 3.7 8.4M6 10.7l2.3-2.3",
-  );
-  svg.append(path);
-  icon.append(svg);
+  icon.append(materialIcon(role === "hash" ? "tag" : "swap_vert"));
   return icon;
 }
 
@@ -4004,7 +4881,7 @@ async function openSchema(request, button) {
   const info = file
     ? "Based on every row in the file."
     : "Based on this query result, not the entire table.";
-  schemaPopInfo.title = info;
+  setTip(schemaPopInfo, info);
   schemaPopInfo.setAttribute("aria-label", info);
   schemaPopTitle.textContent = payload.title || (browser ? "Table" : "Result");
   schemaPopSummary.textContent = inspected.length
@@ -4103,7 +4980,7 @@ function schemaTable(inspected) {
     sample.className = "schema-sample";
     const sampleText = formatSample(item.sample);
     sample.textContent = sampleText;
-    sample.title = sampleText;
+    setTip(sample, sampleText);
     tr.append(name, type, role, present, sample);
     body.append(tr);
   }
@@ -4304,7 +5181,7 @@ function renderSettingsCacheAge(cache) {
   const age = cacheAgeLabel(cache && cache.savedAtMs);
   const detail = cache && cache.text ? cache.text : "";
   node.textContent = age ? "(" + age + ")" : "not cached";
-  node.title = detail || "No table list cached.";
+  setTip(node, detail || "No table list cached.");
   node.classList.toggle("is-refreshing", Boolean(cache && cache.refreshing));
 }
 
@@ -4318,7 +5195,7 @@ async function refreshSettingsCacheAge() {
     if (request !== state.cacheStatusRequest) return;
     const node = document.querySelector("#settings-cache-age");
     node.textContent = "unavailable";
-    node.title = error.message;
+    setTip(node, error.message);
     node.classList.remove("is-refreshing");
   }
 }
@@ -4403,30 +5280,11 @@ function rowPeekButton(row, columns) {
   button.type = "button";
   button.className = "row-peek-btn";
   button.dataset.testid = "row-peek";
-  button.title = "Show row JSON";
+  setTip(button, "Show row JSON");
   button.setAttribute("aria-label", "Show row JSON");
   button.setAttribute("aria-haspopup", "dialog");
   button.setAttribute("aria-controls", "row-pop");
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("width", "14");
-  svg.setAttribute("height", "14");
-  svg.setAttribute("aria-hidden", "true");
-  const outline = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  outline.setAttribute("fill", "none");
-  outline.setAttribute("stroke", "currentColor");
-  outline.setAttribute("stroke-width", "1.4");
-  outline.setAttribute("stroke-linejoin", "round");
-  outline.setAttribute("d", "M1.4 8s2.5-4.2 6.6-4.2S14.6 8 14.6 8s-2.5 4.2-6.6 4.2S1.4 8 1.4 8z");
-  const pupil = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-  pupil.setAttribute("cx", "8");
-  pupil.setAttribute("cy", "8");
-  pupil.setAttribute("r", "1.7");
-  pupil.setAttribute("fill", "none");
-  pupil.setAttribute("stroke", "currentColor");
-  pupil.setAttribute("stroke-width", "1.4");
-  svg.append(outline, pupil);
-  button.append(svg);
+  button.append(materialIcon("visibility"));
   button.addEventListener("click", (event) => {
     event.stopPropagation();
     openRowJson(row, columns);
@@ -4620,6 +5478,87 @@ function reportError(error) {
   if (error && error.serverAway) return;
   window.alert(error.message);
 }
+
+const confirmPop = document.querySelector("#confirm-pop");
+const confirmTitle = document.querySelector("#confirm-pop-title");
+const confirmPath = document.querySelector("#confirm-pop-path");
+const confirmMessage = document.querySelector("#confirm-pop-message");
+const confirmOk = document.querySelector("#confirm-ok");
+const confirmCancel = document.querySelector("#confirm-cancel");
+let confirmPending = null;
+
+function settleConfirm(accepted) {
+  const pending = confirmPending;
+  confirmPending = null;
+  if (confirmPop.open) confirmPop.close();
+  if (pending) pending(accepted);
+}
+
+function confirmAction(message, { title = "Confirm", path = "", okLabel = "OK", danger = false } = {}) {
+  if (confirmPending) settleConfirm(false);
+  confirmTitle.textContent = title;
+  confirmPath.textContent = path;
+  confirmPath.hidden = !path;
+  confirmMessage.textContent = message;
+  confirmOk.textContent = okLabel;
+  confirmOk.classList.toggle("danger", danger);
+  return new Promise((resolve) => {
+    confirmPending = resolve;
+    confirmPop.showModal();
+    confirmCancel.focus();
+  });
+}
+
+confirmOk.addEventListener("click", () => settleConfirm(true));
+confirmCancel.addEventListener("click", () => settleConfirm(false));
+confirmPop.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  settleConfirm(false);
+});
+confirmPop.addEventListener("click", (event) => {
+  if (event.target === confirmPop) settleConfirm(false);
+});
+
+const promptPop = document.querySelector("#prompt-pop");
+const promptForm = document.querySelector("#prompt-pop-form");
+const promptTitle = document.querySelector("#prompt-pop-title");
+const promptInput = document.querySelector("#prompt-pop-input");
+const promptOk = document.querySelector("#prompt-ok");
+const promptCancel = document.querySelector("#prompt-cancel");
+let promptPending = null;
+
+function settlePrompt(value) {
+  const pending = promptPending;
+  promptPending = null;
+  if (promptPop.open) promptPop.close();
+  if (pending) pending(value);
+}
+
+function promptAction(message, defaultValue = "", { okLabel = "OK" } = {}) {
+  if (promptPending) settlePrompt(null);
+  promptTitle.textContent = message;
+  promptInput.value = defaultValue == null ? "" : String(defaultValue);
+  promptOk.textContent = okLabel;
+  return new Promise((resolve) => {
+    promptPending = resolve;
+    promptPop.showModal();
+    promptInput.focus();
+    promptInput.select();
+  });
+}
+
+promptForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  settlePrompt(promptInput.value);
+});
+promptCancel.addEventListener("click", () => settlePrompt(null));
+promptPop.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  settlePrompt(null);
+});
+promptPop.addEventListener("click", (event) => {
+  if (event.target === promptPop) settlePrompt(null);
+});
 
 const serverPop = document.querySelector("#server-pop");
 const serverStatus = document.querySelector("#server-pop-status");
