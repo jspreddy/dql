@@ -5061,9 +5061,11 @@ function schemaResultSection(inspected) {
   section.dataset.testid = "schema-result";
   const heading = document.createElement("h3");
   heading.textContent = "Result structure";
-  const source = document.createElement("p");
-  source.className = "schema-section-note";
-  source.textContent = "Types and metrics come from the data fetched so far. No extra queries were run, so this is a partial structure.";
+  const source = document.createElement("div");
+  source.className = "note";
+  const text = document.createElement("p");
+  text.textContent = "Types and metrics come from the data fetched so far. No extra queries were run, so this is a partial structure.";
+  source.append(materialIcon("info"), text);
   section.append(heading, source, schemaTable(inspected));
   return section;
 }

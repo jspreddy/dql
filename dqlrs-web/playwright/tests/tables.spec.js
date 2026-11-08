@@ -606,7 +606,9 @@ test("opens result and table-browser structure from data already in hand", async
   await expect(columns.locator("tbody tr[data-column='extra']")).toHaveCount(0);
   const result = page.locator("[data-testid='schema-result']");
   await expect(result.locator("h3")).toHaveText("Result structure");
-  await expect(result.locator(".schema-section-note")).toHaveText("Types and metrics come from the data fetched so far. No extra queries were run, so this is a partial structure.");
+  const resultNote = result.locator(".note");
+  await expect(resultNote).toHaveText("Types and metrics come from the data fetched so far. No extra queries were run, so this is a partial structure.");
+  await expect(resultNote.locator("use")).toHaveAttribute("href", /\/vendor\/icons\/info\.svg#icon$/);
   await expect(page.locator("#schema-pop-foot")).toBeHidden();
   await expect(page.locator("#schema-pop h3")).toHaveText(["Definition", "Result structure"]);
   await page.screenshot({ path: playwrightArtifact(`table-structure-${testInfo.project.name}.png`) });
