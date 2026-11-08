@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 BASE = "origin/v-rust"
+DEFAULT_COUNT = 50
+DEFAULT_CUTOFF = "1w"
 _DURATION = re.compile(r"^(\d+)([wdhms])?$", re.IGNORECASE)
 _DURATION_UNITS = {
     "": 1,
@@ -349,16 +351,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "-n",
         "--count",
         type=int,
+        default=DEFAULT_COUNT,
         metavar="count",
-        help="Limit git-graph to this many commits. Visual styling may change; commits and lines stay.",
+        help=(
+            "Limit git-graph to this many commits (default: %(default)s). "
+            "Visual styling may change; commits and lines stay. "
+            "With --cutoff, the graph stops at whichever limit comes first."
+        ),
     )
     parser.add_argument(
         "-d",
         "--cutoff",
+        default=DEFAULT_CUTOFF,
         metavar="date",
         help=(
-            "Prune commits before this date. A git --before date, or a duration before "
-            f"{BASE} such as 2w, 14d, 48h, or 30m. Can be combined with --count."
+            "Prune commits before this date (default: %(default)s, one week before "
+            f"{BASE}). A git --before date, or a duration before {BASE} such as 2w, 14d, "
+            "48h, or 30m. With --count, the graph stops at whichever limit comes first."
         ),
     )
     args = parser.parse_args(argv)
@@ -387,7 +396,7 @@ def main(argv: list[str] | None = None) -> None:
         svg = fit_viewbox(svg)
     svg_path = output_dir() / f"v-rust-branches-{secrets.token_hex(4)}.svg"
     svg_path.write_text(pad_svg(svg))
-    print(f"svg: {svg_path}")
+    print(f"{svg_path}")
 
 
 if __name__ == "__main__":
