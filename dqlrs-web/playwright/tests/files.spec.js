@@ -355,6 +355,12 @@ test("filters files with toggleable type pills and remembers them", async ({ pag
       mdName: ink('[data-testid="node-notes.md"] .node-name'),
       htmlName: ink('[data-testid="node-page.html"] .node-name'),
       dqlName: ink('[data-testid="node-queries__edit.dql"] .node-name'),
+      csvIcon: ink('[data-testid="node-users.csv"] .node-type'),
+      jsonIcon: ink('[data-testid="node-cities.json"] .node-type'),
+      mdIcon: ink('[data-testid="node-notes.md"] .node-type'),
+      htmlIcon: ink('[data-testid="node-page.html"] .node-type'),
+      dqlIcon: ink('[data-testid="node-queries__edit.dql"] .node-type'),
+      folderIcon: ink('[data-testid="node-queries"] .node-type'),
     };
   });
   expect(colors.csvPill).toEqual(colors.jsonPill);
@@ -365,6 +371,12 @@ test("filters files with toggleable type pills and remembers them", async ({ pag
   expect(colors.mdName).toBe(fileName);
   expect(colors.htmlName).toBe(fileName);
   expect(colors.dqlName).toBe(fileName);
+  expect(colors.csvIcon).toBe(colors.jsonIcon);
+  expect(colors.csvIcon).toBe(await themeColor(page, "--amber-ink"));
+  expect(colors.mdIcon).toBe(colors.htmlIcon);
+  expect(colors.mdIcon).toBe(await themeColor(page, "--blue-ink"));
+  expect(colors.dqlIcon).toBe(await themeColor(page, "--teal-ink"));
+  expect(colors.folderIcon).toBe(await themeColor(page, "--muted"));
   await expect(node(page, "users.csv").locator(".node-type use")).toHaveAttribute("href", "/vendor/icons/code.svg#icon");
   await expect(node(page, "cities.json").locator(".node-type use")).toHaveAttribute("href", "/vendor/icons/code.svg#icon");
   await expect(node(page, "notes.md").locator(".node-type use")).toHaveAttribute("href", "/vendor/icons/description.svg#icon");

@@ -1333,7 +1333,7 @@ function renderDir(node, isRoot) {
     const label = child.type === "dir"
       ? nodeNameLabel(child.name, "folder")
       : child.type === "file"
-        ? nodeNameLabel(child.name, FILE_TYPE_ICONS[kind] || "insert_drive_file")
+        ? nodeNameLabel(child.name, FILE_TYPE_ICONS[kind] || "insert_drive_file", kind)
         : child.name;
     const button = nodeButton(child.type === "dir" ? (open ? "▾" : "▸") : "", label, child.path === state.path);
     if (editorFile) {
@@ -1489,11 +1489,12 @@ const FILE_TYPE_ICONS = {
   dql: "terminal",
 };
 
-function nodeNameLabel(name, icon) {
+function nodeNameLabel(name, icon, kind) {
   const label = document.createElement("span");
   label.className = "node-name";
-  label.append(materialIcon(icon, "node-type"));
-  label.append(document.createTextNode(name));
+  const mark = materialIcon(icon, "node-type");
+  if (kind) mark.dataset.kind = kind;
+  label.append(mark, document.createTextNode(name));
   return label;
 }
 

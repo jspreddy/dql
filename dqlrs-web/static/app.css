@@ -1052,6 +1052,16 @@ body.side-resizing * {
   min-width: 0;
 }
 
+.tree .node .node-type { color: var(--muted); }
+
+.tree .node .node-type[data-kind="csv"],
+.tree .node .node-type[data-kind="json"] { color: var(--amber-ink); }
+
+.tree .node .node-type[data-kind="md"],
+.tree .node .node-type[data-kind="html"] { color: var(--blue-ink); }
+
+.tree .node .node-type[data-kind="dql"] { color: var(--teal-ink); }
+
 .cm-editor.is-view-only .cm-run-fill,
 .cm-editor.is-view-only .cm-run-button-layer {
   display: none;
