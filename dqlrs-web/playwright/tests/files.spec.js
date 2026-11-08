@@ -113,7 +113,7 @@ test("uses Noto Sans for interface text and keeps code in the monospace font", a
   }
   expect(fonts.code).not.toContain("Noto Sans");
   expect(fonts.code).toContain("ui-monospace");
-  const diagramLabel = await page.locator(".doc-markdown .nodeLabel").evaluate((el) => getComputedStyle(el).fontFamily);
+  const diagramLabel = await page.locator(".doc-markdown pre.mermaid svg text, .doc-markdown .nodeLabel").first().evaluate((el) => getComputedStyle(el).fontFamily);
   expect(diagramLabel).not.toContain("Noto Sans");
   expect(diagramLabel.toLowerCase()).toContain("trebuchet");
   await page.screenshot({ path: playwrightArtifact(`noto-sans-${testInfo.project.name}.png`) });
@@ -183,7 +183,7 @@ test("renders a mermaid diagram in a markdown file", async ({ page, app }, testI
   const shadow = await themeColor(page, "--shadow-pop");
   const nodeRect = diagram.locator("g.node rect").first();
   await expect(nodeRect).toHaveCSS("fill", paper);
-  await expect(diagram.locator(".nodeLabel").first()).toHaveCSS("color", text);
+  await expect(diagram.locator("g.node text").first()).toHaveCSS("fill", text);
   const stops = await diagram.locator("linearGradient stop").evaluateAll((els) => els.map((el) => getComputedStyle(el).stopColor));
   expect(stops).toEqual([line, lineSoft]);
   expect(await nodeRect.evaluate((el) => getComputedStyle(el).filter)).toContain(shadow);
@@ -302,16 +302,22 @@ test("wraps mermaid node text inside a taller box", async ({ page, app }, testIn
 
 async function labelFits(locator) {
   return locator.evaluate((node) => {
-    const shape = node.querySelector("rect");
-    const label = node.querySelector(".nodeLabel");
+    const shape = node.querySelector("rect, polygon");
+    const box = shape.getBoundingClientRect();
+    let pastRight = -Infinity;
+    let pastBottom = -Infinity;
+    for (const el of node.querySelectorAll("text, tspan, .nodeLabel")) {
+      const text = el.getBoundingClientRect();
+      if (text.width === 0 && text.height === 0) continue;
+      pastRight = Math.max(pastRight, text.right - box.right);
+      pastBottom = Math.max(pastBottom, text.bottom - box.bottom);
+    }
     const frame = node.querySelector("foreignObject");
     const inner = frame?.firstElementChild;
-    const box = shape.getBoundingClientRect();
-    const text = label.getBoundingClientRect();
     return {
       height: box.height,
-      pastRight: text.right - box.right,
-      pastBottom: text.bottom - box.bottom,
+      pastRight,
+      pastBottom,
       clipped: inner ? inner.scrollHeight > frame.clientHeight + 1 : false,
     };
   });

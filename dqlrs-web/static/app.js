@@ -1970,6 +1970,10 @@ async function renderMermaidDiagrams(article) {
     theme: "base",
     securityLevel: "strict",
     themeVariables: mermaidThemeVariables(),
+    htmlLabels: false,
+    flowchart: {
+      wrappingWidth: 120,
+    },
   });
   for (const block of blocks) {
     const source = mermaidSources.get(block) || "";

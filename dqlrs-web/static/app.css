@@ -3072,11 +3072,6 @@ body.results-resizing * {
 
 .doc-markdown .mermaid svg { max-width: 100%; height: auto; }
 
-:is(.doc-markdown, #mermaid-screen) .nodeLabel,
-:is(.doc-markdown, #mermaid-screen) .nodeLabel p {
-  overflow-wrap: anywhere;
-}
-
 :is(.doc-markdown, #mermaid-screen) svg .node { cursor: pointer; }
 
 :is(.doc-markdown, #mermaid-screen) svg.chain .node,
@@ -3098,7 +3093,12 @@ body.results-resizing * {
   stroke-width: 3px;
 }
 
-:is(.doc-markdown, #mermaid-screen) svg .node.pinned .nodeLabel { color: #fffdf8 !important; }
+:is(.doc-markdown, #mermaid-screen) svg .node.pinned text,
+:is(.doc-markdown, #mermaid-screen) svg .node.pinned tspan,
+:is(.doc-markdown, #mermaid-screen) svg .node.pinned .nodeLabel {
+  fill: #fffdf8 !important;
+  color: #fffdf8 !important;
+}
 
 @media (prefers-reduced-motion: reduce) {
   :is(.doc-markdown, #mermaid-screen) svg.chain .node,
