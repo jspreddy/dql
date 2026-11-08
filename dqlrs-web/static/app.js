@@ -1033,6 +1033,7 @@ const schemaPopInfo = document.querySelector("#schema-pop-info");
 const schemaPopSummary = document.querySelector("#schema-pop-summary");
 const schemaPopKeys = document.querySelector("#schema-pop-keys");
 const schemaPopQuery = document.querySelector("#schema-pop-query");
+const schemaPopSchema = document.querySelector("#schema-pop-schema");
 const schemaPopBody = document.querySelector("#schema-pop-body");
 const schemaPopFoot = document.querySelector("#schema-pop-foot");
 const rowPop = document.querySelector("#row-pop");
@@ -4917,13 +4918,37 @@ async function openSchema(request, button) {
     schemaPopKeys.append(chip);
   }
   fillSchemaQuery(browser || file ? "" : payload.statement);
-  schemaPopBody.replaceChildren(schemaTable(inspected));
+  if (browser) {
+    schemaPopSchema.hidden = false;
+    schemaPopSchema.replaceChildren(
+      schemaTextSection(
+        "Create query",
+        "schema-create-query",
+        payload.createQuery,
+        "The schema cache does not have a create query for this table yet.",
+      ),
+      schemaTextSection(
+        "Table definition",
+        "schema-definition",
+        payload.definition,
+        "The schema cache does not have a definition for this table yet.",
+      ),
+    );
+    schemaPopBody.replaceChildren(schemaResultSection(inspected));
+  } else {
+    schemaPopSchema.hidden = true;
+    schemaPopSchema.replaceChildren();
+    schemaPopBody.replaceChildren(schemaTable(inspected));
+  }
   schemaPopFoot.textContent = browser
     ? "Types come from this page and the keys already listed. No extra query was run."
     : file
       ? "Types come from the whole file. No extra query was run."
       : "Types come from this result. No extra query was run.";
   schemaPop.showModal();
+  schemaPopSchema.scrollTop = 0;
+  schemaPopBody.scrollTop = 0;
+  schemaPopBody.scrollLeft = 0;
 }
 
 function fillSchemaQuery(statement) {
@@ -4935,6 +4960,41 @@ function fillSchemaQuery(statement) {
   }
   schemaPopQuery.append(highlightedQuery(text, "schema-pop-query-text"));
   schemaPopQuery.hidden = false;
+}
+
+function schemaTextSection(title, testId, text, empty) {
+  const section = document.createElement("section");
+  section.className = "schema-section";
+  section.dataset.testid = testId;
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  section.append(heading);
+  if (testId === "schema-create-query") {
+    const source = document.createElement("p");
+    source.className = "schema-section-note";
+    source.textContent = "From the schema cache. This updates when the table definition changes.";
+    section.append(source);
+  }
+  const query = String(text || "").trim();
+  if (!query) {
+    const missing = document.createElement("p");
+    missing.className = "schema-section-empty";
+    missing.textContent = empty;
+    section.append(missing);
+    return section;
+  }
+  section.append(highlightedQuery(query, "schema-pop-query-text"));
+  return section;
+}
+
+function schemaResultSection(inspected) {
+  const section = document.createElement("section");
+  section.className = "schema-section";
+  section.dataset.testid = "schema-result";
+  const heading = document.createElement("h3");
+  heading.textContent = "Result structure";
+  section.append(heading, schemaTable(inspected));
+  return section;
 }
 
 function schemaTable(inspected) {

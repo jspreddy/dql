@@ -976,7 +976,7 @@ fn structure_reply(app: &App, query: &str) -> Reply {
     }
     let mut state = lock_state(app);
     if !table.is_empty() {
-        return match table_structure(&state, &table) {
+        return match table_structure(&mut state, &table) {
             Ok(value) => Reply::Json(200, value),
             Err(message) => Reply::Json(400, json!({"ok": false, "error": message})),
         };
@@ -1000,21 +1000,42 @@ fn file_structure(root: &Path, relative: &str) -> Result<Value, PathError> {
     ))
 }
 
-fn table_structure(state: &WebState, name: &str) -> Result<Value, String> {
-    let page = state
-        .fetched_pages
-        .get(name)
-        .ok_or_else(|| "table page is not loaded".to_string())?;
-    let columns = columns_with_shape_keys(&page.columns, page.shape.as_ref());
-    let described = structure::describe(&columns, &page.items);
-    Ok(structure::payload(
-        "table",
-        name,
-        "",
-        page.items.len(),
-        true,
-        described,
-    ))
+fn table_structure(state: &mut WebState, name: &str) -> Result<Value, String> {
+    let (columns, items) = {
+        let page = state
+            .fetched_pages
+            .get(name)
+            .ok_or_else(|| "table page is not loaded".to_string())?;
+        (
+            columns_with_shape_keys(&page.columns, page.shape.as_ref()),
+            page.items.clone(),
+        )
+    };
+    let described = structure::describe(&columns, &items);
+    let mut value = structure::payload("table", name, "", items.len(), true, described);
+    let (create_query, definition) = cached_table_schema(&mut state.session, name);
+    let Some(object) = value.as_object_mut() else {
+        return Ok(value);
+    };
+    object.insert("createQuery".to_string(), json!(create_query));
+    object.insert("definition".to_string(), json!(definition));
+    Ok(value)
+}
+
+/// Create query and pretty definition from the schema cache only.
+///
+/// `cached_definition` reads the in-memory snapshot or the saved cache. It does
+/// not describe the table, so a structure view never refreshes the database.
+/// Creating a table stores the snapshot, and describing the table replaces it
+/// with the current definition. The next structure view shows that snapshot.
+fn cached_table_schema(session: &mut crate::session::Session, name: &str) -> (String, String) {
+    let Some(meta) = session.engine.cached_definition(name) else {
+        return (String::new(), String::new());
+    };
+    if !meta.has_definition() {
+        return (String::new(), String::new());
+    }
+    (meta.schema_dql(), meta.schema_dql_formatted())
 }
 
 fn columns_with_shape_keys(columns: &[Column], shape: Option<&TableShape>) -> Vec<Column> {
@@ -2002,6 +2023,20 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             .unwrap();
         assert_eq!(sk["table"], "range");
         assert_eq!(sk["kinds"], serde_json::json!(["NUMBER"]));
+        let create_query = structure_json["createQuery"].as_str().unwrap_or("");
+        assert!(
+            create_query.contains("CREATE TABLE posts")
+                && create_query.contains("id STRING HASH KEY"),
+            "{create_query}"
+        );
+        assert!(!create_query.contains('\n'), "{create_query}");
+        let definition = structure_json["definition"].as_str().unwrap_or("");
+        assert!(definition.contains("CREATE TABLE posts ("), "{definition}");
+        assert!(
+            definition.contains("\n  id STRING HASH KEY,"),
+            "{definition}"
+        );
+        assert!(definition.contains("sk NUMBER RANGE KEY"), "{definition}");
 
         let saved = super::query_cache::save(
             root.path(),

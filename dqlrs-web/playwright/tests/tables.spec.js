@@ -469,7 +469,7 @@ test("tables-search-matches-like-ls", async ({ page, app }) => {
   await expect(page.locator("#table-list [data-testid='intelligent-match']")).toHaveCount(0);
 });
 
-test("opens result and table-browser structure from data already in hand", async ({ page, app }) => {
+test("opens result and table-browser structure from data already in hand", async ({ page, app }, testInfo) => {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
   await expect(page.locator(".result-card")).toHaveCount(0);
@@ -587,6 +587,17 @@ test("opens result and table-browser structure from data already in hand", async
   await expect(page.locator(".schema-pop-title-row .schema-key-chip")).toHaveCount(2);
   await expect(page.locator("#schema-pop-summary")).toHaveText("3 columns · 3 rows on this page");
   await expect(page.locator("#schema-pop-query")).toBeHidden();
+  const createQuery = page.locator("[data-testid='schema-create-query']");
+  await expect(createQuery).toContainText("From the schema cache");
+  await expect(createQuery.locator("pre")).toHaveText(`CREATE TABLE ${name} (id STRING HASH KEY, sk NUMBER RANGE KEY);`);
+  const definition = page.locator("[data-testid='schema-definition'] pre");
+  await expect(definition).toContainText(`CREATE TABLE ${name} (`);
+  await expect(definition).toContainText("id STRING HASH KEY,");
+  await expect(definition).toContainText("sk NUMBER RANGE KEY");
+  const definitionText = await definition.innerText();
+  expect(definitionText.split("\n").length).toBeGreaterThan(2);
+  await expect(page.locator("[data-testid='schema-result'] h3")).toHaveText("Result structure");
+  await page.screenshot({ path: playwrightArtifact(`table-structure-${testInfo.project.name}.png`) });
   const rowsId = page.locator('#schema-table tbody tr[data-column="id"]');
   await expect(rowsId).toContainText("STRING");
   await expect(rowsId).toContainText("Hash key");
