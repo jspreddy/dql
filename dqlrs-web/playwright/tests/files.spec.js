@@ -155,8 +155,13 @@ test("renders a mermaid diagram in a markdown file", async ({ page, app }, testI
   const fitted = await canvas.evaluate((el) => el.getBoundingClientRect().width);
   const stage = page.locator("#mermaid-screen-stage");
   await stage.hover();
-  await page.mouse.wheel(0, -240);
-  expect(await canvas.evaluate((el) => el.getBoundingClientRect().width)).toBeGreaterThan(fitted + 1);
+  for (let step = 0; step < 12; step += 1) await page.mouse.wheel(0, -240);
+  const zoomedIn = await canvas.evaluate((el) => el.getBoundingClientRect().width);
+  expect(zoomedIn).toBeGreaterThan(fitted * 2);
+  expect(Number.parseInt(await page.locator("#mermaid-zoom-label").textContent(), 10)).toBeGreaterThan(200);
+  for (let step = 0; step < 24; step += 1) await page.mouse.wheel(0, 240);
+  expect(await canvas.evaluate((el) => el.getBoundingClientRect().width)).toBeLessThan(fitted * 0.8);
+  expect(Number.parseInt(await page.locator("#mermaid-zoom-label").textContent(), 10)).toBeLessThan(80);
   await page.mouse.wheel(0, 240);
   const spot = await canvas.boundingBox();
   await page.mouse.move(spot.x + 30, spot.y + 24);

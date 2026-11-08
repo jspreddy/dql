@@ -1785,7 +1785,11 @@ function paintMermaid() {
 }
 
 function zoomMermaidAt(next, originX, originY) {
-  const scale = Math.min(8, Math.max(0.15, next));
+  // The percent label is relative to the fitted size. Clamp against that,
+  // not a fixed viewBox scale: a small diagram is fitted above 8, so a
+  // cap of 8 froze the wheel near 80%.
+  const fit = mermaidScreenFit || mermaidScreenScale || 1;
+  const scale = Math.min(fit * 32, Math.max(fit * 0.1, next));
   const ratio = scale / mermaidScreenScale;
   mermaidX = originX - (originX - mermaidX) * ratio;
   mermaidY = originY - (originY - mermaidY) * ratio;
