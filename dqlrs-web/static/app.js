@@ -163,6 +163,7 @@ function saveFileTypes(types) {
   localStorage.setItem(FILE_TYPES_KEY, JSON.stringify(order.filter((type) => types.has(type))));
 }
 const themeToggle = document.querySelector("#theme-toggle");
+let lintTipAnchor = null;
 
 function currentTheme() {
   return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
@@ -176,7 +177,7 @@ function applyTheme(theme, persist) {
   if (!themeToggle) return;
   themeToggle.setAttribute("aria-pressed", dark ? "true" : "false");
   themeToggle.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
-  themeToggle.title = dark ? "Light mode" : "Dark mode";
+  setTip(themeToggle, dark ? "Light mode" : "Dark mode");
   if (persist) localStorage.setItem(THEME_KEY, dark ? "dark" : "light");
 }
 
@@ -304,7 +305,62 @@ const editor = new EditorView({
 });
 editorReady = true;
 const lintTip = document.querySelector("#lint-tip");
-let lintTipAnchor = null;
+
+const RICH_TIP = ".presence-icon, #run, .table-cache, .describe-cache";
+
+function setTip(el, text) {
+  if (!el) return;
+  const value = String(text || "");
+  el.removeAttribute("title");
+  if (!value) {
+    delete el.dataset.tip;
+    if (lintTipAnchor === el) hideLintTip();
+    return;
+  }
+  el.dataset.tip = value;
+  if (lintTipAnchor === el) placeLintTip(el);
+}
+
+function claimTip(el) {
+  if (!el || el.nodeType !== 1 || el.tagName === "IFRAME") return;
+  if (el.tagName !== "HTML" && el.tagName !== "BODY" && el.hasAttribute("title")) {
+    const text = el.getAttribute("title") || "";
+    el.removeAttribute("title");
+    if (text) el.dataset.tip = text;
+    else delete el.dataset.tip;
+  }
+  if (!el.querySelectorAll) return;
+  for (const titled of el.querySelectorAll("[title]")) claimTip(titled);
+  for (const svgTitle of el.querySelectorAll("svg > title")) {
+    const svg = svgTitle.parentElement;
+    const label = svgTitle.textContent || "";
+    svgTitle.remove();
+    if (label && svg) svg.dataset.tip = label;
+  }
+}
+
+function absorbTitle(node) {
+  if (!node || !node.closest) return;
+  const el = node.closest("[title]");
+  if (el) claimTip(el);
+  const svg = node.closest("svg");
+  const svgTitle = svg && svg.querySelector(":scope > title");
+  if (svgTitle) claimTip(svg);
+}
+
+const tipWatcher = new MutationObserver((records) => {
+  for (const record of records) {
+    if (record.type === "attributes") claimTip(record.target);
+    for (const node of record.addedNodes) claimTip(node);
+  }
+});
+tipWatcher.observe(document.body, {
+  subtree: true,
+  childList: true,
+  attributes: true,
+  attributeFilter: ["title"],
+});
+claimTip(document.body);
 
 function lintHoverTarget(node) {
   if (!node || !node.closest || !editor.dom.contains(node)) return null;
@@ -316,21 +372,36 @@ function lintHoverTarget(node) {
 }
 
 function lintHoverText(target) {
-  if (target.classList.contains("lint-gutter")) return target.getAttribute("title") || "";
+  if (target.classList.contains("lint-gutter")) return target.dataset.tip || "";
   return [...target.querySelectorAll(".cm-lint-error, .cm-lint-warning")]
-    .map((mark) => mark.getAttribute("title") || "")
+    .map((mark) => mark.dataset.tip || "")
     .filter(Boolean)
     .join("\n");
 }
 
+function tipText(target) {
+  if (target.classList.contains("cm-line") || target.classList.contains("lint-gutter")) return lintHoverText(target);
+  return target.dataset.tip || "";
+}
+
+function tipAnchor(node) {
+  if (!node || !node.closest) return null;
+  if (node.closest("#lint-tip, #presence-tip, #run-tip, " + RICH_TIP)) return null;
+  const host = node.closest("[data-tip]");
+  if (host) return host;
+  return lintHoverTarget(node);
+}
+
 function hideLintTip() {
   lintTipAnchor = null;
-  if (lintTip) lintTip.hidden = true;
+  if (!lintTip) return;
+  lintTip.hidden = true;
+  if (lintTip.matches(":popover-open")) lintTip.hidePopover();
 }
 
 function placeLintTip(target) {
   if (!lintTip) return;
-  const text = lintHoverText(target);
+  const text = tipText(target);
   if (!text) {
     hideLintTip();
     return;
@@ -339,6 +410,7 @@ function placeLintTip(target) {
     lintTip.textContent = text;
     lintTip.hidden = false;
     lintTipAnchor = target;
+    if (!lintTip.matches(":popover-open")) lintTip.showPopover();
   }
   const rect = target.getBoundingClientRect();
   const tip = lintTip.getBoundingClientRect();
@@ -350,20 +422,31 @@ function placeLintTip(target) {
   lintTip.style.left = `${left}px`;
 }
 
-editor.dom.addEventListener("mouseover", (event) => {
-  const target = lintHoverTarget(event.target);
+document.addEventListener("pointerover", (event) => {
+  absorbTitle(event.target);
+  const target = tipAnchor(event.target);
   if (!target) {
-    hideLintTip();
+    if (lintTipAnchor && !lintTipAnchor.contains(event.target)) hideLintTip();
     return;
   }
   placeLintTip(target);
+}, true);
+document.addEventListener("pointerout", (event) => {
+  if (!lintTipAnchor || !lintTipAnchor.contains(event.target)) return;
+  if (lintTipAnchor.contains(event.relatedTarget)) return;
+  hideLintTip();
+}, true);
+document.addEventListener("focusin", (event) => {
+  absorbTitle(event.target);
+  const target = tipAnchor(event.target);
+  if (!target || target.classList.contains("cm-line")) return;
+  placeLintTip(target);
 });
-editor.dom.addEventListener("mouseout", (event) => {
-  if (!lintHoverTarget(event.target)) return;
-  if (lintHoverTarget(event.relatedTarget)) return;
+document.addEventListener("focusout", (event) => {
+  if (!lintTipAnchor || lintTipAnchor.contains(event.relatedTarget)) return;
   hideLintTip();
 });
-editor.scrollDOM.addEventListener("scroll", hideLintTip, { passive: true });
+window.addEventListener("scroll", hideLintTip, true);
 
 const resultBody = document.querySelector("#result-body");
 const runProgress = document.querySelector("#run-progress");
@@ -599,7 +682,7 @@ runButton.addEventListener("pointerenter", () => {
 runButton.addEventListener("pointerleave", hideRunTip);
 runButton.addEventListener("pointerdown", hideRunTip);
 runButton.addEventListener("blur", hideRunTip);
-stopButton.title = "Stop running query (Esc)";
+setTip(stopButton, "Stop running query (Esc)");
 stopButton.setAttribute("aria-keyshortcuts", "Escape");
 runButton.addEventListener("click", () => {
   armRunPane();
@@ -1049,7 +1132,7 @@ function applyEnvironment(config) {
   state.environment = environment;
   const label = environment.label || config.endpoint || "";
   endpointButton.textContent = label;
-  endpointButton.title = label;
+  setTip(endpointButton, label);
   endpointButton.dataset.kind = environment.kind || "local";
   if (environment.kind === "aws") {
     endpointButton.setAttribute("popovertarget", "env-pop");
@@ -1377,7 +1460,7 @@ function nodeDomId(path) {
 function runningFileMark() {
   const mark = document.createElement("span");
   mark.className = "node-running";
-  mark.title = "Running";
+  setTip(mark, "Running");
   mark.setAttribute("aria-label", "Running");
   return mark;
 }
@@ -2254,7 +2337,7 @@ function paintLint(issues) {
       lintStatus.classList.add("hidden");
       lintStatus.classList.remove("is-warning");
       lintStatus.textContent = "";
-      lintStatus.removeAttribute("title");
+      setTip(lintStatus, "");
     } else {
       const lead = errors[0] || issues[0];
       lintStatus.classList.toggle("is-warning", errors.length === 0);
@@ -2264,7 +2347,7 @@ function paintLint(issues) {
       if (errors.length && warnings) lintStatus.textContent = `${errorLabel}, ${warningLabel}`;
       else if (errors.length) lintStatus.textContent = errorLabel;
       else lintStatus.textContent = warningLabel;
-      lintStatus.title = lead.message || lintStatus.textContent;
+      setTip(lintStatus, lead.message || lintStatus.textContent);
     }
   }
   if (resultPane === "lint") renderActivePane();
@@ -2372,7 +2455,7 @@ function showOpenFile(path) {
   }
   const viewOnly = viewOnlyFile(state.path);
   text.textContent = state.path ? state.path.split("/").pop() : "No file open";
-  name.title = viewOnly ? "View only" : "";
+  setTip(name, viewOnly ? "View only" : "");
   name.classList.toggle("is-open", Boolean(state.path));
   setViewOnly(viewOnly);
   const running = !stopButton.classList.contains("hidden");
@@ -3595,7 +3678,7 @@ function statChip(text, testId, label) {
   const chip = document.createElement("span");
   chip.className = "result-card-stat";
   chip.dataset.testid = testId;
-  chip.title = label;
+  setTip(chip, label);
   chip.textContent = text;
   return chip;
 }
@@ -3664,7 +3747,7 @@ function queryToggle(query, host) {
   button.type = "button";
   button.className = "result-query-toggle";
   button.dataset.testid = "result-query-toggle";
-  button.title = "Show query";
+  setTip(button, "Show query");
   button.setAttribute("aria-label", "Show query");
   button.setAttribute("aria-expanded", "false");
   button.addEventListener("click", (event) => {
@@ -3676,7 +3759,7 @@ function queryToggle(query, host) {
     button.closest(".result-shell").classList.toggle("is-query-open", open);
     button.setAttribute("aria-expanded", open ? "true" : "false");
     const label = open ? "Hide query" : "Show query";
-    button.title = label;
+    setTip(button, label);
     button.setAttribute("aria-label", label);
   });
   return button;
@@ -3686,7 +3769,7 @@ function schemaIconButton(label) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "schema-btn";
-  button.title = label;
+  setTip(button, label);
   button.setAttribute("aria-label", label);
   button.setAttribute("aria-haspopup", "dialog");
   button.setAttribute("aria-controls", "schema-pop");
@@ -4128,7 +4211,7 @@ function sidebarMatchNote(text) {
   const note = document.createElement("p");
   note.className = "table-match-note";
   note.dataset.testid = "intelligent-match";
-  note.title = text;
+  setTip(note, text);
   const kind = String(text).match(/so showing (similar names and related keys|similar names|related keys)\.$/);
   note.textContent = kind ? kind[1][0].toUpperCase() + kind[1].slice(1) : text;
   return note;
@@ -4347,7 +4430,7 @@ function keyIcon(role, title) {
   const icon = document.createElement("span");
   icon.className = "key-icon";
   icon.dataset.key = role;
-  icon.title = title;
+  setTip(icon, title);
   icon.setAttribute("role", "img");
   icon.setAttribute("aria-label", title);
   icon.append(materialIcon(role === "hash" ? "tag" : "swap_vert"));
@@ -4486,7 +4569,7 @@ async function openSchema(request, button) {
   const info = file
     ? "Based on every row in the file."
     : "Based on this query result, not the entire table.";
-  schemaPopInfo.title = info;
+  setTip(schemaPopInfo, info);
   schemaPopInfo.setAttribute("aria-label", info);
   schemaPopTitle.textContent = payload.title || (browser ? "Table" : "Result");
   schemaPopSummary.textContent = inspected.length
@@ -4585,7 +4668,7 @@ function schemaTable(inspected) {
     sample.className = "schema-sample";
     const sampleText = formatSample(item.sample);
     sample.textContent = sampleText;
-    sample.title = sampleText;
+    setTip(sample, sampleText);
     tr.append(name, type, role, present, sample);
     body.append(tr);
   }
@@ -4786,7 +4869,7 @@ function renderSettingsCacheAge(cache) {
   const age = cacheAgeLabel(cache && cache.savedAtMs);
   const detail = cache && cache.text ? cache.text : "";
   node.textContent = age ? "(" + age + ")" : "not cached";
-  node.title = detail || "No table list cached.";
+  setTip(node, detail || "No table list cached.");
   node.classList.toggle("is-refreshing", Boolean(cache && cache.refreshing));
 }
 
@@ -4800,7 +4883,7 @@ async function refreshSettingsCacheAge() {
     if (request !== state.cacheStatusRequest) return;
     const node = document.querySelector("#settings-cache-age");
     node.textContent = "unavailable";
-    node.title = error.message;
+    setTip(node, error.message);
     node.classList.remove("is-refreshing");
   }
 }
@@ -4885,7 +4968,7 @@ function rowPeekButton(row, columns) {
   button.type = "button";
   button.className = "row-peek-btn";
   button.dataset.testid = "row-peek";
-  button.title = "Show row JSON";
+  setTip(button, "Show row JSON");
   button.setAttribute("aria-label", "Show row JSON");
   button.setAttribute("aria-haspopup", "dialog");
   button.setAttribute("aria-controls", "row-pop");

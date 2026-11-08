@@ -48,10 +48,10 @@
     <div class="header-tools">
       <div id="presence" class="presence" role="list" aria-label="Connected clients"></div>
       <div class="header-toggles">
-        <button type="button" id="settings-toggle" class="theme-toggle" popovertarget="settings-pop" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-pop" aria-label="Settings" title="Settings">
+        <button type="button" id="settings-toggle" class="theme-toggle" popovertarget="settings-pop" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-pop" aria-label="Settings" data-tip="Settings">
           <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/settings.svg#icon"></use></svg>
         </button>
-        <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false" aria-label="Switch to dark mode" title="Dark mode">
+        <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false" aria-label="Switch to dark mode" data-tip="Dark mode">
           <svg class="icon theme-moon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/dark_mode.svg#icon"></use></svg>
           <svg class="icon theme-sun" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/light_mode.svg#icon"></use></svg>
         </button>
@@ -94,17 +94,17 @@
           <span id="side-title">Files</span>
           <span id="side-tools" class="side-tools">
             <span id="tree-fold" class="tree-fold">
-              <button type="button" id="collapse-tree" title="Collapse all folders" aria-label="Collapse all folders">
+              <button type="button" id="collapse-tree" data-tip="Collapse all folders" aria-label="Collapse all folders">
                 <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/keyboard_double_arrow_up.svg#icon"></use></svg>
               </button>
-              <button type="button" id="expand-tree" title="Expand all folders" aria-label="Expand all folders">
+              <button type="button" id="expand-tree" data-tip="Expand all folders" aria-label="Expand all folders">
                 <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/keyboard_double_arrow_down.svg#icon"></use></svg>
               </button>
             </span>
-            <button type="button" id="new-file" title="New .dql file" aria-label="New .dql file">
+            <button type="button" id="new-file" data-tip="New .dql file" aria-label="New .dql file">
               <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/add.svg#icon"></use></svg>
             </button>
-            <button type="button" id="refresh-tables" class="hidden" title="Refresh the cached table list in the background" aria-label="Refresh cached tables">
+            <button type="button" id="refresh-tables" class="hidden" data-tip="Refresh the cached table list in the background" aria-label="Refresh cached tables">
               <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/refresh.svg#icon"></use></svg>
             </button>
             <span id="table-cache" class="table-cache hidden" tabindex="0">
@@ -124,14 +124,14 @@
       <div id="tree" class="tree"></div>
       <div id="tables-nav" class="tables-nav hidden">
         <div class="search-row">
-          <input id="table-search" type="search" placeholder="catalog" spellcheck="false" aria-label="Filter tables" title="Same matching as ls. A glob lists those tables. Otherwise similar names and related keys." />
-          <button type="button" id="group-tables" title="Group by table type" aria-label="Group by table type" aria-pressed="false">
+          <input id="table-search" type="search" placeholder="catalog" spellcheck="false" aria-label="Filter tables" data-tip="Same matching as ls. A glob lists those tables. Otherwise similar names and related keys." />
+          <button type="button" id="group-tables" data-tip="Group by table type" aria-label="Group by table type" aria-pressed="false">
             <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/grid_view.svg#icon"></use></svg>
           </button>
         </div>
         <div id="table-list" class="table-list"></div>
       </div>
-      <div id="side-resize" class="side-resize" role="separator" aria-orientation="vertical" aria-label="Resize navigation" title="Drag to resize the left nav" tabindex="0">
+      <div id="side-resize" class="side-resize" role="separator" aria-orientation="vertical" aria-label="Resize navigation" data-tip="Drag to resize the left nav" tabindex="0">
         <span class="side-grip" aria-hidden="true"></span>
       </div>
     </aside>
@@ -143,7 +143,7 @@
             <span id="file-name">No file open</span>
             <button type="button" id="patch-recall" class="patch-recall hidden">Unsaved patch</button>
             <button type="button" id="lint-status" class="lint-status hidden" aria-live="polite"></button>
-            <button type="button" id="run-file" class="hidden" title="Run this file">
+            <button type="button" id="run-file" class="hidden" data-tip="Run this file">
               <svg class="icon ff-icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/fast_forward.svg#icon"></use></svg>
               Run file
             </button>
@@ -161,7 +161,7 @@
         </div>
         <section class="results" id="results">
           <div class="results-bar">
-            <div id="results-resize" class="results-resize" role="separator" aria-orientation="horizontal" aria-label="Resize results" title="Drag to resize results" tabindex="0">
+            <div id="results-resize" class="results-resize" role="separator" aria-orientation="horizontal" aria-label="Resize results" data-tip="Drag to resize results" tabindex="0">
               <span class="results-grip" aria-hidden="true"></span>
             </div>
             <div class="pane-head results-head">
@@ -178,7 +178,7 @@
                 <span id="result-meta" class="meta"></span>
                 <span class="results-chip">
                   <span id="result-count">0 results</span>
-                  <button type="button" id="clear-results" class="hidden" aria-label="Clear results" title="Clear results">
+                  <button type="button" id="clear-results" class="hidden" aria-label="Clear results" data-tip="Clear results">
                     <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/delete.svg#icon"></use></svg>
                   </button>
                 </span>
@@ -191,7 +191,7 @@
           <div class="rows-head">
             <span class="rows-heading">
               <span id="file-rows-title"></span>
-              <button type="button" id="file-rows-schema" class="schema-btn hidden" title="Show result structure" aria-label="Show result structure" aria-haspopup="dialog" aria-controls="schema-pop" aria-expanded="false">
+              <button type="button" id="file-rows-schema" class="schema-btn hidden" data-tip="Show result structure" aria-label="Show result structure" aria-haspopup="dialog" aria-controls="schema-pop" aria-expanded="false">
                 <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/table_chart.svg#icon"></use></svg>
               </button>
             </span>
@@ -218,7 +218,7 @@
         <div class="rows-head">
           <span class="rows-heading">
             <span id="rows-title"></span>
-            <button type="button" id="rows-schema" class="schema-btn hidden" title="Show table structure" aria-label="Show table structure" aria-haspopup="dialog" aria-controls="schema-pop" aria-expanded="false">
+            <button type="button" id="rows-schema" class="schema-btn hidden" data-tip="Show table structure" aria-label="Show table structure" aria-haspopup="dialog" aria-controls="schema-pop" aria-expanded="false">
               <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/table_chart.svg#icon"></use></svg>
             </button>
           </span>
@@ -241,7 +241,7 @@
         <div class="schema-pop-heading">
           <div class="schema-pop-kicker-row">
             <span id="schema-pop-kicker" class="schema-pop-kicker"></span>
-            <button type="button" id="schema-pop-info" class="schema-pop-info hidden" title="Based on this query result, not the entire table." aria-label="Based on this query result, not the entire table.">
+            <button type="button" id="schema-pop-info" class="schema-pop-info hidden" data-tip="Based on this query result, not the entire table." aria-label="Based on this query result, not the entire table.">
               <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/info.svg#icon"></use></svg>
             </button>
           </div>
@@ -252,7 +252,7 @@
           <div id="schema-pop-query" class="schema-pop-query" hidden></div>
           <p id="schema-pop-summary" class="schema-pop-summary"></p>
         </div>
-        <button type="button" id="schema-pop-close" title="Close" aria-label="Close structure">
+        <button type="button" id="schema-pop-close" data-tip="Close" aria-label="Close structure">
           <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
@@ -268,7 +268,7 @@
           <h2 id="row-pop-title">Row</h2>
           <div id="row-pop-keys" class="row-pop-keys"></div>
         </div>
-        <button type="button" id="row-pop-close" title="Close" aria-label="Close row">
+        <button type="button" id="row-pop-close" data-tip="Close" aria-label="Close row">
           <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
@@ -280,7 +280,7 @@
     <div class="patch-pop-card">
       <header class="patch-pop-head">
         <h2 id="patch-pop-title">File changed on disk</h2>
-        <button type="button" id="patch-pop-close" title="Close" aria-label="Close unsaved patch">
+        <button type="button" id="patch-pop-close" data-tip="Close" aria-label="Close unsaved patch">
           <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
@@ -303,7 +303,7 @@
       <button type="button" id="server-retry">Retry</button>
     </div>
   </dialog>
-  <div id="lint-tip" class="lint-tip" role="tooltip" hidden></div>
+  <div id="lint-tip" class="lint-tip" role="tooltip" popover="manual" hidden></div>
   <div id="presence-tip" class="presence-tip" role="tooltip" hidden></div>
   <div id="run-tip" class="run-tip" role="tooltip" hidden>Run selection</div>
   <script type="module" src="/app.js"></script>

@@ -84,7 +84,7 @@ test("settings menu clears the table cache", async ({ page, app }) => {
   await expect(page.locator("#opt-even-odd")).toBeVisible();
   const sidebarAge = await page.locator(".table-cache-age").innerText();
   await expect(page.locator("#settings-cache-age")).toHaveText(sidebarAge);
-  await expect(page.locator("#settings-cache-age")).toHaveAttribute("title", /.+/);
+  await expect(page.locator("#settings-cache-age")).toHaveAttribute("data-tip", /.+/);
 
   const cleared = page.waitForResponse((response) => {
     const url = new URL(response.url());
@@ -109,7 +109,8 @@ test("settings menu shows the cache age before the table list is open", async ({
   await page.locator("#settings-toggle").click();
   await expect(page.locator("#settings-pop")).toBeVisible();
   await expect(page.locator("#settings-cache-age")).toHaveText("not cached");
-  await expect(page.locator("#settings-cache-age")).toHaveAttribute("title", "No table list cached.");
+  await expect(page.locator("#settings-cache-age")).toHaveAttribute("data-tip", "No table list cached.");
+  await expect(page.locator("#settings-cache-age")).not.toHaveAttribute("title");
 });
 
 test("searching tables filters the cached list without refresh", async ({ page, app }) => {
@@ -439,7 +440,7 @@ test("tables-search-matches-like-ls", async ({ page, app }) => {
   await page.locator("#table-search").fill(stem);
   const similar = page.locator("#table-list [data-testid='intelligent-match']");
   await expect(similar).toHaveText("Similar names");
-  await expect(similar).toHaveAttribute("title", `No exact match for "${stem}", so showing similar names.`);
+  await expect(similar).toHaveAttribute("data-tip", `No exact match for "${stem}", so showing similar names.`);
   await expect(page.locator(`#table-${catalog}`)).toBeVisible();
   await expect(page.locator(`#table-${editions}`)).toBeVisible();
   await expect(page.locator(`#table-${catalog}`)).toContainText("isbn");
@@ -457,7 +458,7 @@ test("tables-search-matches-like-ls", async ({ page, app }) => {
   await page.locator("#table-search").fill(key);
   const related = page.locator("#table-list [data-testid='intelligent-match']");
   await expect(related).toHaveText("Related keys");
-  await expect(related).toHaveAttribute("title", `No exact match for "${key}", so showing related keys.`);
+  await expect(related).toHaveAttribute("data-tip", `No exact match for "${key}", so showing related keys.`);
   await expect(page.locator(`#table-${orders}`)).toBeVisible();
   await expect(page.locator(`#table-${shipments}`)).toBeVisible();
   await expect(page.locator(`#table-${shipments}`)).toContainText(key);

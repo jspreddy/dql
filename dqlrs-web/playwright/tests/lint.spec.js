@@ -18,10 +18,12 @@ test("underlines a bad query, warns when the table is unknown, and clears a vali
   await expect(status).toBeVisible();
   await expect(status).toHaveText("1 error");
   await expect(status).not.toHaveClass(/is-warning/);
-  await expect(status).toHaveAttribute("title", /expected a DQL statement/);
+  await expect(status).toHaveAttribute("data-tip", /expected a DQL statement/);
+  await expect(status).not.toHaveAttribute("title");
   const mark = page.locator(".cm-lint-error");
   await expect(mark).toHaveCount(1);
-  await expect(mark).toHaveAttribute("title", /expected a DQL statement/);
+  await expect(mark).toHaveAttribute("data-tip", /expected a DQL statement/);
+  await expect(mark).not.toHaveAttribute("title");
   await expect(page.locator("[data-testid='lint-gutter-error']")).toHaveCount(1);
   await expect(status).toHaveCSS("color", await themeColor(page, "--danger"));
   await expect(status).toHaveCSS("background-color", await themeColor(page, "--danger-wash"));
@@ -39,6 +41,15 @@ test("underlines a bad query, warns when the table is unknown, and clears a vali
   await page.screenshot({ path: playwrightArtifact(`lint-hover-${testInfo.project.name}.png`) });
   await page.mouse.move(0, 0);
   await expect(tip).toBeHidden();
+  await expect(page.locator("[data-testid='lint-gutter-error']")).toHaveAttribute("data-tip", /expected a DQL statement/);
+  await expect(page.locator("[data-testid='lint-gutter-error']")).not.toHaveAttribute("title");
+  await page.locator("#collapse-tree").hover();
+  await expect(tip).toHaveText("Collapse all folders");
+  await expect(page.locator("#collapse-tree")).not.toHaveAttribute("title");
+  const nativeTitles = await page.locator("[title]").evaluateAll((els) => els
+    .filter((el) => el.tagName !== "IFRAME")
+    .map((el) => `${el.tagName}.${el.id || el.className}`));
+  expect(nativeTitles).toEqual([]);
 
   await status.click();
   await expect(page.locator("#result-tab-lint")).toHaveAttribute("aria-selected", "true");
@@ -72,7 +83,8 @@ test("underlines a bad query, warns when the table is unknown, and clears a vali
   await expect(status).toBeVisible();
   await expect(status).toHaveText("1 warning");
   await expect(status).toHaveClass(/is-warning/);
-  await expect(status).toHaveAttribute("title", /no cached definition/);
+  await expect(status).toHaveAttribute("data-tip", /no cached definition/);
+  await expect(status).not.toHaveAttribute("title");
   await expect(page.locator(".cm-lint-error")).toHaveCount(0);
   const warning = page.locator(".cm-lint-warning");
   await expect(warning).toHaveCount(1);

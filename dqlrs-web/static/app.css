@@ -765,8 +765,13 @@ body.side-resizing * {
 
 .lint-tip {
   position: fixed;
+  inset: auto;
   z-index: 40;
+  width: max-content;
+  height: auto;
   max-width: min(360px, calc(100vw - 16px));
+  margin: 0;
+  overflow: visible;
   padding: 6px 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -3181,35 +3186,6 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
 .schema-pop-info:focus-visible {
   background: var(--teal-wash);
   outline: none;
-}
-
-.schema-pop-info::after {
-  content: attr(title);
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  z-index: 2;
-  width: max-content;
-  max-width: 260px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: var(--bar);
-  color: var(--header-fg);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0;
-  text-transform: none;
-  line-height: 1.35;
-  box-shadow: 0 8px 20px var(--shadow-lg);
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-2px);
-}
-
-.schema-pop-info:hover::after,
-.schema-pop-info:focus-visible::after {
-  opacity: 1;
-  transform: none;
 }
 
 .schema-pop-title-row {
