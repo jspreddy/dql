@@ -1,6 +1,6 @@
 ---
 name: git-graph
-description: Render one SVG of remote branches on top of origin/v-rust. Use when the user asks for a git graph, a branch picture, or changes above v-rust. Pass --count (-n) and --cutoff when the user names a commit limit or a time window. Run only when asked.
+description: Render one SVG of remote branches on top of origin/v-rust. Use when the user asks for a git graph, a branch picture, or changes above v-rust. Pass -n/--count when the user names a commit limit and -d/--cutoff when the user names a date or a cutoff. Both limits can be passed together. Run only when asked.
 ---
 
 # Git graph
@@ -8,13 +8,13 @@ description: Render one SVG of remote branches on top of origin/v-rust. Use when
 From the repository, run:
 
 ```bash
-python3 .cursor/skills/git-graph/snapshot.py --count <n> --cutoff <duration>
+python3 .cursor/skills/git-graph/snapshot.py -n <count> -d <date>
 ```
 
-Pass only the limits the user named. The defaults are `--count 50` and `--cutoff 2w` (two weeks before `origin/v-rust`).
+`--count` is the same option as `-n`. `--cutoff` is the same option as `-d`. Pass either form, and pass both limits when the user names both. Pass only the limits the user named.
 
-- `n` or `count` is `--count` (same as `-n`). `/git-graph n 50` is `--count 50`.
-- `cutoff` is `--cutoff`. A duration is `2w`, `14d`, `48h`, `30m`, or a number of seconds. "2 weeks" is `2w`. "3 days" is `3d`.
+- `-n` / `--count` is the commit count. It limits how many commits git-graph draws. The picture may be restyled. Commits and lines stay. `/git-graph n 50` is `-n 50`.
+- `-d` / `--cutoff` prunes commits before a date. A duration before `origin/v-rust` is `2w`, `14d`, `48h`, `30m`, or a number of seconds. "2 weeks" is `-d 2w`. "3 days" is `--cutoff 3d`. An absolute date uses git's `--before` formats, such as `-d 2026-11-01`.
 
 Each run writes a new SVG. The filename has a random part, so it does not replace an earlier graph. The script prints `svg: <path>`. Show that path's SVG in Cursor chat. Do not reuse an older graph file.
 

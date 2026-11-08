@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import secrets
 import shutil
@@ -14,8 +13,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 BASE = "origin/v-rust"
-DEFAULT_COUNT = 50
-DEFAULT_CUTOFF = "2w"
 _DURATION = re.compile(r"^(\d+)([wdhms])?$", re.IGNORECASE)
 _DURATION_UNITS = {
     "": 1,
@@ -26,20 +23,22 @@ _DURATION_UNITS = {
     "w": 7 * 24 * 60 * 60,
 }
 
-_COMMIT_BLOCK = re.compile(
-    r"<g>\s*(?:<path[^>]*/>\s*)+<circle[^>]*>\s*<title>(?P<hash>[a-f0-9]{40})</title>\s*</circle>\s*</g>\s*<text[\s\S]*?</text>\s*",
-    re.MULTILINE,
-)
+_TAG = re.compile(r"<(/?)([A-Za-z][\w:.-]*)([^>]*)>")
+_TITLE = re.compile(r"<title>([a-f0-9]{40})</title>")
+_NUMBER = r"[+-]?\d+(?:\.\d+)?"
 
 
 def git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    proc = subprocess.run(
         ["git", *args],
         cwd=repo,
-        check=check,
+        check=False,
         text=True,
         capture_output=True,
     )
+    if check and proc.returncode != 0:
+        sys.exit(proc.stderr.strip() or proc.stdout.strip() or f"git {' '.join(args)} failed")
+    return proc
 
 
 def repo_root() -> Path:
@@ -54,126 +53,155 @@ def repo_root() -> Path:
 
 
 def fetch_origin(repo: Path) -> None:
-    proc = git(repo, "fetch", "origin", "--prune", check=False)
+    proc = git(repo, "fetch", "origin", check=False)
     if proc.returncode != 0:
         sys.exit(proc.stderr.strip() or proc.stdout.strip() or "git fetch origin failed")
 
 
-def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
-    return git(repo, "merge-base", "--is-ancestor", ancestor, descendant, check=False).returncode == 0
+def remote_branches(repo: Path) -> list[str]:
+    proc = git(repo, "-c", "color.ui=never", "branch", "-r", "-l", "--no-merge")
+    names: list[str] = []
+    for line in proc.stdout.splitlines():
+        name = line.strip()
+        if not name or " -> " in name:
+            continue
+        names.append(name.split()[0])
+    return names
 
 
-def merge_base(repo: Path, left: str, right: str) -> str:
-    return git(repo, "merge-base", left, right).stdout.strip()
+def current_branch(repo: Path) -> str:
+    return git(repo, "branch", "--show-current").stdout.strip()
 
 
-def commits_above(repo: Path, base: str, tip: str) -> int:
-    proc = git(repo, "rev-list", "--count", f"{base}..{tip}", check=False)
-    if proc.returncode != 0:
-        return 0
-    return int(proc.stdout.strip() or 0)
-
-
-def parse_cutoff(value: str) -> int:
-    match = _DURATION.fullmatch(value.strip())
-    if match is None:
-        raise argparse.ArgumentTypeError(
-            f"cutoff must look like 2w, 14d, 48h, 30m, or seconds, not {value!r}"
-        )
-    amount = int(match.group(1))
-    if amount < 1:
-        raise argparse.ArgumentTypeError("cutoff must be positive")
-    unit = (match.group(2) or "").lower()
-    return amount * _DURATION_UNITS[unit]
-
-
-def base_cutoff(repo: Path, cutoff_seconds: int) -> tuple[int, str]:
-    epoch = int(git(repo, "log", "-1", "--format=%ct", BASE).stdout.strip())
-    cutoff = epoch - cutoff_seconds
-    since = datetime.fromtimestamp(cutoff, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    return cutoff, since
-
-
-def branch_on_top(repo: Path, name: str) -> bool:
-    if name in {BASE, "origin/HEAD"}:
-        return False
-    merge = merge_base(repo, BASE, name)
-    if not is_ancestor(repo, merge, BASE):
-        return False
-    return is_ancestor(repo, BASE, name) or commits_above(repo, BASE, name) > 0
-
-
-def has_recent_commits(repo: Path, name: str, since: str) -> bool:
-    proc = git(repo, "rev-list", "-1", f"--since={since}", f"{BASE}..{name}", check=False)
-    return proc.returncode == 0 and bool(proc.stdout.strip())
-
-
-def open_branch_refs(repo: Path) -> set[str]:
-    proc = subprocess.run(
-        ["gh", "pr", "list", "--state", "open", "--limit", "200", "--json", "headRefName"],
-        cwd=repo,
-        text=True,
-        capture_output=True,
-    )
-    if proc.returncode != 0:
-        sys.exit(proc.stderr.strip() or proc.stdout.strip() or "gh pr list failed")
-    names = {item.get("headRefName", "") for item in json.loads(proc.stdout)}
-    return {f"origin/{name}" for name in names if name}
-
-
-def branches_on_top(repo: Path, since: str) -> list[str]:
+def graph_refs(repo: Path) -> list[str]:
     if git(repo, "rev-parse", "--verify", "--quiet", BASE, check=False).returncode != 0:
         sys.exit(f"{BASE} does not exist after fetch")
-    open_refs = open_branch_refs(repo)
-    listed = git(
-        repo,
-        "for-each-ref",
-        "--sort=-committerdate",
-        "--format=%(refname:short)",
-        "refs/remotes/origin",
-    ).stdout.splitlines()
-    selected = [BASE]
-    for name in listed:
-        if (
-            name
-            and name in open_refs
-            and branch_on_top(repo, name)
-            and has_recent_commits(repo, name, since)
-        ):
-            selected.append(name)
-    return selected
-
-
-def allowed_commits(repo: Path, tips: list[str], since: str) -> set[str]:
-    allowed = {git(repo, "rev-parse", BASE).stdout.strip()}
-    for tip in tips:
-        proc = git(repo, "rev-list", f"--since={since}", f"{BASE}..{tip}", check=False)
-        if proc.returncode != 0:
+    refs = [BASE]
+    seen = {BASE, "origin/HEAD"}
+    for name in remote_branches(repo):
+        if name in seen:
             continue
-        allowed.update(line for line in proc.stdout.splitlines() if line)
-        allowed.add(git(repo, "rev-parse", tip).stdout.strip())
-    return allowed
+        seen.add(name)
+        refs.append(name)
+    current = current_branch(repo)
+    if current and current not in seen:
+        refs.append(current)
+    return refs
 
 
-def filter_svg_by_commits(svg: str, allowed: set[str]) -> str:
-    def repl(match: re.Match[str]) -> str:
-        return match.group(0) if match.group("hash") in allowed else ""
+def cutoff_before(repo: Path, value: str) -> str:
+    """Return a git --before date for a duration before origin/v-rust, or the date itself."""
+    match = _DURATION.fullmatch(value.strip())
+    if match is None:
+        return value
+    amount = int(match.group(1))
+    if amount < 1:
+        sys.exit("cutoff must be positive")
+    seconds = amount * _DURATION_UNITS[(match.group(2) or "").lower()]
+    epoch = int(git(repo, "log", "-1", "--format=%ct", BASE).stdout.strip())
+    cutoff = epoch - seconds
+    return datetime.fromtimestamp(cutoff, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    return _COMMIT_BLOCK.sub(repl, svg)
+
+def commits_before(repo: Path, date: str, refs: list[str]) -> set[str]:
+    proc = git(repo, "rev-list", f"--before={date}", *refs, check=False)
+    if proc.returncode != 0:
+        sys.exit(proc.stderr.strip() or proc.stdout.strip() or f"invalid date {date!r}")
+    return {line.strip() for line in proc.stdout.splitlines() if line.strip()}
+
+
+def _element_end(svg: str, start: int) -> int:
+    close = svg.find(">", start)
+    if close < 0:
+        raise ValueError("unclosed tag")
+    opening = svg[start : close + 1]
+    if opening.startswith("</") or opening.endswith("/>"):
+        return close + 1
+    match = re.match(r"<([A-Za-z][\w:.-]*)", opening)
+    if match is None:
+        return close + 1
+    name = match.group(1)
+    depth = 1
+    for found in _TAG.finditer(svg, close + 1):
+        slash, tag, attrs = found.group(1), found.group(2), found.group(3)
+        if tag != name:
+            continue
+        if slash:
+            depth -= 1
+            if depth == 0:
+                return found.end()
+        elif not attrs.rstrip().endswith("/"):
+            depth += 1
+    raise ValueError(f"unclosed <{name}>")
+
+
+def _top_level_elements(inner: str) -> list[str]:
+    items: list[str] = []
+    index = 0
+    length = len(inner)
+    while index < length:
+        if inner[index] != "<":
+            nxt = inner.find("<", index)
+            if nxt < 0:
+                nxt = length
+            items.append(inner[index:nxt])
+            index = nxt
+            continue
+        end = _element_end(inner, index)
+        items.append(inner[index:end])
+        index = end
+    return items
+
+
+def _commit_hash(element: str) -> str | None:
+    if not element.startswith("<g"):
+        return None
+    match = _TITLE.search(element)
+    return match.group(1) if match else None
+
+
+def prune_svg_commits(svg: str, remove: set[str]) -> str:
+    """Drop commits in `remove`, including the lines drawn with those commits."""
+    if not remove:
+        return svg
+    start = svg.find("<svg")
+    open_end = svg.find(">", start)
+    close = svg.rfind("</svg>")
+    if start < 0 or open_end < 0 or close < 0:
+        sys.exit("git-graph SVG has no svg element")
+    items = _top_level_elements(svg[open_end + 1 : close])
+    kept: list[str] = []
+    index = 0
+    while index < len(items):
+        digest = _commit_hash(items[index])
+        if digest is None:
+            kept.append(items[index])
+            index += 1
+            continue
+        nxt = index + 1
+        while nxt < len(items) and _commit_hash(items[nxt]) is None:
+            nxt += 1
+        if digest not in remove:
+            kept.extend(items[index:nxt])
+        index = nxt
+    return svg[: open_end + 1] + "".join(kept) + svg[close:]
 
 
 def fit_viewbox(svg: str) -> str:
-    ys = [float(value) for value in re.findall(r'\bcy="([0-9.]+)"', svg)]
-    ys.extend(float(value) for value in re.findall(r'<text[^>]*\sy="([0-9.]+)"', svg))
-    xs = [float(value) for value in re.findall(r'\bcx="([0-9.]+)"', svg)]
-    xs.extend(float(value) for value in re.findall(r'<text[^>]*\sx="([0-9.]+)"', svg))
-    if not ys or not xs:
+    """Shrink the vertical frame after commits are removed.
+
+    The horizontal frame stays as git-graph drew it, so branch labels and
+    commit summaries keep the width already reserved for them.
+    """
+    match = re.search(r'viewBox="([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+)"', svg)
+    if match is None:
         return svg
-    min_x = min(xs) - 240.0
-    max_x = max(xs) + 420.0
+    min_x, _min_y, width, _height = (float(part) for part in match.groups())
+    ys = [float(value) for value in re.findall(rf'\b(?:cy|y1|y2)="({_NUMBER})"', svg)]
+    if not ys:
+        return svg
     min_y = min(ys) - 20.0
     max_y = max(ys) + 20.0
-    width = max_x - min_x
     height = max_y - min_y
     svg = re.sub(
         r'viewBox="[^"]+"',
@@ -186,13 +214,11 @@ def fit_viewbox(svg: str) -> str:
     return svg
 
 
-def render_svg(repo: Path, refs: list[str], count: int) -> str:
-    tips = [ref for ref in refs if ref != BASE]
-    command = ["git-graph", "--svg", "-m", "none", "-s", "round", "-n", str(count)]
-    if tips:
-        command.extend([BASE, *tips])
-    else:
-        command.append(BASE)
+def render_svg(repo: Path, refs: list[str], count: int | None) -> str:
+    command = ["git-graph", "--svg", "-m", "none", "-s", "round"]
+    if count is not None:
+        command.extend(["-n", str(count)])
+    command.extend(refs)
     proc = subprocess.run(command, cwd=repo, text=True, capture_output=True)
     if proc.returncode != 0 and "owned by current user" in proc.stderr:
         command.insert(1, "--skip-repo-owner-validation")
@@ -270,25 +296,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "-n",
         "--count",
         type=int,
-        default=DEFAULT_COUNT,
-        help=f"maximum commits to draw (default {DEFAULT_COUNT})",
+        metavar="count",
+        help="Limit git-graph to this many commits. Visual styling may change; commits and lines stay.",
     )
     parser.add_argument(
+        "-d",
         "--cutoff",
-        type=parse_cutoff,
-        default=DEFAULT_CUTOFF,
-        help=f"how far before {BASE} to keep commits, as 2w, 14d, 48h, 30m, or seconds (default {DEFAULT_CUTOFF})",
+        metavar="date",
+        help=(
+            "Prune commits before this date. A git --before date, or a duration before "
+            f"{BASE} such as 2w, 14d, 48h, or 30m. Can be combined with --count."
+        ),
     )
     args = parser.parse_args(argv)
-    if args.count < 1:
-        parser.error("count must be at least 1")
-    if isinstance(args.cutoff, str):
-        args.cutoff = parse_cutoff(args.cutoff)
+    if args.count is not None and args.count < 1:
+        parser.error("count must be a positive integer")
     return args
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
     if shutil.which("git-graph") is None:
         sys.exit(
             "git-graph is not installed. From /tmp, run: cargo install git-graph\n"
@@ -298,12 +325,11 @@ def main() -> None:
         )
     repo = repo_root()
     fetch_origin(repo)
-    _cutoff, since = base_cutoff(repo, args.cutoff)
-    refs = branches_on_top(repo, since)
-    tips = [ref for ref in refs if ref != BASE]
-    allowed = allowed_commits(repo, tips, since)
-    svg = filter_svg_by_commits(render_svg(repo, refs, args.count), allowed)
-    svg = fit_viewbox(svg)
+    refs = graph_refs(repo)
+    svg = render_svg(repo, refs, args.count)
+    if args.cutoff is not None:
+        svg = prune_svg_commits(svg, commits_before(repo, cutoff_before(repo, args.cutoff), refs))
+        svg = fit_viewbox(svg)
     svg_path = output_dir() / f"v-rust-branches-{secrets.token_hex(4)}.svg"
     svg_path.write_text(pad_svg(svg))
     print(f"svg: {svg_path}")
