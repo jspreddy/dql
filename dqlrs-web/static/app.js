@@ -14,6 +14,7 @@ import { tags } from "@lezer/highlight";
 import { bandLayer, dqlLanguage, lintExtension, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setLintIssues, setRunRequest, setRunStatuses } from "./dql-mode.js";
 import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
 import { parseLsMessage } from "./describe-card.js";
+import { noteCard } from "./note-card.js";
 import { unifiedDiff } from "./file-patch.js";
 
 const apiToken = document.querySelector('meta[name="dqlrs-token"]')?.content || "";
@@ -5061,12 +5062,14 @@ function schemaResultSection(inspected) {
   section.dataset.testid = "schema-result";
   const heading = document.createElement("h3");
   heading.textContent = "Result structure";
-  const source = document.createElement("div");
-  source.className = "note";
-  const text = document.createElement("p");
-  text.textContent = "Types and metrics come from the data fetched so far. No extra queries were run, so this is a partial structure.";
-  source.append(materialIcon("info"), text);
-  section.append(heading, source, schemaTable(inspected));
+  section.append(
+    heading,
+    noteCard(
+      "Types and metrics come from the data fetched so far. No extra queries were run, so this is a partial structure.",
+      "info",
+    ),
+    schemaTable(inspected),
+  );
   return section;
 }
 

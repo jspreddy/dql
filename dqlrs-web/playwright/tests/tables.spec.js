@@ -606,9 +606,41 @@ test("opens result and table-browser structure from data already in hand", async
   await expect(columns.locator("tbody tr[data-column='extra']")).toHaveCount(0);
   const result = page.locator("[data-testid='schema-result']");
   await expect(result.locator("h3")).toHaveText("Result structure");
-  const resultNote = result.locator(".note");
+  const resultNote = result.locator(".note-card");
+  await expect(resultNote).toHaveAttribute("data-variant", "info");
   await expect(resultNote).toHaveText("Types and metrics come from the data fetched so far. No extra queries were run, so this is a partial structure.");
   await expect(resultNote.locator("use")).toHaveAttribute("href", /\/vendor\/icons\/info\.svg#icon$/);
+  const variants = await page.evaluate(async () => {
+    const { noteCard } = await import("/note-card.js");
+    const host = document.createElement("div");
+    host.hidden = true;
+    document.body.append(host);
+    const listed = ["error", "success", "alert", "info"].map((variant) => {
+      const card = noteCard(variant + " note", variant);
+      host.append(card);
+      const style = getComputedStyle(card);
+      return {
+        variant: card.dataset.variant,
+        text: card.querySelector("p").textContent,
+        icon: card.querySelector("use").getAttribute("href"),
+        background: style.backgroundColor,
+        border: style.borderTopColor,
+        color: style.color,
+      };
+    });
+    host.remove();
+    return listed;
+  });
+  expect(variants.map((card) => card.variant)).toEqual(["error", "success", "alert", "info"]);
+  expect(variants.map((card) => card.icon)).toEqual([
+    "/vendor/icons/error.svg#icon",
+    "/vendor/icons/check_circle.svg#icon",
+    "/vendor/icons/warning.svg#icon",
+    "/vendor/icons/info.svg#icon",
+  ]);
+  expect(new Set(variants.map((card) => card.background)).size).toBe(4);
+  expect(new Set(variants.map((card) => card.color)).size).toBe(4);
+  expect(new Set(variants.map((card) => card.border)).size).toBe(4);
   await expect(page.locator("#schema-pop-foot")).toBeHidden();
   await expect(page.locator("#schema-pop h3")).toHaveText(["Definition", "Result structure"]);
   await page.screenshot({ path: playwrightArtifact(`table-structure-${testInfo.project.name}.png`) });
