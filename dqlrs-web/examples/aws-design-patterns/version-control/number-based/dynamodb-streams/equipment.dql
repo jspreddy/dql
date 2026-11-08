@@ -1,0 +1,88 @@
+-- Numbered versions copied from a stream, from the AWS sample
+-- amazon-dynamodb-design-patterns
+-- examples/version-control/number-based-version/dynamodb-streams.
+-- The sample writes only the v0 row. A stream consumer copies that image to vN.
+-- These inserts are the table after the consumer has written version 3.
+-- v0 is the latest pointer. v1, v2, and v3 are the history.
+
+DROP TABLE IF EXISTS aws_vc_streams;
+
+CREATE TABLE aws_vc_streams (
+  PK STRING HASH KEY,
+  SK STRING RANGE KEY
+);
+
+INSERT INTO aws_vc_streams (
+  PK='Equipment#1',
+  SK='Metadata',
+  Name='EquipmentName',
+  FactoryID='F#12345',
+  LineID='L#12345'
+);
+
+INSERT INTO aws_vc_streams (
+  PK='Equipment#1',
+  SK='v0',
+  Time='2020-11-11T08:15:00',
+  State='WARNING2',
+  Latest=3
+);
+
+INSERT INTO aws_vc_streams (
+  PK='Equipment#1',
+  SK='v1',
+  Time='2020-11-10T09:00:00',
+  State='WARNING1'
+);
+
+INSERT INTO aws_vc_streams (
+  PK='Equipment#1',
+  SK='v2',
+  Time='2020-11-10T10:30:00',
+  State='NORMAL'
+);
+
+INSERT INTO aws_vc_streams (
+  PK='Equipment#1',
+  SK='v3',
+  Time='2020-11-11T08:15:00',
+  State='WARNING2'
+);
+
+INSERT INTO aws_vc_streams (
+  PK='Equipment#2',
+  SK='Metadata',
+  Name='PackingLine',
+  FactoryID='F#12345',
+  LineID='L#67890'
+);
+
+INSERT INTO aws_vc_streams (
+  PK='Equipment#2',
+  SK='v0',
+  Time='2020-11-12T07:00:00',
+  State='NORMAL',
+  Latest=1
+);
+
+INSERT INTO aws_vc_streams (
+  PK='Equipment#2',
+  SK='v1',
+  Time='2020-11-12T07:00:00',
+  State='NORMAL'
+);
+
+-- Latest state is the v0 row the client writes.
+SELECT Time, State, Latest
+FROM aws_vc_streams
+WHERE PK = 'Equipment#1' AND SK = 'v0';
+
+-- History the stream consumer has copied off v0.
+SELECT SK, Time, State
+FROM aws_vc_streams
+WHERE PK = 'Equipment#1' AND SK BETWEEN 'v1' AND 'v9'
+ORDER BY SK ASC;
+
+SELECT Time, State, Latest
+FROM aws_vc_streams
+WHERE PK = 'Equipment#2' AND SK = 'v0';

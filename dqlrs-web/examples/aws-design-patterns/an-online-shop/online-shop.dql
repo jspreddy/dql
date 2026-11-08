@@ -1,0 +1,277 @@
+-- Online shop in one table, from the AWS sample
+-- amazon-dynamodb-design-patterns examples/an-online-shop.
+-- The rows are the final NoSQL Workbench model in json/AnOnlineShop.json.
+-- PK and SK carry a prefix: c# customer, p# product, w# warehouse,
+-- o# order, i# invoice, sh# shipment, shp# shipment line.
+-- GSI1 finds orders for a product, an invoice, or a shipment.
+-- GSI2 finds stock and shipments for a warehouse, and a customer's lines.
+
+DROP TABLE IF EXISTS aws_shop;
+
+CREATE TABLE aws_shop (
+  PK STRING HASH KEY,
+  SK STRING RANGE KEY
+) GLOBAL INDEX ('GSI1', GSI1-PK STRING, GSI1-SK STRING)
+  GLOBAL INDEX ('GSI2', GSI2-PK STRING, GSI2-SK STRING);
+
+INSERT INTO aws_shop (
+  PK='c#12345',
+  SK='c#12345',
+  EntityType='customer',
+  Email='samaneh@example.com',
+  Name='Samaneh'
+);
+
+INSERT INTO aws_shop (
+  PK='c#23456',
+  SK='c#23456',
+  EntityType='customer',
+  Email='kathleen@example.com',
+  Name='Kathleen'
+);
+
+INSERT INTO aws_shop (
+  PK='c#54321',
+  SK='c#54321',
+  EntityType='customer',
+  Email='henrik@example.com',
+  Name='Henrik'
+);
+
+INSERT INTO aws_shop (
+  PK='p#12345',
+  SK='p#12345',
+  EntityType='product',
+  Detail={'Name': 'Options Open', 'Description': 'The latest album'},
+  Price='100'
+);
+
+INSERT INTO aws_shop (
+  PK='p#99887',
+  SK='p#99887',
+  EntityType='product',
+  Detail={'Name': 'The Book', 'Description': 'The best book ever'},
+  Price='40'
+);
+
+INSERT INTO aws_shop (
+  PK='w#12345',
+  SK='w#12345',
+  EntityType='warehouse',
+  Address={'Country': 'Sweden', 'County': 'Vastra Gotaland', 'City': 'Goteborg', 'Street': 'MainStreet', 'Number': '20', 'ZipCode': '41111'}
+);
+
+INSERT INTO aws_shop (
+  PK='w#12376',
+  SK='w#12376',
+  EntityType='warehouse',
+  Address={'Country': 'Sweden', 'County': 'Vastra Gotaland', 'City': 'Boras', 'Street': 'RiverStreet', 'Number': '20', 'ZipCode': '11111'}
+);
+
+INSERT INTO aws_shop (
+  PK='p#12345',
+  SK='w#12345',
+  EntityType='warehouseItem',
+  GSI2-PK='w#12345',
+  GSI2-SK='p#12345',
+  Quantity='50'
+);
+
+INSERT INTO aws_shop (
+  PK='p#99887',
+  SK='w#12345',
+  EntityType='warehouseItem',
+  GSI2-PK='w#12345',
+  GSI2-SK='p#99887',
+  Quantity='4'
+);
+
+-- This stock row has no GSI2 keys, so the warehouse index does not list it.
+INSERT INTO aws_shop (
+  PK='p#99887',
+  SK='w#12376',
+  EntityType='warehouseItem',
+  Quantity='4'
+);
+
+INSERT INTO aws_shop (
+  PK='o#12345',
+  SK='p#12345',
+  EntityType='orderItem',
+  GSI1-PK='p#12345',
+  GSI1-SK='2020-06-21T19:18:00',
+  GSI2-PK='c#12345',
+  GSI2-SK='2020-06-21T19:18:00',
+  Price='100',
+  Quantity='2'
+);
+
+INSERT INTO aws_shop (
+  PK='o#12345',
+  SK='p#99887',
+  EntityType='orderItem',
+  GSI1-PK='p#99887',
+  GSI1-SK='2020-06-21T19:20:00',
+  GSI2-PK='c#12345',
+  GSI2-SK='2020-06-21T19:20:00',
+  Price='40',
+  Quantity='5'
+);
+
+INSERT INTO aws_shop (
+  PK='o#12345',
+  SK='c#12345',
+  EntityType='order',
+  Date='2020-06-21T19:10:00'
+);
+
+INSERT INTO aws_shop (
+  PK='o#12345',
+  SK='i#55443',
+  EntityType='invoice',
+  GSI1-PK='i#55443',
+  GSI1-SK='i#55443',
+  GSI2-PK='c#12345',
+  GSI2-SK='2020-06-21T19:18:00',
+  Detail={'Payments': [{'Type': 'GiftCard', 'Amount': 100, 'Data': 'GiftCard data here...'}, {'Type': 'MasterCard', 'Amount': 300, 'Data': 'Payment data here...'}]},
+  Amount='400',
+  Date='2020-06-21T19:18:00'
+);
+
+INSERT INTO aws_shop (
+  PK='o#12345',
+  SK='sh#88899',
+  EntityType='shipment',
+  GSI1-PK='sh#88899',
+  GSI1-SK='sh#88899',
+  GSI2-PK='w#12376',
+  GSI2-SK='sh#88899',
+  Address={'Country': 'Sweden', 'County': 'Vastra Gotaland', 'City': 'Goteborg', 'Street': 'Slanbarsvagen', 'Number': '34', 'ZipCode': '41787'},
+  Type='Express',
+  Date='2020-06-22T08:20:00'
+);
+
+INSERT INTO aws_shop (
+  PK='o#12345',
+  SK='sh#98765',
+  EntityType='shipment',
+  GSI1-PK='sh#98765',
+  GSI1-SK='sh#98765',
+  GSI2-PK='w#12345',
+  GSI2-SK='sh#98765',
+  Address={'Country': 'Sweden', 'County': 'Vastra Gotaland', 'City': 'Goteborg', 'Street': 'Slanbarsvagen', 'Number': '34', 'ZipCode': '41787'},
+  Type='Express',
+  Date='2020-06-22T10:20:00'
+);
+
+INSERT INTO aws_shop (
+  PK='o#12345',
+  SK='shp#55555',
+  EntityType='shipmentItem',
+  GSI1-PK='sh#98765',
+  GSI1-SK='p#12345',
+  Quantity='2'
+);
+
+INSERT INTO aws_shop (
+  PK='o#12345',
+  SK='shp#12345',
+  EntityType='shipmentItem',
+  GSI1-PK='sh#98765',
+  GSI1-SK='p#99887',
+  Quantity='3'
+);
+
+INSERT INTO aws_shop (
+  PK='o#12345',
+  SK='shp#54321',
+  EntityType='shipmentItem',
+  GSI1-PK='sh#88899',
+  GSI1-SK='p#99887',
+  Quantity='2'
+);
+
+-- Samaneh's customer row.
+SELECT Email, Name
+FROM aws_shop
+WHERE PK = 'c#12345' AND SK = 'c#12345';
+
+-- The album, and every warehouse that stocks it.
+SELECT Detail, Price
+FROM aws_shop
+WHERE PK = 'p#12345' AND SK = 'p#12345';
+
+SELECT SK, Quantity
+FROM aws_shop
+WHERE PK = 'p#12345' AND begins_with(SK, 'w#');
+
+-- Goteborg warehouse.
+SELECT Address
+FROM aws_shop
+WHERE PK = 'w#12345' AND SK = 'w#12345';
+
+-- Stock indexed under that warehouse. The Boras copy of The Book is not here.
+SELECT GSI2-SK, Quantity
+FROM aws_shop
+WHERE GSI2-PK = 'w#12345' AND begins_with(GSI2-SK, 'p#')
+USING GSI2;
+
+SELECT Quantity
+FROM aws_shop
+WHERE PK = 'p#99887' AND SK = 'w#12376';
+
+-- Everything stored under order o#12345.
+SELECT PK, SK, EntityType
+FROM aws_shop
+WHERE PK = 'o#12345';
+
+-- Lines, invoice, and shipments of that order.
+SELECT SK, Price, Quantity
+FROM aws_shop
+WHERE PK = 'o#12345' AND begins_with(SK, 'p#');
+
+SELECT SK, Amount, Date, Detail
+FROM aws_shop
+WHERE PK = 'o#12345' AND begins_with(SK, 'i#');
+
+SELECT SK, Type, Date, Address
+FROM aws_shop
+WHERE PK = 'o#12345' AND begins_with(SK, 'sh#');
+
+-- Orders for The Book during June 2020.
+SELECT PK, SK, Quantity, Price
+FROM aws_shop
+WHERE GSI1-PK = 'p#99887'
+  AND GSI1-SK BETWEEN '2020-06-01T00:00:00' AND '2020-06-30T23:59:59'
+USING GSI1;
+
+-- Invoice i#55443, including the two payments on the detail map.
+SELECT PK, Amount, Date, Detail
+FROM aws_shop
+WHERE GSI1-PK = 'i#55443' AND GSI1-SK = 'i#55443'
+USING GSI1;
+
+-- Shipment sh#98765 and the products on it.
+SELECT PK, SK, Type, Date
+FROM aws_shop
+WHERE GSI1-PK = 'sh#98765' AND GSI1-SK = 'sh#98765'
+USING GSI1;
+
+SELECT GSI1-SK, Quantity
+FROM aws_shop
+WHERE GSI1-PK = 'sh#98765' AND begins_with(GSI1-SK, 'p#')
+USING GSI1;
+
+-- Shipments leaving the Boras warehouse.
+SELECT PK, GSI2-SK, Type, Date
+FROM aws_shop
+WHERE GSI2-PK = 'w#12376' AND begins_with(GSI2-SK, 'sh#')
+USING GSI2;
+
+-- What Samaneh was billed on 21 June 2020.
+SELECT PK, SK, Amount, Date
+FROM aws_shop
+WHERE GSI2-PK = 'c#12345'
+  AND GSI2-SK BETWEEN '2020-06-21T00:00:00' AND '2020-06-21T23:59:59'
+  AND EntityType = 'invoice'
+USING GSI2;
