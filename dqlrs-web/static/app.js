@@ -1566,6 +1566,7 @@ function showDocument(path, text) {
   const kind = fileKind(path);
   title.textContent = name;
   meta.textContent = kind === "html" ? "Rendered page" : "Formatted";
+  closeMermaidScreen();
   body.replaceChildren();
   if (kind === "html") {
     const frame = document.createElement("iframe");
@@ -1662,6 +1663,260 @@ async function loadMermaid() {
   return mermaidModule;
 }
 
+function cssToken(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function mermaidThemeVariables() {
+  const scale = [
+    cssToken("--paper"),
+    cssToken("--teal-wash"),
+    cssToken("--blue-wash"),
+    cssToken("--amber-bg"),
+    cssToken("--teal-soft"),
+    cssToken("--paper-2"),
+    cssToken("--selected"),
+    cssToken("--hover"),
+  ];
+  const inks = [cssToken("--teal-ink"), cssToken("--blue-ink"), cssToken("--amber-ink"), cssToken("--text-secondary")];
+  const text = cssToken("--text");
+  const variables = {
+    background: cssToken("--canvas"),
+    mainBkg: cssToken("--paper"),
+    secondBkg: cssToken("--paper-2"),
+    primaryColor: cssToken("--paper"),
+    secondaryColor: cssToken("--blue-wash"),
+    tertiaryColor: cssToken("--amber-bg"),
+    primaryBorderColor: cssToken("--line-control"),
+    secondaryBorderColor: cssToken("--blue-ink"),
+    tertiaryBorderColor: cssToken("--amber-ink"),
+    primaryTextColor: text,
+    secondaryTextColor: text,
+    tertiaryTextColor: text,
+    textColor: text,
+    nodeTextColor: text,
+    titleColor: text,
+    lineColor: cssToken("--text-secondary"),
+    defaultLinkColor: cssToken("--text-secondary"),
+    nodeBkg: cssToken("--paper"),
+    nodeBorder: cssToken("--line-control"),
+    clusterBkg: cssToken("--teal-wash"),
+    clusterBorder: cssToken("--teal-ink"),
+    edgeLabelBackground: cssToken("--paper"),
+    actorBkg: cssToken("--blue-wash"),
+    actorBorder: cssToken("--blue-ink"),
+    actorTextColor: text,
+    actorLineColor: cssToken("--muted"),
+    signalColor: cssToken("--text-secondary"),
+    signalTextColor: text,
+    labelBoxBkgColor: cssToken("--paper"),
+    labelBoxBorderColor: cssToken("--line-control"),
+    labelTextColor: text,
+    noteBkgColor: cssToken("--amber-bg"),
+    noteBorderColor: cssToken("--amber-ink"),
+    noteTextColor: text,
+    activationBkgColor: cssToken("--teal-wash"),
+    activationBorderColor: cssToken("--teal-ink"),
+    sequenceNumberColor: cssToken("--on-fill"),
+    sectionBkgColor: cssToken("--teal-soft"),
+    altSectionBkgColor: cssToken("--paper-2"),
+    gridColor: cssToken("--line"),
+    todayLineColor: cssToken("--amber-ink"),
+    taskBkgColor: cssToken("--blue-wash"),
+    taskBorderColor: cssToken("--blue-ink"),
+    activeTaskBkgColor: cssToken("--teal-wash"),
+    activeTaskBorderColor: cssToken("--teal-ink"),
+    doneTaskBkgColor: cssToken("--paper-2"),
+    doneTaskBorderColor: cssToken("--line-control"),
+    critBkgColor: cssToken("--danger-wash"),
+    critBorderColor: cssToken("--danger"),
+    useGradient: true,
+    gradientStart: cssToken("--line-control"),
+    gradientStop: cssToken("--line"),
+    dropShadow: `drop-shadow(1px 2px 2px ${cssToken("--shadow-pop")})`,
+    filterColor: cssToken("--shadow"),
+  };
+  scale.forEach((color, index) => {
+    variables[`cScale${index}`] = color;
+    variables[`cScaleLabel${index}`] = text;
+    variables[`pie${index + 1}`] = inks[index % inks.length];
+  });
+  return variables;
+}
+
+const mermaidScreen = document.querySelector("#mermaid-screen");
+const mermaidStage = document.querySelector("#mermaid-screen-stage");
+const mermaidCanvas = document.querySelector("#mermaid-screen-canvas");
+const mermaidZoomLabel = document.querySelector("#mermaid-zoom-label");
+let mermaidScreenBlock = null;
+let mermaidScreenScale = 1;
+let mermaidScreenFit = 1;
+let mermaidScreenBase = { w: 1, h: 1 };
+let mermaidPan = null;
+
+function closeMermaidScreen() {
+  if (mermaidScreen?.open) mermaidScreen.close();
+}
+
+function mountMermaidScreen(svg) {
+  const clone = svg.cloneNode(true);
+  clone.classList.remove("chain");
+  for (const el of clone.querySelectorAll(".hot, .pinned")) {
+    el.classList.remove("hot");
+    el.classList.remove("pinned");
+  }
+  mermaidCanvas.replaceChildren(clone);
+  const box = svg.viewBox.baseVal;
+  const rendered = svg.getBoundingClientRect();
+  mermaidScreenBase = {
+    w: box?.width || rendered.width || 1,
+    h: box?.height || rendered.height || 1,
+  };
+}
+
+function applyMermaidScale(next) {
+  const scale = Math.min(8, Math.max(0.15, next));
+  const prevW = mermaidCanvas.offsetWidth || mermaidScreenBase.w * mermaidScreenScale;
+  const prevH = mermaidCanvas.offsetHeight || mermaidScreenBase.h * mermaidScreenScale;
+  const marginLeft = parseFloat(mermaidCanvas.style.marginLeft) || 0;
+  const marginTop = parseFloat(mermaidCanvas.style.marginTop) || 0;
+  const cx = mermaidStage.scrollLeft + mermaidStage.clientWidth / 2 - marginLeft;
+  const cy = mermaidStage.scrollTop + mermaidStage.clientHeight / 2 - marginTop;
+  const relX = prevW > 0 ? cx / prevW : 0.5;
+  const relY = prevH > 0 ? cy / prevH : 0.5;
+  mermaidScreenScale = scale;
+  const width = mermaidScreenBase.w * scale;
+  const height = mermaidScreenBase.h * scale;
+  mermaidCanvas.style.width = `${width}px`;
+  mermaidCanvas.style.height = `${height}px`;
+  const extraX = Math.max(0, mermaidStage.clientWidth - width);
+  const extraY = Math.max(0, mermaidStage.clientHeight - height);
+  mermaidCanvas.style.marginLeft = `${extraX / 2}px`;
+  mermaidCanvas.style.marginRight = `${extraX / 2}px`;
+  mermaidCanvas.style.marginTop = `${extraY / 2}px`;
+  mermaidCanvas.style.marginBottom = `${extraY / 2}px`;
+  mermaidStage.scrollLeft = relX * width - mermaidStage.clientWidth / 2 + extraX / 2;
+  mermaidStage.scrollTop = relY * height - mermaidStage.clientHeight / 2 + extraY / 2;
+  const fit = mermaidScreenFit || scale;
+  mermaidZoomLabel.textContent = `${Math.round((scale / fit) * 100)}%`;
+}
+
+function fitMermaidScreen() {
+  const availW = Math.max(mermaidStage.clientWidth - 48, 1);
+  const availH = Math.max(mermaidStage.clientHeight - 48, 1);
+  mermaidScreenFit = Math.min(availW / mermaidScreenBase.w, availH / mermaidScreenBase.h);
+  applyMermaidScale(mermaidScreenFit);
+}
+
+function openMermaidScreen(block) {
+  const svg = block.querySelector("svg");
+  if (!svg || !mermaidScreen) return;
+  mermaidScreenBlock = block;
+  mountMermaidScreen(svg);
+  if (!mermaidScreen.open) mermaidScreen.showModal();
+  fitMermaidScreen();
+}
+
+function refreshOpenMermaidScreen() {
+  if (!mermaidScreen?.open) return;
+  const svg = mermaidScreenBlock?.isConnected ? mermaidScreenBlock.querySelector("svg") : null;
+  if (!svg) {
+    closeMermaidScreen();
+    return;
+  }
+  const scale = mermaidScreenScale;
+  const left = mermaidStage.scrollLeft;
+  const top = mermaidStage.scrollTop;
+  mountMermaidScreen(svg);
+  applyMermaidScale(scale);
+  mermaidStage.scrollLeft = left;
+  mermaidStage.scrollTop = top;
+}
+
+function attachMermaidExpand(block) {
+  const svg = block.querySelector("svg");
+  const frame = block.parentElement?.classList.contains("mermaid-frame") ? block.parentElement : null;
+  if (!svg) {
+    frame?.querySelector(".mermaid-expand")?.remove();
+    return;
+  }
+  let host = frame;
+  if (!host) {
+    host = document.createElement("div");
+    host.className = "mermaid-frame";
+    block.replaceWith(host);
+    host.append(block);
+  }
+  if (host.querySelector(".mermaid-expand")) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "mermaid-expand";
+  button.setAttribute("aria-label", "View diagram full screen");
+  button.setAttribute("aria-haspopup", "dialog");
+  button.setAttribute("aria-controls", "mermaid-screen");
+  setTip(button, "Full screen");
+  button.append(materialIcon("open_in_full"));
+  button.addEventListener("click", () => openMermaidScreen(block));
+  host.append(button);
+}
+
+function endMermaidPan(event) {
+  if (!mermaidPan || (event && event.pointerId !== mermaidPan.id)) return;
+  mermaidPan = null;
+  mermaidStage.classList.remove("is-panning");
+}
+
+if (mermaidScreen && mermaidStage && mermaidCanvas) {
+  document.querySelector("#mermaid-zoom-in")?.addEventListener("click", () => {
+    applyMermaidScale(mermaidScreenScale * 1.25);
+  });
+  document.querySelector("#mermaid-zoom-out")?.addEventListener("click", () => {
+    applyMermaidScale(mermaidScreenScale / 1.25);
+  });
+  document.querySelector("#mermaid-zoom-fit")?.addEventListener("click", () => fitMermaidScreen());
+  document.querySelector("#mermaid-screen-close")?.addEventListener("click", () => closeMermaidScreen());
+  mermaidScreen.addEventListener("close", () => {
+    mermaidScreenBlock = null;
+    mermaidCanvas.replaceChildren();
+  });
+  mermaidScreen.addEventListener("keydown", (event) => {
+    if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      applyMermaidScale(mermaidScreenScale * 1.25);
+    } else if (event.key === "-" || event.key === "_") {
+      event.preventDefault();
+      applyMermaidScale(mermaidScreenScale / 1.25);
+    } else if (event.key === "0") {
+      event.preventDefault();
+      fitMermaidScreen();
+    }
+  });
+  mermaidStage.addEventListener("wheel", (event) => {
+    if (!mermaidScreen.open) return;
+    event.preventDefault();
+    applyMermaidScale(mermaidScreenScale * Math.exp(-event.deltaY * 0.0015));
+  }, { passive: false });
+  mermaidStage.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !mermaidScreen.open) return;
+    mermaidPan = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      left: mermaidStage.scrollLeft,
+      top: mermaidStage.scrollTop,
+    };
+    mermaidStage.classList.add("is-panning");
+    mermaidStage.setPointerCapture(event.pointerId);
+  });
+  mermaidStage.addEventListener("pointermove", (event) => {
+    if (!mermaidPan || event.pointerId !== mermaidPan.id) return;
+    mermaidStage.scrollLeft = mermaidPan.left - (event.clientX - mermaidPan.x);
+    mermaidStage.scrollTop = mermaidPan.top - (event.clientY - mermaidPan.y);
+  });
+  mermaidStage.addEventListener("pointerup", endMermaidPan);
+  mermaidStage.addEventListener("pointercancel", endMermaidPan);
+}
+
 async function renderMermaidDiagrams(article) {
   if (!article) return;
   const blocks = [...article.querySelectorAll("pre.mermaid")];
@@ -1677,25 +1932,11 @@ async function renderMermaidDiagrams(article) {
     return;
   }
   if (ticket !== mermaidTicket || !article.isConnected) return;
-  const dark = currentTheme() === "dark";
   mermaid.initialize({
     startOnLoad: false,
-    theme: dark ? "dark" : "neutral",
+    theme: "base",
     securityLevel: "strict",
-    // Dark mode's built-in glow is a light gray drop-shadow and a #ccc
-    // gradient stroke. Replace both with the dark canvas palette. The light
-    // string is mermaid's own neutral shadow, so switching back does not
-    // keep the dark one.
-    themeVariables: dark
-      ? {
-          dropShadow: "drop-shadow(1px 2px 2px rgba(6, 10, 16, 0.9))",
-          gradientStart: "#1a2433",
-          gradientStop: "#0c1117",
-          nodeBorder: "#1a2433",
-        }
-      : {
-          dropShadow: "drop-shadow( 0px 1px 2px rgba(0, 0, 0, 0.25));",
-        },
+    themeVariables: mermaidThemeVariables(),
   });
   for (const block of blocks) {
     const source = mermaidSources.get(block) || "";
@@ -1709,8 +1950,10 @@ async function renderMermaidDiagrams(article) {
     }
     if (ticket !== mermaidTicket || !article.isConnected) return;
     const svg = block.querySelector("svg");
+    attachMermaidExpand(block);
     if (svg && /^\s*(?:flowchart|graph)\b/m.test(source)) highlightCallChain(svg, source);
   }
+  if (ticket === mermaidTicket && article.isConnected) refreshOpenMermaidScreen();
 }
 
 function highlightCallChain(svg, source) {

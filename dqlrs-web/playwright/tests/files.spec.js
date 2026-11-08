@@ -132,7 +132,48 @@ test("renders a mermaid diagram in a markdown file", async ({ page, app }, testI
   await expect(parser).toHaveClass(/pinned/);
   await parser.click();
   await expect(parser).not.toHaveClass(/pinned/);
+  const paper = await themeColor(page, "--paper");
+  const text = await themeColor(page, "--text");
+  const line = await themeColor(page, "--line-control");
+  const lineSoft = await themeColor(page, "--line");
+  const shadow = await themeColor(page, "--shadow-pop");
+  const nodeRect = diagram.locator("g.node rect").first();
+  await expect(nodeRect).toHaveCSS("fill", paper);
+  await expect(diagram.locator(".nodeLabel").first()).toHaveCSS("color", text);
+  const stops = await diagram.locator("linearGradient stop").evaluateAll((els) => els.map((el) => getComputedStyle(el).stopColor));
+  expect(stops).toEqual([line, lineSoft]);
+  expect(await nodeRect.evaluate((el) => getComputedStyle(el).filter)).toContain(shadow);
+  await expect(page.locator(".mermaid-expand")).toHaveCount(1);
   await page.screenshot({ path: playwrightArtifact(`mermaid-view-${testInfo.project.name}.png`) });
+
+  await page.locator(".mermaid-expand").click();
+  const screen = page.locator("#mermaid-screen");
+  await expect(screen).toBeVisible();
+  const canvas = page.locator("#mermaid-screen-canvas");
+  await expect(canvas.locator("g.node rect").first()).toHaveCSS("fill", paper);
+  expect(await canvas.locator("g.node rect").first().evaluate((el) => getComputedStyle(el).filter)).toContain(shadow);
+  const fitted = await canvas.evaluate((el) => el.getBoundingClientRect().width);
+  await page.locator("#mermaid-zoom-in").click();
+  expect(await canvas.evaluate((el) => el.getBoundingClientRect().width)).toBeGreaterThan(fitted + 1);
+  const stage = page.locator("#mermaid-screen-stage");
+  for (let step = 0; step < 8; step += 1) await page.locator("#mermaid-zoom-in").click();
+  expect(await stage.evaluate((el) => el.scrollWidth > el.clientWidth && el.scrollHeight > el.clientHeight)).toBe(true);
+  await stage.evaluate((el) => {
+    el.scrollLeft = 80;
+    el.scrollTop = 50;
+  });
+  const box = await stage.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 - 40, box.y + box.height / 2 - 20);
+  await page.mouse.up();
+  const panned = await stage.evaluate((el) => ({ left: el.scrollLeft, top: el.scrollTop }));
+  expect(panned.left).toBeGreaterThan(80);
+  expect(panned.top).toBeGreaterThan(50);
+  await page.locator("#mermaid-zoom-fit").click();
+  await expect(page.locator("#mermaid-zoom-label")).toHaveText("100%");
+  await page.keyboard.press("Escape");
+  await expect(screen).toBeHidden();
 });
 
 test("resolves relative links from the file's folder", async ({ page, app }) => {

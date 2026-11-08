@@ -2935,6 +2935,110 @@ body.results-resizing * {
   overflow: visible;
 }
 
+.mermaid-frame {
+  position: relative;
+  margin: 0.8em 0;
+}
+
+.mermaid-frame pre.mermaid { margin: 0; }
+
+.mermaid-expand {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-control);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.mermaid-expand:hover,
+.mermaid-expand:focus-visible {
+  color: var(--text);
+  background: var(--paper-2);
+}
+
+#mermaid-screen {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: var(--canvas);
+  color: var(--text);
+}
+
+#mermaid-screen[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+#mermaid-screen::backdrop { background: var(--canvas); }
+
+.mermaid-screen-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bar);
+}
+
+.mermaid-screen-bar button {
+  height: 28px;
+  min-width: 28px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-control);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.mermaid-screen-bar button:hover,
+.mermaid-screen-bar button:focus-visible {
+  background: var(--paper-2);
+}
+
+.mermaid-zoom-label {
+  min-width: 48px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.mermaid-screen-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  cursor: grab;
+}
+
+.mermaid-screen-stage.is-panning { cursor: grabbing; }
+
+.mermaid-screen-canvas svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+}
+
 .doc-markdown .mermaid svg { max-width: 100%; height: auto; }
 
 .doc-markdown svg .node { cursor: pointer; }

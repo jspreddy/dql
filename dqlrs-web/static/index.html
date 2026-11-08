@@ -303,6 +303,24 @@
       <button type="button" id="server-retry">Retry</button>
     </div>
   </dialog>
+  <dialog id="mermaid-screen" aria-label="Diagram full screen">
+    <div class="mermaid-screen-bar">
+      <button type="button" id="mermaid-zoom-out" aria-label="Zoom out" data-tip="Zoom out">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/zoom_out.svg#icon"></use></svg>
+      </button>
+      <span id="mermaid-zoom-label" class="mermaid-zoom-label">100%</span>
+      <button type="button" id="mermaid-zoom-in" aria-label="Zoom in" data-tip="Zoom in">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/zoom_in.svg#icon"></use></svg>
+      </button>
+      <button type="button" id="mermaid-zoom-fit" aria-label="Fit diagram" data-tip="Fit">Fit</button>
+      <button type="button" id="mermaid-screen-close" aria-label="Exit full screen" data-tip="Exit full screen">
+        <svg class="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
+      </button>
+    </div>
+    <div id="mermaid-screen-stage" class="mermaid-screen-stage">
+      <div id="mermaid-screen-canvas" class="mermaid-screen-canvas"></div>
+    </div>
+  </dialog>
   <div id="lint-tip" class="lint-tip" role="tooltip" popover="manual" hidden></div>
   <div id="presence-tip" class="presence-tip" role="tooltip" hidden></div>
   <div id="run-tip" class="run-tip" role="tooltip" hidden>Run selection</div>
