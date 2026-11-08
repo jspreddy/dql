@@ -511,7 +511,7 @@ test("opens result and table-browser structure from data already in hand", async
   await expect(page.locator("#schema-pop-info")).toBeVisible();
   await expect(page.locator(".schema-pop-kicker-row #schema-pop-info")).toBeVisible();
   await expect(page.locator("#schema-pop-info")).toHaveAttribute(
-    "title",
+    "data-tip",
     "Based on this query result, not the entire table.",
   );
   await expect(page.locator("#schema-pop-title")).toHaveText(name);

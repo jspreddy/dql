@@ -1041,29 +1041,17 @@ body.side-resizing * {
 
 .tree .node.is-open { border-right: 2px solid var(--teal); }
 
-.tree .node .file-kind {
-  margin-left: auto;
-  flex: none;
-  border-radius: 999px;
-  padding: 0 5px;
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  background: var(--teal-wash);
-  color: var(--teal-ink);
+.tree .node[data-kind="file"] {
+  color: var(--text-secondary);
 }
 
-.tree .node .file-kind[data-kind="csv"],
-.tree .node .file-kind[data-kind="json"] {
-  background: var(--amber-bg);
-  color: var(--amber-ink);
-}
+.tree .node .node-ext[data-kind="dql"] { color: var(--teal-ink); }
 
-.tree .node .file-kind[data-kind="md"],
-.tree .node .file-kind[data-kind="html"] {
-  background: var(--blue-wash);
-  color: var(--blue-ink);
-}
+.tree .node .node-ext[data-kind="csv"],
+.tree .node .node-ext[data-kind="json"] { color: var(--amber-ink); }
+
+.tree .node .node-ext[data-kind="md"],
+.tree .node .node-ext[data-kind="html"] { color: var(--blue-ink); }
 
 .cm-editor.is-view-only .cm-run-fill,
 .cm-editor.is-view-only .cm-run-button-layer {

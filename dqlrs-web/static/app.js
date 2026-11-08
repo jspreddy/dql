@@ -1329,8 +1329,9 @@ function renderDir(node, isRoot) {
     const item = document.createElement("li");
     const open = child.type === "dir" && state.expanded.has(child.path);
     const editorFile = child.type === "file" && child.path === state.path;
-    const kind = child.type === "file" ? fileKind(child.path) : "";
-    const button = nodeButton(child.type === "dir" ? (open ? "▾" : "▸") : "", child.name, child.path === state.path);
+    const kind = child.type === "file" ? fileType(child.path) : "";
+    const label = child.type === "file" ? fileNameLabel(child.name, kind) : child.name;
+    const button = nodeButton(child.type === "dir" ? (open ? "▾" : "▸") : "", label, child.path === state.path);
     if (editorFile) {
       button.classList.add("is-open");
       button.setAttribute("aria-current", "true");
@@ -1340,7 +1341,6 @@ function renderDir(node, isRoot) {
     button.dataset.path = child.path;
     button.id = nodeDomId(child.path);
     button.dataset.testid = button.id;
-    if (kind) button.append(fileKindMark(kind));
     bindNode(button, child);
     item.append(button);
     if (open) item.append(renderDir(child, false));
@@ -1477,12 +1477,34 @@ function setRunningFile(path) {
   }
 }
 
-function fileKindMark(kind) {
-  const mark = document.createElement("span");
-  mark.className = "file-kind";
-  mark.dataset.kind = kind;
-  mark.textContent = kind;
-  return mark;
+function fileSuffix(name, kind) {
+  const lower = String(name || "").toLowerCase();
+  const suffix = {
+    csv: ".csv",
+    json: ".json",
+    md: lower.endsWith(".markdown") ? ".markdown" : ".md",
+    html: lower.endsWith(".html") ? ".html" : ".htm",
+    dql: ".dql",
+  }[kind];
+  if (!suffix || !lower.endsWith(suffix)) return "";
+  return name.slice(-suffix.length);
+}
+
+function fileNameLabel(name, kind) {
+  const label = document.createElement("span");
+  label.className = "node-name";
+  const suffix = fileSuffix(name, kind);
+  if (!suffix) {
+    label.textContent = name;
+    return label;
+  }
+  label.append(document.createTextNode(name.slice(0, -suffix.length)));
+  const ext = document.createElement("span");
+  ext.className = "node-ext";
+  ext.dataset.kind = kind;
+  ext.textContent = suffix;
+  label.append(ext);
+  return label;
 }
 
 function nodeButton(twist, label, selected) {
@@ -1492,7 +1514,7 @@ function nodeButton(twist, label, selected) {
   const marker = document.createElement("span");
   marker.className = "twist";
   marker.textContent = twist || " ";
-  button.append(marker, document.createTextNode(label));
+  button.append(marker, label instanceof Node ? label : document.createTextNode(label));
   return button;
 }
 

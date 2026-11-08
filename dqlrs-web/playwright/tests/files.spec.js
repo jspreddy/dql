@@ -44,8 +44,9 @@ test("renders markdown as formatted text and html as a live page", async ({ page
   await page.reload();
   await showTypes(page, ["md", "html"]);
   await reveal(page, "docs/README.md");
-  await expect(node(page, "docs/README.md").locator(".file-kind")).toHaveText("md");
-  await expect(node(page, "docs/page.html").locator(".file-kind")).toHaveText("html");
+  await expect(node(page, "docs/README.md").locator(".node-ext")).toHaveText(".md");
+  await expect(node(page, "docs/page.html").locator(".node-ext")).toHaveText(".html");
+  await expect(node(page, "docs/README.md").locator(".file-kind")).toHaveCount(0);
   await node(page, "docs/README.md").click();
   await expect(page.locator("#doc-view")).toBeVisible();
   await expect(page.locator("#doc-meta")).toHaveText("Formatted");
@@ -342,21 +343,29 @@ test("filters files with toggleable type pills and remembers them", async ({ pag
       const style = getComputedStyle(document.querySelector(selector));
       return [style.backgroundColor, style.color];
     };
+    const ink = (selector) => getComputedStyle(document.querySelector(selector)).color;
     return {
       csvPill: read('.file-filter[data-type="csv"]'),
       jsonPill: read('.file-filter[data-type="json"]'),
-      csvTag: read('[data-testid="node-users.csv"] .file-kind'),
-      jsonTag: read('[data-testid="node-cities.json"] .file-kind'),
       mdPill: read('.file-filter[data-type="md"]'),
       htmlPill: read('.file-filter[data-type="html"]'),
-      mdTag: read('[data-testid="node-notes.md"] .file-kind'),
-      htmlTag: read('[data-testid="node-page.html"] .file-kind'),
+      csvExt: ink('[data-testid="node-users.csv"] .node-ext'),
+      jsonExt: ink('[data-testid="node-cities.json"] .node-ext'),
+      mdExt: ink('[data-testid="node-notes.md"] .node-ext'),
+      htmlExt: ink('[data-testid="node-page.html"] .node-ext'),
+      dqlExt: ink('[data-testid="node-queries__edit.dql"] .node-ext'),
+      fileName: ink('[data-testid="node-users.csv"] .node-name'),
     };
   });
   expect(colors.csvPill).toEqual(colors.jsonPill);
-  expect(colors.csvTag).toEqual(colors.jsonTag);
   expect(colors.mdPill).toEqual(colors.htmlPill);
-  expect(colors.mdTag).toEqual(colors.htmlTag);
+  expect(colors.csvExt).toBe(colors.jsonExt);
+  expect(colors.csvExt).toBe(await themeColor(page, "--amber-ink"));
+  expect(colors.mdExt).toBe(colors.htmlExt);
+  expect(colors.mdExt).toBe(await themeColor(page, "--blue-ink"));
+  expect(colors.dqlExt).toBe(await themeColor(page, "--teal-ink"));
+  expect(colors.fileName).toBe(await themeColor(page, "--text-secondary"));
+  await expect(page.locator(".tree .file-kind")).toHaveCount(0);
   await page.screenshot({ path: playwrightArtifact(`file-type-pills-${testInfo.project.name}.png`) });
   await page.locator('.file-filter[data-type="json"]').click();
   await page.locator('.file-filter[data-type="html"]').click();
@@ -400,8 +409,8 @@ test("shows csv and json files as tables", async ({ page, app }, testInfo) => {
   await expect(node(page, "users.csv")).toBeVisible();
   await expect(node(page, "cities.json")).toBeVisible();
   await expect(node(page, "notes.txt")).toHaveCount(0);
-  await expect(node(page, "users.csv").locator(".file-kind")).toHaveText("csv");
-  await expect(node(page, "cities.json").locator(".file-kind")).toHaveText("json");
+  await expect(node(page, "users.csv").locator(".node-ext")).toHaveText(".csv");
+  await expect(node(page, "cities.json").locator(".node-ext")).toHaveText(".json");
 
   await node(page, "users.csv").click();
   await expect(page.locator("#query-view")).toHaveClass(/is-data/);
@@ -439,7 +448,7 @@ test("shows csv and json files as tables", async ({ page, app }, testInfo) => {
   await expect(page.locator("#schema-pop-kicker")).toHaveText("Result structure");
   await expect(page.locator("#schema-pop-info")).toBeVisible();
   await expect(page.locator("#schema-pop-info")).toHaveAttribute(
-    "title",
+    "data-tip",
     "Based on every row in the file.",
   );
   await expect(page.locator("#schema-pop-title")).toHaveText("users.csv");
