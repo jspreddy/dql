@@ -1677,10 +1677,25 @@ async function renderMermaidDiagrams(article) {
     return;
   }
   if (ticket !== mermaidTicket || !article.isConnected) return;
+  const dark = currentTheme() === "dark";
   mermaid.initialize({
     startOnLoad: false,
-    theme: currentTheme() === "dark" ? "dark" : "neutral",
+    theme: dark ? "dark" : "neutral",
     securityLevel: "strict",
+    // Dark mode's built-in glow is a light gray drop-shadow and a #ccc
+    // gradient stroke. Replace both with the dark canvas palette. The light
+    // string is mermaid's own neutral shadow, so switching back does not
+    // keep the dark one.
+    themeVariables: dark
+      ? {
+          dropShadow: "drop-shadow(1px 2px 2px rgba(6, 10, 16, 0.9))",
+          gradientStart: "#1a2433",
+          gradientStop: "#0c1117",
+          nodeBorder: "#1a2433",
+        }
+      : {
+          dropShadow: "drop-shadow( 0px 1px 2px rgba(0, 0, 0, 0.25));",
+        },
   });
   for (const block of blocks) {
     const source = mermaidSources.get(block) || "";
