@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import secrets
@@ -13,7 +14,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 BASE = "origin/v-rust"
-CUTOFF_SECONDS = 2 * 24 * 60 * 60
+DEFAULT_COUNT = 50
+DEFAULT_CUTOFF = "2w"
+_DURATION = re.compile(r"^(\d+)([wdhms])?$", re.IGNORECASE)
+_DURATION_UNITS = {
+    "": 1,
+    "s": 1,
+    "m": 60,
+    "h": 60 * 60,
+    "d": 24 * 60 * 60,
+    "w": 7 * 24 * 60 * 60,
+}
 
 _COMMIT_BLOCK = re.compile(
     r"<g>\s*(?:<path[^>]*/>\s*)+<circle[^>]*>\s*<title>(?P<hash>[a-f0-9]{40})</title>\s*</circle>\s*</g>\s*<text[\s\S]*?</text>\s*",
@@ -63,9 +74,22 @@ def commits_above(repo: Path, base: str, tip: str) -> int:
     return int(proc.stdout.strip() or 0)
 
 
-def base_cutoff(repo: Path) -> tuple[int, str]:
+def parse_cutoff(value: str) -> int:
+    match = _DURATION.fullmatch(value.strip())
+    if match is None:
+        raise argparse.ArgumentTypeError(
+            f"cutoff must look like 2w, 14d, 48h, 30m, or seconds, not {value!r}"
+        )
+    amount = int(match.group(1))
+    if amount < 1:
+        raise argparse.ArgumentTypeError("cutoff must be positive")
+    unit = (match.group(2) or "").lower()
+    return amount * _DURATION_UNITS[unit]
+
+
+def base_cutoff(repo: Path, cutoff_seconds: int) -> tuple[int, str]:
     epoch = int(git(repo, "log", "-1", "--format=%ct", BASE).stdout.strip())
-    cutoff = epoch - CUTOFF_SECONDS
+    cutoff = epoch - cutoff_seconds
     since = datetime.fromtimestamp(cutoff, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     return cutoff, since
 
@@ -162,14 +186,13 @@ def fit_viewbox(svg: str) -> str:
     return svg
 
 
-def render_svg(repo: Path, refs: list[str]) -> str:
+def render_svg(repo: Path, refs: list[str], count: int) -> str:
     tips = [ref for ref in refs if ref != BASE]
-    command = ["git-graph", "--svg", "-m", "none", "-s", "round"]
+    command = ["git-graph", "--svg", "-m", "none", "-s", "round", "-n", str(count)]
     if tips:
         command.extend([BASE, *tips])
     else:
-        # A lone base ref would otherwise draw the full ancestor history.
-        command.extend(["-n", "1", BASE])
+        command.append(BASE)
     proc = subprocess.run(command, cwd=repo, text=True, capture_output=True)
     if proc.returncode != 0 and "owned by current user" in proc.stderr:
         command.insert(1, "--skip-repo-owner-validation")
@@ -241,7 +264,31 @@ def output_dir() -> Path:
     return path
 
 
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "-n",
+        "--count",
+        type=int,
+        default=DEFAULT_COUNT,
+        help=f"maximum commits to draw (default {DEFAULT_COUNT})",
+    )
+    parser.add_argument(
+        "--cutoff",
+        type=parse_cutoff,
+        default=DEFAULT_CUTOFF,
+        help=f"how far before {BASE} to keep commits, as 2w, 14d, 48h, 30m, or seconds (default {DEFAULT_CUTOFF})",
+    )
+    args = parser.parse_args(argv)
+    if args.count < 1:
+        parser.error("count must be at least 1")
+    if isinstance(args.cutoff, str):
+        args.cutoff = parse_cutoff(args.cutoff)
+    return args
+
+
 def main() -> None:
+    args = parse_args()
     if shutil.which("git-graph") is None:
         sys.exit(
             "git-graph is not installed. From /tmp, run: cargo install git-graph\n"
@@ -251,11 +298,11 @@ def main() -> None:
         )
     repo = repo_root()
     fetch_origin(repo)
-    _cutoff, since = base_cutoff(repo)
+    _cutoff, since = base_cutoff(repo, args.cutoff)
     refs = branches_on_top(repo, since)
     tips = [ref for ref in refs if ref != BASE]
     allowed = allowed_commits(repo, tips, since)
-    svg = filter_svg_by_commits(render_svg(repo, refs), allowed)
+    svg = filter_svg_by_commits(render_svg(repo, refs, args.count), allowed)
     svg = fit_viewbox(svg)
     svg_path = output_dir() / f"v-rust-branches-{secrets.token_hex(4)}.svg"
     svg_path.write_text(pad_svg(svg))
