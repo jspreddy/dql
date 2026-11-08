@@ -44,9 +44,10 @@ test("renders markdown as formatted text and html as a live page", async ({ page
   await page.reload();
   await showTypes(page, ["md", "html"]);
   await reveal(page, "docs/README.md");
-  await expect(node(page, "docs/README.md").locator(".node-ext")).toHaveText(".md");
-  await expect(node(page, "docs/page.html").locator(".node-ext")).toHaveText(".html");
-  await expect(node(page, "docs/README.md").locator(".file-kind")).toHaveCount(0);
+  await expect(node(page, "docs").locator(".node-type use")).toHaveAttribute("href", "/vendor/icons/folder.svg#icon");
+  await expect(node(page, "docs/README.md").locator(".node-type use")).toHaveAttribute("href", "/vendor/icons/description.svg#icon");
+  await expect(node(page, "docs/page.html").locator(".node-type use")).toHaveAttribute("href", "/vendor/icons/html.svg#icon");
+  await expect(node(page, "docs/README.md").locator(".node-ext, .file-kind")).toHaveCount(0);
   await node(page, "docs/README.md").click();
   await expect(page.locator("#doc-view")).toBeVisible();
   await expect(page.locator("#doc-meta")).toHaveText("Formatted");
@@ -349,23 +350,28 @@ test("filters files with toggleable type pills and remembers them", async ({ pag
       jsonPill: read('.file-filter[data-type="json"]'),
       mdPill: read('.file-filter[data-type="md"]'),
       htmlPill: read('.file-filter[data-type="html"]'),
-      csvExt: ink('[data-testid="node-users.csv"] .node-ext'),
-      jsonExt: ink('[data-testid="node-cities.json"] .node-ext'),
-      mdExt: ink('[data-testid="node-notes.md"] .node-ext'),
-      htmlExt: ink('[data-testid="node-page.html"] .node-ext'),
-      dqlExt: ink('[data-testid="node-queries__edit.dql"] .node-ext'),
-      fileName: ink('[data-testid="node-users.csv"] .node-name'),
+      csvName: ink('[data-testid="node-users.csv"] .node-name'),
+      jsonName: ink('[data-testid="node-cities.json"] .node-name'),
+      mdName: ink('[data-testid="node-notes.md"] .node-name'),
+      htmlName: ink('[data-testid="node-page.html"] .node-name'),
+      dqlName: ink('[data-testid="node-queries__edit.dql"] .node-name'),
     };
   });
   expect(colors.csvPill).toEqual(colors.jsonPill);
   expect(colors.mdPill).toEqual(colors.htmlPill);
-  expect(colors.csvExt).toBe(colors.jsonExt);
-  expect(colors.csvExt).toBe(await themeColor(page, "--amber-ink"));
-  expect(colors.mdExt).toBe(colors.htmlExt);
-  expect(colors.mdExt).toBe(await themeColor(page, "--blue-ink"));
-  expect(colors.dqlExt).toBe(await themeColor(page, "--teal-ink"));
-  expect(colors.fileName).toBe(await themeColor(page, "--text-secondary"));
-  await expect(page.locator(".tree .file-kind")).toHaveCount(0);
+  const fileName = await themeColor(page, "--text-secondary");
+  expect(colors.csvName).toBe(fileName);
+  expect(colors.jsonName).toBe(fileName);
+  expect(colors.mdName).toBe(fileName);
+  expect(colors.htmlName).toBe(fileName);
+  expect(colors.dqlName).toBe(fileName);
+  await expect(node(page, "users.csv").locator(".node-type use")).toHaveAttribute("href", "/vendor/icons/code.svg#icon");
+  await expect(node(page, "cities.json").locator(".node-type use")).toHaveAttribute("href", "/vendor/icons/code.svg#icon");
+  await expect(node(page, "notes.md").locator(".node-type use")).toHaveAttribute("href", "/vendor/icons/description.svg#icon");
+  await expect(node(page, "page.html").locator(".node-type use")).toHaveAttribute("href", "/vendor/icons/html.svg#icon");
+  await expect(node(page, "queries/edit.dql").locator(".node-type use")).toHaveAttribute("href", "/vendor/icons/terminal.svg#icon");
+  await expect(node(page, "queries").locator(".node-type use")).toHaveAttribute("href", "/vendor/icons/folder.svg#icon");
+  await expect(page.locator(".tree .file-kind, .tree .node-ext")).toHaveCount(0);
   await page.screenshot({ path: playwrightArtifact(`file-type-pills-${testInfo.project.name}.png`) });
   await page.locator('.file-filter[data-type="json"]').click();
   await page.locator('.file-filter[data-type="html"]').click();
@@ -409,8 +415,8 @@ test("shows csv and json files as tables", async ({ page, app }, testInfo) => {
   await expect(node(page, "users.csv")).toBeVisible();
   await expect(node(page, "cities.json")).toBeVisible();
   await expect(node(page, "notes.txt")).toHaveCount(0);
-  await expect(node(page, "users.csv").locator(".node-ext")).toHaveText(".csv");
-  await expect(node(page, "cities.json").locator(".node-ext")).toHaveText(".json");
+  await expect(node(page, "users.csv").locator(".node-type use")).toHaveAttribute("href", "/vendor/icons/code.svg#icon");
+  await expect(node(page, "cities.json").locator(".node-type use")).toHaveAttribute("href", "/vendor/icons/code.svg#icon");
 
   await node(page, "users.csv").click();
   await expect(page.locator("#query-view")).toHaveClass(/is-data/);

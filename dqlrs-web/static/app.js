@@ -1330,7 +1330,11 @@ function renderDir(node, isRoot) {
     const open = child.type === "dir" && state.expanded.has(child.path);
     const editorFile = child.type === "file" && child.path === state.path;
     const kind = child.type === "file" ? fileType(child.path) : "";
-    const label = child.type === "file" ? fileNameLabel(child.name, kind) : child.name;
+    const label = child.type === "dir"
+      ? nodeNameLabel(child.name, "folder")
+      : child.type === "file"
+        ? nodeNameLabel(child.name, FILE_TYPE_ICONS[kind] || "insert_drive_file")
+        : child.name;
     const button = nodeButton(child.type === "dir" ? (open ? "▾" : "▸") : "", label, child.path === state.path);
     if (editorFile) {
       button.classList.add("is-open");
@@ -1477,33 +1481,19 @@ function setRunningFile(path) {
   }
 }
 
-function fileSuffix(name, kind) {
-  const lower = String(name || "").toLowerCase();
-  const suffix = {
-    csv: ".csv",
-    json: ".json",
-    md: lower.endsWith(".markdown") ? ".markdown" : ".md",
-    html: lower.endsWith(".html") ? ".html" : ".htm",
-    dql: ".dql",
-  }[kind];
-  if (!suffix || !lower.endsWith(suffix)) return "";
-  return name.slice(-suffix.length);
-}
+const FILE_TYPE_ICONS = {
+  csv: "code",
+  json: "code",
+  md: "description",
+  html: "html",
+  dql: "terminal",
+};
 
-function fileNameLabel(name, kind) {
+function nodeNameLabel(name, icon) {
   const label = document.createElement("span");
   label.className = "node-name";
-  const suffix = fileSuffix(name, kind);
-  if (!suffix) {
-    label.textContent = name;
-    return label;
-  }
-  label.append(document.createTextNode(name.slice(0, -suffix.length)));
-  const ext = document.createElement("span");
-  ext.className = "node-ext";
-  ext.dataset.kind = kind;
-  ext.textContent = suffix;
-  label.append(ext);
+  label.append(materialIcon(icon, "node-type"));
+  label.append(document.createTextNode(name));
   return label;
 }
 

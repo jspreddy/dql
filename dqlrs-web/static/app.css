@@ -1045,13 +1045,12 @@ body.side-resizing * {
   color: var(--text-secondary);
 }
 
-.tree .node .node-ext[data-kind="dql"] { color: var(--teal-ink); }
-
-.tree .node .node-ext[data-kind="csv"],
-.tree .node .node-ext[data-kind="json"] { color: var(--amber-ink); }
-
-.tree .node .node-ext[data-kind="md"],
-.tree .node .node-ext[data-kind="html"] { color: var(--blue-ink); }
+.tree .node .node-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
 
 .cm-editor.is-view-only .cm-run-fill,
 .cm-editor.is-view-only .cm-run-button-layer {
