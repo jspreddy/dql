@@ -1767,6 +1767,11 @@ function mountMermaidScreen(svg) {
     el.classList.remove("hot");
     el.classList.remove("pinned");
   }
+  // Mermaid sets an inline max-width to the viewBox size. That beats the
+  // stylesheet, so the canvas can grow while the drawing stays put.
+  clone.style.maxWidth = "none";
+  clone.style.width = "100%";
+  clone.style.height = "100%";
   mermaidCanvas.replaceChildren(clone);
   const box = svg.viewBox.baseVal;
   const rendered = svg.getBoundingClientRect();
