@@ -1,0 +1,1 @@
+../../.cursor/rules/material-icons.rule.mdc

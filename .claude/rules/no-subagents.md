@@ -1,0 +1,1 @@
+../../.cursor/rules/no-subagents.rule.mdc

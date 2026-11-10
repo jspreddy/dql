@@ -1,0 +1,1 @@
+../../.cursor/rules/playwright-screenshots.rule.mdc
