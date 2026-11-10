@@ -220,6 +220,9 @@ def start_lab(workdir: Path) -> LabServer:
         "--ServerApp.open_browser=False",
         "--ServerApp.allow_remote_access=False",
     ]
+    # Containers (CI, cloud sessions) often run as root; JupyterLab refuses that without this flag.
+    if os.geteuid() == 0:
+        command.append("--allow-root")
     log_file = log_path.open("w", encoding="utf-8")
     process = subprocess.Popen(
         command,
