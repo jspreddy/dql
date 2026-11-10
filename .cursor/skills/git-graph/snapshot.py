@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Write one SVG of origin branches on top of origin/v-rust."""
+"""Write one PNG (and its source SVG) of origin branches on top of origin/v-rust."""
 
 from __future__ import annotations
 
 import argparse
+import math
+import os
 import re
 import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -336,6 +339,63 @@ def paint_white(svg: str, min_x: float, min_y: float, width: float, height: floa
     return svg.replace(">", f">{rect}", 1)
 
 
+_CHROME_NAMES = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome")
+_CHROME_PATHS = (
+    "/opt/pw-browsers/chromium",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+)
+
+
+def find_chrome() -> str:
+    for name in _CHROME_NAMES:
+        found = shutil.which(name)
+        if found:
+            return found
+    for path in _CHROME_PATHS:
+        if Path(path).is_file():
+            return path
+    sys.exit(
+        "No Chrome or Chromium found to render the PNG. "
+        "Install Google Chrome or Chromium, or put one on PATH."
+    )
+
+
+def svg_to_png(svg_path: Path, svg: str) -> Path:
+    """Screenshot the SVG with headless Chrome at 2x so chat clients show it inline."""
+    width = re.search(r'<svg\b[^>]*\bwidth="([\d.]+)"', svg)
+    height = re.search(r'<svg\b[^>]*\bheight="([\d.]+)"', svg)
+    if width is None or height is None:
+        sys.exit("git-graph SVG has no width or height")
+    size = f"{math.ceil(float(width.group(1)))},{math.ceil(float(height.group(1)))}"
+    png_path = svg_path.with_suffix(".png")
+    # No --user-data-dir: a blank profile makes headless Chrome hang on first-run work.
+    command = [
+        find_chrome(),
+        "--headless",
+        "--disable-gpu",
+        "--hide-scrollbars",
+        "--force-device-scale-factor=2",
+        f"--window-size={size}",
+        f"--screenshot={png_path}",
+        svg_path.resolve().as_uri(),
+    ]
+    # Chrome refuses to run as root unless its sandbox is off (containers, cloud sessions).
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        command.insert(1, "--no-sandbox")
+    # Log to a file, not a pipe: Chrome helper processes can hold a pipe open after exit.
+    with tempfile.TemporaryFile(mode="w+") as log:
+        try:
+            proc = subprocess.run(command, check=False, stdout=log, stderr=log, timeout=120)
+        except subprocess.TimeoutExpired:
+            sys.exit("Chrome did not finish the PNG within 120 seconds")
+        log.seek(0)
+        output = log.read().strip()
+    if proc.returncode != 0 or not png_path.is_file():
+        sys.exit(output[-2000:] or "Chrome did not write the PNG")
+    return png_path
+
+
 def output_dir() -> Path:
     artifacts = Path("/opt/cursor/artifacts")
     if artifacts.is_dir():
@@ -395,8 +455,9 @@ def main(argv: list[str] | None = None) -> None:
     if args.cutoff is not None:
         svg = fit_viewbox(svg)
     svg_path = output_dir() / f"v-rust-branches-{secrets.token_hex(4)}.svg"
-    svg_path.write_text(pad_svg(svg))
-    print(f"{svg_path}")
+    svg = pad_svg(svg)
+    svg_path.write_text(svg)
+    print(f"{svg_to_png(svg_path, svg)}")
 
 
 if __name__ == "__main__":

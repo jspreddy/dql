@@ -1,6 +1,6 @@
 ---
 name: git-graph
-description: Render one SVG of remote branches on top of origin/v-rust. Use when the user asks for a git graph, a branch picture, or changes above v-rust. The script defaults to 100 commits and 1 week, whichever comes first. Pass -n/--count when the user names a commit limit and -d/--cutoff when the user names a date or a cutoff. Both limits can be passed together. Run only when asked.
+description: Render one PNG of remote branches on top of origin/v-rust. Use when the user asks for a git graph, a branch picture, or changes above v-rust. The script defaults to 100 commits and 1 week, whichever comes first. Pass -n/--count when the user names a commit limit and -d/--cutoff when the user names a date or a cutoff. Both limits can be passed together. Run only when asked.
 ---
 
 # Git graph
@@ -11,7 +11,9 @@ From the repository, run:
 python3 .cursor/skills/git-graph/snapshot.py
 ```
 
-That will create an svg file and print its path. Show the file in the chat window. Do not think, do not read, just show the file.
+That will create a PNG file and print its path. Show the PNG in the chat window, always as the PNG, never the SVG: chat clients show PNG inline, while an SVG can arrive as a download. Do not think, do not read, just show the file.
+
+The script also keeps the source SVG next to the PNG, with the same name. Do not show it.
 
 ## Options
 
@@ -25,7 +27,7 @@ With no flags, the script uses `-n 100 -d 1w`. It stops at 100 commits or one we
 
 ## FAQ
 
-Use this section only when `snapshot.py` failed with the error named in the heading. After the fix, run the script again and show the SVG.
+Use this section only when `snapshot.py` failed with the error named in the heading. After the fix, run the script again and show the PNG.
 
 ### git-graph is not installed, or the command is not found
 
@@ -47,3 +49,7 @@ rustup toolchain install stable
 cd /tmp
 cargo +stable install git-graph
 ```
+
+### No Chrome or Chromium found to render the PNG
+
+The script renders the PNG with headless Chrome. Install Google Chrome or Chromium, or put an existing one on `PATH`. Do not add a browser or an image library to this repository.
