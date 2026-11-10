@@ -1,0 +1,1 @@
+../../.cursor/rules/branching.rule.mdc
