@@ -1,0 +1,20 @@
+---
+alwaysApply: true
+---
+
+# Branching
+
+`v-rust` is the target branch for this repository, even though it is not the GitHub default branch. Treat it the way you would treat `main`.
+
+Never commit to `v-rust` directly. Never push commits to `v-rust`. Changes reach it only through merged pull requests.
+
+## Where a new branch starts
+
+- By default, create the new branch from the latest branch: the branch currently checked out, which is the top of the current stack. Do not use this when the current branch is `v-rust`.
+- When the user asks for a fresh branch, or the current branch is `v-rust`, create it from the latest `origin/v-rust`. Run `git fetch origin v-rust` first.
+
+## Stacked pull requests
+
+Prefer stacked pull requests. Each branch's pull request targets the branch it was created from. Only the bottom branch of a stack targets `v-rust`.
+
+A fresh branch from `v-rust` starts a separate stack. Later branches created from it stack on that line, not on the earlier stack.
