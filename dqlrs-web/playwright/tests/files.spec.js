@@ -113,9 +113,13 @@ test("uses Noto Sans for interface text and keeps code in the monospace font", a
   }
   expect(fonts.code).not.toContain("Noto Sans");
   expect(fonts.code).toContain("ui-monospace");
-  const diagramLabel = await page.locator(".doc-markdown pre.mermaid svg text, .doc-markdown .nodeLabel").first().evaluate((el) => getComputedStyle(el).fontFamily);
-  expect(diagramLabel).not.toContain("Noto Sans");
-  expect(diagramLabel.toLowerCase()).toContain("trebuchet");
+  // Mermaid builds labels in a scratch node and swaps the SVG in, so a label read too early is detached
+  // and reports an empty font. Wait for the expand button, which the app adds after the render, then
+  // let toHaveCSS retry against the live label.
+  await expect(page.locator(".doc-markdown .mermaid-expand")).toHaveCount(1);
+  const diagramLabel = page.locator(".doc-markdown pre.mermaid svg text, .doc-markdown .nodeLabel").first();
+  await expect(diagramLabel).toHaveCSS("font-family", /trebuchet/i);
+  await expect(diagramLabel).not.toHaveCSS("font-family", /Noto Sans/);
   await page.screenshot({ path: playwrightArtifact(`noto-sans-${testInfo.project.name}.png`) });
 
   await reveal(page, "queries/read.dql");
@@ -1053,6 +1057,13 @@ test("writes editor edits back to the temporary file", async ({ page, app }) => 
 });
 
 test("says the server went away and retries the config call", async ({ page }) => {
+  // Opening a file lints it 400 ms later. Let that startup lint finish before the API goes away,
+  // or its failed request opens the dialog before the click and the dialog blocks the click.
+  const startupLint = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/lint");
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await reveal(page, "queries/read.dql");
+  await startupLint;
   await page.route("**/api/**", (route) => route.abort());
   await node(page, "queries/read.dql").click();
   const pop = page.locator("#server-pop");
