@@ -1371,8 +1371,11 @@ function bindNode(button, child) {
   button.addEventListener("click", () => {
     if (button.querySelector("input")) return;
     clearTimeout(clickTimer);
+    // Decide open or close now, from what the click saw. The action waits 220 ms for a
+    // possible double-click, and the folder can open in between (a new file inside it).
+    const open = child.type === "dir" && !state.expanded.has(child.path);
     clickTimer = window.setTimeout(() => {
-      if (child.type === "dir") toggleDir(child.path);
+      if (child.type === "dir") setDirOpen(child.path, open);
       else openFile(child.path);
     }, 220);
   });
@@ -1420,9 +1423,9 @@ function bindNode(button, child) {
   });
 }
 
-function toggleDir(path) {
-  if (state.expanded.has(path)) state.expanded.delete(path);
-  else state.expanded.add(path);
+function setDirOpen(path, open) {
+  if (open) state.expanded.add(path);
+  else state.expanded.delete(path);
   if (state.tree) paintTree();
   else void refreshTree();
 }
