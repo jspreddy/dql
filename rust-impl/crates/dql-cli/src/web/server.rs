@@ -85,7 +85,7 @@ struct Incoming {
 enum Reply {
     Json(u16, Value),
     Bytes(u16, &'static str, Vec<u8>),
-    Ndjson(Arc<App>, Vec<String>),
+    Ndjson(Arc<App>, Vec<String>, dql_engine::FileBase),
     Events(Arc<App>, String),
 }
 
@@ -649,7 +649,8 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
-        return handle_run(Arc::clone(app), dql);
+        let script = parsed.get("path").and_then(Value::as_str).unwrap_or("");
+        return handle_run(Arc::clone(app), dql, script);
     }
     let body = parse_json(body);
     let relative = body.get("path").and_then(Value::as_str).unwrap_or("");
@@ -775,18 +776,43 @@ fn save_query_result(root: &Path, body: &Value) -> Reply {
     }
 }
 
-fn handle_run(app: Arc<App>, dql: String) -> Reply {
+fn handle_run(app: Arc<App>, dql: String, script: &str) -> Reply {
     let statements = split_statements(&dql);
     if statements.is_empty() {
         return Reply::Json(502, json!({"ok": false, "error": "nothing to run"}));
     }
-    Reply::Ndjson(app, statements)
+    let file_base = match run_file_base(&app.root, script) {
+        Ok(file_base) => file_base,
+        Err(err) => return Reply::Json(400, json!({"ok": false, "error": err.to_string()})),
+    };
+    Reply::Ndjson(app, statements, file_base)
 }
 
-fn run_script(app: Arc<App>, statements: Vec<String>, writer: impl Write + Send + 'static) {
+/// SAVE, LOAD, and local-table paths in a run: `./` is relative to the folder of the
+/// `.dql` file (`script`, workspace-relative), and other relative paths to the workspace.
+/// A run without a file (an empty `script`) resolves `./` against the workspace.
+fn run_file_base(root: &Path, script: &str) -> Result<dql_engine::FileBase, PathError> {
+    let workspace = files::resolve_inside(root, "")?;
+    let script = script.trim();
+    let script_dir = if script.is_empty() {
+        None
+    } else {
+        let file = files::resolve_inside(root, script)?;
+        file.parent().map(Path::to_path_buf)
+    };
+    Ok(dql_engine::FileBase::new(Some(workspace), script_dir))
+}
+
+fn run_script(
+    app: Arc<App>,
+    statements: Vec<String>,
+    file_base: dql_engine::FileBase,
+    writer: impl Write + Send + 'static,
+) {
     app.cancel.clear();
     let writer = Arc::new(Mutex::new(writer));
     let mut state = lock_state(&app);
+    state.session.engine.set_file_base(file_base);
     for (index, statement) in statements.iter().enumerate() {
         if write_json(
             &mut *lock_writer(&writer),
@@ -976,7 +1002,7 @@ fn structure_reply(app: &App, query: &str) -> Reply {
     }
     let mut state = lock_state(app);
     if !table.is_empty() {
-        return match table_structure(&state, &table) {
+        return match table_structure(&mut state, &table) {
             Ok(value) => Reply::Json(200, value),
             Err(message) => Reply::Json(400, json!({"ok": false, "error": message})),
         };
@@ -1000,21 +1026,121 @@ fn file_structure(root: &Path, relative: &str) -> Result<Value, PathError> {
     ))
 }
 
-fn table_structure(state: &WebState, name: &str) -> Result<Value, String> {
-    let page = state
-        .fetched_pages
-        .get(name)
-        .ok_or_else(|| "table page is not loaded".to_string())?;
-    let columns = columns_with_shape_keys(&page.columns, page.shape.as_ref());
-    let described = structure::describe(&columns, &page.items);
-    Ok(structure::payload(
-        "table",
-        name,
-        "",
-        page.items.len(),
-        true,
-        described,
-    ))
+fn table_structure(state: &mut WebState, name: &str) -> Result<Value, String> {
+    let (columns, items) = {
+        let page = state
+            .fetched_pages
+            .get(name)
+            .ok_or_else(|| "table page is not loaded".to_string())?;
+        (
+            columns_with_shape_keys(&page.columns, page.shape.as_ref()),
+            page.items.clone(),
+        )
+    };
+    let described = structure::describe(&columns, &items);
+    let mut value = structure::payload("table", name, "", items.len(), true, described);
+    let (create_query, definition) = cached_table_schema(&mut state.session, name);
+    let Some(object) = value.as_object_mut() else {
+        return Ok(value);
+    };
+    object.insert("createQuery".to_string(), json!(create_query));
+    object.insert("definition".to_string(), definition);
+    Ok(value)
+}
+
+/// Formatted create query and attribute rows from the schema cache only.
+///
+/// `cached_definition` reads the in-memory snapshot or the saved cache. It does
+/// not describe the table, so a structure view never refreshes the database.
+/// Creating a table stores the snapshot, and describing the table replaces it
+/// with the current definition. The next structure view shows that snapshot.
+fn cached_table_schema(session: &mut crate::session::Session, name: &str) -> (String, Value) {
+    let Some(meta) = session.engine.cached_definition(name) else {
+        return (String::new(), json!([]));
+    };
+    if !meta.has_definition() {
+        return (String::new(), json!([]));
+    }
+    (meta.schema_dql_formatted(), json!(definition_rows(&meta)))
+}
+
+fn definition_rows(meta: &dql_models::TableMeta) -> Vec<Value> {
+    let mut names = Vec::new();
+    if !meta.hash_key.is_empty() {
+        names.push(meta.hash_key.clone());
+    }
+    if let Some(range) = &meta.range_key {
+        if !names.iter().any(|name| name == range) {
+            names.push(range.clone());
+        }
+    }
+    let mut rest: Vec<String> = meta
+        .attrs
+        .keys()
+        .filter(|name| !names.iter().any(|kept| kept == *name))
+        .cloned()
+        .collect();
+    rest.sort();
+    names.extend(rest);
+    names
+        .into_iter()
+        .filter_map(|name| {
+            let field = meta.attrs.get(&name)?;
+            let role = if name == meta.hash_key {
+                "hash"
+            } else if meta.range_key.as_deref() == Some(name.as_str()) {
+                "range"
+            } else if meta
+                .global_indexes
+                .values()
+                .any(|index| index.hash_key.name == name)
+            {
+                "index-hash"
+            } else if meta.global_indexes.values().any(|index| {
+                index.range_key.as_ref().map(|field| field.name.as_str()) == Some(name.as_str())
+            }) || meta
+                .local_indexes
+                .values()
+                .any(|index| index.range_key.as_deref() == Some(name.as_str()))
+            {
+                "index-range"
+            } else {
+                ""
+            };
+            let mut indexes = Vec::new();
+            for index in meta.local_indexes.values() {
+                if index.range_key.as_deref() == Some(name.as_str()) {
+                    indexes.push(index.name.clone());
+                }
+            }
+            for index in meta.global_indexes.values() {
+                let on_hash = index.hash_key.name == name;
+                let on_range = index.range_key.as_ref().map(|field| field.name.as_str())
+                    == Some(name.as_str());
+                if on_hash || on_range {
+                    indexes.push(index.name.clone());
+                }
+            }
+            indexes.sort();
+            indexes.dedup();
+            Some(json!({
+                "name": name,
+                "type": attribute_type_label(&field.data_type),
+                "role": role,
+                "index": indexes.join(", "),
+            }))
+        })
+        .collect()
+}
+
+fn attribute_type_label(data_type: &dql_parser::AttributeType) -> String {
+    match data_type {
+        dql_parser::AttributeType::String => "STRING".to_string(),
+        dql_parser::AttributeType::Number => "NUMBER".to_string(),
+        dql_parser::AttributeType::Binary => "BINARY".to_string(),
+        dql_parser::AttributeType::Bool => "BOOL".to_string(),
+        dql_parser::AttributeType::Other(value) => value.clone(),
+    }
 }
 
 fn columns_with_shape_keys(columns: &[Column], shape: Option<&TableShape>) -> Vec<Column> {
@@ -1222,8 +1348,8 @@ fn write_reply(stream: &mut TcpStream, reply: Reply, keep_alive: bool) -> io::Re
             write_bytes(stream, status, content_type, &bytes, keep_alive)?;
             Ok(keep_alive)
         }
-        Reply::Ndjson(app, statements) => {
-            write_ndjson(stream, app, statements)?;
+        Reply::Ndjson(app, statements, file_base) => {
+            write_ndjson(stream, app, statements, file_base)?;
             Ok(false)
         }
         Reply::Events(app, client_id) => {
@@ -1325,7 +1451,12 @@ fn write_bytes(
     stream.flush()
 }
 
-fn write_ndjson(stream: &mut TcpStream, app: Arc<App>, statements: Vec<String>) -> io::Result<()> {
+fn write_ndjson(
+    stream: &mut TcpStream,
+    app: Arc<App>,
+    statements: Vec<String>,
+    file_base: dql_engine::FileBase,
+) -> io::Result<()> {
     let header = "\
 HTTP/1.1 200 OK\r\n\
 Content-Type: application/x-ndjson; charset=utf-8\r\n\
@@ -1336,7 +1467,7 @@ Connection: close\r\n\
     stream.write_all(header.as_bytes())?;
     stream.flush()?;
     let (mut reader, writer) = io::pipe()?;
-    thread::spawn(move || run_script(app, statements, writer));
+    thread::spawn(move || run_script(app, statements, file_base, writer));
     let mut buf = [0u8; 8192];
     loop {
         let n = reader.read(&mut buf)?;
@@ -2002,6 +2133,29 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             .unwrap();
         assert_eq!(sk["table"], "range");
         assert_eq!(sk["kinds"], serde_json::json!(["NUMBER"]));
+        let create_query = structure_json["createQuery"].as_str().unwrap_or("");
+        assert!(
+            create_query.contains("CREATE TABLE posts ("),
+            "{create_query}"
+        );
+        assert!(
+            create_query.contains("\n  id STRING HASH KEY,"),
+            "{create_query}"
+        );
+        assert!(
+            create_query.contains("sk NUMBER RANGE KEY"),
+            "{create_query}"
+        );
+        let definition = structure_json["definition"]
+            .as_array()
+            .expect("definition rows");
+        assert_eq!(definition.len(), 2);
+        assert_eq!(definition[0]["name"], "id");
+        assert_eq!(definition[0]["type"], "STRING");
+        assert_eq!(definition[0]["role"], "hash");
+        assert_eq!(definition[1]["name"], "sk");
+        assert_eq!(definition[1]["type"], "NUMBER");
+        assert_eq!(definition[1]["role"], "range");
 
         let saved = super::query_cache::save(
             root.path(),

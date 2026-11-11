@@ -14,6 +14,7 @@ import { tags } from "@lezer/highlight";
 import { bandLayer, dqlLanguage, lintExtension, markersForRunStatus, queryHighlight, runButtonLayer, runFrame, runStatusField, runStatusGutter, setLintIssues, setRunRequest, setRunStatuses } from "./dql-mode.js";
 import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
 import { parseLsMessage } from "./describe-card.js";
+import { noteCard } from "./note-card.js";
 import { unifiedDiff } from "./file-patch.js";
 
 const apiToken = document.querySelector('meta[name="dqlrs-token"]')?.content || "";
@@ -1370,8 +1371,11 @@ function bindNode(button, child) {
   button.addEventListener("click", () => {
     if (button.querySelector("input")) return;
     clearTimeout(clickTimer);
+    // Decide open or close now, from what the click saw. The action waits 220 ms for a
+    // possible double-click, and the folder can open in between (a new file inside it).
+    const open = child.type === "dir" && !state.expanded.has(child.path);
     clickTimer = window.setTimeout(() => {
-      if (child.type === "dir") toggleDir(child.path);
+      if (child.type === "dir") setDirOpen(child.path, open);
       else openFile(child.path);
     }, 220);
   });
@@ -1419,9 +1423,9 @@ function bindNode(button, child) {
   });
 }
 
-function toggleDir(path) {
-  if (state.expanded.has(path)) state.expanded.delete(path);
-  else state.expanded.add(path);
+function setDirOpen(path, open) {
+  if (open) state.expanded.add(path);
+  else state.expanded.delete(path);
   if (state.tree) paintTree();
   else void refreshTree();
 }
@@ -3787,7 +3791,8 @@ async function runDocuments(documents) {
       const response = await fetchServer("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dql: doc.text }),
+        // The server resolves ./ paths in SAVE, LOAD, and local tables against this file's folder.
+        body: JSON.stringify({ dql: doc.text, path: doc.path || "" }),
       });
       await readNdjson(response, (event) => {
         if (event.event === "error") throw new Error(event.error || "failed");
@@ -4265,10 +4270,54 @@ function explainPlan(steps) {
 
 function resultLabel(item) {
   if (!item.ok) return item.error || item.message || "failed";
-  if (item.kind === "affected") return (item.affected ?? 0) + " affected";
-  if (item.kind === "status" || item.kind === "schema" || item.kind === "text") return item.message || item.kind;
+  if (item.kind === "affected") return affectedLabel(item);
+  if (item.kind === "status" || item.kind === "schema" || item.kind === "text") {
+    return droppedLabel(item) || item.message || item.kind;
+  }
   if (item.kind === "items") return ((item.items || []).length) + " rows";
   return item.message || "ok";
+}
+
+// The server keeps the comment lines above a statement in its text. Drop them before reading the verb.
+function statementCode(statement) {
+  return String(statement || "").replace(/^(?:\s*--[^\n]*(?:\n|$))*/, "").trim();
+}
+
+function affectedLabel(item) {
+  const count = Number(item.affected ?? 0);
+  const statement = statementCode(item.statement);
+  const verb = (statement.match(/^(insert|delete|update|select|scan|load)\b/i) || [])[1];
+  const action = verb ? verb.toLowerCase() : "";
+  if (action === "insert") return `${amountPhrase(count, "row", "rows")} inserted`;
+  if (action === "delete") return `${amountPhrase(count, "row", "rows")} deleted`;
+  if (action === "update") return `${amountPhrase(count, "row", "rows")} updated`;
+  if (action === "load") return `${amountPhrase(count, "row", "rows")} loaded`;
+  if (isSaveStatement(statement)) return `${amountPhrase(count, "row", "rows")} saved`;
+  if ((action === "select" || action === "scan") && /\bcount\s*\(\s*\*\s*\)/i.test(statement)) {
+    return amountPhrase(count, "row", "rows");
+  }
+  return `${count} affected`;
+}
+
+function isSaveStatement(statement) {
+  const text = String(statement || "")
+    .replace(/--[^\n]*/g, " ")
+    .replace(/'(?:[^']|\\')*'/g, " '' ")
+    .replace(/"(?:[^"]|\\")*"/g, ' "" ');
+  return /\bsave\s+(?:''|""|[^\s=;]+)/i.test(text);
+}
+
+// DROP names a single table, so a drop that removed something dropped one table.
+function droppedLabel(item) {
+  if (!/^drop\b/i.test(statementCode(item.statement))) return "";
+  if (!/^Dropped\b/.test(String(item.message || ""))) return "";
+  return "one table dropped";
+}
+
+function amountPhrase(count, singular, plural) {
+  const amount = Number.isFinite(count) ? count : 0;
+  if (amount === 1) return `one ${singular}`;
+  return `${amount} ${plural}`;
 }
 
 function describeCard(description, note, cache) {
@@ -4917,13 +4966,24 @@ async function openSchema(request, button) {
     schemaPopKeys.append(chip);
   }
   fillSchemaQuery(browser || file ? "" : payload.statement);
-  schemaPopBody.replaceChildren(schemaTable(inspected));
+  // Definition and Result structure share one scrolling body, so they move as one surface.
+  if (browser) {
+    schemaPopBody.replaceChildren(
+      schemaDefinitionSection(payload.createQuery, payload.definition),
+      schemaResultSection(inspected),
+    );
+  } else {
+    schemaPopBody.replaceChildren(schemaTable(inspected));
+  }
+  schemaPopFoot.hidden = browser;
   schemaPopFoot.textContent = browser
-    ? "Types come from this page and the keys already listed. No extra query was run."
+    ? ""
     : file
       ? "Types come from the whole file. No extra query was run."
       : "Types come from this result. No extra query was run.";
   schemaPop.showModal();
+  schemaPopBody.scrollTop = 0;
+  schemaPopBody.scrollLeft = 0;
 }
 
 function fillSchemaQuery(statement) {
@@ -4935,6 +4995,128 @@ function fillSchemaQuery(statement) {
   }
   schemaPopQuery.append(highlightedQuery(text, "schema-pop-query-text"));
   schemaPopQuery.hidden = false;
+}
+
+function schemaDefinitionSection(createQuery, rows) {
+  const section = document.createElement("section");
+  section.className = "schema-section";
+  section.dataset.testid = "schema-definition";
+  const heading = document.createElement("h3");
+  heading.textContent = "Definition";
+  const source = document.createElement("p");
+  source.className = "schema-section-note";
+  source.textContent = "From the schema cache, saved when this table was created or last described in dqlrs.";
+  const query = document.createElement("div");
+  query.className = "schema-definition-query";
+  query.dataset.testid = "schema-create-query";
+  const text = String(createQuery || "").trim();
+  if (!text) {
+    const missing = document.createElement("p");
+    missing.className = "schema-section-empty";
+    missing.textContent = "The schema cache does not have a create query for this table yet.";
+    query.append(missing);
+  } else {
+    query.append(highlightedQuery(text, "schema-pop-query-text"));
+  }
+  const columns = document.createElement("div");
+  columns.className = "schema-definition-columns";
+  columns.dataset.testid = "schema-definition-columns";
+  const listed = Array.isArray(rows) ? rows : [];
+  if (!listed.length) {
+    const missing = document.createElement("p");
+    missing.className = "schema-section-empty";
+    missing.textContent = "The schema cache does not have a definition for this table yet.";
+    columns.append(missing);
+  } else {
+    columns.append(definitionTable(listed));
+  }
+  section.append(heading, source, query, columns);
+  return section;
+}
+
+function definitionTable(rows) {
+  const table = document.createElement("table");
+  table.className = "schema-grid";
+  const head = document.createElement("tr");
+  for (const label of ["Column", "Type", "Role", "Index"]) {
+    const cell = document.createElement("th");
+    cell.scope = "col";
+    cell.textContent = label;
+    head.append(cell);
+  }
+  const thead = document.createElement("thead");
+  thead.append(head);
+  const body = document.createElement("tbody");
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    tr.dataset.column = row.name;
+    const name = document.createElement("td");
+    name.className = "schema-name";
+    name.textContent = row.name || "";
+    const type = document.createElement("td");
+    const types = document.createElement("span");
+    types.className = "schema-types";
+    types.append(schemaTypeChip(row.type || "empty", row.type || "—"));
+    type.append(types);
+    const role = schemaRoleCell(definitionColumn(row));
+    const index = document.createElement("td");
+    if (row.index) {
+      index.textContent = row.index;
+    } else {
+      const empty = document.createElement("span");
+      empty.className = "schema-role-muted";
+      empty.textContent = "—";
+      index.append(empty);
+    }
+    tr.append(name, type, role, index);
+    body.append(tr);
+  }
+  table.append(thead, body);
+  return table;
+}
+
+function definitionColumn(row) {
+  if (row.role === "hash" || row.role === "range") return { table: row.role, index: "" };
+  if (row.role === "index-hash") return { table: "", index: "hash" };
+  if (row.role === "index-range") return { table: "", index: "range" };
+  return { table: "", index: "" };
+}
+
+function schemaRoleCell(column) {
+  const role = document.createElement("td");
+  const labels = roleLabels(column);
+  if (labels.length) {
+    const line = document.createElement("span");
+    line.className = "schema-role";
+    for (const icon of keyIcons(column)) line.append(icon);
+    const text = document.createElement("span");
+    text.textContent = labels.join(", ");
+    line.append(text);
+    role.append(line);
+  } else {
+    const empty = document.createElement("span");
+    empty.className = "schema-role-muted";
+    empty.textContent = "—";
+    role.append(empty);
+  }
+  return role;
+}
+
+function schemaResultSection(inspected) {
+  const section = document.createElement("section");
+  section.className = "schema-section";
+  section.dataset.testid = "schema-result";
+  const heading = document.createElement("h3");
+  heading.textContent = "Result structure";
+  section.append(
+    heading,
+    noteCard(
+      "Types and metrics come from the data fetched so far. No extra queries were run, so this is a partial structure.",
+      "info",
+    ),
+    schemaTable(inspected),
+  );
+  return section;
 }
 
 function schemaTable(inspected) {
@@ -4966,22 +5148,7 @@ function schemaTable(inspected) {
       types.append(schemaTypeChip("empty", "—"));
     }
     type.append(types);
-    const role = document.createElement("td");
-    const labels = roleLabels(item.column);
-    if (labels.length) {
-      const line = document.createElement("span");
-      line.className = "schema-role";
-      for (const icon of keyIcons(item.column)) line.append(icon);
-      const text = document.createElement("span");
-      text.textContent = labels.join(", ");
-      line.append(text);
-      role.append(line);
-    } else {
-      const empty = document.createElement("span");
-      empty.className = "schema-role-muted";
-      empty.textContent = "—";
-      role.append(empty);
-    }
+    const role = schemaRoleCell(item.column);
     const present = document.createElement("td");
     present.append(schemaPresent(item.present, item.total));
     const sample = document.createElement("td");

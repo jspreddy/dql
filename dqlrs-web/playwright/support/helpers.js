@@ -39,7 +39,12 @@ export async function reveal(page, filePath) {
   for (let i = 0; i < parts.length - 1; i += 1) {
     const dir = parts.slice(0, i + 1).join("/");
     const child = parts.slice(0, i + 2).join("/");
-    if (await node(page, child).count() === 0) await node(page, dir).click();
+    if (await node(page, child).count() === 0) {
+      await node(page, dir).click();
+      // A folder click opens it 220 ms later, after ruling out a double-click. Wait for it so
+      // the caller does not race that pending click.
+      await expect(node(page, child)).toBeVisible();
+    }
   }
 }
 

@@ -10,7 +10,7 @@ use crate::{BackendResponse, DynamoBackend, EngineError, Item, ReadRequest};
 use dql_models::{BillingMode, TableField, TableMeta, TableStatus};
 use dql_parser::{AttributeType, KeyType, Value};
 use std::collections::{BTreeMap, HashMap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TableKind {
@@ -166,7 +166,7 @@ impl VirtualCatalog {
     pub fn create_local(
         &mut self,
         name: &str,
-        path: &str,
+        path: &Path,
         if_not_exists: bool,
         taken: bool,
     ) -> Result<String, EngineError> {
@@ -625,10 +625,9 @@ fn key_name(key: Option<&KeyType>) -> &'static str {
     }
 }
 
-fn absolute_path(path: &str) -> PathBuf {
-    let path = PathBuf::from(path);
+fn absolute_path(path: &Path) -> PathBuf {
     if path.is_absolute() {
-        path
+        path.to_path_buf()
     } else {
         std::env::current_dir()
             .unwrap_or_else(|_| PathBuf::from("."))

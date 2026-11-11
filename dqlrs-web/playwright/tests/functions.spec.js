@@ -62,7 +62,7 @@ test("returns the expected rows for each DynamoDB function", async ({ page, app 
   await runEditor(page, seed(table).join("\n"));
   await openResultPane(page, "history");
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
-  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "1 affected" })).toHaveCount(4);
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "one row inserted" })).toHaveCount(4);
 
   const cases = [
     {

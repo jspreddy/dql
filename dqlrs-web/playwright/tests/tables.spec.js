@@ -162,7 +162,7 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   );
   await pressMod(page, "A");
   await page.locator("#run").click();
-  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "51 affected" })).toBeVisible();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "51 rows inserted" })).toBeVisible();
 
   await page.locator("#table-search").evaluate((input, value) => {
     input.value = value;
@@ -216,7 +216,7 @@ test("table column headers stay put while rows scroll", async ({ page, app }) =>
   );
   await pressMod(page, "A");
   await page.locator("#run").click();
-  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "40 affected" })).toBeVisible();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "40 rows inserted" })).toBeVisible();
 
   await page.locator("#table-search").evaluate((input, value) => {
     input.value = value;
@@ -469,7 +469,7 @@ test("tables-search-matches-like-ls", async ({ page, app }) => {
   await expect(page.locator("#table-list [data-testid='intelligent-match']")).toHaveCount(0);
 });
 
-test("opens result and table-browser structure from data already in hand", async ({ page, app }) => {
+test("opens result and table-browser structure from data already in hand", async ({ page, app }, testInfo) => {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
   await expect(page.locator(".result-card")).toHaveCount(0);
@@ -587,6 +587,97 @@ test("opens result and table-browser structure from data already in hand", async
   await expect(page.locator(".schema-pop-title-row .schema-key-chip")).toHaveCount(2);
   await expect(page.locator("#schema-pop-summary")).toHaveText("3 columns · 3 rows on this page");
   await expect(page.locator("#schema-pop-query")).toBeHidden();
+  const definition = page.locator("[data-testid='schema-definition']");
+  await expect(definition.locator(":scope > h3")).toHaveText("Definition");
+  await expect(definition).toContainText("From the schema cache");
+  const createText = definition.locator("[data-testid='schema-create-query'] pre");
+  await expect(createText).toContainText(`CREATE TABLE ${name} (`);
+  await expect(createText).toContainText("id STRING HASH KEY,");
+  await expect(createText).toContainText("sk NUMBER RANGE KEY");
+  expect((await createText.innerText()).split("\n").length).toBeGreaterThan(2);
+  const columns = definition.locator("[data-testid='schema-definition-columns']");
+  await expect(columns.locator("th")).toHaveText(["Column", "Type", "Role", "Index"]);
+  const definedId = columns.locator("tbody tr[data-column='id']");
+  await expect(definedId).toContainText("STRING");
+  await expect(definedId).toContainText("Hash key");
+  const definedSk = columns.locator("tbody tr[data-column='sk']");
+  await expect(definedSk).toContainText("NUMBER");
+  await expect(definedSk).toContainText("Range key");
+  await expect(columns.locator("tbody tr[data-column='extra']")).toHaveCount(0);
+  const result = page.locator("[data-testid='schema-result']");
+  await expect(result.locator("h3")).toHaveText("Result structure");
+  const resultNote = result.locator(".note-card");
+  await expect(resultNote).toHaveAttribute("data-variant", "info");
+  await expect(resultNote).toHaveText("Types and metrics come from the data fetched so far. No extra queries were run, so this is a partial structure.");
+  await expect(resultNote.locator("use")).toHaveAttribute("href", /\/vendor\/icons\/info\.svg#icon$/);
+  const variants = await page.evaluate(async () => {
+    const { noteCard } = await import("/note-card.js");
+    const host = document.createElement("div");
+    host.hidden = true;
+    document.body.append(host);
+    const listed = ["error", "success", "alert", "info"].map((variant) => {
+      const card = noteCard(variant + " note", variant);
+      host.append(card);
+      const style = getComputedStyle(card);
+      return {
+        variant: card.dataset.variant,
+        text: card.querySelector("p").textContent,
+        icon: card.querySelector("use").getAttribute("href"),
+        background: style.backgroundColor,
+        border: style.borderTopColor,
+        color: style.color,
+      };
+    });
+    host.remove();
+    return listed;
+  });
+  expect(variants.map((card) => card.variant)).toEqual(["error", "success", "alert", "info"]);
+  expect(variants.map((card) => card.icon)).toEqual([
+    "/vendor/icons/error.svg#icon",
+    "/vendor/icons/check_circle.svg#icon",
+    "/vendor/icons/warning.svg#icon",
+    "/vendor/icons/info.svg#icon",
+  ]);
+  expect(new Set(variants.map((card) => card.background)).size).toBe(4);
+  expect(new Set(variants.map((card) => card.color)).size).toBe(4);
+  expect(new Set(variants.map((card) => card.border)).size).toBe(4);
+  await expect(page.locator("#schema-pop-foot")).toBeHidden();
+  await expect(page.locator("#schema-pop h3")).toHaveText(["Definition", "Result structure"]);
+  await page.screenshot({ path: playwrightArtifact(`table-structure-${testInfo.project.name}.png`) });
+
+  // Definition and Result structure scroll as one surface inside the dialog body.
+  await expect(page.locator("#schema-pop-schema")).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 480 });
+  const scrolled = await page.evaluate(() => {
+    const scroller = (el) => {
+      for (let node = el.parentElement; node; node = node.parentElement) {
+        const overflow = getComputedStyle(node).overflowY;
+        if ((overflow === "auto" || overflow === "scroll") && node.scrollHeight > node.clientHeight) return node;
+      }
+      return null;
+    };
+    const definitionEl = document.querySelector("[data-testid='schema-definition']");
+    const resultEl = document.querySelector("[data-testid='schema-result']");
+    const body = document.querySelector("#schema-pop-body");
+    const before = [definitionEl.getBoundingClientRect().top, resultEl.getBoundingClientRect().top];
+    body.scrollTop = 120;
+    const after = [definitionEl.getBoundingClientRect().top, resultEl.getBoundingClientRect().top];
+    return {
+      definitionScroller: scroller(definitionEl)?.id,
+      resultScroller: scroller(resultEl)?.id,
+      scrollTop: body.scrollTop,
+      moved: [before[0] - after[0], before[1] - after[1]],
+    };
+  });
+  expect(scrolled.definitionScroller).toBe("schema-pop-body");
+  expect(scrolled.resultScroller).toBe("schema-pop-body");
+  expect(scrolled.scrollTop).toBe(120);
+  expect(scrolled.moved).toEqual([120, 120]);
+  await page.screenshot({ path: playwrightArtifact(`table-structure-scrolled-${testInfo.project.name}.png`) });
+  await page.locator("#schema-pop-body").evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  await page.setViewportSize({ width: 1280, height: 800 });
   const rowsId = page.locator('#schema-table tbody tr[data-column="id"]');
   await expect(rowsId).toContainText("STRING");
   await expect(rowsId).toContainText("Hash key");
@@ -729,6 +820,40 @@ test("scrolls a wide result table sideways inside the card", async ({ page, app 
   await card.screenshot({
     path: playwrightArtifact(`result-table-scroll-end-${testInfo.project.name}.png`),
   });
+});
+
+test("names insert, update, delete, count, and drop results", async ({ page, app }) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, n NUMBER);`,
+      // The server keeps comment lines in the statement text; labels still name the operation.
+      "-- seed two rows",
+      `INSERT INTO ${name} (id, n) VALUES ('a', 1), ('b', 2);`,
+      "-- bump one",
+      "-- and keep the other",
+      `UPDATE ${name} SET n = 9 WHERE id = 'a';`,
+      `DELETE FROM ${name} WHERE id = 'b';`,
+      `SCAN count(*) FROM ${name};`,
+      "-- clean up",
+      `DROP TABLE ${name};`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await openResultPane(page, "history");
+  const notes = page.locator('[data-testid="result-note"]');
+  await expect(notes.filter({ hasText: "2 rows inserted" })).toHaveCount(1);
+  await expect(notes.filter({ hasText: "one row updated" })).toHaveCount(1);
+  await expect(notes.filter({ hasText: "one row deleted" })).toHaveCount(1);
+  await expect(notes.filter({ hasText: /^one row$/ })).toHaveCount(1);
+  await expect(notes.filter({ hasText: "one table dropped" })).toHaveCount(1);
+  await expect(notes.filter({ hasText: "did not exist" })).toHaveCount(1);
 });
 
 function uniqueTable() {

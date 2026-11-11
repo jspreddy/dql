@@ -1,5 +1,6 @@
 use crate::cancel::CancelFlag;
 use crate::convert::keys_in_to_items;
+use crate::file_base::FileBase;
 use crate::file_io::{load_items as load_items_from_file, save_items, validate_save_path};
 use crate::progress::ProgressSink;
 use crate::query_context::{query_context_from_read, LastQueryContext};
@@ -20,7 +21,6 @@ use dql_parser::{
     ThrottleConfig, UpdateExpr, Value,
 };
 use std::collections::{BTreeMap, HashMap};
-use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -45,6 +45,7 @@ pub struct Engine<B: DynamoBackend> {
     cancel: CancelFlag,
     virtual_tables: VirtualCatalog,
     local_store: Option<Arc<dyn LocalDefinitionStore>>,
+    file_base: FileBase,
 }
 
 impl<B: DynamoBackend> Engine<B> {
@@ -74,10 +75,16 @@ impl<B: DynamoBackend> Engine<B> {
             cancel,
             virtual_tables: VirtualCatalog::default(),
             local_store: None,
+            file_base: FileBase::default(),
         }
     }
 
     /// Load encrypted local-table definitions and read their files.
+    /// Set where SAVE, LOAD, and local-table paths resolve. See [`FileBase`].
+    pub fn set_file_base(&mut self, file_base: FileBase) {
+        self.file_base = file_base;
+    }
+
     pub fn set_local_store(&mut self, store: Option<Arc<dyn LocalDefinitionStore>>) {
         let definitions = store.as_ref().map(|store| store.load()).unwrap_or_default();
         self.local_store = store;
@@ -728,9 +735,10 @@ impl<B: DynamoBackend> Engine<B> {
     ) -> Result<StatementResult, EngineError> {
         self.record("create_table", name);
         let taken = self.table_exists(name)?;
+        let path = self.file_base.resolve(path);
         let message = self
             .virtual_tables
-            .create_local(name, path, if_not_exists, taken)?;
+            .create_local(name, &path, if_not_exists, taken)?;
         self.persist_locals();
         Ok(StatementResult::Status(message))
     }
@@ -1070,8 +1078,11 @@ impl<B: DynamoBackend> Engine<B> {
         let Some(filename) = options.save_file.as_deref() else {
             return Ok(());
         };
-        validate_save_path(save_filename(filename), options.save_create_parents)
-            .map_err(EngineError::Runtime)
+        validate_save_path(
+            &self.file_base.resolve(filename),
+            options.save_create_parents,
+        )
+        .map_err(EngineError::Runtime)
     }
 
     fn maybe_save(
@@ -1087,8 +1098,12 @@ impl<B: DynamoBackend> Engine<B> {
                 "Cannot use count(*) with SAVE".to_string(),
             ));
         };
-        let count = save_items(save_filename(filename), &items, options.save_create_parents)
-            .map_err(|err| EngineError::Runtime(err.to_string()))?;
+        let count = save_items(
+            &self.file_base.resolve(filename),
+            &items,
+            options.save_create_parents,
+        )
+        .map_err(|err| EngineError::Runtime(err.to_string()))?;
         Ok(StatementResult::Affected(count))
     }
 
@@ -1206,9 +1221,9 @@ impl<B: DynamoBackend> Engine<B> {
 
     fn load(&mut self, file: &str, table: &str) -> Result<StatementResult, EngineError> {
         self.record("batch_write_item", table);
-        let path = Path::new(file.trim_matches('"').trim_matches('\''));
+        let path = self.file_base.resolve(file);
         let items =
-            load_items_from_file(path).map_err(|err| EngineError::Runtime(err.to_string()))?;
+            load_items_from_file(&path).map_err(|err| EngineError::Runtime(err.to_string()))?;
         let response = self.write_items(table, items)?;
         Ok(StatementResult::Affected(response.output))
     }
@@ -1736,10 +1751,6 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0)
-}
-
-fn save_filename(filename: &str) -> &Path {
-    Path::new(filename.trim_matches('"').trim_matches('\''))
 }
 
 fn format_explain_kwargs(kwargs: &BTreeMap<String, String>) -> String {

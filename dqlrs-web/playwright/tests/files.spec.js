@@ -922,6 +922,26 @@ test("creates a file inside a folder from the context menu", async ({ page }) =>
   await expect(page.locator("#file-name")).toHaveText("made.dql");
 });
 
+test("a folder click keeps a folder that opened while it waited for a double-click", async ({ page }, testInfo) => {
+  await node(page, "queries").click();
+  await expect(node(page, "queries/edit.dql")).toHaveCount(0);
+
+  // Hold the 220 ms single-click timer so the folder opens another way before it fires.
+  await page.clock.install();
+  await node(page, "queries").click();
+  await node(page, "queries").click({ button: "right" });
+  await page.locator("#menu-new-file").click();
+  await page.locator("#prompt-pop-input").fill("made.dql");
+  await page.locator("#prompt-pop-input").press("Enter");
+  await expect(node(page, "queries/made.dql")).toBeVisible();
+
+  // The click meant to open the folder. It must not close the folder that is now open.
+  await page.clock.runFor(300);
+  await expect(node(page, "queries/made.dql")).toBeVisible();
+  await expect(node(page, "queries/edit.dql")).toBeVisible();
+  await page.screenshot({ path: playwrightArtifact(`folder-click-keeps-open-${testInfo.project.name}.png`) });
+});
+
 test("duplicates a file and a folder", async ({ page }) => {
   await node(page, "queries/edit.dql").click({ button: "right" });
   await page.locator("#menu-duplicate").click();

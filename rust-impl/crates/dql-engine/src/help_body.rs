@@ -51,6 +51,7 @@ pub const CREATE: &str = r"
     or JSON file. Its definition is encrypted and loaded the next time this
     program starts. A temp table keeps the query result in memory until this
     process exits, and other processes do not see it.
+    A relative local table file path resolves the same way as a LOAD path.
 
     Examples
     --------
@@ -138,6 +139,10 @@ pub const LOAD: &str = r"
 
     Formats: .json / .csv / .msgpack (optional .gz). Pickle (.p) is not supported.
 
+    A relative path that starts with ./ is relative to the folder of the
+    .dql file being run in dqlrs --web. Other relative paths are relative to
+    the --dir workspace there, and to the current directory elsewhere.
+
     Examples
     --------
     CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id) VALUES ('a'); SCAN * FROM foobars SAVE archive.msgpack; CREATE TABLE mytable (id STRING HASH KEY); LOAD archive.msgpack INTO mytable;
@@ -163,6 +168,7 @@ pub const SELECT: &str = r"
     a[0].b reads one list element, and a[].b returns the list of each b.
     AS label names the result column.
     WHERE can compare a.b.c and a[0].b on SELECT and SCAN.
+    A relative SAVE path resolves the same way as a LOAD path.
 
     Examples
     --------

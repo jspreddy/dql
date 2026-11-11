@@ -265,6 +265,13 @@ impl RuntimeEngine {
         }
     }
 
+    pub fn set_file_base(&mut self, file_base: dql_engine::FileBase) {
+        match self {
+            Self::Memory(engine) => engine.inner_mut().set_file_base(file_base),
+            Self::Remote(engine) => engine.inner_mut().set_file_base(file_base),
+        }
+    }
+
     pub fn set_local_store(
         &mut self,
         store: Option<std::sync::Arc<dyn dql_engine::LocalDefinitionStore>>,
