@@ -644,6 +644,40 @@ test("opens result and table-browser structure from data already in hand", async
   await expect(page.locator("#schema-pop-foot")).toBeHidden();
   await expect(page.locator("#schema-pop h3")).toHaveText(["Definition", "Result structure"]);
   await page.screenshot({ path: playwrightArtifact(`table-structure-${testInfo.project.name}.png`) });
+
+  // Definition and Result structure scroll as one surface inside the dialog body.
+  await expect(page.locator("#schema-pop-schema")).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 480 });
+  const scrolled = await page.evaluate(() => {
+    const scroller = (el) => {
+      for (let node = el.parentElement; node; node = node.parentElement) {
+        const overflow = getComputedStyle(node).overflowY;
+        if ((overflow === "auto" || overflow === "scroll") && node.scrollHeight > node.clientHeight) return node;
+      }
+      return null;
+    };
+    const definitionEl = document.querySelector("[data-testid='schema-definition']");
+    const resultEl = document.querySelector("[data-testid='schema-result']");
+    const body = document.querySelector("#schema-pop-body");
+    const before = [definitionEl.getBoundingClientRect().top, resultEl.getBoundingClientRect().top];
+    body.scrollTop = 120;
+    const after = [definitionEl.getBoundingClientRect().top, resultEl.getBoundingClientRect().top];
+    return {
+      definitionScroller: scroller(definitionEl)?.id,
+      resultScroller: scroller(resultEl)?.id,
+      scrollTop: body.scrollTop,
+      moved: [before[0] - after[0], before[1] - after[1]],
+    };
+  });
+  expect(scrolled.definitionScroller).toBe("schema-pop-body");
+  expect(scrolled.resultScroller).toBe("schema-pop-body");
+  expect(scrolled.scrollTop).toBe(120);
+  expect(scrolled.moved).toEqual([120, 120]);
+  await page.screenshot({ path: playwrightArtifact(`table-structure-scrolled-${testInfo.project.name}.png`) });
+  await page.locator("#schema-pop-body").evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  await page.setViewportSize({ width: 1280, height: 800 });
   const rowsId = page.locator('#schema-table tbody tr[data-column="id"]');
   await expect(rowsId).toContainText("STRING");
   await expect(rowsId).toContainText("Hash key");

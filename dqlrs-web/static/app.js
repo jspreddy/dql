@@ -1034,7 +1034,6 @@ const schemaPopInfo = document.querySelector("#schema-pop-info");
 const schemaPopSummary = document.querySelector("#schema-pop-summary");
 const schemaPopKeys = document.querySelector("#schema-pop-keys");
 const schemaPopQuery = document.querySelector("#schema-pop-query");
-const schemaPopSchema = document.querySelector("#schema-pop-schema");
 const schemaPopBody = document.querySelector("#schema-pop-body");
 const schemaPopFoot = document.querySelector("#schema-pop-foot");
 const rowPop = document.querySelector("#row-pop");
@@ -4963,13 +4962,13 @@ async function openSchema(request, button) {
     schemaPopKeys.append(chip);
   }
   fillSchemaQuery(browser || file ? "" : payload.statement);
+  // Definition and Result structure share one scrolling body, so they move as one surface.
   if (browser) {
-    schemaPopSchema.hidden = false;
-    schemaPopSchema.replaceChildren(schemaDefinitionSection(payload.createQuery, payload.definition));
-    schemaPopBody.replaceChildren(schemaResultSection(inspected));
+    schemaPopBody.replaceChildren(
+      schemaDefinitionSection(payload.createQuery, payload.definition),
+      schemaResultSection(inspected),
+    );
   } else {
-    schemaPopSchema.hidden = true;
-    schemaPopSchema.replaceChildren();
     schemaPopBody.replaceChildren(schemaTable(inspected));
   }
   schemaPopFoot.hidden = browser;
@@ -4979,7 +4978,6 @@ async function openSchema(request, button) {
       ? "Types come from the whole file. No extra query was run."
       : "Types come from this result. No extra query was run.";
   schemaPop.showModal();
-  schemaPopSchema.scrollTop = 0;
   schemaPopBody.scrollTop = 0;
   schemaPopBody.scrollLeft = 0;
 }

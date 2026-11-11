@@ -3636,16 +3636,6 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
   height: 11px;
 }
 
-.schema-pop-schema {
-  flex: none;
-  max-height: 42%;
-  overflow: auto;
-  padding: 14px 20px 4px;
-  border-bottom: 1px solid var(--schema-line);
-}
-
-.schema-pop-schema[hidden] { display: none; }
-
 .schema-pop-body {
   flex: 1;
   min-height: 0;
@@ -3655,6 +3645,11 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
 
 .schema-section {
   margin: 0 0 18px;
+}
+
+.schema-section + .schema-section {
+  padding-top: 14px;
+  border-top: 1px solid var(--schema-line);
 }
 
 .schema-section h3 {
@@ -3681,8 +3676,7 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
 
 .schema-definition-query .schema-section-empty { margin-bottom: 0; }
 
-.schema-pop-body table,
-.schema-pop-schema table {
+.schema-pop-body table {
   width: max-content;
   min-width: 100%;
   border-collapse: separate;
@@ -3690,9 +3684,7 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
 }
 
 .schema-pop-body th,
-.schema-pop-body td,
-.schema-pop-schema th,
-.schema-pop-schema td {
+.schema-pop-body td {
   padding: 8px 10px;
   border-bottom: 1px solid var(--schema-line);
   text-align: left;
@@ -3701,21 +3693,16 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
 }
 
 .schema-pop-body th:not(:last-child),
-.schema-pop-body td:not(:last-child),
-.schema-pop-schema th:not(:last-child),
-.schema-pop-schema td:not(:last-child) {
+.schema-pop-body td:not(:last-child) {
   width: 1%;
 }
 
 .schema-pop-body th:last-child,
-.schema-pop-body td:last-child,
-.schema-pop-schema th:last-child,
-.schema-pop-schema td:last-child {
+.schema-pop-body td:last-child {
   width: 99%;
 }
 
-.schema-pop-body thead th,
-.schema-pop-schema thead th {
+.schema-pop-body thead th {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -3727,11 +3714,9 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
   text-transform: uppercase;
 }
 
-.schema-pop-body tbody tr:last-child td,
-.schema-pop-schema tbody tr:last-child td { border-bottom: 0; }
+.schema-pop-body tbody tr:last-child td { border-bottom: 0; }
 
-.schema-pop-body tbody tr:hover td,
-.schema-pop-schema tbody tr:hover td { background: var(--schema-hover); }
+.schema-pop-body tbody tr:hover td { background: var(--schema-hover); }
 
 .schema-name {
   font-family: var(--mono);
