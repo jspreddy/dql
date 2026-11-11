@@ -483,31 +483,55 @@ fn push_span(
     if !has_code(raw) {
         return;
     }
-    let lead_chars = raw.chars().take_while(|ch| ch.is_whitespace()).count();
-    let lead_utf16: usize = raw
-        .chars()
-        .take_while(|ch| ch.is_whitespace())
-        .map(char::len_utf16)
-        .sum();
-    let lead_bytes: usize = raw.chars().take(lead_chars).map(char::len_utf8).sum();
-    let trimmed_end = raw.trim_end();
-    let end_bytes = from_byte + trimmed_end.len();
-    let trail_utf16 = utf16_len(&raw[trimmed_end.len()..]);
-    let from = from_utf16 + lead_utf16;
-    let to = to_utf16.saturating_sub(trail_utf16);
-    let statement = text
-        .get(from_byte + lead_bytes..end_bytes)
-        .unwrap_or("")
-        .to_string();
+    // A span runs from the previous `;` to this one, so it can start with comment lines that
+    // belong above the statement, and an unclosed tail can end with comment lines. Issues
+    // underline the whole span, so keep both out of it.
+    let lead = code_start(raw);
+    let parsed_end = raw.trim_end().len().max(lead);
+    let shown_end = code_end(raw).max(lead);
+    let statement = raw[lead..parsed_end].to_string();
     if statement.is_empty() {
         return;
     }
+    let from = from_utf16 + utf16_len(&raw[..lead]);
+    let to = from_utf16 + utf16_len(&raw[..shown_end]);
+    debug_assert!(to <= to_utf16);
     spans.push(Span {
         from,
         to: to.max(from),
         text: statement,
         closed,
     });
+}
+
+/// Byte index of the first code character, past whitespace and `--` comment lines.
+fn code_start(raw: &str) -> usize {
+    let mut at = 0;
+    loop {
+        let rest = &raw[at..];
+        let trimmed = rest.trim_start();
+        at += rest.len() - trimmed.len();
+        if !trimmed.starts_with("--") {
+            return at;
+        }
+        match trimmed.find('\n') {
+            Some(newline) => at += newline + 1,
+            None => return raw.len(),
+        }
+    }
+}
+
+/// Byte index just past the last code character, before trailing whitespace and lines that
+/// are only a `--` comment.
+fn code_end(raw: &str) -> usize {
+    let mut end = raw.trim_end().len();
+    loop {
+        let line_start = raw[..end].rfind('\n').map_or(0, |newline| newline + 1);
+        if !raw[line_start..end].trim_start().starts_with("--") || line_start == 0 {
+            return end;
+        }
+        end = raw[..line_start].trim_end().len();
+    }
 }
 
 fn utf16_len(text: &str) -> usize {
@@ -672,6 +696,73 @@ SELECT * FROM shelf KEYS IN 'b' WHERE id = 'a';
         assert_eq!(report.issues.len(), 1);
         assert_eq!(report.issues[0].severity, "warning");
         assert!(report.issues[0].message.contains("no cached definition"));
+    }
+
+    /// The underlined range of a statement-level issue, as text.
+    fn underlined<'a>(script: &'a str, issue: &LintIssue) -> &'a str {
+        let units: Vec<u16> = script.encode_utf16().collect();
+        let start = String::from_utf16(&units[..issue.offset]).unwrap().len();
+        let end = String::from_utf16(&units[..issue.end]).unwrap().len();
+        &script[start..end]
+    }
+
+    #[test]
+    fn issues_underline_the_statement_not_the_comments_above_it() {
+        let mut session = session(false);
+        let script = "\
+CREATE TABLE posts (id STRING HASH KEY);
+-- read one shelf row
+-- (no table yet)
+SELECT * FROM shelf WHERE id = 'a';
+";
+        let report = lint_script(&mut session, script);
+        assert_eq!(report.issues.len(), 1, "{:?}", report.issues);
+        let issue = &report.issues[0];
+        assert_eq!(
+            underlined(script, issue),
+            "SELECT * FROM shelf WHERE id = 'a';"
+        );
+        assert_eq!((issue.line, issue.column), (4, 1));
+    }
+
+    #[test]
+    fn a_comment_after_a_semicolon_is_not_underlined_with_the_next_statement() {
+        let mut session = session(false);
+        let script = "CREATE TABLE posts (id STRING HASH KEY); -- made it\nSELECT * FROM shelf WHERE id = 'a';\n";
+        let report = lint_script(&mut session, script);
+        assert_eq!(report.issues.len(), 1, "{:?}", report.issues);
+        assert_eq!(
+            underlined(script, &report.issues[0]),
+            "SELECT * FROM shelf WHERE id = 'a';"
+        );
+    }
+
+    #[test]
+    fn trailing_comment_lines_of_an_unclosed_statement_are_not_underlined() {
+        let mut session = session(false);
+        let script = "-- lead\nSELECT * FROM shelf WHERE id = 'a'\n-- tail note\n";
+        let report = lint_script(&mut session, script);
+        assert_eq!(report.issues.len(), 1, "{:?}", report.issues);
+        assert_eq!(
+            underlined(script, &report.issues[0]),
+            "SELECT * FROM shelf WHERE id = 'a'"
+        );
+    }
+
+    #[test]
+    fn a_parse_error_after_a_leading_comment_points_into_the_statement() {
+        let mut session = session(false);
+        let script = "-- broken one\nSELEC * FROM shelf;\n";
+        let report = lint_script(&mut session, script);
+        assert_eq!(report.issues.len(), 1, "{:?}", report.issues);
+        let issue = &report.issues[0];
+        assert_eq!(issue.severity, "error");
+        assert_eq!(issue.line, 2, "{:?}", issue);
+        assert!(
+            !underlined(script, issue).contains("--"),
+            "{:?}",
+            underlined(script, issue)
+        );
     }
 
     #[test]
