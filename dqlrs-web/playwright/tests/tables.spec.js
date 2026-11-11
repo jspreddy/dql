@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
 import { colorPattern, openResultPane, pressMod, replaceEditor, themeColor } from "../support/helpers.js";
@@ -689,6 +691,50 @@ test("opens result and table-browser structure from data already in hand", async
   expect(afterRows).toEqual([]);
   await page.keyboard.press("Escape");
   await expect(pop).toBeHidden();
+});
+
+test("a local table's definition is cached for the linter and the structure view", async ({ page, app }, testInfo) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  const name = uniqueTable();
+  fs.writeFileSync(path.join(app.workspace, "queries", "people.csv"), "id,name\na,ada\nb,grace\n");
+
+  await replaceEditor(page, `DROP LOCALTABLE IF EXISTS ${name};\nCREATE LOCALTABLE ${name} AS './people.csv';`);
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(2);
+
+  // The linter uses the local table's definition: an unkeyed SELECT is an error, not a
+  // "no cached definition" warning, and a SCAN then clears the status.
+  await replaceEditor(page, `SELECT * FROM ${name};`);
+  await expect(page.locator("#lint-status")).toHaveText("1 error");
+  await expect(page.locator("#lint-status")).toHaveAttribute("data-tip", /indexed WHERE/);
+  await replaceEditor(page, `SCAN * FROM ${name};`);
+  await expect(page.locator("#lint-status")).toBeHidden();
+
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await page.locator(`#table-${name}`).click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
+  await page.locator("#rows-schema").click();
+  const definition = page.locator("[data-testid='schema-definition']");
+  await expect(definition).toContainText("From this local table's file");
+  await expect(definition.locator("[data-testid='schema-create-query'] pre")).toHaveText(
+    `CREATE LOCALTABLE ${name} AS '${path.join(app.workspace, "queries", "people.csv")}';`,
+  );
+  const columns = definition.locator("[data-testid='schema-definition-columns']");
+  await expect(columns.locator("tbody tr[data-column='id']")).toContainText("Hash key");
+  await expect(columns.locator("tbody tr[data-column='name']")).toContainText("STRING");
+  await page.screenshot({ path: playwrightArtifact(`local-table-structure-${testInfo.project.name}.png`) });
+  await page.keyboard.press("Escape");
+
+  await page.locator("#mode-query").click();
+  await replaceEditor(page, `DROP LOCALTABLE ${name};`);
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(1);
 });
 
 test("gives each query result its own named card and structure icon", async ({ page, app }) => {

@@ -1039,29 +1039,42 @@ fn table_structure(state: &mut WebState, name: &str) -> Result<Value, String> {
     };
     let described = structure::describe(&columns, &items);
     let mut value = structure::payload("table", name, "", items.len(), true, described);
-    let (create_query, definition) = cached_table_schema(&mut state.session, name);
+    let (create_query, definition, source) = cached_table_schema(&mut state.session, name);
     let Some(object) = value.as_object_mut() else {
         return Ok(value);
     };
     object.insert("createQuery".to_string(), json!(create_query));
     object.insert("definition".to_string(), definition);
+    object.insert("definitionSource".to_string(), json!(source));
     Ok(value)
 }
 
-/// Formatted create query and attribute rows from the schema cache only.
+/// Create query, attribute rows, and where they came from, without a database call.
 ///
-/// `cached_definition` reads the in-memory snapshot or the saved cache. It does
-/// not describe the table, so a structure view never refreshes the database.
-/// Creating a table stores the snapshot, and describing the table replaces it
-/// with the current definition. The next structure view shows that snapshot.
-fn cached_table_schema(session: &mut crate::session::Session, name: &str) -> (String, Value) {
+/// `cached_definition` reads a local or temp table's in-memory definition, or a DynamoDB
+/// table's snapshot in memory or in the saved cache. It does not describe the table, so a
+/// structure view never refreshes the database. Creating a table stores the snapshot, and
+/// describing the table replaces it with the current definition.
+///
+/// The source is `local` or `temp` for those tables, whose create query is their own
+/// `CREATE LOCALTABLE` or `CREATE TEMPTABLE` text, and `cache` for a DynamoDB table.
+fn cached_table_schema(
+    session: &mut crate::session::Session,
+    name: &str,
+) -> (String, Value, &'static str) {
+    let virtual_line = session.engine.virtual_schema_line(name);
+    let source = virtual_line.as_ref().map_or("cache", |(kind, _)| *kind);
     let Some(meta) = session.engine.cached_definition(name) else {
-        return (String::new(), json!([]));
+        return (String::new(), json!([]), source);
     };
     if !meta.has_definition() {
-        return (String::new(), json!([]));
+        return (String::new(), json!([]), source);
     }
-    (meta.schema_dql_formatted(), json!(definition_rows(&meta)))
+    let create_query = match virtual_line {
+        Some((_, line)) => line,
+        None => meta.schema_dql_formatted(),
+    };
+    (create_query, json!(definition_rows(&meta)), source)
 }
 
 fn definition_rows(meta: &dql_models::TableMeta) -> Vec<Value> {

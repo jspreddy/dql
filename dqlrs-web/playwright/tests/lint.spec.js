@@ -112,6 +112,22 @@ test("underlines a bad query, warns when the table is unknown, and clears a vali
   await expect(page.locator("[data-testid='lint-gutter-warning']")).toHaveCount(0);
 });
 
+test("does not underline the comments above a statement", async ({ page }, testInfo) => {
+  await replaceEditor(page, ["-- notes about the shelf", "-- second note line", UNKNOWN].join("\n"));
+  const status = page.locator("#lint-status");
+  await expect(status).toHaveText("1 warning");
+  const marks = page.locator(".cm-lint-warning");
+  await expect(marks.first()).toBeVisible();
+  const underlined = (await marks.allTextContents()).join("");
+  expect(underlined).toBe(UNKNOWN);
+  const gutter = page.locator("[data-testid='lint-gutter-warning']");
+  await expect(gutter).toHaveCount(1);
+  const statementLine = await page.locator(".cm-line", { hasText: "lint_missing_shelf" }).boundingBox();
+  const mark = await gutter.boundingBox();
+  expect(Math.abs(mark.y + mark.height / 2 - (statementLine.y + statementLine.height / 2))).toBeLessThan(statementLine.height / 2);
+  await page.screenshot({ path: playwrightArtifact(`lint-skips-comments-${testInfo.project.name}.png`) });
+});
+
 test("lints on open, after save, and when a fetch replaces the file", async ({ page, app }, testInfo) => {
   const broken = "SELEKT * FROM shelf;\n";
   const lints = [];

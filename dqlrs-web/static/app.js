@@ -4969,7 +4969,7 @@ async function openSchema(request, button) {
   // Definition and Result structure share one scrolling body, so they move as one surface.
   if (browser) {
     schemaPopBody.replaceChildren(
-      schemaDefinitionSection(payload.createQuery, payload.definition),
+      schemaDefinitionSection(payload.createQuery, payload.definition, payload.definitionSource),
       schemaResultSection(inspected),
     );
   } else {
@@ -4997,7 +4997,13 @@ function fillSchemaQuery(statement) {
   schemaPopQuery.hidden = false;
 }
 
-function schemaDefinitionSection(createQuery, rows) {
+const DEFINITION_SOURCES = {
+  cache: "From the schema cache, saved when this table was created or last described in dqlrs.",
+  local: "From this local table's file, read when the table was created or last loaded.",
+  temp: "From this temp table's query. It stays in memory until dqlrs exits.",
+};
+
+function schemaDefinitionSection(createQuery, rows, definitionSource) {
   const section = document.createElement("section");
   section.className = "schema-section";
   section.dataset.testid = "schema-definition";
@@ -5005,7 +5011,7 @@ function schemaDefinitionSection(createQuery, rows) {
   heading.textContent = "Definition";
   const source = document.createElement("p");
   source.className = "schema-section-note";
-  source.textContent = "From the schema cache, saved when this table was created or last described in dqlrs.";
+  source.textContent = DEFINITION_SOURCES[definitionSource] || DEFINITION_SOURCES.cache;
   const query = document.createElement("div");
   query.className = "schema-definition-query";
   query.dataset.testid = "schema-create-query";

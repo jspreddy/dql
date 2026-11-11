@@ -673,6 +673,46 @@ mod tests {
     }
 
     #[test]
+    fn local_and_temp_tables_have_a_cached_definition_without_a_describe() {
+        let dir = std::env::temp_dir().join(format!("dqlrs-table-defs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let csv = write_file(&dir, "users.csv", "id,name\na,ada\n");
+        let mut engine = in_memory_engine();
+        engine
+            .execute(&format!("CREATE LOCALTABLE users AS '{}'", csv.display()))
+            .unwrap();
+        engine
+            .execute("CREATE TABLE posts (id STRING HASH KEY, title STRING)")
+            .unwrap();
+        engine
+            .execute("CREATE TEMPTABLE hot AS (SCAN * FROM posts)")
+            .unwrap();
+
+        let users = engine.cached_definition("users").expect("local definition");
+        assert!(users.has_definition());
+        assert_eq!(users.hash_key, "id");
+        let hot = engine.cached_definition("hot").expect("temp definition");
+        assert!(hot.has_definition());
+
+        // The local file is not re-read: a broken file does not change the cached definition.
+        std::fs::write(&csv, "not,a\n\"csv").unwrap();
+        assert_eq!(engine.cached_definition("users").unwrap().hash_key, "id");
+
+        let (kind, line) = engine.virtual_schema_line("users").unwrap();
+        assert_eq!(kind, "local");
+        assert!(line.starts_with("CREATE LOCALTABLE users AS '"), "{line}");
+        let (kind, line) = engine.virtual_schema_line("hot").unwrap();
+        assert_eq!(kind, "temp");
+        assert_eq!(line, "CREATE TEMPTABLE hot AS (SCAN * FROM posts);");
+        assert!(engine.virtual_schema_line("posts").is_none());
+
+        engine.execute("DROP TEMPTABLE hot").unwrap();
+        assert!(engine.cached_definition("hot").is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn local_and_temp_tables_query_like_dynamodb() {
         let dir = std::env::temp_dir().join(format!("dqlrs-table-kinds-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
