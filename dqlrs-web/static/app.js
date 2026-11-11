@@ -1266,8 +1266,13 @@ async function refreshTree() {
   paintTree();
 }
 
+// A rename edits inside a tree button. Repainting would replace that button and drop the rename,
+// for example when the event stream pushes a tree change. Skip repaints until the rename settles;
+// finishing a rename always repaints from the latest state.tree.
+let treeRenaming = false;
+
 function paintTree() {
-  if (!state.tree) return;
+  if (!state.tree || treeRenaming) return;
   treeEl.replaceChildren(renderDir(visibleTree(state.tree), true));
 }
 
@@ -2401,6 +2406,7 @@ function beginRename(path) {
   const twist = button.querySelector(".twist");
   button.draggable = false;
   button.replaceChildren(twist, input);
+  treeRenaming = true;
   input.focus();
   const dot = name.lastIndexOf(".");
   if (button.dataset.kind === "file" && dot > 0) input.setSelectionRange(0, dot);
@@ -2409,6 +2415,8 @@ function beginRename(path) {
   const finish = async (commit) => {
     if (settled) return;
     settled = true;
+    // The rename is decided, so repaints may replace the input again.
+    treeRenaming = false;
     const nextName = input.value.trim();
     if (!commit || !nextName || nextName === name || /[\\/]/.test(nextName)) {
       if (state.tree) paintTree();
