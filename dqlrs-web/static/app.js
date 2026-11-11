@@ -3788,7 +3788,8 @@ async function runDocuments(documents) {
       const response = await fetchServer("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dql: doc.text }),
+        // The server resolves ./ paths in SAVE, LOAD, and local tables against this file's folder.
+        body: JSON.stringify({ dql: doc.text, path: doc.path || "" }),
       });
       await readNdjson(response, (event) => {
         if (event.event === "error") throw new Error(event.error || "failed");

@@ -85,7 +85,7 @@ struct Incoming {
 enum Reply {
     Json(u16, Value),
     Bytes(u16, &'static str, Vec<u8>),
-    Ndjson(Arc<App>, Vec<String>),
+    Ndjson(Arc<App>, Vec<String>, dql_engine::FileBase),
     Events(Arc<App>, String),
 }
 
@@ -649,7 +649,8 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
-        return handle_run(Arc::clone(app), dql);
+        let script = parsed.get("path").and_then(Value::as_str).unwrap_or("");
+        return handle_run(Arc::clone(app), dql, script);
     }
     let body = parse_json(body);
     let relative = body.get("path").and_then(Value::as_str).unwrap_or("");
@@ -775,18 +776,43 @@ fn save_query_result(root: &Path, body: &Value) -> Reply {
     }
 }
 
-fn handle_run(app: Arc<App>, dql: String) -> Reply {
+fn handle_run(app: Arc<App>, dql: String, script: &str) -> Reply {
     let statements = split_statements(&dql);
     if statements.is_empty() {
         return Reply::Json(502, json!({"ok": false, "error": "nothing to run"}));
     }
-    Reply::Ndjson(app, statements)
+    let file_base = match run_file_base(&app.root, script) {
+        Ok(file_base) => file_base,
+        Err(err) => return Reply::Json(400, json!({"ok": false, "error": err.to_string()})),
+    };
+    Reply::Ndjson(app, statements, file_base)
 }
 
-fn run_script(app: Arc<App>, statements: Vec<String>, writer: impl Write + Send + 'static) {
+/// SAVE, LOAD, and local-table paths in a run: `./` is relative to the folder of the
+/// `.dql` file (`script`, workspace-relative), and other relative paths to the workspace.
+/// A run without a file (an empty `script`) resolves `./` against the workspace.
+fn run_file_base(root: &Path, script: &str) -> Result<dql_engine::FileBase, PathError> {
+    let workspace = files::resolve_inside(root, "")?;
+    let script = script.trim();
+    let script_dir = if script.is_empty() {
+        None
+    } else {
+        let file = files::resolve_inside(root, script)?;
+        file.parent().map(Path::to_path_buf)
+    };
+    Ok(dql_engine::FileBase::new(Some(workspace), script_dir))
+}
+
+fn run_script(
+    app: Arc<App>,
+    statements: Vec<String>,
+    file_base: dql_engine::FileBase,
+    writer: impl Write + Send + 'static,
+) {
     app.cancel.clear();
     let writer = Arc::new(Mutex::new(writer));
     let mut state = lock_state(&app);
+    state.session.engine.set_file_base(file_base);
     for (index, statement) in statements.iter().enumerate() {
         if write_json(
             &mut *lock_writer(&writer),
@@ -1322,8 +1348,8 @@ fn write_reply(stream: &mut TcpStream, reply: Reply, keep_alive: bool) -> io::Re
             write_bytes(stream, status, content_type, &bytes, keep_alive)?;
             Ok(keep_alive)
         }
-        Reply::Ndjson(app, statements) => {
-            write_ndjson(stream, app, statements)?;
+        Reply::Ndjson(app, statements, file_base) => {
+            write_ndjson(stream, app, statements, file_base)?;
             Ok(false)
         }
         Reply::Events(app, client_id) => {
@@ -1425,7 +1451,12 @@ fn write_bytes(
     stream.flush()
 }
 
-fn write_ndjson(stream: &mut TcpStream, app: Arc<App>, statements: Vec<String>) -> io::Result<()> {
+fn write_ndjson(
+    stream: &mut TcpStream,
+    app: Arc<App>,
+    statements: Vec<String>,
+    file_base: dql_engine::FileBase,
+) -> io::Result<()> {
     let header = "\
 HTTP/1.1 200 OK\r\n\
 Content-Type: application/x-ndjson; charset=utf-8\r\n\
@@ -1436,7 +1467,7 @@ Connection: close\r\n\
     stream.write_all(header.as_bytes())?;
     stream.flush()?;
     let (mut reader, writer) = io::pipe()?;
-    thread::spawn(move || run_script(app, statements, writer));
+    thread::spawn(move || run_script(app, statements, file_base, writer));
     let mut buf = [0u8; 8192];
     loop {
         let n = reader.read(&mut buf)?;
