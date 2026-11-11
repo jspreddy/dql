@@ -798,10 +798,15 @@ test("names insert, update, delete, count, and drop results", async ({ page, app
     [
       `DROP TABLE IF EXISTS ${name};`,
       `CREATE TABLE ${name} (id STRING HASH KEY, n NUMBER);`,
+      // The server keeps comment lines in the statement text; labels still name the operation.
+      "-- seed two rows",
       `INSERT INTO ${name} (id, n) VALUES ('a', 1), ('b', 2);`,
+      "-- bump one",
+      "-- and keep the other",
       `UPDATE ${name} SET n = 9 WHERE id = 'a';`,
       `DELETE FROM ${name} WHERE id = 'b';`,
       `SCAN count(*) FROM ${name};`,
+      "-- clean up",
       `DROP TABLE ${name};`,
     ].join("\n"),
   );

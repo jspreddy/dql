@@ -4275,9 +4275,14 @@ function resultLabel(item) {
   return item.message || "ok";
 }
 
+// The server keeps the comment lines above a statement in its text. Drop them before reading the verb.
+function statementCode(statement) {
+  return String(statement || "").replace(/^(?:\s*--[^\n]*(?:\n|$))*/, "").trim();
+}
+
 function affectedLabel(item) {
   const count = Number(item.affected ?? 0);
-  const statement = String(item.statement || "").trim();
+  const statement = statementCode(item.statement);
   const verb = (statement.match(/^(insert|delete|update|select|scan|load)\b/i) || [])[1];
   const action = verb ? verb.toLowerCase() : "";
   if (action === "insert") return `${amountPhrase(count, "row", "rows")} inserted`;
@@ -4299,17 +4304,11 @@ function isSaveStatement(statement) {
   return /\bsave\s+(?:''|""|[^\s=;]+)/i.test(text);
 }
 
+// DROP names a single table, so a drop that removed something dropped one table.
 function droppedLabel(item) {
-  const statement = String(item.statement || "").trim();
-  if (!/^drop\b/i.test(statement)) return "";
+  if (!/^drop\b/i.test(statementCode(item.statement))) return "";
   if (!/^Dropped\b/.test(String(item.message || ""))) return "";
-  const names = statement
-    .replace(/^drop\s+(?:localtable|temptable|dynamodb\s+table|table)\s+(?:if\s+exists\s+)?/i, "")
-    .replace(/;+\s*$/, "")
-    .split(",")
-    .map((name) => name.trim())
-    .filter(Boolean);
-  return `${amountPhrase(Math.max(names.length, 1), "table", "tables")} dropped`;
+  return "one table dropped";
 }
 
 function amountPhrase(count, singular, plural) {
@@ -5004,7 +5003,7 @@ function schemaDefinitionSection(createQuery, rows) {
   heading.textContent = "Definition";
   const source = document.createElement("p");
   source.className = "schema-section-note";
-  source.textContent = "From the schema cache. This updates when the table definition changes.";
+  source.textContent = "From the schema cache, saved when this table was created or last described in dqlrs.";
   const query = document.createElement("div");
   query.className = "schema-definition-query";
   query.dataset.testid = "schema-create-query";

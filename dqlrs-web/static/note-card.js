@@ -1,4 +1,5 @@
-// Shared note card. Query result notes and the structure dialog use the same card.
+// Shared note card with error, success, alert, and info variants.
+// The table structure dialog uses it for its partial-structure note.
 
 const VARIANTS = {
   error: "error",
