@@ -12,6 +12,28 @@ export function node(page, filePath) {
   return page.locator(`[data-testid="${id}"]`);
 }
 
+// Drag one element onto another with HTML5 drag events and a shared DataTransfer.
+// Playwright's dragTo decides whether a drag started by waiting one task after the first
+// mousemove for dragstart. When the page is busy (a file just reopened after a move, a lint
+// running), dragstart lands later, Playwright drops its drag interception, and Chrome's own
+// drag never ends. These events run the same tree handlers without that guess.
+export async function dragAndDrop(page, source, target) {
+  const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+  // Hold the source element itself: a successful drop repaints the tree, and the browser
+  // still fires dragend on the original element even after it leaves the page.
+  const dragged = await source.elementHandle();
+  try {
+    await dragged.dispatchEvent("dragstart", { dataTransfer });
+    await target.dispatchEvent("dragenter", { dataTransfer });
+    await target.dispatchEvent("dragover", { dataTransfer });
+    await target.dispatchEvent("drop", { dataTransfer });
+    await dragged.dispatchEvent("dragend", { dataTransfer });
+  } finally {
+    await dragged.dispose();
+    await dataTransfer.dispose();
+  }
+}
+
 export async function reveal(page, filePath) {
   const parts = String(filePath).split("/");
   for (let i = 0; i < parts.length - 1; i += 1) {

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
-import { handleDialogs, node, openApp, pressMod, replaceEditor, reveal, themeColor } from "../support/helpers.js";
+import { dragAndDrop, handleDialogs, node, openApp, pressMod, replaceEditor, reveal, themeColor } from "../support/helpers.js";
 
 test.beforeEach(async ({ page, app }) => {
   await openApp(page, app);
@@ -975,15 +975,12 @@ test("moves a file through the prompt and by dragging", async ({ page }) => {
   await expect(node(page, "empty/moved.dql")).toBeVisible();
   await expect(node(page, "queries/read.dql")).toHaveCount(0);
 
-  await node(page, "queries/edit.dql").dragTo(node(page, "empty"));
+  await dragAndDrop(page, node(page, "queries/edit.dql"), node(page, "empty"));
   await expect(node(page, "empty/edit.dql")).toBeVisible();
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
 
-  const tree = page.locator("#tree");
-  const box = await tree.boundingBox();
-  await node(page, "empty/moved.dql").dragTo(tree, {
-    targetPosition: { x: 16, y: box.height - 2 },
-  });
+  // Dropping on the tree itself, outside any node, moves the file to the workspace root.
+  await dragAndDrop(page, node(page, "empty/moved.dql"), page.locator("#tree"));
   await expect(node(page, "moved.dql")).toBeVisible();
   await expect(node(page, "empty/moved.dql")).toHaveCount(0);
 });

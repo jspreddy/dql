@@ -70,6 +70,27 @@ test("shows a file added outside the editor", async ({ page, app }) => {
   await expect(page.locator('[data-testid="node-queries__fresh.dql"]')).toBeVisible();
 });
 
+test("keeps a rename open while the tree changes on disk", async ({ page, app }, testInfo) => {
+  await page.locator('[data-testid="node-queries__read.dql"]').dblclick();
+  const input = page.locator("#rename-input");
+  await expect(input).toBeVisible();
+  await input.fill("kept.dql");
+
+  // A file added outside the editor makes the server push a tree change, and the page refetches the tree.
+  const pushedTree = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/tree");
+  fs.writeFileSync(path.join(app.workspace, "queries/pushed.dql"), "SELECT 1;\n");
+  await pushedTree;
+  await expect(input).toBeVisible();
+  await expect(input).toBeFocused();
+  await expect(input).toHaveValue("kept.dql");
+  await page.screenshot({ path: playwrightArtifact(`rename-survives-tree-push-${testInfo.project.name}.png`) });
+
+  await input.press("Enter");
+  await expect(page.locator('[data-testid="node-queries__kept.dql"]')).toBeVisible();
+  await expect(page.locator('[data-testid="node-queries__pushed.dql"]')).toBeVisible();
+  await expect(page.locator('[data-testid="node-queries__read.dql"]')).toHaveCount(0);
+});
+
 test("a second window picks up a saved edit without a patch", async ({ page, app }) => {
   const other = await page.context().newPage();
   await openApp(other, app);
