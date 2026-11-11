@@ -265,6 +265,13 @@ impl RuntimeEngine {
         }
     }
 
+    pub fn virtual_schema_line(&self, name: &str) -> Option<(&'static str, String)> {
+        match self {
+            Self::Memory(engine) => engine.inner().virtual_schema_line(name),
+            Self::Remote(engine) => engine.inner().virtual_schema_line(name),
+        }
+    }
+
     pub fn set_file_base(&mut self, file_base: dql_engine::FileBase) {
         match self {
             Self::Memory(engine) => engine.inner_mut().set_file_base(file_base),

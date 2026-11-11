@@ -183,7 +183,14 @@ impl<B: DynamoBackend> Engine<B> {
     }
 
     /// Definition already in memory or on disk. Does not call the backend.
+    /// The definition dqlrs already holds for `table`, without describing it.
+    ///
+    /// Local and temp tables come from their in-memory definition (a local table's file is
+    /// not re-read). DynamoDB tables come from the description cache in memory or on disk.
     pub fn cached_definition(&mut self, table: &str) -> Option<TableMeta> {
+        if let Some(meta) = self.virtual_tables.meta(table) {
+            return Some(meta);
+        }
         self.note_disk_generation();
         if let Some(meta) = self.cached_descriptions.get(table) {
             return Some(meta.clone());
@@ -396,6 +403,14 @@ impl<B: DynamoBackend> Engine<B> {
     /// `dynamodb`, `local`, or `temp` for one table. Does not list the catalog.
     pub fn table_kind_name(&self, name: &str) -> &'static str {
         self.row_kind(name).0.as_str()
+    }
+
+    /// `CREATE LOCALTABLE … AS '…'` or `CREATE TEMPTABLE … AS (…)` for a local or temp
+    /// table, and its kind (`local` or `temp`). `None` for a DynamoDB table.
+    pub fn virtual_schema_line(&self, name: &str) -> Option<(&'static str, String)> {
+        let kind = self.virtual_tables.kind(name)?;
+        let line = self.virtual_tables.schema_line(name)?;
+        Some((kind.as_str(), line))
     }
 
     fn row_kind(&self, name: &str) -> (TableKind, Option<String>) {

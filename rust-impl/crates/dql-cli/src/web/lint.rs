@@ -39,6 +39,9 @@ struct Span {
 
 struct Schemas {
     local: HashMap<String, TableMeta>,
+    /// Local and temp tables created earlier in the script. Their columns come from a file
+    /// or a query, so they have no definition yet, but they exist.
+    created_virtual: HashSet<String>,
     dropped: HashSet<String>,
 }
 
@@ -47,6 +50,7 @@ pub fn lint_script(session: &mut Session, text: &str) -> LintReport {
     let spans = statement_spans(text);
     let mut schemas = Schemas {
         local: HashMap::new(),
+        created_virtual: HashSet::new(),
         dropped: HashSet::new(),
     };
     let mut issues = Vec::new();
@@ -103,9 +107,25 @@ fn check_statement(statement: &Statement, cx: &mut Cx<'_>, apply_schema: bool) {
             }
             Err(err) => cx.error(err.to_string()),
         },
-        Statement::DropTable { name, .. } => {
+        Statement::CreateLocalTable { name, .. } => {
+            if apply_schema {
+                cx.schemas.dropped.remove(name);
+                cx.schemas.created_virtual.insert(name.clone());
+            }
+        }
+        Statement::CreateTempTable { name, query, .. } => {
+            check_statement(query, cx, false);
+            if apply_schema {
+                cx.schemas.dropped.remove(name);
+                cx.schemas.created_virtual.insert(name.clone());
+            }
+        }
+        Statement::DropTable { name, .. }
+        | Statement::DropLocalTable { name, .. }
+        | Statement::DropTempTable { name, .. } => {
             if apply_schema {
                 cx.schemas.local.remove(name);
+                cx.schemas.created_virtual.remove(name);
                 cx.schemas.dropped.insert(name.clone());
             }
         }
@@ -311,6 +331,9 @@ fn schema_for(cx: &mut Cx<'_>, table: &str) -> Option<TableMeta> {
     }
     if let Some(meta) = cx.session.engine.cached_definition(table) {
         return Some(meta);
+    }
+    if cx.schemas.created_virtual.contains(table) {
+        return None;
     }
     cx.warning(format!(
         "table {table} has no cached definition, so key and index checks were skipped"
@@ -762,6 +785,58 @@ SELECT * FROM shelf WHERE id = 'a';
             !underlined(script, issue).contains("--"),
             "{:?}",
             underlined(script, issue)
+        );
+    }
+
+    #[test]
+    fn an_existing_local_table_uses_its_definition() {
+        let mut session = session(false);
+        let dir = tempfile::tempdir().unwrap();
+        let csv = dir.path().join("people.csv");
+        std::fs::write(&csv, "id,name\na,ada\n").unwrap();
+        session
+            .engine
+            .execute_script(&format!("CREATE LOCALTABLE people AS '{}';", csv.display()))
+            .unwrap();
+        let clean = lint_script(&mut session, "SCAN * FROM people;\n");
+        assert!(clean.issues.is_empty(), "{:?}", clean.issues);
+        let rejected = lint_script(&mut session, "SELECT * FROM people;\n");
+        assert!(
+            messages(&rejected).join("\n").contains("indexed WHERE"),
+            "{:?}",
+            rejected.issues
+        );
+    }
+
+    #[test]
+    fn local_and_temp_tables_created_in_the_script_are_known() {
+        let mut session = session(false);
+        let script = "\
+CREATE TABLE posts (id STRING HASH KEY);
+CREATE LOCALTABLE people AS './people.csv';
+SCAN * FROM people;
+CREATE TEMPTABLE hot AS (SCAN * FROM posts);
+SCAN * FROM hot;
+";
+        let report = lint_script(&mut session, script);
+        assert!(report.issues.is_empty(), "{:?}", report.issues);
+    }
+
+    #[test]
+    fn a_temp_table_query_is_checked_and_a_dropped_one_is_an_error() {
+        let mut session = session(false);
+        let script = "\
+CREATE TABLE posts (id STRING HASH KEY);
+CREATE TEMPTABLE hot AS (SELECT * FROM posts);
+DROP TEMPTABLE hot;
+SCAN * FROM hot;
+";
+        let report = lint_script(&mut session, script);
+        let text = messages(&report).join("\n");
+        assert!(text.contains("indexed WHERE"), "{text}");
+        assert!(
+            text.contains("table hot was dropped earlier in this script"),
+            "{text}"
         );
     }
 
