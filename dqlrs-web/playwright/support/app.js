@@ -110,7 +110,8 @@ export const test = base.extend({
     await use();
   }, { auto: true }],
   app: async ({ isolateCwd }, use) => {
-    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-web-"));
+    // The server reports paths under its canonical root, and macOS links /var to /private/var.
+    const workspace = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-web-")));
     fs.cpSync(fixtureRoot, workspace, { recursive: true });
     const cwd = isolateCwd ? fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-web-cwd-")) : webRoot;
     const port = await freePort();

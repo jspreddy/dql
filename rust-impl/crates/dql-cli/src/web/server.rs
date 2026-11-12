@@ -1473,20 +1473,46 @@ fn stream_events(
     app: &App,
     rx: std::sync::mpsc::Receiver<String>,
 ) -> io::Result<()> {
+    const PING: Duration = Duration::from_secs(15);
+    // A closed tab is noticed on the next check, not the next failed write.
+    const CHECK: Duration = Duration::from_secs(1);
     write_chunk(stream, ": ping\n\n")?;
+    let mut last_ping = std::time::Instant::now();
     loop {
-        match rx.recv_timeout(Duration::from_secs(15)) {
+        match rx.recv_timeout(CHECK) {
             Ok(frame) => write_chunk(stream, &frame)?,
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                write_chunk(stream, ": ping\n\n")?;
-                if app.presence.sweep() {
-                    app.hub.presence(&app.presence.snapshot());
+                if peer_closed(stream) {
+                    break;
+                }
+                if last_ping.elapsed() >= PING {
+                    write_chunk(stream, ": ping\n\n")?;
+                    last_ping = std::time::Instant::now();
+                    if app.presence.sweep() {
+                        app.hub.presence(&app.presence.snapshot());
+                    }
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
     Ok(())
+}
+
+/// Whether the client has closed its end. An event-stream client sends nothing
+/// after its request, so a read of zero bytes or an error means it is gone.
+fn peer_closed(stream: &TcpStream) -> bool {
+    if stream.set_nonblocking(true).is_err() {
+        return false;
+    }
+    let mut byte = [0u8; 1];
+    let closed = match stream.peek(&mut byte) {
+        Ok(0) => true,
+        Ok(_) => false,
+        Err(err) => err.kind() != io::ErrorKind::WouldBlock,
+    };
+    let _ = stream.set_nonblocking(false);
+    closed
 }
 
 fn write_chunk(stream: &mut TcpStream, data: &str) -> io::Result<()> {
