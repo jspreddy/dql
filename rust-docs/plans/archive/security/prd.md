@@ -1,6 +1,6 @@
 # PRD: local cache and API security
 
-**Status:** plan. Do not implement from this folder until the phases below are accepted.
+**Status:** done. All three phases shipped: the API token (`f36607e`), sealed owner-only caches (`5c6a30e`, `c5833df`), and both secrets in the user key store (`1e3cd92`, `abc93e6`). The Problem section describes the code before that work.
 
 ## Problem
 

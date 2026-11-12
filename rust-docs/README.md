@@ -19,7 +19,7 @@ This repository ([jspreddy/dql](https://github.com/jspreddy/dql)) is a fork of
 | [packaging.html](packaging.html) | How `dqlrs` is packaged, installed, and run (web assets included) |
 | [notebook.html](notebook.html) | How `dqlrs notebook` installs, configures, and launches kernels |
 | [`metrics/`](metrics/) | How long the rewrite took and what it cost: [by day](metrics/rewrite-metrics.html), [by hour](metrics/rewrite-metrics-hours.html), [Plotly charts](metrics/work-metrics.html) |
-| [`plans/`](plans/README.md) | Architecture notes, testing strategy, open design debt, security plans, and the archive of finished plans |
+| [`plans/`](plans/README.md) | Architecture notes, testing strategy, open design debt, and the archive of finished plans (including the security design) |
 
 ## Install
 

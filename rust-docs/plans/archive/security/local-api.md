@@ -1,6 +1,6 @@
 # Plan: local API
 
-**Group:** API. **Status:** implemented.
+**Group:** API. **Status:** done (`f36607e`, `abc93e6`). The "Auth today" column describes the code before this plan. Code: `api_token.rs`, `web/server.rs`, `serve/tcp.rs`.
 
 Loopback is already required. Each web server and each TCP `--serve` listener loads a token so a client that does not have it, including a page on another origin, cannot call the server just by knowing the port.
 

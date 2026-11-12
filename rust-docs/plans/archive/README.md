@@ -47,6 +47,20 @@ The user-facing description is in [`rust-docs/README.md`](../../README.md#headle
 One item was left open in `black_box_acceptance_tests.plan.md`: an optional CI
 job that builds both binaries, starts DynamoDB Local, and runs the harness.
 
+## Security
+
+All shipped. The folder's [`README.md`](security/README.md) lists what
+shipped and the commits.
+
+| Plan | Focus |
+| --- | --- |
+| [`security/README.md`](security/README.md) | Index, what shipped, diagram |
+| [`security/prd.md`](security/prd.md) | Threat model, requirements, phases, decisions |
+| [`security/disk-caches.md`](security/disk-caches.md) | Table cache and workspace query-result cache, owner-only and sealed |
+| [`security/encryption-and-keys.md`](security/encryption-and-keys.md) | AES-256-GCM and the per-user key store on each platform |
+| [`security/local-api.md`](security/local-api.md) | Token on the web API, `/mcp`, and TCP `--serve` |
+| [`security/agents.md`](security/agents.md) | What a workspace reader or same-user agent can still see |
+
 ## Repository layout
 
 | Plan | Focus |

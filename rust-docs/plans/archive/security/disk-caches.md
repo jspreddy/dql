@@ -1,6 +1,6 @@
 # Plan: disk caches
 
-**Group:** disk. **Status:** done.
+**Group:** disk. **Status:** done (`5c6a30e`). The "Today" columns describe the code before this plan. Code: `cache_seal.rs`, `table_cache.rs`, `web/query_cache.rs`.
 
 The product has two caches. This plan changes how they are written. It does not move the query-result cache.
 

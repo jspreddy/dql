@@ -239,7 +239,7 @@ WHERE pk = 'PLANET#jupiter' AND begins_with(sk, 'MOON#');
 | Where | What |
 | --- | --- |
 | [`rust-docs/`](rust-docs/README.md) | `dqlrs` user guide: flags, `--serve`, notebook, SAVE/LOAD, migration from Python, architecture |
-| [`rust-docs/plans/`](rust-docs/plans/README.md) | Architecture notes, open design debt, security plans, archive of finished plans |
+| [`rust-docs/plans/`](rust-docs/plans/README.md) | Architecture notes, open design debt, archive of finished plans (including the security design) |
 | [`dqlrs-web/`](dqlrs-web/README.md) | Web UI behavior and Playwright tests |
 | [`notebook/`](notebook/README.md) | JupyterLab setup from a checkout (Python and Rust kernels) |
 | [`py-docs/`](py-docs/) | Python `dql` docs (Sphinx) |
