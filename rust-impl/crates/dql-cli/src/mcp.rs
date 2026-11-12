@@ -1,6 +1,6 @@
 //! MCP tools for Cursor and Claude.
 //!
-//! `dqlrs --mcp` speaks newline-delimited JSON-RPC on stdio. `dqlrs --web --mcp`
+//! `dqlrs --mcp` speaks newline-delimited JSON-RPC on stdio. `dqlrs web --mcp`
 //! serves the same tools at `/mcp` on the web host, using that process's session
 //! and workspace. Logs stay off stdout.
 
@@ -117,7 +117,7 @@ fn mcp_instructions(root: &Path) -> String {
     let workspace = absolute_dir(root);
     let workspace = workspace.display();
     format!(
-        "The dqlrs workspace is {workspace}, the same folder dqlrs --web uses. If that directory is locally in scope of the Cursor or Claude workspace, prefer local file edits for .dql files. If it is not in scope, prefer the MCP tools create_query_file, read_query_file, and update_query_file to create and edit .dql files. Call help before writing DQL you are unsure of. Omit topic for the command list, or pass a topic such as select. global_search finds table names, cached columns and indexes, and queries in files. lint_query checks a script, and lint_query_file checks a workspace .dql file, for parse errors and for queries the engine would reject, without running them or fetching a missing definition. list_tables and describe_tables use the shared table cache for this connection."
+        "The dqlrs workspace is {workspace}, the same folder dqlrs web uses. If that directory is locally in scope of the Cursor or Claude workspace, prefer local file edits for .dql files. If it is not in scope, prefer the MCP tools create_query_file, read_query_file, and update_query_file to create and edit .dql files. Call help before writing DQL you are unsure of. Omit topic for the command list, or pass a topic such as select. global_search finds table names, cached columns and indexes, and queries in files. lint_query checks a script, and lint_query_file checks a workspace .dql file, for parse errors and for queries the engine would reject, without running them or fetching a missing definition. list_tables and describe_tables use the shared table cache for this connection."
     )
 }
 
@@ -306,7 +306,7 @@ fn update_query_file(root: &Path, arguments: &Value) -> Result<Value, ToolError>
     Ok(json!({ "path": path, "text": text }))
 }
 
-/// One line for `dqlrs --web` when `/mcp` is not enabled.
+/// One line for `dqlrs web` when `/mcp` is not enabled.
 pub fn web_mcp_hint(listen: &str) -> String {
     format!("MCP        off. Pass --mcp to serve http://{listen}/mcp")
 }

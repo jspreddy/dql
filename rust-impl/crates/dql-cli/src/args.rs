@@ -54,32 +54,33 @@ pub struct CliArgs {
     )]
     pub bind: Option<String>,
 
-    #[arg(long = "web", help = "Serve the query editor and table browser")]
+    /// Set by the `web` subcommand (`dqlrs web …`), not a flag. See [`take_web_subcommand`].
+    #[arg(skip)]
     pub web: bool,
 
     #[arg(
         long = "mcp",
-        help = "MCP tools. Alone, stdio. With --web, HTTP at /mcp on the web host."
+        help = "MCP tools. Alone, stdio. With `web`, HTTP at /mcp on the web host."
     )]
     pub mcp: bool,
 
     #[arg(
         long = "listen",
         value_name = "ADDR",
-        help = "With --web, listen on loopback HOST:PORT (default 127.0.0.1:8765)"
+        help = "With `web`, listen on loopback HOST:PORT (default 127.0.0.1:8765)"
     )]
     pub listen: Option<String>,
 
     #[arg(
         long = "dir",
         value_name = "DIR",
-        help = "With --web or --mcp, folder of .dql files (default: current directory)"
+        help = "With `web` or --mcp, folder of .dql files (default: current directory)"
     )]
     pub dir: Option<String>,
 
     #[arg(
         long = "load-tables",
-        help = "With --web, load every table and its definition in the background"
+        help = "With `web`, load every table and its definition in the background"
     )]
     pub load_tables: bool,
 
@@ -90,36 +91,133 @@ pub struct CliArgs {
     pub help: bool,
 }
 
+/// Flags that take a value. Their values are skipped when looking for a subcommand word.
+const VALUE_FLAGS: &[&str] = &[
+    "-c",
+    "--command",
+    "-r",
+    "--region",
+    "-H",
+    "--host",
+    "-p",
+    "--port",
+    "--bind",
+    "--listen",
+    "--dir",
+];
+
+/// Remove a `web` subcommand word from `argv` and say whether it was there. The word can sit
+/// before or after the options (`dqlrs web --dir x` or `dqlrs --dir x web`); a value that
+/// follows a flag such as `-c web` is not the subcommand.
+pub fn take_web_subcommand(argv: &mut Vec<String>) -> bool {
+    let mut index = 1;
+    while index < argv.len() {
+        let arg = argv[index].as_str();
+        if VALUE_FLAGS.contains(&arg) {
+            index += 2;
+            continue;
+        }
+        if arg == "web" {
+            argv.remove(index);
+            return true;
+        }
+        index += 1;
+    }
+    false
+}
+
 fn default_region() -> String {
     env::var("AWS_REGION").unwrap_or_else(|_| "us-west-1".to_string())
 }
 
 pub fn help_text() -> String {
-    "Start the DQL client.\n\n\
-     Options:\n\
-       -c, --command <command>  Run this command and exit\n\
-       -r, --region <region>    AWS region to connect to\n\
-       -H, --host <host>        Host to connect to if using a local instance\n\
-       -p, --port <port>        Port to connect to\n\
-           --json               When used with --command, format results as JSON\n\
-           --serve              Headless JSON-lines worker (stdio, or --bind on loopback). Not a TTY REPL.\n\
-           --bind <ADDR>        With --serve, listen on loopback HOST:PORT (or PORT as 127.0.0.1:PORT)\n\
-           --web                Serve the query editor and table browser\n\
-           --mcp                MCP tools. Alone, stdio. With --web, HTTP at /mcp\n\
-           --listen <ADDR>      With --web, listen on loopback HOST:PORT (default 127.0.0.1:8765)\n\
-           --dir <DIR>          With --web or --mcp, folder of .dql files (default: current directory)\n\
-           --load-tables        With --web, load every table and its definition in the background\n\
-           notebook, --notebook Start JupyterLab with a DQL (Rust) kernel (this binary)\n\
-           --version            Print the version and exit\n\n\
-     Environment:\n\
-       AWS_REGION               Default region (else us-west-1)\n\
-       DQL_BACKEND=memory       Use in-memory backend instead of live AWS"
-        .to_string()
+    // One line per entry: a `\` continuation would strip the leading spaces.
+    [
+        "Start the DQL client.",
+        "",
+        "Usage:",
+        "  dqlrs [options]          Start the REPL (or run -c)",
+        "  dqlrs web [options]      Serve the query editor and table browser",
+        "  dqlrs notebook           Start JupyterLab with a DQL (Rust) kernel (this binary)",
+        "",
+        "Options:",
+        "  -c, --command <command>  Run this command and exit",
+        "  -r, --region <region>    AWS region to connect to",
+        "  -H, --host <host>        Host to connect to if using a local instance",
+        "  -p, --port <port>        Port to connect to",
+        "      --json               When used with --command, format results as JSON",
+        "      --serve              Headless JSON-lines worker (stdio, or --bind on loopback). Not a TTY REPL.",
+        "      --bind <ADDR>        With --serve, listen on loopback HOST:PORT (or PORT as 127.0.0.1:PORT)",
+        "      --mcp                MCP tools. Alone, stdio. With web, HTTP at /mcp",
+        "      --listen <ADDR>      With web, listen on loopback HOST:PORT (default 127.0.0.1:8765)",
+        "      --dir <DIR>          With web or --mcp, folder of .dql files (default: current directory)",
+        "      --load-tables        With web, load every table and its definition in the background",
+        "      --version            Print the version and exit",
+        "",
+        "Environment:",
+        "  AWS_REGION               Default region (else us-west-1)",
+        "  DQL_BACKEND=memory       Use in-memory backend instead of live AWS",
+    ]
+    .join("\n")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn argv(args: &[&str]) -> Vec<String> {
+        args.iter().map(|arg| arg.to_string()).collect()
+    }
+
+    /// Parse the way `run` does: take the `web` word, parse the rest, then set `web`.
+    fn parse(args: &[&str]) -> CliArgs {
+        let mut list = argv(args);
+        let web = take_web_subcommand(&mut list);
+        let mut parsed = CliArgs::try_parse_from(&list).unwrap();
+        parsed.web = web;
+        parsed
+    }
+
+    #[test]
+    fn web_is_a_subcommand_before_or_after_the_options() {
+        let mut first = argv(&["dqlrs", "web", "--dir", "queries", "--listen", "9000"]);
+        assert!(take_web_subcommand(&mut first));
+        assert_eq!(
+            first,
+            argv(&["dqlrs", "--dir", "queries", "--listen", "9000"])
+        );
+        let parsed = CliArgs::try_parse_from(&first).unwrap();
+        assert_eq!(parsed.dir.as_deref(), Some("queries"));
+
+        let mut last = argv(&["dqlrs", "-H", "localhost", "-p", "8000", "web", "--mcp"]);
+        assert!(take_web_subcommand(&mut last));
+        assert_eq!(
+            last,
+            argv(&["dqlrs", "-H", "localhost", "-p", "8000", "--mcp"])
+        );
+    }
+
+    #[test]
+    fn a_flag_value_named_web_is_not_the_subcommand() {
+        for args in [
+            &["dqlrs", "-c", "web"][..],
+            &["dqlrs", "--dir", "web"],
+            &["dqlrs", "-H", "web", "-c", "LS"],
+        ] {
+            let mut list = argv(args);
+            assert!(!take_web_subcommand(&mut list), "{args:?}");
+            assert_eq!(list, argv(args));
+        }
+        let mut both = argv(&["dqlrs", "--dir", "web", "web"]);
+        assert!(take_web_subcommand(&mut both));
+        assert_eq!(both, argv(&["dqlrs", "--dir", "web"]));
+    }
+
+    #[test]
+    fn web_is_no_longer_a_flag() {
+        assert!(CliArgs::try_parse_from(["dqlrs", "--web"]).is_err());
+        assert!(!CliArgs::try_parse_from(["dqlrs"]).unwrap().web);
+    }
 
     #[test]
     fn parses_version_flag() {
@@ -163,17 +261,16 @@ mod tests {
 
     #[test]
     fn parses_web_listen_and_dir() {
-        let args = CliArgs::try_parse_from([
+        let args = parse(&[
             "dqlrs",
-            "--web",
+            "web",
             "--listen",
             "127.0.0.1:9000",
             "--dir",
             "/tmp/queries",
             "-H",
             "localhost",
-        ])
-        .unwrap();
+        ]);
         assert!(args.web);
         assert_eq!(args.listen.as_deref(), Some("127.0.0.1:9000"));
         assert_eq!(args.dir.as_deref(), Some("/tmp/queries"));
@@ -203,16 +300,15 @@ mod tests {
 
     #[test]
     fn parses_web_and_mcp_together() {
-        let args = CliArgs::try_parse_from([
+        let args = parse(&[
             "dqlrs",
-            "--web",
+            "web",
             "--mcp",
             "--listen",
             "127.0.0.1:8765",
             "--dir",
             "/tmp/queries",
-        ])
-        .unwrap();
+        ]);
         assert!(args.web);
         assert!(args.mcp);
         assert_eq!(args.listen.as_deref(), Some("127.0.0.1:8765"));
@@ -222,9 +318,12 @@ mod tests {
 
     #[test]
     fn parses_web_load_tables() {
-        let args = CliArgs::try_parse_from(["dqlrs", "--web", "--load-tables"]).unwrap();
+        let args = parse(&["dqlrs", "web", "--load-tables"]);
         assert!(args.web);
         assert!(args.load_tables);
         assert!(help_text().contains("--load-tables"));
+        // Entries keep their indentation.
+        assert!(help_text().contains("\n  dqlrs web [options]"));
+        assert!(help_text().contains("\n      --json "));
     }
 }

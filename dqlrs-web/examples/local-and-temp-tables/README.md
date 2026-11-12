@@ -1,6 +1,6 @@
 # Local and temp tables
 
-[local-tables.dql](local-tables.dql) registers two files and two in-memory copies. Its paths start with `./`, which resolves against the folder of the `.dql` file, so they point at the files in this folder wherever `dqlrs` was started. Any other relative path resolves against the workspace (the folder `dqlrs --web` was started in, or `--dir`).
+[local-tables.dql](local-tables.dql) registers two files and two in-memory copies. Its paths start with `./`, which resolves against the folder of the `.dql` file, so they point at the files in this folder wherever `dqlrs` was started. Any other relative path resolves against the workspace (the folder `dqlrs web` was started in, or `--dir`).
 
 ## Local tables
 

@@ -65,7 +65,7 @@ export AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-fakekey}"
 export AWS_REGION="${AWS_REGION:-us-west-1}"
 export AWS_EC2_METADATA_DISABLED="${AWS_EC2_METADATA_DISABLED:-true}"
 
-args=(--web --listen "${listen:-$host:$port}" --dir "$dir" -r "$AWS_REGION")
+args=(web --listen "${listen:-$host:$port}" --dir "$dir" -r "$AWS_REGION")
 if [[ "$mcp" -eq 1 ]]; then
   args+=(--mcp)
 fi

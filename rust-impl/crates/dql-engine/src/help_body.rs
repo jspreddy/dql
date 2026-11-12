@@ -140,7 +140,7 @@ pub const LOAD: &str = r"
     Formats: .json / .csv / .msgpack (optional .gz). Pickle (.p) is not supported.
 
     A relative path that starts with ./ is relative to the folder of the
-    .dql file being run in dqlrs --web. Other relative paths are relative to
+    .dql file being run in dqlrs web. Other relative paths are relative to
     the --dir workspace there, and to the current directory elsewhere.
 
     Examples

@@ -101,8 +101,8 @@ dqlrs -H localhost -p 8000
 ### Web UI
 
 ```bash
-dqlrs --web
-dqlrs --web -H localhost -p 8000 --dir ~/queries
+dqlrs web
+dqlrs web -H localhost -p 8000 --dir ~/queries
 ```
 
 Query editor, `.dql` file tree, table browser — default
@@ -123,7 +123,7 @@ JupyterLab with a **DQL (Rust)** kernel.
 
 ## Compare the three surfaces
 
-| | REPL | Web (`--web`) | Notebook |
+| | REPL | Web (`dqlrs web`) | Notebook |
 | --- | :---: | :---: | :---: |
 | Interactive DQL | Yes (TUI) | Yes (editor) | Yes (cells) |
 | One-shot / scripts | `-c` outside the REPL | — | Cells (or `-c` via kernel) |

@@ -16,7 +16,7 @@
 -- File paths follow the same rule as SAVE and LOAD. A path that starts with ./
 -- is relative to the folder of this .dql file, so './sample-users.csv' is the
 -- file next to it wherever dqlrs was started. Any other relative path is
--- relative to the workspace (the folder dqlrs --web was started in, or --dir).
+-- relative to the workspace (the folder dqlrs web was started in, or --dir).
 
 DROP LOCALTABLE IF EXISTS sample_local_users;
 DROP LOCALTABLE IF EXISTS sample_local_cities;

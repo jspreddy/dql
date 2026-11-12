@@ -145,11 +145,14 @@ fn smoke_load_tables_requires_web() {
     let output = run_raw(&["--load-tables"]);
     assert!(
         !output.status.success(),
-        "dqlrs --load-tables should fail without --web\n{}",
+        "dqlrs --load-tables should fail without `dqlrs web`\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("--load-tables requires --web"), "{stderr}");
+    assert!(
+        stderr.contains("--load-tables requires `dqlrs web`"),
+        "{stderr}"
+    );
 }
 
 #[test]

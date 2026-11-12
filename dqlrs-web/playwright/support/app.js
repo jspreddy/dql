@@ -121,7 +121,7 @@ export const test = base.extend({
     const chunks = [];
     const child = spawn(
       binary,
-      ["--web", "--dir", workspace, "--listen", `127.0.0.1:${port}`, "-H", "localhost", "-p", "8000", "-r", "us-west-1"],
+      ["web", "--dir", workspace, "--listen", `127.0.0.1:${port}`, "-H", "localhost", "-p", "8000", "-r", "us-west-1"],
       {
         cwd,
         env: {
