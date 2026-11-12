@@ -109,7 +109,7 @@ mindmap
       REPL
       -c
       --serve
-      --web
+      web
       notebook
       </pre>
     </figure>
@@ -192,7 +192,7 @@ flowchart LR
   buildRs --> exampleNb
   buildRs --> binary
       </pre>
-      <p>At runtime <code>--web</code> prefers a checkout of <code>dqlrs-web/static</code> when that directory is present, and otherwise serves the embedded copy. The notebook files are unpacked on first <code>dqlrs notebook</code>, not on every query.</p>
+      <p>At runtime <code>dqlrs web</code> prefers a checkout of <code>dqlrs-web/static</code> when that directory is present, and otherwise serves the embedded copy. The notebook files are unpacked on first <code>dqlrs notebook</code>, not on every query.</p>
     </figure>
 
     <figure id="installed" class="call-graph">
@@ -221,7 +221,7 @@ flowchart LR
     <figure id="runs" class="call-graph">
       <figcaption>
         <h2>Runs</h2>
-        <p><code>run</code> looks at argv before clap so notebook flags never share a parser with <code>--web</code> or <code>--serve</code>.</p>
+        <p><code>run</code> looks at argv before clap so notebook flags never share a parser with <code>dqlrs web</code> or <code>--serve</code>.</p>
       </figcaption>
       <pre class="mermaid">
 flowchart LR
@@ -244,7 +244,7 @@ flowchart LR
   command --> session
   repl --> session
       </pre>
-      <p>Notebook returns before <code>CliArgs</code> is parsed. <code>--web</code> and <code>--serve</code> use <code>Session::new_for_serve</code> and skip history. <code>-c</code> and the REPL use <code>Session::new</code>. <code>--bind</code> is only valid with <code>--serve</code>; <code>--listen</code> and <code>--dir</code> are only valid with <code>--web</code>.</p>
+      <p>Notebook returns before <code>CliArgs</code> is parsed. <code>dqlrs web</code> and <code>--serve</code> use <code>Session::new_for_serve</code> and skip history. <code>-c</code> and the REPL use <code>Session::new</code>. <code>--bind</code> is only valid with <code>--serve</code>; <code>--listen</code> and <code>--dir</code> are only valid with <code>dqlrs web</code>.</p>
     </figure>
 
     <figure id="web" class="call-graph">
@@ -322,7 +322,7 @@ flowchart LR
   engine --> envelope
   engine --> ndjson
       </pre>
-      <p>The REPL and <code>-c</code> render through <code>dql-output</code>. <code>--serve</code> returns a JSON envelope, which is what the notebook displays. <code>--web</code> streams NDJSON. With no <code>-H</code> and <code>DQL_BACKEND=memory</code>, the engine uses an in-memory backend; <code>-H</code> selects DynamoDB Local, and the default credentials path selects AWS.</p>
+      <p>The REPL and <code>-c</code> render through <code>dql-output</code>. <code>--serve</code> returns a JSON envelope, which is what the notebook displays. <code>dqlrs web</code> streams NDJSON. With no <code>-H</code> and <code>DQL_BACKEND=memory</code>, the engine uses an in-memory backend; <code>-H</code> selects DynamoDB Local, and the default credentials path selects AWS.</p>
     </figure>
   </main>
   <script type="module">

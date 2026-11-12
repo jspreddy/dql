@@ -140,7 +140,7 @@ pub const LOAD: &str = r"
     Formats: .json / .csv / .msgpack (optional .gz). Pickle (.p) is not supported.
 
     A relative path that starts with ./ is relative to the folder of the
-    .dql file being run in dqlrs --web. Other relative paths are relative to
+    .dql file being run in dqlrs web. Other relative paths are relative to
     the --dir workspace there, and to the current directory elsewhere.
 
     Examples
@@ -334,7 +334,14 @@ pub const SHOW: &str = r"
 
     SHOW TABLES;
     SHOW TABLES LIKE 'pattern';
+    ST;
+    ST LIKE 'pattern';
+    ST 'pattern';
+    ST name;
 
+    ST is short for SHOW TABLES and works the same way.
+    ST 'pattern' is ST LIKE 'pattern'. A bare name lists the tables whose names
+    contain it, so ST post is SHOW TABLES LIKE '%post%'.
     SHOW TABLES prints the same list as `ls`: name, items, read, write, status,
     and size. LIKE is case-sensitive. % matches any sequence. _ matches one
     character.
@@ -356,6 +363,9 @@ pub const SHOW: &str = r"
     SHOW TABLES LIKE 'alpha%';
     SHOW TABLES LIKE 'foo_bar';
     SHOW TABLES LIKE 'post';
+    ST LIKE 'alpha%';
+    ST 'foo_bar';
+    ST post;
 ";
 
 pub const HISTORY: &str = r#"

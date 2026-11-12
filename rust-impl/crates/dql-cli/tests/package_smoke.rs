@@ -7,6 +7,14 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Working directory for the dqlrs under test. dqlrs keeps its cache in
+/// `<working directory>/.dqlrs-cache`; running it here keeps that out of the crate folder.
+fn workdir() -> &'static std::path::Path {
+    static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| tempfile::tempdir().expect("test working directory"))
+        .path()
+}
+
 static TABLE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn dql_bin() -> PathBuf {
@@ -22,6 +30,7 @@ fn dql_bin() -> PathBuf {
 
 fn run(args: &[&str]) -> std::process::Output {
     Command::new(dql_bin())
+        .current_dir(workdir())
         .args(args)
         .env("DQL_BACKEND", "memory")
         .output()
@@ -30,6 +39,7 @@ fn run(args: &[&str]) -> std::process::Output {
 
 fn run_raw(args: &[&str]) -> std::process::Output {
     Command::new(dql_bin())
+        .current_dir(workdir())
         .args(args)
         .env_remove("DQL_BACKEND")
         .output()
@@ -135,11 +145,14 @@ fn smoke_load_tables_requires_web() {
     let output = run_raw(&["--load-tables"]);
     assert!(
         !output.status.success(),
-        "dqlrs --load-tables should fail without --web\n{}",
+        "dqlrs --load-tables should fail without `dqlrs web`\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("--load-tables requires --web"), "{stderr}");
+    assert!(
+        stderr.contains("--load-tables requires `dqlrs web`"),
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -268,6 +281,7 @@ fn smoke_dynamodb_local_serve_stdio() {
     let port = std::env::var("DQL_LOCAL_PORT").unwrap_or_else(|_| "8000".to_string());
     let table = unique_table("pkg_local_serve");
     let mut child = Command::new(dql_bin())
+        .current_dir(workdir())
         .args(["--serve", "-H", &host, "-p", &port])
         .env_remove("DQL_BACKEND")
         .stdin(Stdio::piped())
@@ -331,6 +345,7 @@ fn smoke_dynamodb_local_drop_if_exists_missing() {
     let port = std::env::var("DQL_LOCAL_PORT").unwrap_or_else(|_| "8000".to_string());
     let table = unique_table("pkg_drop_if");
     let mut child = Command::new(dql_bin())
+        .current_dir(workdir())
         .args(["--serve", "-H", &host, "-p", &port])
         .env_remove("DQL_BACKEND")
         .stdin(Stdio::piped())

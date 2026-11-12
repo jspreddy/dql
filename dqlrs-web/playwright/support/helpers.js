@@ -34,6 +34,31 @@ export async function dragAndDrop(page, source, target) {
   }
 }
 
+// "Run file" and "Run folder" in the tree menu open the run dialog. Confirm, wait for the
+// run to finish, and close the dialog.
+export async function runFromDialog(page) {
+  const dialog = page.locator("#run-pop");
+  await expect(dialog).toBeVisible();
+  await page.locator("#run-pop-start").click();
+  await expect(page.locator("#run-pop-cancel")).toHaveText("Close");
+  await page.locator("#run-pop-cancel").click();
+  await expect(dialog).toBeHidden();
+}
+
+// The box of an editor line. CodeMirror replaces line elements when decorations change (lint
+// marks and saved results land shortly after a file opens), and boundingBox() returns null
+// for a line that is detached while it is measured. Wait for the line and measure again.
+export async function lineBox(page, text) {
+  const line = page.locator(".cm-line", { hasText: text });
+  await expect(line).toBeVisible();
+  let box = null;
+  await expect.poll(async () => {
+    box = await line.boundingBox();
+    return box !== null;
+  }).toBe(true);
+  return box;
+}
+
 export async function reveal(page, filePath) {
   const parts = String(filePath).split("/");
   for (let i = 0; i < parts.length - 1; i += 1) {

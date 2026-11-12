@@ -4,6 +4,14 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+/// Working directory for the dqlrs under test. dqlrs keeps its cache in
+/// `<working directory>/.dqlrs-cache`; running it here keeps that out of the crate folder.
+fn workdir() -> &'static std::path::Path {
+    static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| tempfile::tempdir().expect("test working directory"))
+        .path()
+}
+
 fn dql_bin() -> PathBuf {
     if let Some(path) = std::env::var_os("CARGO_BIN_EXE_dqlrs") {
         return PathBuf::from(path);
@@ -29,6 +37,7 @@ fn read_envelope(stdout: &mut BufReader<impl std::io::Read>) -> serde_json::Valu
 #[test]
 fn stdio_ping_exec_shutdown() {
     let mut child = Command::new(dql_bin())
+        .current_dir(workdir())
         .args(["--serve"])
         .env("DQL_BACKEND", "memory")
         .stdin(Stdio::piped())

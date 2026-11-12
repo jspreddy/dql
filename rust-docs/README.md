@@ -62,9 +62,13 @@ Config and history paths: `~/.config/dql.json` and `~/.dql/history`.
 You can use `$HOME/.aws/credentials` or `AWS_ACCESS_KEY_ID` /
 `AWS_SECRET_ACCESS_KEY`.
 
-## Flags
+## Usage and flags
 
 ```text
+dqlrs [options]          Start the REPL (or run -c)
+dqlrs web [options]      Serve the query editor and table browser
+dqlrs notebook           Start JupyterLab with a DQL (Rust) kernel (this binary)
+
 -c, --command <command>  Run this command and exit
 -r, --region <region>    AWS region
 -H, --host <host>        Local DynamoDB host
@@ -72,10 +76,10 @@ You can use `$HOME/.aws/credentials` or `AWS_ACCESS_KEY_ID` /
     --json               With -c, print results as JSON
     --serve              Headless JSON-lines worker (stdio, or --bind on loopback)
     --bind <ADDR>        With --serve, listen on loopback HOST:PORT (or PORT as 127.0.0.1:PORT)
-    --web                Serve the query editor and table browser
-    --listen <ADDR>      With --web, listen on loopback HOST:PORT (default 127.0.0.1:8765)
-    --dir <DIR>          With --web, folder of .dql files (default: current directory)
-    notebook             Start JupyterLab with a DQL (Rust) kernel (this binary)
+    --mcp                MCP tools. Alone, stdio. With web, HTTP at /mcp
+    --listen <ADDR>      With web, listen on loopback HOST:PORT (default 127.0.0.1:8765)
+    --dir <DIR>          With web or --mcp, folder of .dql files (default: current directory)
+    --load-tables        With web, load every table and its definition in the background
     --version            Print the version and exit
     -h, --help           Print help
 ```
@@ -93,15 +97,15 @@ In the REPL, type `help` or `help <statement>`. Meta-commands include `opt`,
 Output formats (via `opt format`): `smart`, `column`, `expanded`, `json`,
 `rich`. Non-TUI paths can page with `opt display less`.
 
-## Web UI (`--web`)
+## Web UI (`dqlrs web`)
 
-`dqlrs --web` serves the query editor and table browser on `127.0.0.1:8765`.
+`dqlrs web` serves the query editor and table browser on `127.0.0.1:8765`.
 The server runs inside this binary. Browser assets are bundled with it.
 `-H` and `-p` still choose DynamoDB Local; omit `-H` to use AWS.
 
 ```bash
-dqlrs --web -H localhost -p 8000
-dqlrs --web --listen 127.0.0.1:9000 --dir ~/queries
+dqlrs web -H localhost -p 8000
+dqlrs web --listen 127.0.0.1:9000 --dir ~/queries
 ```
 
 From a checkout, `just web` builds `dqlrs`, starts DynamoDB Local when port 8000

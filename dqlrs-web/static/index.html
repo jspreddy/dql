@@ -70,8 +70,16 @@
         <span class="settings-label">Table cache</span>
         <span id="settings-cache-age" class="settings-cache-age">not cached</span>
       </div>
-      <button type="button" id="clear-table-cache">Clear table cache</button>
+      <button type="button" id="clear-table-cache" class="settings-clear">Clear table cache</button>
       <p id="cache-clear-note" class="settings-note" hidden></p>
+      <hr class="settings-rule" />
+      <span class="settings-label">Local tables</span>
+      <button type="button" id="clear-local-tables" class="settings-clear">Clear local tables</button>
+      <p id="local-tables-clear-note" class="settings-note" hidden></p>
+      <hr class="settings-rule" />
+      <span class="settings-label">Result cache</span>
+      <button type="button" id="clear-result-cache" class="settings-clear">Clear result cache</button>
+      <p id="result-cache-clear-note" class="settings-note" hidden></p>
       <hr class="settings-rule" />
       <span class="settings-label" id="settings-keys-label">Keyboard</span>
       <div class="settings-keys" role="list" aria-labelledby="settings-keys-label">
@@ -263,6 +271,32 @@
       <p id="schema-pop-foot" class="schema-pop-foot"></p>
     </div>
   </dialog>
+  <dialog id="run-pop" aria-labelledby="run-pop-title">
+    <div class="schema-pop-card">
+      <header class="schema-pop-head">
+        <div class="schema-pop-heading">
+          <div class="schema-pop-kicker-row">
+            <span id="run-pop-kicker" class="schema-pop-kicker">Run files</span>
+          </div>
+          <div class="schema-pop-title-row">
+            <h2 id="run-pop-title">Run</h2>
+          </div>
+          <p id="run-pop-summary" class="schema-pop-summary"></p>
+        </div>
+        <button type="button" id="run-pop-close" class="schema-pop-close" data-tip="Close" aria-label="Close run">
+          <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
+        </button>
+      </header>
+      <div id="run-pop-totals" class="run-pop-totals" hidden></div>
+      <div id="run-pop-body" class="run-pop-body"></div>
+      <footer class="run-pop-foot">
+        <span id="run-pop-status" class="run-pop-status"></span>
+        <button type="button" id="run-pop-cancel">Cancel</button>
+        <button type="button" id="run-pop-stop" class="danger" hidden>Stop</button>
+        <button type="button" id="run-pop-start" class="primary">Run</button>
+      </footer>
+    </div>
+  </dialog>
   <dialog id="row-pop" aria-labelledby="row-pop-title">
     <div class="row-pop-card">
       <header class="row-pop-head">
@@ -305,27 +339,6 @@
       <p id="server-pop-status" class="server-pop-status"></p>
       <button type="button" id="server-retry">Retry</button>
     </div>
-  </dialog>
-  <dialog id="confirm-pop" aria-labelledby="confirm-pop-title" aria-describedby="confirm-pop-message">
-    <div class="confirm-pop-card">
-      <h2 id="confirm-pop-title">Confirm</h2>
-      <p id="confirm-pop-path" class="confirm-pop-path" hidden></p>
-      <p id="confirm-pop-message"></p>
-      <div class="confirm-pop-actions">
-        <button type="button" id="confirm-cancel">Cancel</button>
-        <button type="button" id="confirm-ok">OK</button>
-      </div>
-    </div>
-  </dialog>
-  <dialog id="prompt-pop" aria-labelledby="prompt-pop-title">
-    <form class="prompt-pop-card" id="prompt-pop-form">
-      <h2 id="prompt-pop-title">Name</h2>
-      <input id="prompt-pop-input" type="text" autocomplete="off" spellcheck="false">
-      <div class="prompt-pop-actions">
-        <button type="button" id="prompt-cancel">Cancel</button>
-        <button type="submit" id="prompt-ok">OK</button>
-      </div>
-    </form>
   </dialog>
   <dialog id="mermaid-screen" aria-label="Diagram full screen">
     <div class="mermaid-screen-bar">

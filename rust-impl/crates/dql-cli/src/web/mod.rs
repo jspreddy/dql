@@ -1,4 +1,4 @@
-//! Local web UI served by `dqlrs --web`.
+//! Local web UI served by `dqlrs web`.
 //!
 //! Browser assets live in `dqlrs-web/static` and are compiled into the binary.
 //! A checkout of that directory is preferred at runtime so UI edits show up

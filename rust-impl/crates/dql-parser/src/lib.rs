@@ -659,6 +659,8 @@ impl<'a> Parser<'a> {
             self.parse_load()
         } else if self.accept_keyword("SHOW") {
             self.parse_show()
+        } else if self.accept_keyword("ST") {
+            self.parse_st()
         } else if self.accept_keyword("DESCRIBE") {
             self.parse_describe()
         } else if self.accept_keyword("LS") {
@@ -1370,10 +1372,36 @@ impl<'a> Parser<'a> {
 
     fn parse_show(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword("TABLES")?;
+        self.parse_show_tables_like()
+    }
+
+    /// The rest of `SHOW TABLES` (or `ST`): an optional `LIKE 'pattern'`.
+    fn parse_show_tables_like(&mut self) -> Result<Statement, ParseError> {
         let like = if self.accept_keyword("LIKE") {
             Some(self.expect_string()?)
         } else {
             None
+        };
+        Ok(Statement::ShowTables { like })
+    }
+
+    /// `ST` is short for `SHOW TABLES`. `ST LIKE 'p'` and `ST 'p'` use the pattern as written;
+    /// a bare name, `ST posts`, lists the tables whose names contain it (`LIKE '%posts%'`).
+    fn parse_st(&mut self) -> Result<Statement, ParseError> {
+        if self.accept_keyword("LIKE") {
+            let like = self.expect_string()?;
+            return Ok(Statement::ShowTables { like: Some(like) });
+        }
+        let like = match self.peek().cloned() {
+            Some(Token::String(pattern)) => {
+                self.pos += 1;
+                Some(pattern)
+            }
+            Some(Token::Ident(name)) => {
+                self.pos += 1;
+                Some(format!("%{name}%"))
+            }
+            _ => None,
         };
         Ok(Statement::ShowTables { like })
     }
@@ -2565,6 +2593,60 @@ mod tests {
         );
         assert!(parse_statement("SHOW TABLES LIKE").is_err());
         assert!(parse_statement("SHOW TABLE t").is_err());
+    }
+
+    #[test]
+    fn st_is_show_tables() {
+        assert_eq!(
+            parse_statement("ST").unwrap(),
+            parse_statement("SHOW TABLES").unwrap()
+        );
+        assert_eq!(
+            parse_statement("st;").unwrap(),
+            Statement::ShowTables { like: None }
+        );
+        assert_eq!(
+            parse_statement("ST LIKE 'alpha%';").unwrap(),
+            Statement::ShowTables {
+                like: Some("alpha%".to_string())
+            }
+        );
+        assert_eq!(
+            parse_statement("st like 'a_c'").unwrap(),
+            parse_statement("SHOW TABLES LIKE 'a_c'").unwrap()
+        );
+        assert!(parse_statement("ST LIKE").is_err());
+    }
+
+    #[test]
+    fn st_takes_a_quoted_or_bare_pattern() {
+        let like = |pattern: &str| Statement::ShowTables {
+            like: Some(pattern.to_string()),
+        };
+        // A quoted pattern is used as written, wildcards and all.
+        assert_eq!(parse_statement("ST 'po%ts';").unwrap(), like("po%ts"));
+        assert_eq!(
+            parse_statement("st 'alpha%'").unwrap(),
+            parse_statement("SHOW TABLES LIKE 'alpha%'").unwrap()
+        );
+        // A bare name means names that contain it, which includes the name itself.
+        assert_eq!(parse_statement("st post").unwrap(), like("%post%"));
+        assert_eq!(
+            parse_statement("st post").unwrap(),
+            parse_statement("show tables like '%post%'").unwrap()
+        );
+        assert_eq!(
+            parse_statement("ST order-items.v2;").unwrap(),
+            like("%order-items.v2%")
+        );
+        assert_eq!(parse_statement("st TABLES").unwrap(), like("%TABLES%"));
+        // Only one pattern.
+        assert!(parse_statement("st posts comments").is_err());
+        assert!(parse_statement("st 'a' 'b'").is_err());
+        assert!(parse_statement("st posts%").is_err());
+        // SHOW TABLES itself still needs LIKE.
+        assert!(parse_statement("SHOW TABLES 'posts'").is_err());
+        assert!(parse_statement("SHOW TABLES posts").is_err());
     }
 
     #[test]

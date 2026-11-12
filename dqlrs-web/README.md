@@ -3,8 +3,8 @@
 A compact local UI for `.dql` files. On Query, the left side is the folder tree of the directory you start in. Right-click a file or folder there to create, duplicate, rename, move, or delete it. Drag an entry onto a folder to move it, or double-click its name to rename it. The top bar switches between a query editor and a table browser. On Tables, that same nav lists tables.
 
 ```bash
-dqlrs --web
-dqlrs --web -H localhost -p 8000 --dir /path/to/queries
+dqlrs web
+dqlrs web -H localhost -p 8000 --dir /path/to/queries
 just web
 ```
 

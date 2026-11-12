@@ -15,6 +15,7 @@ pub mod session;
 pub mod table_cache;
 pub mod throttle;
 pub mod web;
+pub mod workspace_cache;
 
 use args::{help_text, CliArgs};
 use clap::Parser;
@@ -42,7 +43,6 @@ const KNOWN_FLAGS: &[&str] = &[
     "--json",
     "--serve",
     "--bind",
-    "--web",
     "--mcp",
     "--listen",
     "--dir",
@@ -53,12 +53,16 @@ const KNOWN_FLAGS: &[&str] = &[
 ];
 
 pub fn run() -> color_eyre::Result<()> {
-    let argv: Vec<String> = std::env::args().collect();
+    let mut argv: Vec<String> = std::env::args().collect();
     if notebook::is_notebook_invocation(&argv) {
         return notebook::run(&argv);
     }
+    let web = args::take_web_subcommand(&mut argv);
     let mut args_iter = argv.iter().skip(1);
     while let Some(arg) = args_iter.next() {
+        if arg == "--web" {
+            bail!("--web is now a subcommand: run `dqlrs web` (with the same options)");
+        }
         if arg.starts_with('-') {
             if !KNOWN_FLAGS.contains(&arg.as_str()) {
                 eprintln!("unknown argument '{arg}'\n\n{}", help_text());
@@ -82,7 +86,8 @@ pub fn run() -> color_eyre::Result<()> {
         }
     }
 
-    let args = CliArgs::try_parse_from(&argv).wrap_err("failed to parse CLI arguments")?;
+    let mut args = CliArgs::try_parse_from(&argv).wrap_err("failed to parse CLI arguments")?;
+    args.web = web;
 
     if args.help {
         let mut stderr = io::stderr();
@@ -99,22 +104,22 @@ pub fn run() -> color_eyre::Result<()> {
         bail!("--bind requires --serve");
     }
     if args.listen.is_some() && !args.web {
-        bail!("--listen requires --web");
+        bail!("--listen requires `dqlrs web`");
     }
     if args.dir.is_some() && !args.web && !args.mcp {
-        bail!("--dir requires --web or --mcp");
+        bail!("--dir requires `dqlrs web` or --mcp");
     }
     if args.load_tables && !args.web {
-        bail!("--load-tables requires --web");
+        bail!("--load-tables requires `dqlrs web`");
     }
     if args.serve && args.command.is_some() {
         bail!("--serve cannot be used with -c/--command");
     }
     if args.web && args.serve {
-        bail!("--web cannot be used with --serve");
+        bail!("`dqlrs web` cannot be used with --serve");
     }
     if args.web && args.command.is_some() {
-        bail!("--web cannot be used with -c/--command");
+        bail!("`dqlrs web` cannot be used with -c/--command");
     }
     if args.mcp && (args.serve || args.command.is_some()) {
         bail!("--mcp cannot be used with --serve or -c/--command");
@@ -135,21 +140,17 @@ pub fn run() -> color_eyre::Result<()> {
                 .parse()
                 .expect("default web listen address"),
         };
-        let dir = match args.dir.clone() {
-            Some(dir) => std::path::PathBuf::from(dir),
-            None => std::env::current_dir().wrap_err("current directory")?,
-        };
+        // The workspace is --dir or the current directory; Session resolves it once.
         let session = Session::new_for_serve(&args).wrap_err("failed to start session")?;
+        let dir = session.workspace.clone();
         web::run(session, dir, listen, args.mcp, args.load_tables)?;
         return Ok(());
     }
 
     if args.mcp {
-        let dir = match args.dir.clone() {
-            Some(dir) => std::path::PathBuf::from(dir),
-            None => std::env::current_dir().wrap_err("current directory")?,
-        };
+        // The workspace is --dir or the current directory; Session resolves it once.
         let session = Session::new_for_serve(&args).wrap_err("failed to start session")?;
+        let dir = session.workspace.clone();
         mcp::run(session, dir)?;
         return Ok(());
     }

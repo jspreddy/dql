@@ -85,7 +85,7 @@ const GROUPS: &[HelpGroup] = &[
             },
             HelpCommand {
                 name: "show",
-                summary: "List table names, optionally with a LIKE pattern",
+                summary: "List table names, optionally with a LIKE pattern (short: st)",
             },
             HelpCommand {
                 name: "update",
@@ -193,6 +193,7 @@ const CODE_START: &[&str] = &[
     "explain",
     "analyze",
     "show",
+    "st",
     "describe",
     "help",
     "from",
@@ -248,7 +249,7 @@ pub fn topic_help(topic: &str) -> Option<&'static str> {
         "load" => Some(LOAD),
         "scan" => Some(SCAN),
         "select" => Some(SELECT),
-        "show" => Some(SHOW),
+        "show" | "st" => Some(SHOW),
         "update" => Some(UPDATE),
         "opt" | "options" => Some(OPTIONS),
         "help" => Some(HELP),
@@ -650,6 +651,7 @@ fn is_highlight_keyword(word: &str) -> bool {
         "ANALYZE",
         "SAVE",
         "SHOW",
+        "ST",
         "LIKE",
         "DESCRIBE",
         "HELP",

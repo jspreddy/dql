@@ -2,26 +2,38 @@ import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
-import { lineByText, lineOverlaps, mod, node, openApp, openResultPane, pressMod, replaceEditor, reveal, themeColor } from "../support/helpers.js";
+import { lineBox, lineByText, lineOverlaps, mod, node, openApp, openResultPane, pressMod, replaceEditor, reveal, runFromDialog, themeColor } from "../support/helpers.js";
 
 // dragTo jumps in one move. Chrome sometimes delivers that move after mouseup,
 // so the gesture collapses to a cursor. Step the pointer while the button is down.
 async function dragAcrossLines(page, fromText, toText) {
-  const from = await page.locator(".cm-line", { hasText: fromText }).boundingBox();
-  const to = await page.locator(".cm-line", { hasText: toText }).boundingBox();
+  const from = await lineBox(page, fromText);
+  const to = await lineBox(page, toText);
   await page.mouse.move(from.x + 28, from.y + 8);
   await page.mouse.down();
   await page.mouse.move(to.x + 28, to.y + 8, { steps: 8 });
   await page.mouse.up();
 }
 
-function cachedResults(workspace) {
-  const root = path.join(workspace, ".dqlrs-web-cache");
+// Results live in <workspace>/.dqlrs-cache/<connection>/results/<file>/query_result_<ms>.json.
+function resultFolders(workspace) {
+  const root = path.join(workspace, ".dqlrs-cache");
   if (!fs.existsSync(root)) return [];
+  const folders = [];
+  for (const connection of fs.readdirSync(root)) {
+    const results = path.join(root, connection, "results");
+    if (!fs.existsSync(results)) continue;
+    for (const dir of fs.readdirSync(results)) {
+      const folder = path.join(results, dir);
+      if (fs.statSync(folder).isDirectory()) folders.push(folder);
+    }
+  }
+  return folders;
+}
+
+function cachedResults(workspace) {
   const files = [];
-  for (const dir of fs.readdirSync(root)) {
-    const folder = path.join(root, dir);
-    if (!fs.statSync(folder).isDirectory()) continue;
+  for (const folder of resultFolders(workspace)) {
     for (const name of fs.readdirSync(folder)) {
       const stamp = /^query_result_(\d+)\.json$/.exec(name);
       if (!stamp) continue;
@@ -298,8 +310,7 @@ test("colors SELECT and outlines the current query without covering the next one
 
 test("frames a partial line selection as a whole line and highlights the text", async ({ page }) => {
   await node(page, "queries/read.dql").click();
-  const line = page.locator(".cm-line", { hasText: "SELECT * FROM pw_missing_table" });
-  const box = await line.boundingBox();
+  const box = await lineBox(page, "SELECT * FROM pw_missing_table");
   await page.mouse.move(box.x + 14, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + 52, box.y + box.height / 2, { steps: 4 });
@@ -541,6 +552,7 @@ test("runs every dql file in a folder from the context menu", async ({ page, app
   await expect(page.locator("#menu-clear-results")).toBeVisible();
   await expect(page.locator("#menu-clear-cache")).toHaveCount(0);
   await page.locator("#menu-run-folder").click();
+  await runFromDialog(page);
   await expect(page.locator("#run")).toBeEnabled();
   await expect(page.locator("#result-body")).not.toContainText("should_not_run");
   await node(page, `${folder}/one.dql`).click();
@@ -578,6 +590,7 @@ test("clears stored results for each file under a right-clicked folder", async (
   await expect(page.locator("#menu-clear-results")).toBeVisible();
   await expect(page.locator("#menu-clear-cache")).toHaveCount(0);
   await page.locator("#menu-run-folder").click();
+  await runFromDialog(page);
 
   const results = () => cachedResults(app.workspace);
   await expect.poll(() => results().length).toBe(3);
@@ -585,8 +598,8 @@ test("clears stored results for each file under a right-clicked folder", async (
     expectSealed(file, [one, two, kept, "CREATE"]);
   }
   expect(fs.existsSync(path.join(app.workspace, ".cache"))).toBe(false);
-  expect(fs.existsSync(path.join(app.workspace, ".dqlrs-web-cache"))).toBe(true);
-  expect(fs.statSync(path.join(app.workspace, ".dqlrs-web-cache")).mode & 0o777).toBe(0o700);
+  expect(fs.existsSync(path.join(app.workspace, ".dqlrs-web-cache"))).toBe(false);
+  expect(fs.statSync(path.join(app.workspace, ".dqlrs-cache")).mode & 0o777).toBe(0o700);
 
   await node(page, folder).click({ button: "right" });
   await expect(page.locator("#menu-clear-results")).toBeVisible();
@@ -684,7 +697,7 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   for (const file of cached) {
     expectSealed(file, [name, "alpha", "INSERT", "DROP"]);
   }
-  expect(fs.statSync(path.join(app.workspace, ".dqlrs-web-cache")).mode & 0o777).toBe(0o700);
+  expect(fs.statSync(path.join(app.workspace, ".dqlrs-cache")).mode & 0o777).toBe(0o700);
 
   await page.locator("#clear-results").click();
   await expect(page.locator(".query-result")).toHaveCount(0);

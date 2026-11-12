@@ -44,7 +44,7 @@ cargo install --path crates/dql-cli --locked --root ~/.local
 ## Verification
 
 [`VERIFICATION.md`](VERIFICATION.md). From the repo root,
-[`just`](https://just.systems/) lists tasks; `just verify` runs the full check.
+[`just`](https://just.systems/) lists tasks; `just verify` runs the full check. `just changelog` regenerates [CHANGELOG.md](CHANGELOG.md) from the merges into `v-rust` (see the `changelog` skill).
 
 Notebook from a checkout: `./notebook/start.sh --local --start-local`.
 Details: [`notebook/README.md`](notebook/README.md).

@@ -13,5 +13,5 @@ __pycache__/
 /dist/
 /build/
 .cache/
-.dqlrs-web-cache/
+.dqlrs-cache/
 /.playwright-artifacts/

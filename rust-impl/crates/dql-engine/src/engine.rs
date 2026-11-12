@@ -840,6 +840,23 @@ impl<B: DynamoBackend> Engine<B> {
         Ok(columns)
     }
 
+    /// Forget every local table definition and save the empty list. The files stay on disk.
+    /// Temp tables are not touched. Returns the names that were dropped, sorted.
+    pub fn clear_local_tables(&mut self) -> Result<Vec<String>, EngineError> {
+        let names: Vec<String> = self
+            .virtual_tables
+            .names()
+            .into_iter()
+            .filter(|name| self.virtual_tables.kind(name) == Some(TableKind::Local))
+            .collect();
+        for name in &names {
+            self.virtual_tables
+                .drop_kind(name, TableKind::Local, true)?;
+        }
+        self.persist_locals();
+        Ok(names)
+    }
+
     fn drop_virtual(
         &mut self,
         if_exists: bool,

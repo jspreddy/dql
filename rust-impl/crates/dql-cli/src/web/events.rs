@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender, TrySendError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex, Weak};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -123,28 +123,44 @@ fn publish(inner: &mut Inner, frame: String) {
 }
 
 /// Watch `app.root` until the server is dropped.
+///
+/// Returns after the watch is installed. A change that happens before that
+/// is not delivered, so the server waits here before it accepts clients.
 pub(crate) fn start(app: &Arc<App>) {
     let weak = Arc::downgrade(app);
     let root = app.root.clone();
-    thread::spawn(move || {
-        if let Err(err) = watch(weak, root) {
-            eprintln!("dqlrs: workspace watch: {err}");
-        }
-    });
+    let (ready_tx, ready_rx) = mpsc::channel();
+    thread::spawn(move || watch(weak, root, ready_tx));
+    if let Err(err) = ready_rx
+        .recv()
+        .unwrap_or_else(|_| Err("stopped before it started".to_string()))
+    {
+        eprintln!("dqlrs: workspace watch: {err}");
+    }
 }
 
-fn watch(app: Weak<App>, root: PathBuf) -> notify::Result<()> {
+fn watch(app: Weak<App>, root: PathBuf, ready: Sender<Result<(), String>>) {
     let root = root.canonicalize().unwrap_or(root);
     let (tx, rx) = mpsc::channel();
-    let mut watcher = RecommendedWatcher::new(
+    let mut watcher = match RecommendedWatcher::new(
         move |result: notify::Result<Event>| {
             if let Ok(event) = result {
                 let _ = tx.send(event);
             }
         },
         notify::Config::default(),
-    )?;
-    watcher.watch(&root, RecursiveMode::Recursive)?;
+    ) {
+        Ok(watcher) => watcher,
+        Err(err) => {
+            let _ = ready.send(Err(err.to_string()));
+            return;
+        }
+    };
+    if let Err(err) = watcher.watch(&root, RecursiveMode::Recursive) {
+        let _ = ready.send(Err(err.to_string()));
+        return;
+    }
+    let _ = ready.send(Ok(()));
     loop {
         if app.upgrade().is_none() {
             break;
@@ -166,7 +182,6 @@ fn watch(app: Weak<App>, root: PathBuf) -> notify::Result<()> {
             Err(RecvTimeoutError::Disconnected) => break,
         }
     }
-    Ok(())
 }
 
 fn apply(app: &App, root: &Path, events: &[Event]) {

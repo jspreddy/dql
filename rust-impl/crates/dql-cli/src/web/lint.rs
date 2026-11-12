@@ -587,6 +587,8 @@ mod tests {
             history: HistoryManager::new(),
             throttle: TableLimits::default(),
             table_disk: None,
+            workspace: std::env::temp_dir(),
+            connection_key: "memory|us-west-1".to_string(),
         }
     }
 

@@ -19,7 +19,7 @@ const groups = {
     "IF", "NOT", "EXISTS", "INCLUDE", "ALL", "SCHEMA",
     "AND", "OR", "BETWEEN",
     "NONE", "UPDATED", "OLD", "NEW",
-    "LS", "OPT", "OPTIONS", "HELP", "USE", "WATCH",
+    "LS", "ST", "OPT", "OPTIONS", "HELP", "USE", "WATCH",
   ],
   /* DROP and DELETE are destructive, so they render red rather than teal. */
   deleted: ["DROP", "DELETE"],

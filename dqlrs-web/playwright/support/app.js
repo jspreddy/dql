@@ -30,12 +30,13 @@ function dqlrsBinary() {
   return candidates.find((candidate) => fs.existsSync(candidate)) || "";
 }
 
-function dropTable(binary, name) {
-  if (!binary) return;
-  const result = spawnSync(
-    binary,
-    ["-c", `DROP TABLE IF EXISTS ${name}`, "-H", "localhost", "-p", "8000"],
-    {
+// Run one command with `dqlrs -c` against DynamoDB Local, outside the web server.
+function runCommand(binary, command) {
+  // dqlrs keeps its cache in <working directory>/.dqlrs-cache, so run it in a throwaway folder.
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-cmd-"));
+  try {
+    return spawnSync(binary, ["-c", command, "-H", "localhost", "-p", "8000"], {
+      cwd,
       encoding: "utf8",
       timeout: 20_000,
       env: {
@@ -44,10 +45,16 @@ function dropTable(binary, name) {
         AWS_SECRET_ACCESS_KEY: "fakekey",
         AWS_REGION: "us-west-1",
         AWS_EC2_METADATA_DISABLED: "true",
-        DQLRS_TABLE_CACHE: fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-table-cache-")),
       },
-    },
-  );
+    });
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+function dropTable(binary, name) {
+  if (!binary) return;
+  const result = runCommand(binary, `DROP TABLE IF EXISTS ${name}`);
   if (result.status !== 0) {
     console.warn(`DROP ${name} failed`, result.stderr || result.stdout || result.error);
   }
@@ -107,7 +114,8 @@ export const test = base.extend({
     await use();
   }, { auto: true }],
   app: async ({ isolateCwd }, use) => {
-    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-web-"));
+    // The server reports paths under its canonical root, and macOS links /var to /private/var.
+    const workspace = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-web-")));
     fs.cpSync(fixtureRoot, workspace, { recursive: true });
     const cwd = isolateCwd ? fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-web-cwd-")) : webRoot;
     const port = await freePort();
@@ -118,7 +126,7 @@ export const test = base.extend({
     const chunks = [];
     const child = spawn(
       binary,
-      ["--web", "--dir", workspace, "--listen", `127.0.0.1:${port}`, "-H", "localhost", "-p", "8000", "-r", "us-west-1"],
+      ["web", "--dir", workspace, "--listen", `127.0.0.1:${port}`, "-H", "localhost", "-p", "8000", "-r", "us-west-1"],
       {
         cwd,
         env: {
@@ -127,7 +135,6 @@ export const test = base.extend({
           AWS_SECRET_ACCESS_KEY: "fakekey",
           AWS_REGION: "us-west-1",
           AWS_EC2_METADATA_DISABLED: "true",
-          DQLRS_TABLE_CACHE: fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-table-cache-")),
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
@@ -145,6 +152,14 @@ export const test = base.extend({
         binary,
         trackTable(name) {
           tables.push(name);
+        },
+        // Run a command with `dqlrs -c`, so the web server only learns of it by listing.
+        command(text) {
+          const result = runCommand(binary, text);
+          if (result.status !== 0) {
+            throw new Error(`dqlrs -c ${text} failed: ${result.stderr || result.stdout || result.error}`);
+          }
+          return result.stdout;
         },
       });
     } finally {

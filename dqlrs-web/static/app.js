@@ -15,6 +15,16 @@ import { bandLayer, dqlLanguage, lintExtension, markersForRunStatus, queryHighli
 import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
 import { parseLsMessage } from "./describe-card.js";
 import { noteCard } from "./note-card.js";
+import { createContextMenu } from "./context-menu.js";
+import { createConfirmDialog, createPromptDialog } from "./dialogs.js";
+import { buildRunTree, paintRunFile, renderRunTotals } from "./run-tree.js";
+import {
+  addResultCounts,
+  amountPhrase,
+  emptyCounts,
+  formatUnits,
+  resultLabel,
+} from "./statement-text.js";
 import { unifiedDiff } from "./file-patch.js";
 
 const apiToken = document.querySelector('meta[name="dqlrs-token"]')?.content || "";
@@ -780,14 +790,6 @@ async function runFile() {
   await runDocuments([{ text: editorText(), path: state.path, base: 0 }]);
 }
 
-async function runFileAt(path) {
-  if (runButton.disabled || !path) return;
-  if (path !== state.path) await openFile(path);
-  if (state.path !== path) return;
-  armRunPane();
-  await runFile();
-}
-
 setRunRequest(runFromEditor);
 const minimalWriteInput = document.querySelector("#opt-minimal-write");
 const evenOddInput = document.querySelector("#opt-even-odd");
@@ -808,11 +810,33 @@ function applyHighlightToggles() {
 }
 const settingsPop = document.querySelector("#settings-pop");
 const settingsButton = document.querySelector("#settings-toggle");
+const SETTINGS_NOTES = ["#cache-clear-note", "#local-tables-clear-note", "#result-cache-clear-note"];
+// A note to show when the popover next opens. A confirm dialog closes the popover, and the
+// toggle event that reopens it runs later and hides every note, so the result waits here.
+let pendingSettingsNote = null;
+
+function showSettingsNote(selector, text) {
+  if (settingsPop.matches(":popover-open")) {
+    const note = document.querySelector(selector);
+    note.hidden = false;
+    note.textContent = text;
+    return;
+  }
+  pendingSettingsNote = { selector, text };
+  settingsPop.showPopover();
+}
+
 settingsPop.addEventListener("toggle", (event) => {
   const open = event.newState === "open";
   settingsButton.setAttribute("aria-expanded", open ? "true" : "false");
   if (!open) return;
-  document.querySelector("#cache-clear-note").hidden = true;
+  for (const selector of SETTINGS_NOTES) document.querySelector(selector).hidden = true;
+  if (pendingSettingsNote) {
+    const note = document.querySelector(pendingSettingsNote.selector);
+    note.hidden = false;
+    note.textContent = pendingSettingsNote.text;
+    pendingSettingsNote = null;
+  }
   refreshSettingsCacheAge();
   const chip = settingsButton.getBoundingClientRect();
   const width = settingsPop.getBoundingClientRect().width || 232;
@@ -840,6 +864,58 @@ document.querySelector("#clear-table-cache").addEventListener("click", async () 
     button.disabled = false;
   }
   if (state.mode === "tables") await loadTables();
+});
+document.querySelector("#clear-local-tables").addEventListener("click", async () => {
+  const button = document.querySelector("#clear-local-tables");
+  const confirmed = await confirmAction(
+    "Forget every local table saved for this connection in this workspace? Their CSV and JSON files stay on disk, and CREATE LOCALTABLE adds them back.",
+    { title: "Clear local tables", okLabel: "Clear", danger: true },
+  );
+  if (!confirmed) {
+    settingsPop.showPopover();
+    return;
+  }
+  button.disabled = true;
+  try {
+    const payload = await api("/api/local-tables/clear", { method: "POST", body: {} });
+    const count = (payload.tables || []).length;
+    showSettingsNote(
+      "#local-tables-clear-note",
+      count === 1 ? "Cleared one local table." : count ? `Cleared ${count} local tables.` : "No local tables to clear.",
+    );
+    invalidateCatalog();
+    if (state.mode === "tables") await loadTables();
+  } catch (error) {
+    showSettingsNote("#local-tables-clear-note", error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+document.querySelector("#clear-result-cache").addEventListener("click", async () => {
+  const button = document.querySelector("#clear-result-cache");
+  const confirmed = await confirmAction(
+    "Delete the saved results of every query file for this connection in this workspace? This cannot be undone.",
+    { title: "Clear result cache", okLabel: "Clear", danger: true },
+  );
+  if (!confirmed) {
+    settingsPop.showPopover();
+    return;
+  }
+  button.disabled = true;
+  try {
+    const payload = await api("/api/result-cache/clear", { method: "POST", body: {} });
+    const files = Number(payload.files || 0);
+    state.entries = [];
+    showResults([]);
+    showSettingsNote(
+      "#result-cache-clear-note",
+      files === 1 ? "Cleared results for one file." : files ? `Cleared results for ${files} files.` : "No saved results to clear.",
+    );
+  } catch (error) {
+    showSettingsNote("#result-cache-clear-note", error.message);
+  } finally {
+    button.disabled = false;
+  }
 });
 const titleSearch = document.querySelector("#title-search");
 const titleSearchList = document.querySelector("#title-search-list");
@@ -2455,10 +2531,10 @@ function menuItems(target) {
   const items = [];
   const passive = target.type === "file" && viewOnlyFile(target.path);
   if (target.type === "file" && !passive) {
-    items.push({ label: "Run file", icon: "forward", danger: true, run: () => runFileAt(target.path) }, "-");
+    items.push({ label: "Run file", icon: "forward", danger: true, run: () => openRunDialog(target.path, "file") }, "-");
   }
   if (target.type === "dir") {
-    items.push({ label: "Run folder", icon: "forward", danger: true, run: () => runFolder(target.path) }, "-");
+    items.push({ label: "Run folder", icon: "forward", danger: true, run: () => openRunDialog(target.path, "dir") }, "-");
   }
   items.push(
     { label: "New file", run: () => createNamedFile(dir) },
@@ -2497,45 +2573,12 @@ const menuIds = {
 
 const menuEl = document.querySelector("#file-menu");
 
-function showMenu(x, y, items) {
-  menuEl.replaceChildren();
-  for (const item of items) {
-    if (item === "-") {
-      menuEl.append(document.createElement("hr"));
-      continue;
-    }
-    const button = document.createElement("button");
-    button.type = "button";
-    button.role = "menuitem";
-    button.id = menuIds[item.label];
-    if (item.icon === "forward") button.append(fastForwardIcon());
-    button.append(item.label);
-    if (item.danger) button.className = "danger";
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      hideMenu();
-      item.run();
-    });
-    menuEl.append(button);
-  }
-  menuEl.hidden = false;
-  menuEl.style.left = "0px";
-  menuEl.style.top = "0px";
-  const rect = menuEl.getBoundingClientRect();
-  menuEl.style.left = Math.max(4, Math.min(x, window.innerWidth - rect.width - 8)) + "px";
-  menuEl.style.top = Math.max(4, Math.min(y, window.innerHeight - rect.height - 8)) + "px";
-}
-
-function hideMenu() {
-  menuEl.hidden = true;
-}
-
-document.addEventListener("click", (event) => {
-  if (!menuEl.contains(event.target)) hideMenu();
+const contextMenu = createContextMenu(menuEl, {
+  ids: menuIds,
+  icon: (name) => (name === "forward" ? fastForwardIcon() : document.createTextNode("")),
 });
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") hideMenu();
-});
+const showMenu = contextMenu.show;
+const hideMenu = contextMenu.hide;
 document.querySelector(".side").addEventListener("contextmenu", (event) => {
   if (state.mode !== "query" || event.target.closest(".node")) return;
   event.preventDefault();
@@ -3705,19 +3748,160 @@ async function runSelection() {
   await runDocuments([{ text: dql, path: state.path, base: range ? range.from : 0 }]);
 }
 
-async function runFolder(path) {
-  if (!stopButton.classList.contains("hidden")) return;
-  armRunPane();
+// --- Run files dialog ----------------------------------------------------------------
+// "Run file" and "Run folder" in the tree menu list the files first, as a tree, and run
+// them after a confirm. Each file gets a dot (waiting, running, ok, error, not run) and a
+// summary; the header totals queries, reads, writes, successes, failures, and capacity.
+
+const runPop = document.querySelector("#run-pop");
+const runPopTitle = document.querySelector("#run-pop-title");
+const runPopKicker = document.querySelector("#run-pop-kicker");
+const runPopSummary = document.querySelector("#run-pop-summary");
+const runPopTotals = document.querySelector("#run-pop-totals");
+const runPopBody = document.querySelector("#run-pop-body");
+const runPopStatus = document.querySelector("#run-pop-status");
+const runPopStart = document.querySelector("#run-pop-start");
+const runPopCancel = document.querySelector("#run-pop-cancel");
+const runPopStop = document.querySelector("#run-pop-stop");
+let runDialog = null;
+
+async function runTargetDocuments(path, kind) {
+  if (kind === "dir") return folderDocuments(path);
+  const text = path === state.path
+    ? editorText()
+    : (await api("/api/file?path=" + encodeURIComponent(path))).text;
+  return [{ text, path, base: path === state.path ? 0 : null }];
+}
+
+/** Open the run dialog for a file or folder from the tree menu. */
+async function openRunDialog(path, kind) {
+  if (runButton.disabled || !stopButton.classList.contains("hidden") || !path) return;
   await flushSave();
-  let documents = [];
+  let documents;
   try {
-    documents = await folderDocuments(path);
+    documents = await runTargetDocuments(path, kind);
   } catch (error) {
     reportError(error);
     return;
   }
-  await runDocuments(documents);
+  const files = documents.map((doc) => ({
+    doc,
+    statements: statementSpans(doc.text || "").length,
+    counts: emptyCounts(),
+    status: "waiting",
+    error: "",
+    row: null,
+  }));
+  runDialog = { path, kind, files, counts: emptyCounts(), running: false, done: false };
+  runPopKicker.textContent = kind === "dir" ? "Run folder" : "Run file";
+  runPopTitle.textContent = kind === "dir" ? (path === "." ? "Workspace" : path) : path;
+  const runnable = files.filter((file) => file.statements > 0);
+  const queries = runnable.reduce((sum, file) => sum + file.statements, 0);
+  runPopSummary.textContent = runnable.length
+    ? `${amountPhrase(runnable.length, "file", "files")} · ${amountPhrase(queries, "query", "queries")}. Files run one at a time, in this order, and stop at the first failure.`
+    : "No .dql file here has a statement to run.";
+  for (const file of files) if (!file.statements) file.status = "skipped";
+  runPopTotals.hidden = true;
+  runPopTotals.replaceChildren();
+  runPopBody.replaceChildren(buildRunTree(path, kind, files, { tip: setTip }));
+  runPopStatus.textContent = "";
+  runPopStart.hidden = false;
+  runPopStart.disabled = !runnable.length;
+  runPopStart.textContent = runnable.length === 1 ? "Run 1 file" : `Run ${runnable.length} files`;
+  runPopCancel.textContent = "Cancel";
+  runPopCancel.hidden = false;
+  runPopStop.hidden = true;
+  runPop.showModal();
+  (runnable.length ? runPopStart : runPopCancel).focus();
 }
+
+function runDialogFile(doc) {
+  return runDialog?.files.find((file) => file.doc === doc) || null;
+}
+
+async function startRunDialog() {
+  if (!runDialog || runDialog.running || runDialog.done) return;
+  const dialog = runDialog;
+  dialog.running = true;
+  runPopStart.hidden = true;
+  runPopCancel.hidden = true;
+  runPopStop.hidden = false;
+  runPopStatus.textContent = "Running…";
+  renderRunTotals(runPopTotals, dialog.counts);
+  // A single file opens in the editor first, so its statements get run marks there too.
+  if (dialog.kind !== "dir") {
+    const file = dialog.files[0];
+    if (file.doc.path !== state.path) await openFile(file.doc.path);
+    if (state.path === file.doc.path) file.doc = { text: editorText(), path: state.path, base: 0 };
+  }
+  armRunPane();
+  await runDocuments(dialog.files.map((file) => file.doc), {
+    fileStart(doc) {
+      const file = runDialogFile(doc);
+      if (!file) return;
+      file.status = "running";
+      paintRunFile(file, { tip: setTip });
+      file.row?.scrollIntoView({ block: "nearest" });
+    },
+    result(doc, result) {
+      const file = runDialogFile(doc);
+      if (!file) return;
+      addResultCounts(file.counts, result);
+      addResultCounts(dialog.counts, result);
+      if (!result.ok) file.error = result.error || result.message || "failed";
+      paintRunFile(file, { tip: setTip });
+      renderRunTotals(runPopTotals, dialog.counts);
+    },
+    fileEnd(doc, results, errorMessage) {
+      const file = runDialogFile(doc);
+      if (!file) return;
+      if (errorMessage) file.error = errorMessage;
+      const failed = Boolean(errorMessage) || !results.length || results.some((item) => !item.ok);
+      file.status = failed ? "error" : "ok";
+      paintRunFile(file, { tip: setTip });
+    },
+  });
+  for (const file of dialog.files) {
+    if (file.status === "running") {
+      file.status = "error";
+      file.error = file.error || "Stopped before the file finished";
+    } else if (file.status === "waiting") {
+      file.status = "skipped";
+    }
+    paintRunFile(file, { tip: setTip });
+  }
+  dialog.running = false;
+  dialog.done = true;
+  renderRunTotals(runPopTotals, dialog.counts);
+  const ran = dialog.files.filter((file) => file.status === "ok" || file.status === "error").length;
+  const failed = dialog.files.filter((file) => file.status === "error").length;
+  const notRun = dialog.files.filter((file) => file.status === "skipped" && file.statements).length;
+  const status = failed
+    ? `${amountPhrase(failed, "file", "files")} failed of ${ran} run${notRun ? `; ${notRun} not run` : ""}.`
+    : `Ran ${amountPhrase(ran, "file", "files")}.`;
+  runPopStatus.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+  runPopStop.hidden = true;
+  runPopCancel.hidden = false;
+  runPopCancel.textContent = "Close";
+  runPopCancel.focus();
+}
+
+runPopStart.addEventListener("click", () => {
+  void startRunDialog();
+});
+runPopCancel.addEventListener("click", () => runPop.close());
+document.querySelector("#run-pop-close").addEventListener("click", () => {
+  if (runDialog?.running) return;
+  runPop.close();
+});
+runPopStop.addEventListener("click", stopRun);
+runPop.addEventListener("cancel", (event) => {
+  // Escape during a run stops it (the window handler); the dialog stays to show the result.
+  if (runDialog?.running) event.preventDefault();
+});
+runPop.addEventListener("close", () => {
+  if (!runDialog?.running) runDialog = null;
+});
 
 async function folderDocuments(path) {
   const root = await api("/api/tree");
@@ -3754,7 +3938,9 @@ function dqlFilesUnder(node) {
   return files.concat(nested);
 }
 
-async function runDocuments(documents) {
+// hooks: optional { fileStart(doc), result(doc, result), fileEnd(doc, results, errorMessage) },
+// called as each file runs. The run files dialog uses them for its dots and totals.
+async function runDocuments(documents, hooks = {}) {
   const runnable = documents.filter((doc) => statementSpans(doc.text || "").length);
   if (!runnable.length) {
     hideProgress();
@@ -3788,6 +3974,7 @@ async function runDocuments(documents) {
       }
       const results = [];
       active = { doc, results };
+      hooks.fileStart?.(doc);
       const response = await fetchServer("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3808,11 +3995,13 @@ async function runDocuments(documents) {
         if (event.event === "result") {
           const result = event.result || {};
           results.push(result);
+          hooks.result?.(doc, result);
           markStatement(origins[event.index], result.ok ? "ok" : "error");
           if (result.ok && changesSchema(result.statement)) invalidateCatalog();
         }
       });
       await storeStatementResults(doc.path || "", doc.text, results);
+      hooks.fileEnd?.(doc, results, null);
       const failed = results.findIndex((item) => !item.ok);
       if (marked && failed >= 0) scrollEditorTo(origins[failed]);
       if ((doc.path || "") === state.path) touchedShown = true;
@@ -3832,6 +4021,7 @@ async function runDocuments(documents) {
     }
     const doc = active ? active.doc : runnable[0];
     const done = active ? active.results : [];
+    if (doc) hooks.fileEnd?.(doc, done, error.message || "failed");
     if (doc) {
       try {
         if (done.length) await storeStatementResults(doc.path || "", doc.text, done);
@@ -4015,12 +4205,6 @@ function formatElapsed(value) {
   const seconds = ms / 1000;
   const digits = seconds < 10 ? 1 : 0;
   return seconds.toFixed(digits).replace(/\.0$/, "") + " s";
-}
-
-function formatUnits(value) {
-  const number = Number(value) || 0;
-  const rounded = Math.round(number * 100) / 100;
-  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
 }
 
 function formatCapacity(readUnits, writeUnits) {
@@ -4266,58 +4450,6 @@ function explainPlan(steps) {
     card.append(row);
   }
   return card;
-}
-
-function resultLabel(item) {
-  if (!item.ok) return item.error || item.message || "failed";
-  if (item.kind === "affected") return affectedLabel(item);
-  if (item.kind === "status" || item.kind === "schema" || item.kind === "text") {
-    return droppedLabel(item) || item.message || item.kind;
-  }
-  if (item.kind === "items") return ((item.items || []).length) + " rows";
-  return item.message || "ok";
-}
-
-// The server keeps the comment lines above a statement in its text. Drop them before reading the verb.
-function statementCode(statement) {
-  return String(statement || "").replace(/^(?:\s*--[^\n]*(?:\n|$))*/, "").trim();
-}
-
-function affectedLabel(item) {
-  const count = Number(item.affected ?? 0);
-  const statement = statementCode(item.statement);
-  const verb = (statement.match(/^(insert|delete|update|select|scan|load)\b/i) || [])[1];
-  const action = verb ? verb.toLowerCase() : "";
-  if (action === "insert") return `${amountPhrase(count, "row", "rows")} inserted`;
-  if (action === "delete") return `${amountPhrase(count, "row", "rows")} deleted`;
-  if (action === "update") return `${amountPhrase(count, "row", "rows")} updated`;
-  if (action === "load") return `${amountPhrase(count, "row", "rows")} loaded`;
-  if (isSaveStatement(statement)) return `${amountPhrase(count, "row", "rows")} saved`;
-  if ((action === "select" || action === "scan") && /\bcount\s*\(\s*\*\s*\)/i.test(statement)) {
-    return amountPhrase(count, "row", "rows");
-  }
-  return `${count} affected`;
-}
-
-function isSaveStatement(statement) {
-  const text = String(statement || "")
-    .replace(/--[^\n]*/g, " ")
-    .replace(/'(?:[^']|\\')*'/g, " '' ")
-    .replace(/"(?:[^"]|\\")*"/g, ' "" ');
-  return /\bsave\s+(?:''|""|[^\s=;]+)/i.test(text);
-}
-
-// DROP names a single table, so a drop that removed something dropped one table.
-function droppedLabel(item) {
-  if (!/^drop\b/i.test(statementCode(item.statement))) return "";
-  if (!/^Dropped\b/.test(String(item.message || ""))) return "";
-  return "one table dropped";
-}
-
-function amountPhrase(count, singular, plural) {
-  const amount = Number.isFinite(count) ? count : 0;
-  if (amount === 1) return `one ${singular}`;
-  return `${amount} ${plural}`;
 }
 
 function describeCard(description, note, cache) {
@@ -5660,86 +5792,8 @@ function reportError(error) {
   window.alert(error.message);
 }
 
-const confirmPop = document.querySelector("#confirm-pop");
-const confirmTitle = document.querySelector("#confirm-pop-title");
-const confirmPath = document.querySelector("#confirm-pop-path");
-const confirmMessage = document.querySelector("#confirm-pop-message");
-const confirmOk = document.querySelector("#confirm-ok");
-const confirmCancel = document.querySelector("#confirm-cancel");
-let confirmPending = null;
-
-function settleConfirm(accepted) {
-  const pending = confirmPending;
-  confirmPending = null;
-  if (confirmPop.open) confirmPop.close();
-  if (pending) pending(accepted);
-}
-
-function confirmAction(message, { title = "Confirm", path = "", okLabel = "OK", danger = false } = {}) {
-  if (confirmPending) settleConfirm(false);
-  confirmTitle.textContent = title;
-  confirmPath.textContent = path;
-  confirmPath.hidden = !path;
-  confirmMessage.textContent = message;
-  confirmOk.textContent = okLabel;
-  confirmOk.classList.toggle("danger", danger);
-  return new Promise((resolve) => {
-    confirmPending = resolve;
-    confirmPop.showModal();
-    confirmCancel.focus();
-  });
-}
-
-confirmOk.addEventListener("click", () => settleConfirm(true));
-confirmCancel.addEventListener("click", () => settleConfirm(false));
-confirmPop.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  settleConfirm(false);
-});
-confirmPop.addEventListener("click", (event) => {
-  if (event.target === confirmPop) settleConfirm(false);
-});
-
-const promptPop = document.querySelector("#prompt-pop");
-const promptForm = document.querySelector("#prompt-pop-form");
-const promptTitle = document.querySelector("#prompt-pop-title");
-const promptInput = document.querySelector("#prompt-pop-input");
-const promptOk = document.querySelector("#prompt-ok");
-const promptCancel = document.querySelector("#prompt-cancel");
-let promptPending = null;
-
-function settlePrompt(value) {
-  const pending = promptPending;
-  promptPending = null;
-  if (promptPop.open) promptPop.close();
-  if (pending) pending(value);
-}
-
-function promptAction(message, defaultValue = "", { okLabel = "OK" } = {}) {
-  if (promptPending) settlePrompt(null);
-  promptTitle.textContent = message;
-  promptInput.value = defaultValue == null ? "" : String(defaultValue);
-  promptOk.textContent = okLabel;
-  return new Promise((resolve) => {
-    promptPending = resolve;
-    promptPop.showModal();
-    promptInput.focus();
-    promptInput.select();
-  });
-}
-
-promptForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  settlePrompt(promptInput.value);
-});
-promptCancel.addEventListener("click", () => settlePrompt(null));
-promptPop.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  settlePrompt(null);
-});
-promptPop.addEventListener("click", (event) => {
-  if (event.target === promptPop) settlePrompt(null);
-});
+const confirmAction = createConfirmDialog();
+const promptAction = createPromptDialog();
 
 const serverPop = document.querySelector("#server-pop");
 const serverStatus = document.querySelector("#server-pop-status");
