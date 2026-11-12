@@ -434,6 +434,9 @@ test("ST lists tables the same way as SHOW TABLES", async ({ page, app }) => {
   const fromSt = await listed(`ST LIKE '${name}';`);
   expect(fromSt).toEqual(fromShow);
   expect(fromSt).toHaveLength(1);
+  // ST 'pattern' is ST LIKE 'pattern'; a bare name lists names that begin with it.
+  expect(await listed(`st '${name}';`)).toEqual(fromShow);
+  expect(await listed(`st ${name.slice(0, -2)};`)).toEqual(await listed(`SHOW TABLES LIKE '${name.slice(0, -2)}%';`));
 
   // ST is a keyword to the editor: colored like SHOW, and lint accepts it (a lint error
   // first, so the status clearing shows lint ran on "st;").
