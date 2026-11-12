@@ -2,9 +2,10 @@
 --
 -- The first column of the file is the hash key. Types are inferred from the values.
 -- A local table is read again on every query, so an edit to the file shows up
--- on the next scan. Its definition is saved encrypted and loaded the next time
--- this program starts. DROP LOCALTABLE forgets that definition and leaves the
--- file on disk. INSERT, UPDATE, and DELETE are rejected.
+-- on the next scan. Its definition is saved encrypted in this workspace's
+-- .dqlrs-cache, for the current connection, and loaded the next time dqlrs starts
+-- in this workspace with that connection. DROP LOCALTABLE forgets that definition
+-- and leaves the file on disk. INSERT, UPDATE, and DELETE are rejected.
 --
 -- A temp table is the rows from a SELECT or SCAN. Every tab on this server sees
 -- it. Another dqlrs process does not. It is not saved, and it is gone when this
@@ -12,8 +13,10 @@
 --
 -- A name cannot belong to a DynamoDB table and a local or temp table at once.
 --
--- The file path is resolved from the directory where dqlrs was started, the
--- same rule as SAVE. just web starts in the repository root.
+-- File paths follow the same rule as SAVE and LOAD. A path that starts with ./
+-- is relative to the folder of this .dql file, so './sample-users.csv' is the
+-- file next to it wherever dqlrs was started. Any other relative path is
+-- relative to the workspace (the folder dqlrs --web was started in, or --dir).
 
 DROP LOCALTABLE IF EXISTS sample_local_users;
 DROP LOCALTABLE IF EXISTS sample_local_cities;
@@ -21,17 +24,15 @@ DROP TEMPTABLE IF EXISTS sample_temp_london;
 DROP TEMPTABLE IF EXISTS sample_temp_notes;
 DROP TABLE IF EXISTS sample_source;
 
--- Register the CSV that ships with these examples.
-CREATE LOCALTABLE sample_local_users AS './local-and-temp-tables/sample-users.csv';
--- When the process was started in dqlrs-web/examples, use this path instead:
--- CREATE LOCALTABLE sample_local_users AS 'data/sample-users.csv';
+-- Register the CSV that ships next to this file.
+CREATE LOCALTABLE sample_local_users AS './sample-users.csv';
 
 SELECT * FROM sample_local_users WHERE id = 'a';
 
 SCAN * FROM sample_local_users;
 
 -- JSON is the same kind of table. id is first, so it is the hash key.
-CREATE LOCALTABLE sample_local_cities AS './local-and-temp-tables/sample-cities.json';
+CREATE LOCALTABLE sample_local_cities AS './sample-cities.json';
 
 SELECT city, country FROM sample_local_cities WHERE id = 'b';
 
