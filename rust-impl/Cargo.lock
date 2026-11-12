@@ -1156,7 +1156,7 @@ dependencies = [
 
 [[package]]
 name = "dql-cli"
-version = "0.7.6-dev0"
+version = "0.7.7-dev0"
 dependencies = [
  "aes-gcm",
  "better-panic",
@@ -1189,7 +1189,7 @@ dependencies = [
 
 [[package]]
 name = "dql-engine"
-version = "0.7.6-dev0"
+version = "0.7.7-dev0"
 dependencies = [
  "aws-config",
  "aws-credential-types",
@@ -1210,21 +1210,21 @@ dependencies = [
 
 [[package]]
 name = "dql-expr"
-version = "0.7.6-dev0"
+version = "0.7.7-dev0"
 dependencies = [
  "dql-parser",
 ]
 
 [[package]]
 name = "dql-models"
-version = "0.7.6-dev0"
+version = "0.7.7-dev0"
 dependencies = [
  "dql-parser",
 ]
 
 [[package]]
 name = "dql-output"
-version = "0.7.6-dev0"
+version = "0.7.7-dev0"
 dependencies = [
  "crossterm",
  "dql-engine",
@@ -1236,7 +1236,7 @@ dependencies = [
 
 [[package]]
 name = "dql-parser"
-version = "0.7.6-dev0"
+version = "0.7.7-dev0"
 
 [[package]]
 name = "dunce"
