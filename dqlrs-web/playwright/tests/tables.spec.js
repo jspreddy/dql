@@ -411,6 +411,43 @@ test("orders table and result columns by keys, index, then selection or name", a
   expect(listedOrder).toEqual([["hash", "id"], ["range", "sk"]]);
 });
 
+test("ST lists tables the same way as SHOW TABLES", async ({ page, app }) => {
+  const name = uniqueTable();
+  app.trackTable(name);
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await replaceEditor(page, `CREATE TABLE ${name} (id STRING HASH KEY);`);
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(1);
+
+  const listed = async (statement) => {
+    await replaceEditor(page, statement);
+    await pressMod(page, "A");
+    await page.locator("#run").click();
+    await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(1);
+    const card = page.locator(".result-card").last();
+    await expect(card).toContainText(name);
+    return card.locator("table tbody tr").allInnerTexts();
+  };
+  const fromShow = await listed(`SHOW TABLES LIKE '${name}';`);
+  const fromSt = await listed(`ST LIKE '${name}';`);
+  expect(fromSt).toEqual(fromShow);
+  expect(fromSt).toHaveLength(1);
+
+  // ST is a keyword to the editor: colored like SHOW, and lint accepts it (a lint error
+  // first, so the status clearing shows lint ran on "st;").
+  await replaceEditor(page, "SELEKT;");
+  await expect(page.locator("#lint-status")).toHaveText("1 error");
+  await replaceEditor(page, "st;");
+  await expect(page.locator("#lint-status")).toBeHidden();
+  const color = await page.evaluate(() => {
+    const span = [...document.querySelectorAll(".cm-content span")].find((el) => el.textContent === "st");
+    return span ? getComputedStyle(span).color : "";
+  });
+  expect(color).toBe(await themeColor(page, "--tok-keyword"));
+});
+
 test("tables-search-matches-like-ls", async ({ page, app }) => {
   const stem = uniqueTable();
   const catalog = `${stem}catalog`;

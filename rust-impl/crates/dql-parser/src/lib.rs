@@ -659,6 +659,9 @@ impl<'a> Parser<'a> {
             self.parse_load()
         } else if self.accept_keyword("SHOW") {
             self.parse_show()
+        } else if self.accept_keyword("ST") {
+            // `ST` is short for `SHOW TABLES`.
+            self.parse_show_tables_like()
         } else if self.accept_keyword("DESCRIBE") {
             self.parse_describe()
         } else if self.accept_keyword("LS") {
@@ -1370,6 +1373,11 @@ impl<'a> Parser<'a> {
 
     fn parse_show(&mut self) -> Result<Statement, ParseError> {
         self.expect_keyword("TABLES")?;
+        self.parse_show_tables_like()
+    }
+
+    /// The rest of `SHOW TABLES` (or `ST`): an optional `LIKE 'pattern'`.
+    fn parse_show_tables_like(&mut self) -> Result<Statement, ParseError> {
         let like = if self.accept_keyword("LIKE") {
             Some(self.expect_string()?)
         } else {
@@ -2565,6 +2573,31 @@ mod tests {
         );
         assert!(parse_statement("SHOW TABLES LIKE").is_err());
         assert!(parse_statement("SHOW TABLE t").is_err());
+    }
+
+    #[test]
+    fn st_is_show_tables() {
+        assert_eq!(
+            parse_statement("ST").unwrap(),
+            parse_statement("SHOW TABLES").unwrap()
+        );
+        assert_eq!(
+            parse_statement("st;").unwrap(),
+            Statement::ShowTables { like: None }
+        );
+        assert_eq!(
+            parse_statement("ST LIKE 'alpha%';").unwrap(),
+            Statement::ShowTables {
+                like: Some("alpha%".to_string())
+            }
+        );
+        assert_eq!(
+            parse_statement("st like 'a_c'").unwrap(),
+            parse_statement("SHOW TABLES LIKE 'a_c'").unwrap()
+        );
+        assert!(parse_statement("ST LIKE").is_err());
+        assert!(parse_statement("ST TABLES").is_err());
+        assert!(parse_statement("ST posts").is_err());
     }
 
     #[test]

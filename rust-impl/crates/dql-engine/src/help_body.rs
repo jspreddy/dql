@@ -334,7 +334,10 @@ pub const SHOW: &str = r"
 
     SHOW TABLES;
     SHOW TABLES LIKE 'pattern';
+    ST;
+    ST LIKE 'pattern';
 
+    ST is short for SHOW TABLES and works the same way.
     SHOW TABLES prints the same list as `ls`: name, items, read, write, status,
     and size. LIKE is case-sensitive. % matches any sequence. _ matches one
     character.
@@ -356,6 +359,7 @@ pub const SHOW: &str = r"
     SHOW TABLES LIKE 'alpha%';
     SHOW TABLES LIKE 'foo_bar';
     SHOW TABLES LIKE 'post';
+    ST LIKE 'alpha%';
 ";
 
 pub const HISTORY: &str = r#"
