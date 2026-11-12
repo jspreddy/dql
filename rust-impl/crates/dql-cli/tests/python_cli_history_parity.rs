@@ -6,12 +6,21 @@ use dql_output::{format_table_detail, format_table_summary_table, TableStats};
 use std::process::Command;
 use tempfile::tempdir;
 
+/// Working directory for the dqlrs under test. dqlrs keeps its cache in
+/// `<working directory>/.dqlrs-cache`; running it here keeps that out of the crate folder.
+fn workdir() -> &'static std::path::Path {
+    static DIR: std::sync::OnceLock<tempfile::TempDir> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| tempfile::tempdir().expect("test working directory"))
+        .path()
+}
+
 fn test_session() -> Session {
     Session::new_memory("us-west-1")
 }
 
 fn dql() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_dqlrs"));
+    cmd.current_dir(workdir());
     // Offline smoke paths must not hit live AWS.
     cmd.env("DQL_BACKEND", "memory");
     cmd

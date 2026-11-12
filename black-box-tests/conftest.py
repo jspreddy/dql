@@ -222,6 +222,20 @@ def isolation_home() -> Path:
     shutil.rmtree(path, ignore_errors=True)
 
 
+@pytest.fixture(scope="session")
+def workdir(suite_root: Path) -> Path:
+    """Working directory for the CLI under test, outside the repository.
+
+    dqlrs keeps its cache in ``<working directory>/.dqlrs-cache``. Running it here keeps that
+    out of ``black-box-tests/``. ``fixtures`` links back to the suite so relative ``LOAD``
+    paths such as ``fixtures/load-users/seed.json`` still resolve.
+    """
+    path = Path(tempfile.mkdtemp(prefix="dql-at-work."))
+    (path / "fixtures").symlink_to(suite_root / "fixtures", target_is_directory=True)
+    yield path
+    shutil.rmtree(path, ignore_errors=True)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_local(pytestconfig: pytest.Config) -> None:
     host, port = local_host(), local_port()
@@ -232,7 +246,7 @@ def _ensure_local(pytestconfig: pytest.Config) -> None:
 
 
 @pytest.fixture
-def cli(request: pytest.FixtureRequest, isolation_home: Path, suite_root: Path) -> Cli:
+def cli(request: pytest.FixtureRequest, isolation_home: Path, workdir: Path) -> Cli:
     spec: BinSpec = request.param
     timeout = float(os.environ.get("DQL_BB_TIMEOUT", "120"))
     verbose = request.config.option.verbose >= 1
@@ -243,7 +257,7 @@ def cli(request: pytest.FixtureRequest, isolation_home: Path, suite_root: Path) 
         port=local_port(),
         region=os.environ.get("AWS_REGION", "us-west-1"),
         env=spawn_env(isolation_home),
-        cwd=suite_root,
+        cwd=workdir,
         timeout=timeout,
         nodeid=request.node.nodeid,
         pid=os.getpid(),

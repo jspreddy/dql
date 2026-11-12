@@ -12,6 +12,13 @@ if [[ ! -x "$DQL_BIN" ]]; then
   echo "error: dqlrs binary not found or not executable: $DQL_BIN" >&2
   exit 1
 fi
+DQL_BIN="$(cd "$(dirname "$DQL_BIN")" && pwd)/$(basename "$DQL_BIN")"
+
+# dqlrs keeps its cache in <working directory>/.dqlrs-cache. Run it in a throwaway folder so
+# the smoke test leaves nothing in the repository.
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/dqlrs-smoke.XXXXXX")"
+trap 'rm -rf "$WORK"' EXIT
+cd "$WORK"
 
 run() {
   echo "+ $*"
