@@ -30,14 +30,12 @@ function dqlrsBinary() {
   return candidates.find((candidate) => fs.existsSync(candidate)) || "";
 }
 
-function dropTable(binary, name) {
-  if (!binary) return;
+// Run one command with `dqlrs -c` against DynamoDB Local, outside the web server.
+function runCommand(binary, command) {
   // dqlrs keeps its cache in <working directory>/.dqlrs-cache, so run it in a throwaway folder.
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-drop-"));
-  const result = spawnSync(
-    binary,
-    ["-c", `DROP TABLE IF EXISTS ${name}`, "-H", "localhost", "-p", "8000"],
-    {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-cmd-"));
+  try {
+    return spawnSync(binary, ["-c", command, "-H", "localhost", "-p", "8000"], {
       cwd,
       encoding: "utf8",
       timeout: 20_000,
@@ -48,9 +46,15 @@ function dropTable(binary, name) {
         AWS_REGION: "us-west-1",
         AWS_EC2_METADATA_DISABLED: "true",
       },
-    },
-  );
-  fs.rmSync(cwd, { recursive: true, force: true });
+    });
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+function dropTable(binary, name) {
+  if (!binary) return;
+  const result = runCommand(binary, `DROP TABLE IF EXISTS ${name}`);
   if (result.status !== 0) {
     console.warn(`DROP ${name} failed`, result.stderr || result.stdout || result.error);
   }
@@ -148,6 +152,14 @@ export const test = base.extend({
         binary,
         trackTable(name) {
           tables.push(name);
+        },
+        // Run a command with `dqlrs -c`, so the web server only learns of it by listing.
+        command(text) {
+          const result = runCommand(binary, text);
+          if (result.status !== 0) {
+            throw new Error(`dqlrs -c ${text} failed: ${result.stderr || result.stdout || result.error}`);
+          }
+          return result.stdout;
         },
       });
     } finally {

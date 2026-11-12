@@ -67,9 +67,13 @@ test("title search opens a table from a cached column or index", async ({ page, 
 });
 
 test("title search does not show columns for a table that was only listed", async ({ page, app }) => {
+  // Create the table outside the page so the list is the only place the app sees it, and so
+  // the test does not depend on tables other tests left in DynamoDB Local.
+  const listed = uniqueTable();
+  app.trackTable(listed);
+  app.command(`CREATE TABLE ${listed} (id STRING HASH KEY, shelf STRING)`);
   await page.goto(`${app.baseURL}/#tables`);
-  await expect(page.locator("#table-list .table-row").first()).toBeVisible();
-  const listed = (await page.locator("#table-list .table-row strong").first().innerText()).trim();
+  await expect(page.locator("#table-list .table-row strong", { hasText: listed })).toBeVisible();
   const search = page.locator("#title-search");
   await search.fill(listed);
   await expect(page.locator(".title-search-item").filter({ hasText: "Table" }).filter({ hasText: listed })).toBeVisible();
