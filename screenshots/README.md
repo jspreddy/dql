@@ -10,9 +10,9 @@ Local.
 | [`banner.png`](banner.png) | README banner: the three surfaces, MCP, and security, in the web UI's dark colors |
 | [`cli/repl.png`](cli/repl.png) | REPL: `opt format rich`, then Sol's planets as a table |
 | [`cli/cosmos-planets.png`](cli/cosmos-planets.png) | REPL: default `smart` format, expanded rows with nested maps |
-| [`web/query.png`](web/query.png) | `dqlrs --web` query editor with a result |
-| [`web/explain.png`](web/explain.png) | `dqlrs --web` explain plan card |
-| [`web/tables.png`](web/tables.png) | `dqlrs --web` table browser |
+| [`web/query.png`](web/query.png) | `dqlrs web` query editor with a result |
+| [`web/explain.png`](web/explain.png) | `dqlrs web` explain plan card |
+| [`web/tables.png`](web/tables.png) | `dqlrs web` table browser |
 | [`notebook/cosmos.png`](notebook/cosmos.png) | `dqlrs notebook`: a DQL (Rust) cell and its table |
 | [`notebook/getting-started.png`](notebook/getting-started.png) | `dqlrs notebook`: the starter notebook it writes |
 | [`notebook/launcher.png`](notebook/launcher.png) | `dqlrs notebook`: launcher with the DQL (Rust) kernel |

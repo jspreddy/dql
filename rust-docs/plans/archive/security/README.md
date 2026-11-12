@@ -14,6 +14,12 @@ What shipped:
   `--serve` needs none.
 - Listen addresses stay loopback-only.
 
+Since then (`66145e5`), every cache lives in `<workspace>/.dqlrs-cache/`, one
+folder per connection (`tables/`, `local-tables.seal`, `results/`). The
+table cache is no longer under `~/.cache/dqlrs/tables`, and
+`DQLRS_TABLE_CACHE` is gone. Sealing, file modes, and the key stores are
+unchanged. Paths inside these plans are the old ones.
+
 Platform-store tests skip when the store is absent, so the Mac keychain and
 Windows DPAPI paths are covered here by the store-selection test only.
 

@@ -10,7 +10,7 @@ AI agent can use the same workspace over MCP.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/HEAD/scripts/rust-install.sh | sh
-dqlrs --web          # open http://127.0.0.1:8765, using your usual AWS credentials
+dqlrs web            # open http://127.0.0.1:8765, using your usual AWS credentials
 ```
 
 Add `-H localhost -p 8000` to any command to use
@@ -28,7 +28,7 @@ instead.
   shows the plan before you spend capacity.
 - **Three surfaces, one binary.** A rich terminal UI, a web editor with a file
   tree, lint, and a table browser, and a notebook kernel. Nothing else to run.
-- **MCP for agents.** `dqlrs --web --mcp` lets an agent search tables, read
+- **MCP for agents.** `dqlrs web --mcp` lets an agent search tables, read
   schemas, lint, and write `.dql` files. It cannot run queries.
 - **Secure by default.** Table and result caches are sealed with AES-256-GCM,
   with the key in your OS keychain. Servers listen on loopback only, and a
@@ -59,8 +59,8 @@ maps:
 ### Web UI
 
 ```bash
-dqlrs --web
-dqlrs --web -H localhost -p 8000 --dir ~/queries
+dqlrs web
+dqlrs web -H localhost -p 8000 --dir ~/queries
 ```
 
 Opens `http://127.0.0.1:8765` by default. The server is the `dqlrs` binary;
@@ -113,7 +113,7 @@ The launcher lists the DQL (Rust) notebook and console:
 | `SCAN` | Table or index scan (same clauses as `SELECT`) |
 | `UPDATE` / `DELETE` | Mutate or remove items |
 | `ALTER TABLE` | Throughput and global indexes |
-| `SHOW TABLES` / `SHOW TABLES LIKE` | List tables (`%` / `_` globs) |
+| `SHOW TABLES` / `ST` | List tables: `LIKE 'a%'` globs, or `ST post` for names containing `post` |
 | `DESCRIBE` | Table description |
 | `DUMP SCHEMA` | Emit `CREATE TABLE` DDL |
 | `LOAD` / `SAVE` | Import / export `.json`, `.csv`, `.msgpack` (+ `.gz`) |
@@ -244,6 +244,7 @@ WHERE pk = 'PLANET#jupiter' AND begins_with(sk, 'MOON#');
 | [`notebook/`](notebook/README.md) | JupyterLab setup from a checkout (Python and Rust kernels) |
 | [`py-docs/`](py-docs/) | Python `dql` docs (Sphinx) |
 | [`screenshots/`](screenshots/README.md) | The images on this page |
+| [`CHANGELOG.md`](CHANGELOG.md) | What changed in each version (generated from `v-rust`) |
 | [`MAINTAINER.md`](MAINTAINER.md) | Repository layout, builds, releases |
 
 ## About this fork

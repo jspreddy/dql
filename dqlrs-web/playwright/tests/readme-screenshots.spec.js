@@ -19,24 +19,30 @@ test.use({
 
 function seedCosmos(binary) {
   // `file` reads one path per call. Passing the DQL to -c does not work: it starts with a `--` comment.
-  for (const name of ["00-table.dql", "10-bodies.dql"]) {
-    const result = spawnSync(
-      binary,
-      ["-H", "localhost", "-p", "8000", "-c", `file ${path.join(examples, "cosmos", name)}`],
-      {
-        encoding: "utf8",
-        timeout: 60_000,
-        env: {
-          ...process.env,
-          AWS_ACCESS_KEY_ID: "fakeid",
-          AWS_SECRET_ACCESS_KEY: "fakekey",
-          AWS_REGION: "us-west-1",
-          AWS_EC2_METADATA_DISABLED: "true",
-          DQLRS_TABLE_CACHE: fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-table-cache-")),
+  // dqlrs keeps its cache in <cwd>/.dqlrs-cache, so run it from a temp folder, not the repository.
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-seed-"));
+  try {
+    for (const name of ["00-table.dql", "10-bodies.dql"]) {
+      const result = spawnSync(
+        binary,
+        ["-H", "localhost", "-p", "8000", "-c", `file ${path.join(examples, "cosmos", name)}`],
+        {
+          cwd,
+          encoding: "utf8",
+          timeout: 60_000,
+          env: {
+            ...process.env,
+            AWS_ACCESS_KEY_ID: "fakeid",
+            AWS_SECRET_ACCESS_KEY: "fakekey",
+            AWS_REGION: "us-west-1",
+            AWS_EC2_METADATA_DISABLED: "true",
+          },
         },
-      },
-    );
-    expect(result.status, result.stderr || result.stdout).toBe(0);
+      );
+      expect(result.status, result.stderr || result.stdout).toBe(0);
+    }
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
   }
 }
 
