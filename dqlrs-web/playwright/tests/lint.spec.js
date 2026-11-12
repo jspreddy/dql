@@ -2,7 +2,7 @@ import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
 import fs from "node:fs";
 import path from "node:path";
-import { node, openApp, replaceEditor, themeColor } from "../support/helpers.js";
+import { lineBox, node, openApp, replaceEditor, themeColor } from "../support/helpers.js";
 
 const BROKEN = "SELEKT * FROM shelf;";
 const UNKNOWN = "SELECT * FROM lint_missing_shelf WHERE id = 'a';";
@@ -122,7 +122,7 @@ test("does not underline the comments above a statement", async ({ page }, testI
   expect(underlined).toBe(UNKNOWN);
   const gutter = page.locator("[data-testid='lint-gutter-warning']");
   await expect(gutter).toHaveCount(1);
-  const statementLine = await page.locator(".cm-line", { hasText: "lint_missing_shelf" }).boundingBox();
+  const statementLine = await lineBox(page, "lint_missing_shelf");
   const mark = await gutter.boundingBox();
   expect(Math.abs(mark.y + mark.height / 2 - (statementLine.y + statementLine.height / 2))).toBeLessThan(statementLine.height / 2);
   await page.screenshot({ path: playwrightArtifact(`lint-skips-comments-${testInfo.project.name}.png`) });

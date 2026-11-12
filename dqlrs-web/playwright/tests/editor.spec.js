@@ -2,13 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
-import { lineByText, lineOverlaps, mod, node, openApp, openResultPane, pressMod, replaceEditor, reveal, runFromDialog, themeColor } from "../support/helpers.js";
+import { lineBox, lineByText, lineOverlaps, mod, node, openApp, openResultPane, pressMod, replaceEditor, reveal, runFromDialog, themeColor } from "../support/helpers.js";
 
 // dragTo jumps in one move. Chrome sometimes delivers that move after mouseup,
 // so the gesture collapses to a cursor. Step the pointer while the button is down.
 async function dragAcrossLines(page, fromText, toText) {
-  const from = await page.locator(".cm-line", { hasText: fromText }).boundingBox();
-  const to = await page.locator(".cm-line", { hasText: toText }).boundingBox();
+  const from = await lineBox(page, fromText);
+  const to = await lineBox(page, toText);
   await page.mouse.move(from.x + 28, from.y + 8);
   await page.mouse.down();
   await page.mouse.move(to.x + 28, to.y + 8, { steps: 8 });
@@ -310,8 +310,7 @@ test("colors SELECT and outlines the current query without covering the next one
 
 test("frames a partial line selection as a whole line and highlights the text", async ({ page }) => {
   await node(page, "queries/read.dql").click();
-  const line = page.locator(".cm-line", { hasText: "SELECT * FROM pw_missing_table" });
-  const box = await line.boundingBox();
+  const box = await lineBox(page, "SELECT * FROM pw_missing_table");
   await page.mouse.move(box.x + 14, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + 52, box.y + box.height / 2, { steps: 4 });
