@@ -1,17 +1,107 @@
+<p align="center">
+  <img src="screenshots/banner.png" alt="dqlrs: query DynamoDB like it's SQL from a terminal, a browser, or a notebook, with MCP for agents, encrypted caches, and loopback-only servers" width="100%">
+</p>
+
 # DQL & DQLRS
 
-SQL-ish queries for Amazon DynamoDB — richer than [PartiQL for
-DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-reference.html),
-which covers only a thin slice of everyday table work.
+**Query Amazon DynamoDB like it's SQL.** `dqlrs` is one Rust binary with three
+ways to work: a terminal UI, a browser editor, and a JupyterLab notebook. Your
+AI agent can use the same workspace over MCP.
 
-`dqlrs` (Rust) is the primary client. `dql` (Python) remains available for the
-original CLI and for places Rust is not a fit. Both speak the same DQL language
-and can be installed side by side.
+```bash
+curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/HEAD/scripts/rust-install.sh | sh
+dqlrs --web          # open http://127.0.0.1:8765, using your usual AWS credentials
+```
 
-This repository ([jspreddy/dql](https://github.com/jspreddy/dql)) is a fork of
-[stevearc/dql](https://github.com/stevearc/dql). Use this repo for source,
-issues, and GitHub releases. The PyPI package `dql` and
-[Read the Docs](http://dql.readthedocs.org/) still ship from upstream.
+Add `-H localhost -p 8000` to any command to use
+[DynamoDB Local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html)
+instead.
+
+## Why dqlrs
+
+- **More than PartiQL.** `SELECT`, `SCAN`, `INSERT`, `UPDATE`, `DELETE`,
+  `CREATE` / `ALTER` / `DROP TABLE`, `EXPLAIN`, `ANALYZE`, `DUMP SCHEMA`, and
+  `SAVE` / `LOAD`. [PartiQL for
+  DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ql-reference.html)
+  covers only a thin slice of everyday table work.
+- **Index-aware.** Picks the table or index for your `WHERE`, and `EXPLAIN`
+  shows the plan before you spend capacity.
+- **Three surfaces, one binary.** A rich terminal UI, a web editor with a file
+  tree, lint, and a table browser, and a notebook kernel. Nothing else to run.
+- **MCP for agents.** `dqlrs --web --mcp` lets an agent search tables, read
+  schemas, lint, and write `.dql` files. It cannot run queries.
+- **Secure by default.** Table and result caches are sealed with AES-256-GCM,
+  with the key in your OS keychain. Servers listen on loopback only, and a
+  per-user token guards the web API, MCP, and TCP `--serve`.
+
+## Screenshots
+
+More shots live under [`screenshots/cli/`](screenshots/cli/),
+[`screenshots/web/`](screenshots/web/), and
+[`screenshots/notebook/`](screenshots/notebook/).
+
+### REPL
+
+```bash
+dqlrs
+dqlrs -H localhost -p 8000
+```
+
+`opt format rich` draws results as a table:
+
+![dqlrs interactive REPL with opt format rich](screenshots/cli/repl.png)
+
+The default `smart` format switches to one block per item when a row has nested
+maps:
+
+![dqlrs smart format with nested maps](screenshots/cli/cosmos-planets.png)
+
+### Web UI
+
+```bash
+dqlrs --web
+dqlrs --web -H localhost -p 8000 --dir ~/queries
+```
+
+Opens `http://127.0.0.1:8765` by default. The server is the `dqlrs` binary;
+the browser assets are bundled into it.
+
+- **Query:** `.dql` file tree on the left, CodeMirror editor with DQL
+  highlighting and lint, and Result / History / Lint tabs under it. Run the
+  statement at the cursor (Ctrl+Enter) or the whole file.
+- **Tables:** every table with its keys, 50 rows at a time.
+- Search across tables, columns, and queries, and a light or dark theme.
+- `--mcp` also serves MCP tools at `/mcp` on the same host.
+
+![dqlrs web UI query editor](screenshots/web/query.png)
+
+`EXPLAIN` shows the plan as a card, with a JSON toggle:
+
+![dqlrs web UI explain plan](screenshots/web/explain.png)
+
+The table browser:
+
+![dqlrs web UI table browser](screenshots/web/tables.png)
+
+Details: [`dqlrs-web/README.md`](dqlrs-web/README.md).
+
+### Notebook
+
+```bash
+dqlrs notebook
+dqlrs notebook --local
+```
+
+JupyterLab with a **DQL (Rust)** kernel. The first run installs JupyterLab into
+`~/.local/share/dqlrs/notebook` (needs Python 3.10+ or
+[uv](https://docs.astral.sh/uv/)) and writes a `getting-started-dqlrs.ipynb`
+starter into the current folder. `--local` points cells at DynamoDB Local.
+
+![dqlrs notebook running a query](screenshots/notebook/cosmos.png)
+
+The launcher lists the DQL (Rust) notebook and console:
+
+![JupyterLab launcher with the DQL (Rust) kernel](screenshots/notebook/launcher.png)
 
 ## Supported queries
 
@@ -89,75 +179,6 @@ dqlrs -H localhost -p 8000 -c "ls"
 `--json` only applies with `-c`. Point at DynamoDB Local with `-H` / `-p`, or
 omit `-H` for live AWS.
 
-## Screenshots
-
-More shots live under [`screenshots/cli/`](screenshots/cli/),
-[`screenshots/web/`](screenshots/web/), and
-[`screenshots/notebook/`](screenshots/notebook/).
-
-### REPL
-
-```bash
-dqlrs
-dqlrs -H localhost -p 8000
-```
-
-`opt format rich` draws results as a table:
-
-![dqlrs interactive REPL with opt format rich](screenshots/cli/repl.png)
-
-The default `smart` format switches to one block per item when a row has nested
-maps:
-
-![dqlrs smart format with nested maps](screenshots/cli/cosmos-planets.png)
-
-### Web UI
-
-```bash
-dqlrs web
-dqlrs web -H localhost -p 8000 --dir ~/queries
-```
-
-Opens `http://127.0.0.1:8765` by default. The server is the `dqlrs` binary;
-the browser assets are bundled into it.
-
-- **Query:** `.dql` file tree on the left, CodeMirror editor with DQL
-  highlighting and lint, and Result / History / Lint tabs under it. Run the
-  statement at the cursor (Ctrl+Enter) or the whole file.
-- **Tables:** every table with its keys, 50 rows at a time.
-- Search across tables, columns, and queries, and a light or dark theme.
-- `--mcp` also serves MCP tools at `/mcp` on the same host.
-
-![dqlrs web UI query editor](screenshots/web/query.png)
-
-`EXPLAIN` shows the plan as a card, with a JSON toggle:
-
-![dqlrs web UI explain plan](screenshots/web/explain.png)
-
-The table browser:
-
-![dqlrs web UI table browser](screenshots/web/tables.png)
-
-Details: [`dqlrs-web/README.md`](dqlrs-web/README.md).
-
-### Notebook
-
-```bash
-dqlrs notebook
-dqlrs notebook --local
-```
-
-JupyterLab with a **DQL (Rust)** kernel. The first run installs JupyterLab into
-`~/.local/share/dqlrs/notebook` (needs Python 3.10+ or
-[uv](https://docs.astral.sh/uv/)) and writes a `getting-started-dqlrs.ipynb`
-starter into the current folder. `--local` points cells at DynamoDB Local.
-
-![dqlrs notebook running a query](screenshots/notebook/cosmos.png)
-
-The launcher lists the DQL (Rust) notebook and console:
-
-![JupyterLab launcher with the DQL (Rust) kernel](screenshots/notebook/launcher.png)
-
 ## Compare the three surfaces
 
 | | REPL | Web (`dqlrs web`) | Notebook |
@@ -224,3 +245,14 @@ WHERE pk = 'PLANET#jupiter' AND begins_with(sk, 'MOON#');
 | [`py-docs/`](py-docs/) | Python `dql` docs (Sphinx) |
 | [`screenshots/`](screenshots/README.md) | The images on this page |
 | [`MAINTAINER.md`](MAINTAINER.md) | Repository layout, builds, releases |
+
+## About this fork
+
+`dqlrs` (Rust) is the primary client. `dql` (Python) remains available for the
+original CLI and for places Rust is not a fit. Both speak the same DQL language
+and can be installed side by side.
+
+This repository ([jspreddy/dql](https://github.com/jspreddy/dql)) is a fork of
+[stevearc/dql](https://github.com/stevearc/dql). Use this repo for source,
+issues, and GitHub releases. The PyPI package `dql` and
+[Read the Docs](http://dql.readthedocs.org/) still ship from upstream.

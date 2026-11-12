@@ -8,7 +8,6 @@ import { playwrightArtifact } from "../support/artifacts.js";
 import { node, reveal } from "../support/helpers.js";
 
 // Copy them over as described in screenshots/README.md (drop the readme-web- prefix).
-// Copy them over with: cp .playwright-artifacts/readme-web-*.png screenshots/web/ (drop the prefix).
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const examples = path.resolve(here, "../../examples");
@@ -68,7 +67,9 @@ async function settle(page) {
 }
 
 test("README web shots: query, explain, tables", async ({ page, app }, testInfo) => {
-  test.skip(testInfo.project.name !== "light", "README shots use the light theme");
+  // light: the README body. dark: the panels in screenshots/banner.png.
+  const shot = (name) =>
+    playwrightArtifact(`readme-web-${name}${testInfo.project.name === "dark" ? "-dark" : ""}.png`);
   // Leave sample_cosmos in place: it is the same table `just web` users load from the cosmos example.
   seedCosmos(app.binary);
 
@@ -76,16 +77,16 @@ test("README web shots: query, explain, tables", async ({ page, app }, testInfo)
   await runStatement(page, "SELECT name, kind, class, radius_km FROM sample_cosmos", { above: 8 });
   await expect(page.locator("#result-table")).toContainText("Jupiter");
   await settle(page);
-  await page.screenshot({ path: playwrightArtifact("readme-web-query.png") });
+  await page.screenshot({ path: shot("query") });
 
   await runStatement(page, "EXPLAIN SELECT * FROM sample_cosmos", { above: 8 });
   await expect(page.getByRole("term").filter({ hasText: "key condition expression" }).last()).toBeVisible();
   await settle(page);
-  await page.screenshot({ path: playwrightArtifact("readme-web-explain.png") });
+  await page.screenshot({ path: shot("explain") });
 
   await page.locator("#mode-tables").click();
   await page.locator("#table-list").getByText("sample_cosmos", { exact: true }).click();
   await expect(page.locator("#tables-view")).toContainText("PLANET#earth");
   await settle(page);
-  await page.screenshot({ path: playwrightArtifact("readme-web-tables.png") });
+  await page.screenshot({ path: shot("tables") });
 });

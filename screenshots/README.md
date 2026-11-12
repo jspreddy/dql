@@ -7,6 +7,7 @@ Local.
 
 | File | Shows |
 | --- | --- |
+| [`banner.png`](banner.png) | README banner: the three surfaces, MCP, and security, in the web UI's dark colors |
 | [`cli/repl.png`](cli/repl.png) | REPL: `opt format rich`, then Sol's planets as a table |
 | [`cli/cosmos-planets.png`](cli/cosmos-planets.png) | REPL: default `smart` format, expanded rows with nested maps |
 | [`web/query.png`](web/query.png) | `dqlrs --web` query editor with a result |
@@ -46,3 +47,12 @@ terrestrial filter query. The current shots were captured from tmux
 the Sol planets query), run `dqlrs notebook --local`. Open
 `getting-started-dqlrs.ipynb` and `cosmos.ipynb`, run the query cell, and
 capture Lab at 1440×900 with the news toast dismissed.
+
+**Banner.** [`banner/banner.html`](banner/banner.html) is the source. It uses
+the dark tokens from `dqlrs-web/static/theme.css` and the vendored Material
+icons. Its panels are dark captures: `banner/web.png` is
+`readme-web-query-dark.png` from the web spec (dark project), `banner/tui.png`
+is `cli/repl.png`, and `banner/notebook.png` is the cosmos notebook in
+JupyterLab Dark. Render the `#banner` element at 1280×640 with
+`deviceScaleFactor: 2` and Chromium's `--allow-file-access-from-files` (the
+icons load from a sibling folder), and save it as `screenshots/banner.png`.
