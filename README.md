@@ -44,7 +44,13 @@ Install from the **`v-rust`** branch on GitHub.
 
 ### Rust `dqlrs` (recommended)
 
-Requires [Rust/Cargo](https://rustup.rs/).
+Prebuilt binary from [GitHub releases](https://github.com/jspreddy/dql/releases):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/HEAD/scripts/rust-install.sh | sh
+```
+
+Or build it with [Rust/Cargo](https://rustup.rs/):
 
 ```bash
 cargo install --git https://github.com/jspreddy/dql.git --branch v-rust \
@@ -96,7 +102,14 @@ dqlrs
 dqlrs -H localhost -p 8000
 ```
 
-![dqlrs interactive REPL](screenshots/cli/repl.png)
+`opt format rich` draws results as a table:
+
+![dqlrs interactive REPL with opt format rich](screenshots/cli/repl.png)
+
+The default `smart` format switches to one block per item when a row has nested
+maps:
+
+![dqlrs smart format with nested maps](screenshots/cli/cosmos-planets.png)
 
 ### Web UI
 
@@ -105,10 +118,27 @@ dqlrs web
 dqlrs web -H localhost -p 8000 --dir ~/queries
 ```
 
-Query editor, `.dql` file tree, table browser — default
-`http://127.0.0.1:8765`.
+Opens `http://127.0.0.1:8765` by default. The server is the `dqlrs` binary;
+the browser assets are bundled into it.
 
-![dqlrs web UI](screenshots/web/query.png)
+- **Query:** `.dql` file tree on the left, CodeMirror editor with DQL
+  highlighting and lint, and Result / History / Lint tabs under it. Run the
+  statement at the cursor (Ctrl+Enter) or the whole file.
+- **Tables:** every table with its keys, 50 rows at a time.
+- Search across tables, columns, and queries, and a light or dark theme.
+- `--mcp` also serves MCP tools at `/mcp` on the same host.
+
+![dqlrs web UI query editor](screenshots/web/query.png)
+
+`EXPLAIN` shows the plan as a card, with a JSON toggle:
+
+![dqlrs web UI explain plan](screenshots/web/explain.png)
+
+The table browser:
+
+![dqlrs web UI table browser](screenshots/web/tables.png)
+
+Details: [`dqlrs-web/README.md`](dqlrs-web/README.md).
 
 ### Notebook
 
@@ -117,22 +147,30 @@ dqlrs notebook
 dqlrs notebook --local
 ```
 
-JupyterLab with a **DQL (Rust)** kernel.
+JupyterLab with a **DQL (Rust)** kernel. The first run installs JupyterLab into
+`~/.local/share/dqlrs/notebook` (needs Python 3.10+ or
+[uv](https://docs.astral.sh/uv/)) and writes a `getting-started-dqlrs.ipynb`
+starter into the current folder. `--local` points cells at DynamoDB Local.
 
-![dqlrs notebook](screenshots/notebook/cosmos.png)
+![dqlrs notebook running a query](screenshots/notebook/cosmos.png)
+
+The launcher lists the DQL (Rust) notebook and console:
+
+![JupyterLab launcher with the DQL (Rust) kernel](screenshots/notebook/launcher.png)
 
 ## Compare the three surfaces
 
 | | REPL | Web (`dqlrs web`) | Notebook |
 | --- | :---: | :---: | :---: |
 | Interactive DQL | Yes (TUI) | Yes (editor) | Yes (cells) |
-| One-shot / scripts | `-c` outside the REPL | — | Cells (or `-c` via kernel) |
-| Table browser | `ls` / `SHOW` / `DESCRIBE` | Tables nav + sample rows | Via statements |
-| `.dql` files | `file <path>` | Left nav create/edit/run | Jupyter file browser |
+| One-shot / scripts | `-c` outside the REPL | Run file | Cells (or `-c` via kernel) |
+| Table browser | `ls` / `SHOW` / `DESCRIBE` | Tables view, 50 rows a page | Via statements |
+| `.dql` files | `file <path>` | File tree: create, rename, move, run | Jupyter file browser |
 | Multi-cell workflows | — | — | Yes |
 | `EXPLAIN` UI | Text plan | Plan card + JSON toggle | As DQL in a cell |
 | Meta-commands (`opt`, `whoami`, …) | Full set | Session via server | Kernel / magics |
-| History | `~/.dql/history` | — | Jupyter history |
+| Lint | — | Lint tab and underlines | — |
+| History | `~/.dql/history` | History tab (this page) | Jupyter history |
 
 ## Credentials
 
@@ -175,4 +213,14 @@ EXPLAIN SELECT * FROM sample_cosmos
 WHERE pk = 'PLANET#jupiter' AND begins_with(sk, 'MOON#');
 ```
 
-Maintainer notes live in [`MAINTAINER.md`](MAINTAINER.md).
+## Documentation
+
+| Where | What |
+| --- | --- |
+| [`rust-docs/`](rust-docs/README.md) | `dqlrs` user guide: flags, `--serve`, notebook, SAVE/LOAD, migration from Python, architecture |
+| [`rust-docs/plans/`](rust-docs/plans/README.md) | Architecture notes, open design debt, security plans, archive of finished plans |
+| [`dqlrs-web/`](dqlrs-web/README.md) | Web UI behavior and Playwright tests |
+| [`notebook/`](notebook/README.md) | JupyterLab setup from a checkout (Python and Rust kernels) |
+| [`py-docs/`](py-docs/) | Python `dql` docs (Sphinx) |
+| [`screenshots/`](screenshots/README.md) | The images on this page |
+| [`MAINTAINER.md`](MAINTAINER.md) | Repository layout, builds, releases |

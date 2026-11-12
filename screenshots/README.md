@@ -1,9 +1,48 @@
 # Screenshots
 
-Product shots used by the top-level [`README.md`](../README.md).
+Product shots used by the top-level [`README.md`](../README.md). Every shot
+uses the cosmos sample from
+[`dqlrs-web/examples/cosmos/`](../dqlrs-web/examples/cosmos/) against DynamoDB
+Local.
 
-| Folder | Interface |
+| File | Shows |
 | --- | --- |
-| [`cli/`](cli/) | `dqlrs` REPL / TUI |
-| [`web/`](web/) | `dqlrs web` |
-| [`notebook/`](notebook/) | `dqlrs notebook` |
+| [`cli/repl.png`](cli/repl.png) | REPL: `opt format rich`, then Sol's planets as a table |
+| [`cli/cosmos-planets.png`](cli/cosmos-planets.png) | REPL: default `smart` format, expanded rows with nested maps |
+| [`web/query.png`](web/query.png) | `dqlrs --web` query editor with a result |
+| [`web/explain.png`](web/explain.png) | `dqlrs --web` explain plan card |
+| [`web/tables.png`](web/tables.png) | `dqlrs --web` table browser |
+| [`notebook/cosmos.png`](notebook/cosmos.png) | `dqlrs notebook`: a DQL (Rust) cell and its table |
+| [`notebook/getting-started.png`](notebook/getting-started.png) | `dqlrs notebook`: the starter notebook it writes |
+| [`notebook/launcher.png`](notebook/launcher.png) | `dqlrs notebook`: launcher with the DQL (Rust) kernel |
+
+## Recapture
+
+Seed the table first (`file` reads one path per call):
+
+```bash
+just dynamo
+dqlrs -H localhost -p 8000 -c "file dqlrs-web/examples/cosmos/00-table.dql"
+dqlrs -H localhost -p 8000 -c "file dqlrs-web/examples/cosmos/10-bodies.dql"
+```
+
+**Web.** The Playwright spec
+[`readme-screenshots.spec.js`](../dqlrs-web/playwright/tests/readme-screenshots.spec.js)
+seeds the table itself and writes three 1440×900 shots to
+`.playwright-artifacts/`:
+
+```bash
+just web-test -- tests/readme-screenshots.spec.js --project light
+for n in query explain tables; do cp .playwright-artifacts/readme-web-$n.png screenshots/web/$n.png; done
+```
+
+**CLI.** Run `dqlrs -H localhost -p 8000` in a 110×34 terminal with a black
+background. For `repl.png`, type `opt format rich`, then the Sol planets query
+from `20-queries.dql`. For `cosmos-planets.png`, start a new session and run the
+terrestrial filter query. The current shots were captured from tmux
+(`capture-pane -e -N`) and rendered with xterm.js.
+
+**Notebook.** From an empty folder that holds only `cosmos.ipynb` (a heading and
+the Sol planets query), run `dqlrs notebook --local`. Open
+`getting-started-dqlrs.ipynb` and `cosmos.ipynb`, run the query cell, and
+capture Lab at 1440×900 with the news toast dismissed.
