@@ -1386,7 +1386,7 @@ impl<'a> Parser<'a> {
     }
 
     /// `ST` is short for `SHOW TABLES`. `ST LIKE 'p'` and `ST 'p'` use the pattern as written;
-    /// a bare name, `ST posts`, lists the tables whose names begin with it (`LIKE 'posts%'`).
+    /// a bare name, `ST posts`, lists the tables whose names contain it (`LIKE '%posts%'`).
     fn parse_st(&mut self) -> Result<Statement, ParseError> {
         if self.accept_keyword("LIKE") {
             let like = self.expect_string()?;
@@ -1399,7 +1399,7 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Ident(name)) => {
                 self.pos += 1;
-                Some(format!("{name}%"))
+                Some(format!("%{name}%"))
             }
             _ => None,
         };
@@ -2629,13 +2629,17 @@ mod tests {
             parse_statement("st 'alpha%'").unwrap(),
             parse_statement("SHOW TABLES LIKE 'alpha%'").unwrap()
         );
-        // A bare name means names that begin with it, which includes the name itself.
-        assert_eq!(parse_statement("st posts").unwrap(), like("posts%"));
+        // A bare name means names that contain it, which includes the name itself.
+        assert_eq!(parse_statement("st post").unwrap(), like("%post%"));
+        assert_eq!(
+            parse_statement("st post").unwrap(),
+            parse_statement("show tables like '%post%'").unwrap()
+        );
         assert_eq!(
             parse_statement("ST order-items.v2;").unwrap(),
-            like("order-items.v2%")
+            like("%order-items.v2%")
         );
-        assert_eq!(parse_statement("st TABLES").unwrap(), like("TABLES%"));
+        assert_eq!(parse_statement("st TABLES").unwrap(), like("%TABLES%"));
         // Only one pattern.
         assert!(parse_statement("st posts comments").is_err());
         assert!(parse_statement("st 'a' 'b'").is_err());
