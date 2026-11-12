@@ -155,6 +155,22 @@ pub fn clear(store: Store<'_>, relative: &str) -> Result<(), PathError> {
     Ok(())
 }
 
+/// Drop every saved result for this connection in this workspace. Returns how many query
+/// files had results. Other connections' results are kept.
+pub fn clear_all(store: Store<'_>) -> Result<usize, PathError> {
+    let base = store.base();
+    if !base.is_dir() {
+        return Ok(0);
+    }
+    let files = fs::read_dir(&base)
+        .map_err(|err| PathError(err.to_string()))?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().is_dir())
+        .count();
+    fs::remove_dir_all(&base).map_err(|err| PathError(err.to_string()))?;
+    Ok(files)
+}
+
 /// Drop this connection's result directories for a file, or for every `.dql` file under a
 /// folder. The directory name is the sha256 of the workspace-relative path.
 pub fn clear_at(store: Store<'_>, relative: &str) -> Result<Vec<String>, PathError> {
@@ -525,6 +541,29 @@ mod tests {
         clear_at(local, "notes.dql").unwrap();
         assert!(list(local, "notes.dql").unwrap().is_empty());
         assert_eq!(list(aws, "notes.dql").unwrap().len(), 1);
+
+        fs::write(root.path().join("other.dql"), "").unwrap();
+        save(
+            local,
+            "other.dql",
+            "SCAN * FROM x;",
+            json!({"ok": true}),
+            true,
+        )
+        .unwrap();
+        save(
+            local,
+            "notes.dql",
+            "SCAN * FROM y;",
+            json!({"ok": true}),
+            true,
+        )
+        .unwrap();
+        assert_eq!(clear_all(local).unwrap(), 2);
+        assert!(list(local, "notes.dql").unwrap().is_empty());
+        assert!(list(local, "other.dql").unwrap().is_empty());
+        assert_eq!(list(aws, "notes.dql").unwrap().len(), 1);
+        assert_eq!(clear_all(local).unwrap(), 0);
 
         let ignore = fs::read_to_string(root.path().join(".dqlrs-cache/.gitignore")).unwrap();
         assert!(ignore.lines().any(|line| line == "*"), "{ignore}");

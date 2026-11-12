@@ -86,3 +86,59 @@ test("keeps local tables, the table cache, and results per workspace and connect
   await page.locator("#run").click();
   await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(1);
 });
+
+test("settings menu clears local tables and the result cache after a confirm", async ({ page, app }, testInfo) => {
+  const local = uniqueTable();
+  fs.writeFileSync(path.join(app.workspace, "queries", "people.csv"), "id,name\na,ada\n");
+  await replaceEditor(page, `DROP LOCALTABLE IF EXISTS ${local};\nCREATE LOCALTABLE ${local} AS './people.csv';\nSCAN * FROM ${local};`);
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(3);
+  await openResultPane(page, "history");
+  await expect(page.locator(".query-result")).toHaveCount(3);
+  const connection = path.join(
+    app.workspace,
+    ".dqlrs-cache",
+    fs.readdirSync(path.join(app.workspace, ".dqlrs-cache")).find((name) => name !== ".gitignore"),
+  );
+  await expect.poll(() => fs.readdirSync(path.join(connection, "results")).length).toBe(1);
+
+  const settings = page.locator("#settings-pop");
+  await page.locator("#settings-toggle").click();
+  await expect(settings).toBeVisible();
+  await expect(page.locator("#clear-local-tables")).toHaveText("Clear local tables");
+  await expect(page.locator("#clear-result-cache")).toHaveText("Clear result cache");
+
+  // Cancel keeps everything and brings the settings menu back.
+  await page.locator("#clear-local-tables").click();
+  await expect(page.locator("#confirm-pop")).toBeVisible();
+  await expect(page.locator("#confirm-pop-title")).toHaveText("Clear local tables");
+  await page.locator("#confirm-cancel").click();
+  await expect(settings).toBeVisible();
+  await expect(page.locator("#local-tables-clear-note")).toBeHidden();
+  expect(cli(app, app.workspace, "LS")).toContain(local);
+
+  await page.locator("#clear-local-tables").click();
+  await page.locator("#confirm-ok").click();
+  await expect(settings).toBeVisible();
+  await expect(page.locator("#local-tables-clear-note")).toHaveText("Cleared one local table.");
+  expect(cli(app, app.workspace, "LS")).not.toContain(local);
+  expect(fs.existsSync(path.join(app.workspace, "queries", "people.csv"))).toBe(true);
+
+  await page.locator("#clear-result-cache").click();
+  await expect(page.locator("#confirm-pop-title")).toHaveText("Clear result cache");
+  await page.locator("#confirm-ok").click();
+  await expect(settings).toBeVisible();
+  await expect(page.locator("#result-cache-clear-note")).toHaveText("Cleared results for one file.");
+  await expect(page.locator("#local-tables-clear-note")).toBeHidden();
+  await expect(page.locator(".query-result")).toHaveCount(0);
+  expect(fs.existsSync(path.join(connection, "results"))).toBe(false);
+  await page.screenshot({ path: playwrightArtifact(`settings-clear-caches-${testInfo.project.name}.png`) });
+
+  // The results stay cleared after a reload.
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await openResultPane(page, "history");
+  await expect(page.locator(".query-result")).toHaveCount(0);
+});
+

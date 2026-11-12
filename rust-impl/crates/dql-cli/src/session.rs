@@ -265,6 +265,13 @@ impl RuntimeEngine {
         }
     }
 
+    pub fn clear_local_tables(&mut self) -> Result<Vec<String>, EngineError> {
+        match self {
+            Self::Memory(engine) => engine.inner_mut().clear_local_tables(),
+            Self::Remote(engine) => engine.inner_mut().clear_local_tables(),
+        }
+    }
+
     pub fn virtual_schema_line(&self, name: &str) -> Option<(&'static str, String)> {
         match self {
             Self::Memory(engine) => engine.inner().virtual_schema_line(name),

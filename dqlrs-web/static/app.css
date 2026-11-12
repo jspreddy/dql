@@ -362,7 +362,7 @@ input, textarea { background: var(--paper); }
 
 .settings-cache-age.is-refreshing { color: var(--label); }
 
-#clear-table-cache {
+.settings-clear {
   width: 100%;
   height: 26px;
   border: 1px solid var(--line-control);
@@ -371,9 +371,9 @@ input, textarea { background: var(--paper); }
   cursor: pointer;
 }
 
-#clear-table-cache:hover { background: var(--hover); }
+.settings-clear:hover { background: var(--hover); }
 
-#clear-table-cache:disabled { opacity: 0.5; cursor: default; }
+.settings-clear:disabled { opacity: 0.5; cursor: default; }
 
 .settings-keys {
   display: grid;

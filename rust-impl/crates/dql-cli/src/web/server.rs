@@ -741,6 +741,28 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
             let report = super::lint::lint_script(&mut state.session, text);
             Reply::Json(200, serde_json::to_value(report).unwrap_or(Value::Null))
         }
+        "/api/local-tables/clear" => {
+            let mut state = lock_state(app);
+            match state.session.engine.clear_local_tables() {
+                Ok(names) => {
+                    state.table_catalog = None;
+                    for name in &names {
+                        state.shapes.remove(name);
+                    }
+                    drop(state);
+                    app.hub.tables(&names);
+                    Reply::Json(200, json!({"ok": true, "tables": names}))
+                }
+                Err(err) => Reply::Json(500, json!({"ok": false, "error": err.to_string()})),
+            }
+        }
+        "/api/result-cache/clear" => {
+            let key = app.connection_key();
+            match query_cache::clear_all(app.results(&key)) {
+                Ok(files) => Reply::Json(200, json!({"ok": true, "files": files})),
+                Err(err) => json_error(400, &err),
+            }
+        }
         "/api/table-cache/clear" => {
             let mut state = lock_state(app);
             state.shapes.clear();

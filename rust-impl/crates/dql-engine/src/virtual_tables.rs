@@ -713,6 +713,40 @@ mod tests {
     }
 
     #[test]
+    fn clearing_local_tables_forgets_them_and_keeps_temp_tables_and_files() {
+        let dir = std::env::temp_dir().join(format!("dqlrs-clear-locals-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let users = write_file(&dir, "users.csv", "id,name\na,ada\n");
+        let cities = write_file(&dir, "cities.csv", "id,city\na,nyc\n");
+        let store = Arc::new(MemStore(Mutex::new(Vec::new())));
+        let mut engine = in_memory_engine();
+        engine.set_local_store(Some(store.clone()));
+        engine
+            .execute(&format!("CREATE LOCALTABLE users AS '{}'", users.display()))
+            .unwrap();
+        engine
+            .execute(&format!(
+                "CREATE LOCALTABLE cities AS '{}'",
+                cities.display()
+            ))
+            .unwrap();
+        engine
+            .execute("CREATE TEMPTABLE hot AS (SCAN * FROM users)")
+            .unwrap();
+        assert_eq!(store.0.lock().unwrap().len(), 2);
+
+        let cleared = engine.clear_local_tables().unwrap();
+        assert_eq!(cleared, vec!["cities".to_string(), "users".to_string()]);
+        assert!(store.0.lock().unwrap().is_empty());
+        assert!(engine.cached_definition("users").is_none());
+        assert!(engine.cached_definition("hot").is_some());
+        assert!(users.exists() && cities.exists());
+        assert!(engine.clear_local_tables().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn local_and_temp_tables_query_like_dynamodb() {
         let dir = std::env::temp_dir().join(format!("dqlrs-table-kinds-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

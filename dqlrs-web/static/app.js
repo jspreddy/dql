@@ -808,11 +808,33 @@ function applyHighlightToggles() {
 }
 const settingsPop = document.querySelector("#settings-pop");
 const settingsButton = document.querySelector("#settings-toggle");
+const SETTINGS_NOTES = ["#cache-clear-note", "#local-tables-clear-note", "#result-cache-clear-note"];
+// A note to show when the popover next opens. A confirm dialog closes the popover, and the
+// toggle event that reopens it runs later and hides every note, so the result waits here.
+let pendingSettingsNote = null;
+
+function showSettingsNote(selector, text) {
+  if (settingsPop.matches(":popover-open")) {
+    const note = document.querySelector(selector);
+    note.hidden = false;
+    note.textContent = text;
+    return;
+  }
+  pendingSettingsNote = { selector, text };
+  settingsPop.showPopover();
+}
+
 settingsPop.addEventListener("toggle", (event) => {
   const open = event.newState === "open";
   settingsButton.setAttribute("aria-expanded", open ? "true" : "false");
   if (!open) return;
-  document.querySelector("#cache-clear-note").hidden = true;
+  for (const selector of SETTINGS_NOTES) document.querySelector(selector).hidden = true;
+  if (pendingSettingsNote) {
+    const note = document.querySelector(pendingSettingsNote.selector);
+    note.hidden = false;
+    note.textContent = pendingSettingsNote.text;
+    pendingSettingsNote = null;
+  }
   refreshSettingsCacheAge();
   const chip = settingsButton.getBoundingClientRect();
   const width = settingsPop.getBoundingClientRect().width || 232;
@@ -840,6 +862,58 @@ document.querySelector("#clear-table-cache").addEventListener("click", async () 
     button.disabled = false;
   }
   if (state.mode === "tables") await loadTables();
+});
+document.querySelector("#clear-local-tables").addEventListener("click", async () => {
+  const button = document.querySelector("#clear-local-tables");
+  const confirmed = await confirmAction(
+    "Forget every local table saved for this connection in this workspace? Their CSV and JSON files stay on disk, and CREATE LOCALTABLE adds them back.",
+    { title: "Clear local tables", okLabel: "Clear", danger: true },
+  );
+  if (!confirmed) {
+    settingsPop.showPopover();
+    return;
+  }
+  button.disabled = true;
+  try {
+    const payload = await api("/api/local-tables/clear", { method: "POST", body: {} });
+    const count = (payload.tables || []).length;
+    showSettingsNote(
+      "#local-tables-clear-note",
+      count === 1 ? "Cleared one local table." : count ? `Cleared ${count} local tables.` : "No local tables to clear.",
+    );
+    invalidateCatalog();
+    if (state.mode === "tables") await loadTables();
+  } catch (error) {
+    showSettingsNote("#local-tables-clear-note", error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+document.querySelector("#clear-result-cache").addEventListener("click", async () => {
+  const button = document.querySelector("#clear-result-cache");
+  const confirmed = await confirmAction(
+    "Delete the saved results of every query file for this connection in this workspace? This cannot be undone.",
+    { title: "Clear result cache", okLabel: "Clear", danger: true },
+  );
+  if (!confirmed) {
+    settingsPop.showPopover();
+    return;
+  }
+  button.disabled = true;
+  try {
+    const payload = await api("/api/result-cache/clear", { method: "POST", body: {} });
+    const files = Number(payload.files || 0);
+    state.entries = [];
+    showResults([]);
+    showSettingsNote(
+      "#result-cache-clear-note",
+      files === 1 ? "Cleared results for one file." : files ? `Cleared results for ${files} files.` : "No saved results to clear.",
+    );
+  } catch (error) {
+    showSettingsNote("#result-cache-clear-note", error.message);
+  } finally {
+    button.disabled = false;
+  }
 });
 const titleSearch = document.querySelector("#title-search");
 const titleSearchList = document.querySelector("#title-search-list");
