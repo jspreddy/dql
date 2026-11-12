@@ -15,6 +15,16 @@ import { bandLayer, dqlLanguage, lintExtension, markersForRunStatus, queryHighli
 import { highlightParts, runTarget, statementSpans } from "./dql-tokens.js";
 import { parseLsMessage } from "./describe-card.js";
 import { noteCard } from "./note-card.js";
+import { createContextMenu } from "./context-menu.js";
+import { createConfirmDialog, createPromptDialog } from "./dialogs.js";
+import { buildRunTree, paintRunFile, renderRunTotals } from "./run-tree.js";
+import {
+  addResultCounts,
+  amountPhrase,
+  emptyCounts,
+  formatUnits,
+  resultLabel,
+} from "./statement-text.js";
 import { unifiedDiff } from "./file-patch.js";
 
 const apiToken = document.querySelector('meta[name="dqlrs-token"]')?.content || "";
@@ -2563,45 +2573,12 @@ const menuIds = {
 
 const menuEl = document.querySelector("#file-menu");
 
-function showMenu(x, y, items) {
-  menuEl.replaceChildren();
-  for (const item of items) {
-    if (item === "-") {
-      menuEl.append(document.createElement("hr"));
-      continue;
-    }
-    const button = document.createElement("button");
-    button.type = "button";
-    button.role = "menuitem";
-    button.id = menuIds[item.label];
-    if (item.icon === "forward") button.append(fastForwardIcon());
-    button.append(item.label);
-    if (item.danger) button.className = "danger";
-    button.addEventListener("click", (event) => {
-      event.stopPropagation();
-      hideMenu();
-      item.run();
-    });
-    menuEl.append(button);
-  }
-  menuEl.hidden = false;
-  menuEl.style.left = "0px";
-  menuEl.style.top = "0px";
-  const rect = menuEl.getBoundingClientRect();
-  menuEl.style.left = Math.max(4, Math.min(x, window.innerWidth - rect.width - 8)) + "px";
-  menuEl.style.top = Math.max(4, Math.min(y, window.innerHeight - rect.height - 8)) + "px";
-}
-
-function hideMenu() {
-  menuEl.hidden = true;
-}
-
-document.addEventListener("click", (event) => {
-  if (!menuEl.contains(event.target)) hideMenu();
+const contextMenu = createContextMenu(menuEl, {
+  ids: menuIds,
+  icon: (name) => (name === "forward" ? fastForwardIcon() : document.createTextNode("")),
 });
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") hideMenu();
-});
+const showMenu = contextMenu.show;
+const hideMenu = contextMenu.hide;
 document.querySelector(".side").addEventListener("contextmenu", (event) => {
   if (state.mode !== "query" || event.target.closest(".node")) return;
   event.preventDefault();
@@ -3788,45 +3765,6 @@ const runPopCancel = document.querySelector("#run-pop-cancel");
 const runPopStop = document.querySelector("#run-pop-stop");
 let runDialog = null;
 
-const READ_VERBS = new Set(["select", "scan"]);
-const WRITE_VERBS = new Set(["insert", "update", "delete", "load", "create", "drop", "alter"]);
-
-/** Whether a statement reads, writes, or both. SAVE writes a file, so it counts as a write. */
-function statementAccess(statement) {
-  const code = statementCode(statement);
-  const verb = (code.match(/^[a-z]+/i) || [""])[0].toLowerCase();
-  return {
-    read: READ_VERBS.has(verb),
-    write: WRITE_VERBS.has(verb) || isSaveStatement(code),
-  };
-}
-
-function emptyCounts() {
-  return { queries: 0, reads: 0, writes: 0, success: 0, failure: 0, readUnits: 0, writeUnits: 0 };
-}
-
-function addResultCounts(counts, result) {
-  const access = statementAccess(result.statement || "");
-  counts.queries += 1;
-  if (access.read) counts.reads += 1;
-  if (access.write) counts.writes += 1;
-  if (result.ok) counts.success += 1;
-  else counts.failure += 1;
-  counts.readUnits += Number(result.read_units) || 0;
-  counts.writeUnits += Number(result.write_units) || 0;
-}
-
-function fileSummaryText(counts) {
-  const parts = [
-    amountPhrase(counts.queries, "query", "queries"),
-    amountPhrase(counts.reads, "read", "reads"),
-    amountPhrase(counts.writes, "write", "writes"),
-    `${counts.success} ok`,
-  ];
-  if (counts.failure) parts.push(`${counts.failure} failed`);
-  return parts.join(" · ");
-}
-
 async function runTargetDocuments(path, kind) {
   if (kind === "dir") return folderDocuments(path);
   const text = path === state.path
@@ -3865,7 +3803,7 @@ async function openRunDialog(path, kind) {
   for (const file of files) if (!file.statements) file.status = "skipped";
   runPopTotals.hidden = true;
   runPopTotals.replaceChildren();
-  runPopBody.replaceChildren(runTree(path, kind, files));
+  runPopBody.replaceChildren(buildRunTree(path, kind, files, { tip: setTip }));
   runPopStatus.textContent = "";
   runPopStart.hidden = false;
   runPopStart.disabled = !runnable.length;
@@ -3875,119 +3813,6 @@ async function openRunDialog(path, kind) {
   runPopStop.hidden = true;
   runPop.showModal();
   (runnable.length ? runPopStart : runPopCancel).focus();
-}
-
-/** Files as a tree of folders, relative to the folder that was run. */
-function runTree(path, kind, files) {
-  const base = kind === "dir" && path !== "." ? path + "/" : "";
-  const root = { dirs: new Map(), files: [] };
-  for (const file of files) {
-    const relative = kind === "dir" ? file.doc.path.slice(base.length) : file.doc.path.split("/").pop();
-    const parts = relative.split("/");
-    let node = root;
-    for (const part of parts.slice(0, -1)) {
-      if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), files: [] });
-      node = node.dirs.get(part);
-    }
-    node.files.push({ file, name: parts[parts.length - 1] });
-  }
-  const list = document.createElement("ul");
-  list.className = "run-tree";
-  list.dataset.testid = "run-tree";
-  appendRunTree(list, root, base);
-  if (!files.length) {
-    const empty = document.createElement("p");
-    empty.className = "empty";
-    empty.textContent = "This folder has no .dql files.";
-    return empty;
-  }
-  return list;
-}
-
-function appendRunTree(list, node, prefix) {
-  // Files before subfolders: the order folderDocuments runs them in (dqlFilesUnder).
-  for (const { file, name } of node.files) {
-    const item = document.createElement("li");
-    item.className = "run-tree-file";
-    const row = document.createElement("div");
-    row.className = "run-tree-row";
-    row.dataset.path = file.doc.path;
-    row.dataset.testid = "run-file";
-    const dot = document.createElement("span");
-    dot.className = "run-dot";
-    dot.dataset.testid = "run-dot";
-    const label = document.createElement("span");
-    label.className = "run-tree-name";
-    label.textContent = name;
-    const count = document.createElement("span");
-    count.className = "run-tree-count";
-    count.textContent = file.statements ? amountPhrase(file.statements, "statement", "statements") : "no statements";
-    const summary = document.createElement("span");
-    summary.className = "run-tree-summary";
-    summary.dataset.testid = "run-summary";
-    row.append(dot, label, count, summary);
-    item.append(row);
-    list.append(item);
-    file.row = row;
-    paintRunFile(file);
-  }
-  for (const [name, child] of [...node.dirs.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    const item = document.createElement("li");
-    item.className = "run-tree-dir";
-    const row = document.createElement("div");
-    row.className = "run-tree-row";
-    const label = document.createElement("span");
-    label.className = "run-tree-name";
-    label.textContent = name + "/";
-    row.append(label);
-    const nested = document.createElement("ul");
-    appendRunTree(nested, child, prefix + name + "/");
-    item.append(row, nested);
-    list.append(item);
-  }
-}
-
-function paintRunFile(file) {
-  if (!file.row) return;
-  const dot = file.row.querySelector(".run-dot");
-  const summary = file.row.querySelector(".run-tree-summary");
-  dot.dataset.status = file.status;
-  file.row.dataset.status = file.status;
-  summary.classList.toggle("is-error", file.status === "error");
-  if (file.status === "waiting") summary.textContent = "";
-  else if (file.status === "skipped") summary.textContent = file.statements ? "Not run" : "Skipped";
-  else if (file.status === "running") summary.textContent = file.counts.queries ? fileSummaryText(file.counts) : "Running…";
-  else summary.textContent = file.error && !file.counts.queries ? file.error : fileSummaryText(file.counts);
-  if (file.error) setTip(summary, file.error);
-}
-
-function paintRunTotals() {
-  const counts = runDialog.counts;
-  runPopTotals.hidden = false;
-  const tiles = [
-    ["queries", "Queries", counts.queries],
-    ["reads", "Reads", counts.reads],
-    ["writes", "Writes", counts.writes],
-    ["success", "Success", counts.success],
-    ["failure", "Failure", counts.failure],
-    ["read-units", "Read units", formatUnits(counts.readUnits)],
-    ["write-units", "Write units", formatUnits(counts.writeUnits)],
-  ];
-  runPopTotals.replaceChildren(...tiles.map(([key, label, value]) => {
-    const tile = document.createElement("div");
-    tile.className = "run-total";
-    tile.dataset.total = key;
-    tile.dataset.testid = "run-total-" + key;
-    if (key === "failure" && !value) tile.dataset.zero = "";
-    const name = document.createElement("span");
-    name.className = "run-total-label";
-    name.textContent = label;
-    const amount = document.createElement("span");
-    amount.className = "run-total-value";
-    amount.textContent = String(value);
-    tile.append(name, amount);
-    return tile;
-  }));
 }
 
 function runDialogFile(doc) {
@@ -4002,7 +3827,7 @@ async function startRunDialog() {
   runPopCancel.hidden = true;
   runPopStop.hidden = false;
   runPopStatus.textContent = "Running…";
-  paintRunTotals();
+  renderRunTotals(runPopTotals, dialog.counts);
   // A single file opens in the editor first, so its statements get run marks there too.
   if (dialog.kind !== "dir") {
     const file = dialog.files[0];
@@ -4015,7 +3840,7 @@ async function startRunDialog() {
       const file = runDialogFile(doc);
       if (!file) return;
       file.status = "running";
-      paintRunFile(file);
+      paintRunFile(file, { tip: setTip });
       file.row?.scrollIntoView({ block: "nearest" });
     },
     result(doc, result) {
@@ -4024,8 +3849,8 @@ async function startRunDialog() {
       addResultCounts(file.counts, result);
       addResultCounts(dialog.counts, result);
       if (!result.ok) file.error = result.error || result.message || "failed";
-      paintRunFile(file);
-      paintRunTotals();
+      paintRunFile(file, { tip: setTip });
+      renderRunTotals(runPopTotals, dialog.counts);
     },
     fileEnd(doc, results, errorMessage) {
       const file = runDialogFile(doc);
@@ -4033,7 +3858,7 @@ async function startRunDialog() {
       if (errorMessage) file.error = errorMessage;
       const failed = Boolean(errorMessage) || !results.length || results.some((item) => !item.ok);
       file.status = failed ? "error" : "ok";
-      paintRunFile(file);
+      paintRunFile(file, { tip: setTip });
     },
   });
   for (const file of dialog.files) {
@@ -4043,11 +3868,11 @@ async function startRunDialog() {
     } else if (file.status === "waiting") {
       file.status = "skipped";
     }
-    paintRunFile(file);
+    paintRunFile(file, { tip: setTip });
   }
   dialog.running = false;
   dialog.done = true;
-  paintRunTotals();
+  renderRunTotals(runPopTotals, dialog.counts);
   const ran = dialog.files.filter((file) => file.status === "ok" || file.status === "error").length;
   const failed = dialog.files.filter((file) => file.status === "error").length;
   const notRun = dialog.files.filter((file) => file.status === "skipped" && file.statements).length;
@@ -4382,12 +4207,6 @@ function formatElapsed(value) {
   return seconds.toFixed(digits).replace(/\.0$/, "") + " s";
 }
 
-function formatUnits(value) {
-  const number = Number(value) || 0;
-  const rounded = Math.round(number * 100) / 100;
-  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
-}
-
 function formatCapacity(readUnits, writeUnits) {
   const parts = [];
   const read = capacityText(readUnits);
@@ -4631,58 +4450,6 @@ function explainPlan(steps) {
     card.append(row);
   }
   return card;
-}
-
-function resultLabel(item) {
-  if (!item.ok) return item.error || item.message || "failed";
-  if (item.kind === "affected") return affectedLabel(item);
-  if (item.kind === "status" || item.kind === "schema" || item.kind === "text") {
-    return droppedLabel(item) || item.message || item.kind;
-  }
-  if (item.kind === "items") return ((item.items || []).length) + " rows";
-  return item.message || "ok";
-}
-
-// The server keeps the comment lines above a statement in its text. Drop them before reading the verb.
-function statementCode(statement) {
-  return String(statement || "").replace(/^(?:\s*--[^\n]*(?:\n|$))*/, "").trim();
-}
-
-function affectedLabel(item) {
-  const count = Number(item.affected ?? 0);
-  const statement = statementCode(item.statement);
-  const verb = (statement.match(/^(insert|delete|update|select|scan|load)\b/i) || [])[1];
-  const action = verb ? verb.toLowerCase() : "";
-  if (action === "insert") return `${amountPhrase(count, "row", "rows")} inserted`;
-  if (action === "delete") return `${amountPhrase(count, "row", "rows")} deleted`;
-  if (action === "update") return `${amountPhrase(count, "row", "rows")} updated`;
-  if (action === "load") return `${amountPhrase(count, "row", "rows")} loaded`;
-  if (isSaveStatement(statement)) return `${amountPhrase(count, "row", "rows")} saved`;
-  if ((action === "select" || action === "scan") && /\bcount\s*\(\s*\*\s*\)/i.test(statement)) {
-    return amountPhrase(count, "row", "rows");
-  }
-  return `${count} affected`;
-}
-
-function isSaveStatement(statement) {
-  const text = String(statement || "")
-    .replace(/--[^\n]*/g, " ")
-    .replace(/'(?:[^']|\\')*'/g, " '' ")
-    .replace(/"(?:[^"]|\\")*"/g, ' "" ');
-  return /\bsave\s+(?:''|""|[^\s=;]+)/i.test(text);
-}
-
-// DROP names a single table, so a drop that removed something dropped one table.
-function droppedLabel(item) {
-  if (!/^drop\b/i.test(statementCode(item.statement))) return "";
-  if (!/^Dropped\b/.test(String(item.message || ""))) return "";
-  return "one table dropped";
-}
-
-function amountPhrase(count, singular, plural) {
-  const amount = Number.isFinite(count) ? count : 0;
-  if (amount === 1) return `one ${singular}`;
-  return `${amount} ${plural}`;
 }
 
 function describeCard(description, note, cache) {
@@ -6025,86 +5792,8 @@ function reportError(error) {
   window.alert(error.message);
 }
 
-const confirmPop = document.querySelector("#confirm-pop");
-const confirmTitle = document.querySelector("#confirm-pop-title");
-const confirmPath = document.querySelector("#confirm-pop-path");
-const confirmMessage = document.querySelector("#confirm-pop-message");
-const confirmOk = document.querySelector("#confirm-ok");
-const confirmCancel = document.querySelector("#confirm-cancel");
-let confirmPending = null;
-
-function settleConfirm(accepted) {
-  const pending = confirmPending;
-  confirmPending = null;
-  if (confirmPop.open) confirmPop.close();
-  if (pending) pending(accepted);
-}
-
-function confirmAction(message, { title = "Confirm", path = "", okLabel = "OK", danger = false } = {}) {
-  if (confirmPending) settleConfirm(false);
-  confirmTitle.textContent = title;
-  confirmPath.textContent = path;
-  confirmPath.hidden = !path;
-  confirmMessage.textContent = message;
-  confirmOk.textContent = okLabel;
-  confirmOk.classList.toggle("danger", danger);
-  return new Promise((resolve) => {
-    confirmPending = resolve;
-    confirmPop.showModal();
-    confirmCancel.focus();
-  });
-}
-
-confirmOk.addEventListener("click", () => settleConfirm(true));
-confirmCancel.addEventListener("click", () => settleConfirm(false));
-confirmPop.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  settleConfirm(false);
-});
-confirmPop.addEventListener("click", (event) => {
-  if (event.target === confirmPop) settleConfirm(false);
-});
-
-const promptPop = document.querySelector("#prompt-pop");
-const promptForm = document.querySelector("#prompt-pop-form");
-const promptTitle = document.querySelector("#prompt-pop-title");
-const promptInput = document.querySelector("#prompt-pop-input");
-const promptOk = document.querySelector("#prompt-ok");
-const promptCancel = document.querySelector("#prompt-cancel");
-let promptPending = null;
-
-function settlePrompt(value) {
-  const pending = promptPending;
-  promptPending = null;
-  if (promptPop.open) promptPop.close();
-  if (pending) pending(value);
-}
-
-function promptAction(message, defaultValue = "", { okLabel = "OK" } = {}) {
-  if (promptPending) settlePrompt(null);
-  promptTitle.textContent = message;
-  promptInput.value = defaultValue == null ? "" : String(defaultValue);
-  promptOk.textContent = okLabel;
-  return new Promise((resolve) => {
-    promptPending = resolve;
-    promptPop.showModal();
-    promptInput.focus();
-    promptInput.select();
-  });
-}
-
-promptForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  settlePrompt(promptInput.value);
-});
-promptCancel.addEventListener("click", () => settlePrompt(null));
-promptPop.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  settlePrompt(null);
-});
-promptPop.addEventListener("click", (event) => {
-  if (event.target === promptPop) settlePrompt(null);
-});
+const confirmAction = createConfirmDialog();
+const promptAction = createPromptDialog();
 
 const serverPop = document.querySelector("#server-pop");
 const serverStatus = document.querySelector("#server-pop-status");
