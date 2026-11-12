@@ -47,7 +47,7 @@ return values. Hard to test and reuse outside the REPL.
 2. Replace thread-locals with
    `enum MetaOutcome { None, Result(...), Exit, Watch(...), ClearScreen }`.
 3. Move rich line renderers to `dql-output` (see
-   `todo_invert_output_dependencies.md`). Meta exposes view data; presentation
+   [`invert_output_dependencies.md`](invert_output_dependencies.md)). Meta exposes view data; presentation
    chooses text vs ratatui lines.
 4. Slim `Session` into connection + config + engine handle; extract
    `CommandExecutor` / `OutputPipeline`.

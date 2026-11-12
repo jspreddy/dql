@@ -23,11 +23,11 @@ responsibilities. Navigation, review, and incremental change are expensive.
    (`query`, `dml`, `ddl`). Keep `lib.rs` as a thin re-export facade.
 2. **`dql-expr`:** Split into `render/`, `values/`, `timestamps/`; move
    `project_selection` / runtime evaluation toward engine or a small eval
-   module (see also `todo_typed_expression_ast.md`).
+   module (see also [`typed_expression_ast.md`](typed_expression_ast.md)).
 3. **`dql-models`:** Keep structural metadata + `plan_read` here; move
    `schema_dql` / display helpers to `dql-output` (or a schema-format module).
 4. **`dql-engine`:** Decompose `Engine` and `lib.rs` as described in
-   `todo_engine_backend_boundaries.md`; split `aws.rs` read/write/DDL helpers.
+   [`engine_backend_boundaries.md`](engine_backend_boundaries.md); split `aws.rs` read/write/DDL helpers.
 
 ## Acceptance
 

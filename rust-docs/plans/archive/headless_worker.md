@@ -42,7 +42,7 @@ This is the Rust half of “continuous evaluation”: one process, many execs, o
 | `StatementResult` | `None` / `Status` / `Affected` / `Items` / `Schema` | Map to envelope |
 | `dql-output` `JsonFormat` | NDJSON items | Leave `-c --json` as-is; envelope is serve-only at first |
 | `watch` | ratatui + CloudWatch | Error in serve: “not available” |
-| `todo_unify_cli_pipelines.md` | One `execute_input` for `-c` and REPL | Worker must call that same function, not a third pipeline |
+| [`todo/unify_cli_pipelines.md`](../todo/unify_cli_pipelines.md) | One `execute_input` for `-c` and REPL | Worker must call that same function, not a third pipeline |
 
 `run()` today exits 0 even when `run_command` fails (`eprintln` only). Serve must not copy that: errors go in the envelope; the process stays up.
 
@@ -176,7 +176,7 @@ History: append exec text like `-c` does or skip file history in serve (prefer *
 
 ## Code shape
 
-Do not add a third execution path. Prefer a thin slice of [`todo_unify_cli_pipelines.md`](todo_unify_cli_pipelines.md):
+Do not add a third execution path. Prefer a thin slice of [`todo/unify_cli_pipelines.md`](../todo/unify_cli_pipelines.md):
 
 ```text
 Session::execute_input(line, ExecutionContext) -> ExecutionOutcome

@@ -112,8 +112,8 @@ One engine parity test remains `#[ignore]` in
 Python readline stay ignored.
 
 Design-debt follow-ups (not user-facing parity) are listed in
-`rust-plans/todo_*.md`. See `rust-impl/README.md` and
-`rust-plans/migration-roadmap.md` for overall status.
+[`plans/todo/`](plans/todo/). See `rust-impl/README.md` and
+[`plans/archive/migration-roadmap.md`](plans/archive/migration-roadmap.md) for the rewrite history.
 
 ## Python package status
 

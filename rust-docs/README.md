@@ -4,15 +4,22 @@
 
 User guide for the Rust implementation of DynamoDB Query Language. The CLI
 binary is `dqlrs`. Source lives in [`rust-impl/`](../rust-impl/). Maintainer
-notes are in [`rust-impl/README.md`](../rust-impl/README.md). Differences from
-the Python client: [migration-from-python.md](migration-from-python.md).
-Architecture, package, and runtime diagrams: [architecture.html](architecture.html).
-How long the rewrite took, and what it cost in commits, pull requests, and tokens: [rewrite-metrics.html](rewrite-metrics.html).
-The same counts, binned by hour: [rewrite-metrics-hours.html](rewrite-metrics-hours.html).
-Plotly charts for the same span. This repo's agents count in every hour, and other usage counts only in an hour with a commit here: [work-metrics.html](work-metrics.html).
+notes are in [`rust-impl/README.md`](../rust-impl/README.md).
 
 This repository ([jspreddy/dql](https://github.com/jspreddy/dql)) is a fork of
 [stevearc/dql](https://github.com/stevearc/dql).
+
+## Documentation map
+
+| Where | What |
+| --- | --- |
+| This file | Install, connect, flags, statements, web UI, `--serve`, notebook |
+| [migration-from-python.md](migration-from-python.md) | Differences from the Python client |
+| [architecture.html](architecture.html) | Crate, module, and runtime diagrams |
+| [packaging.html](packaging.html) | How `dqlrs` is packaged, installed, and run (web assets included) |
+| [notebook.html](notebook.html) | How `dqlrs notebook` installs, configures, and launches kernels |
+| [`metrics/`](metrics/) | How long the rewrite took and what it cost: [by day](metrics/rewrite-metrics.html), [by hour](metrics/rewrite-metrics-hours.html), [Plotly charts](metrics/work-metrics.html) |
+| [`plans/`](plans/README.md) | Architecture notes, testing strategy, open design debt, security plans, and the archive of finished plans |
 
 ## Install
 

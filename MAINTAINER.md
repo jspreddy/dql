@@ -10,8 +10,7 @@
 | [`py-docs/`](py-docs/) | Sphinx docs for the Python client |
 | [`py-plans/`](py-plans/) | Python-only design notes |
 | [`rust-impl/`](rust-impl/) | Rust Cargo workspace (`dqlrs`) |
-| [`rust-docs/`](rust-docs/) | Markdown user docs for the Rust client |
-| [`rust-plans/`](rust-plans/) | Rust rewrite / architecture notes |
+| [`rust-docs/`](rust-docs/) | User docs for the Rust client; plans and archive under [`rust-docs/plans/`](rust-docs/plans/README.md) |
 | [`black-box-tests/`](black-box-tests/) | Black-box acceptance cases (binaries + DynamoDB Local) |
 | [`notebook/`](notebook/) | JupyterLab UI and DQL kernels |
 | [`dqlrs-web/`](dqlrs-web/) | Web UI assets and Playwright tests |
