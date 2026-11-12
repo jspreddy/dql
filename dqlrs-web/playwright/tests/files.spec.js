@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
-import { dragAndDrop, handleDialogs, node, openApp, pressMod, replaceEditor, reveal, themeColor } from "../support/helpers.js";
+import { dragAndDrop, handleDialogs, node, openApp, pressMod, replaceEditor, reveal, runFromDialog, themeColor } from "../support/helpers.js";
 
 test.beforeEach(async ({ page, app }) => {
   await openApp(page, app);
@@ -887,6 +887,7 @@ test("runs the selected file from the context menu", async ({ page, app }, testI
   await page.screenshot({ path: playwrightArtifact(`run-file-menu-${testInfo.project.name}.png`) });
   await page.locator("#menu-run-file").click();
   await expect(page.locator("#file-menu")).toBeHidden();
+  await runFromDialog(page);
   await expect(page.locator("#file-name")).toHaveText(`run-${name}.dql`);
   await expect(node(page, file)).toHaveClass(/selected/);
   await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(4);
@@ -894,6 +895,7 @@ test("runs the selected file from the context menu", async ({ page, app }, testI
 
   await node(page, file).click({ button: "right" });
   await page.locator("#menu-run-file").click();
+  await runFromDialog(page);
   await expect(page.locator("#file-name")).toHaveText(`run-${name}.dql`);
   await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(4);
 });
@@ -906,7 +908,11 @@ test("runs an empty folder from the context menu", async ({ page }) => {
   await expect(page.locator("#menu-run-folder")).toHaveCSS("color", await themeColor(page, "--danger"));
   await page.locator("#menu-run-folder").click();
   await expect(page.locator("#file-menu")).toBeHidden();
-  await expect(page.locator("#result-meta")).toHaveText("Nothing to run");
+  await expect(page.locator("#run-pop")).toBeVisible();
+  await expect(page.locator("#run-pop-body")).toHaveText("This folder has no .dql files.");
+  await expect(page.locator("#run-pop-start")).toBeDisabled();
+  await page.locator("#run-pop-cancel").click();
+  await expect(page.locator("#run-pop")).toBeHidden();
   await expect(page.locator(".node-running")).toHaveCount(0);
 });
 

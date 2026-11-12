@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
-import { lineByText, lineOverlaps, mod, node, openApp, openResultPane, pressMod, replaceEditor, reveal, themeColor } from "../support/helpers.js";
+import { lineByText, lineOverlaps, mod, node, openApp, openResultPane, pressMod, replaceEditor, reveal, runFromDialog, themeColor } from "../support/helpers.js";
 
 // dragTo jumps in one move. Chrome sometimes delivers that move after mouseup,
 // so the gesture collapses to a cursor. Step the pointer while the button is down.
@@ -553,6 +553,7 @@ test("runs every dql file in a folder from the context menu", async ({ page, app
   await expect(page.locator("#menu-clear-results")).toBeVisible();
   await expect(page.locator("#menu-clear-cache")).toHaveCount(0);
   await page.locator("#menu-run-folder").click();
+  await runFromDialog(page);
   await expect(page.locator("#run")).toBeEnabled();
   await expect(page.locator("#result-body")).not.toContainText("should_not_run");
   await node(page, `${folder}/one.dql`).click();
@@ -590,6 +591,7 @@ test("clears stored results for each file under a right-clicked folder", async (
   await expect(page.locator("#menu-clear-results")).toBeVisible();
   await expect(page.locator("#menu-clear-cache")).toHaveCount(0);
   await page.locator("#menu-run-folder").click();
+  await runFromDialog(page);
 
   const results = () => cachedResults(app.workspace);
   await expect.poll(() => results().length).toBe(3);

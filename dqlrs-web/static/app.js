@@ -780,14 +780,6 @@ async function runFile() {
   await runDocuments([{ text: editorText(), path: state.path, base: 0 }]);
 }
 
-async function runFileAt(path) {
-  if (runButton.disabled || !path) return;
-  if (path !== state.path) await openFile(path);
-  if (state.path !== path) return;
-  armRunPane();
-  await runFile();
-}
-
 setRunRequest(runFromEditor);
 const minimalWriteInput = document.querySelector("#opt-minimal-write");
 const evenOddInput = document.querySelector("#opt-even-odd");
@@ -2529,10 +2521,10 @@ function menuItems(target) {
   const items = [];
   const passive = target.type === "file" && viewOnlyFile(target.path);
   if (target.type === "file" && !passive) {
-    items.push({ label: "Run file", icon: "forward", danger: true, run: () => runFileAt(target.path) }, "-");
+    items.push({ label: "Run file", icon: "forward", danger: true, run: () => openRunDialog(target.path, "file") }, "-");
   }
   if (target.type === "dir") {
-    items.push({ label: "Run folder", icon: "forward", danger: true, run: () => runFolder(target.path) }, "-");
+    items.push({ label: "Run folder", icon: "forward", danger: true, run: () => openRunDialog(target.path, "dir") }, "-");
   }
   items.push(
     { label: "New file", run: () => createNamedFile(dir) },
@@ -3779,19 +3771,312 @@ async function runSelection() {
   await runDocuments([{ text: dql, path: state.path, base: range ? range.from : 0 }]);
 }
 
-async function runFolder(path) {
-  if (!stopButton.classList.contains("hidden")) return;
-  armRunPane();
+// --- Run files dialog ----------------------------------------------------------------
+// "Run file" and "Run folder" in the tree menu list the files first, as a tree, and run
+// them after a confirm. Each file gets a dot (waiting, running, ok, error, not run) and a
+// summary; the header totals queries, reads, writes, successes, failures, and capacity.
+
+const runPop = document.querySelector("#run-pop");
+const runPopTitle = document.querySelector("#run-pop-title");
+const runPopKicker = document.querySelector("#run-pop-kicker");
+const runPopSummary = document.querySelector("#run-pop-summary");
+const runPopTotals = document.querySelector("#run-pop-totals");
+const runPopBody = document.querySelector("#run-pop-body");
+const runPopStatus = document.querySelector("#run-pop-status");
+const runPopStart = document.querySelector("#run-pop-start");
+const runPopCancel = document.querySelector("#run-pop-cancel");
+const runPopStop = document.querySelector("#run-pop-stop");
+let runDialog = null;
+
+const READ_VERBS = new Set(["select", "scan"]);
+const WRITE_VERBS = new Set(["insert", "update", "delete", "load", "create", "drop", "alter"]);
+
+/** Whether a statement reads, writes, or both. SAVE writes a file, so it counts as a write. */
+function statementAccess(statement) {
+  const code = statementCode(statement);
+  const verb = (code.match(/^[a-z]+/i) || [""])[0].toLowerCase();
+  return {
+    read: READ_VERBS.has(verb),
+    write: WRITE_VERBS.has(verb) || isSaveStatement(code),
+  };
+}
+
+function emptyCounts() {
+  return { queries: 0, reads: 0, writes: 0, success: 0, failure: 0, readUnits: 0, writeUnits: 0 };
+}
+
+function addResultCounts(counts, result) {
+  const access = statementAccess(result.statement || "");
+  counts.queries += 1;
+  if (access.read) counts.reads += 1;
+  if (access.write) counts.writes += 1;
+  if (result.ok) counts.success += 1;
+  else counts.failure += 1;
+  counts.readUnits += Number(result.read_units) || 0;
+  counts.writeUnits += Number(result.write_units) || 0;
+}
+
+function fileSummaryText(counts) {
+  const parts = [
+    amountPhrase(counts.queries, "query", "queries"),
+    amountPhrase(counts.reads, "read", "reads"),
+    amountPhrase(counts.writes, "write", "writes"),
+    `${counts.success} ok`,
+  ];
+  if (counts.failure) parts.push(`${counts.failure} failed`);
+  return parts.join(" · ");
+}
+
+async function runTargetDocuments(path, kind) {
+  if (kind === "dir") return folderDocuments(path);
+  const text = path === state.path
+    ? editorText()
+    : (await api("/api/file?path=" + encodeURIComponent(path))).text;
+  return [{ text, path, base: path === state.path ? 0 : null }];
+}
+
+/** Open the run dialog for a file or folder from the tree menu. */
+async function openRunDialog(path, kind) {
+  if (runButton.disabled || !stopButton.classList.contains("hidden") || !path) return;
   await flushSave();
-  let documents = [];
+  let documents;
   try {
-    documents = await folderDocuments(path);
+    documents = await runTargetDocuments(path, kind);
   } catch (error) {
     reportError(error);
     return;
   }
-  await runDocuments(documents);
+  const files = documents.map((doc) => ({
+    doc,
+    statements: statementSpans(doc.text || "").length,
+    counts: emptyCounts(),
+    status: "waiting",
+    error: "",
+    row: null,
+  }));
+  runDialog = { path, kind, files, counts: emptyCounts(), running: false, done: false };
+  runPopKicker.textContent = kind === "dir" ? "Run folder" : "Run file";
+  runPopTitle.textContent = kind === "dir" ? (path === "." ? "Workspace" : path) : path;
+  const runnable = files.filter((file) => file.statements > 0);
+  const queries = runnable.reduce((sum, file) => sum + file.statements, 0);
+  runPopSummary.textContent = runnable.length
+    ? `${amountPhrase(runnable.length, "file", "files")} · ${amountPhrase(queries, "query", "queries")}. Files run one at a time, in this order, and stop at the first failure.`
+    : "No .dql file here has a statement to run.";
+  for (const file of files) if (!file.statements) file.status = "skipped";
+  runPopTotals.hidden = true;
+  runPopTotals.replaceChildren();
+  runPopBody.replaceChildren(runTree(path, kind, files));
+  runPopStatus.textContent = "";
+  runPopStart.hidden = false;
+  runPopStart.disabled = !runnable.length;
+  runPopStart.textContent = runnable.length === 1 ? "Run 1 file" : `Run ${runnable.length} files`;
+  runPopCancel.textContent = "Cancel";
+  runPopCancel.hidden = false;
+  runPopStop.hidden = true;
+  runPop.showModal();
+  (runnable.length ? runPopStart : runPopCancel).focus();
 }
+
+/** Files as a tree of folders, relative to the folder that was run. */
+function runTree(path, kind, files) {
+  const base = kind === "dir" && path !== "." ? path + "/" : "";
+  const root = { dirs: new Map(), files: [] };
+  for (const file of files) {
+    const relative = kind === "dir" ? file.doc.path.slice(base.length) : file.doc.path.split("/").pop();
+    const parts = relative.split("/");
+    let node = root;
+    for (const part of parts.slice(0, -1)) {
+      if (!node.dirs.has(part)) node.dirs.set(part, { dirs: new Map(), files: [] });
+      node = node.dirs.get(part);
+    }
+    node.files.push({ file, name: parts[parts.length - 1] });
+  }
+  const list = document.createElement("ul");
+  list.className = "run-tree";
+  list.dataset.testid = "run-tree";
+  appendRunTree(list, root, base);
+  if (!files.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "This folder has no .dql files.";
+    return empty;
+  }
+  return list;
+}
+
+function appendRunTree(list, node, prefix) {
+  // Files before subfolders: the order folderDocuments runs them in (dqlFilesUnder).
+  for (const { file, name } of node.files) {
+    const item = document.createElement("li");
+    item.className = "run-tree-file";
+    const row = document.createElement("div");
+    row.className = "run-tree-row";
+    row.dataset.path = file.doc.path;
+    row.dataset.testid = "run-file";
+    const dot = document.createElement("span");
+    dot.className = "run-dot";
+    dot.dataset.testid = "run-dot";
+    const label = document.createElement("span");
+    label.className = "run-tree-name";
+    label.textContent = name;
+    const count = document.createElement("span");
+    count.className = "run-tree-count";
+    count.textContent = file.statements ? amountPhrase(file.statements, "statement", "statements") : "no statements";
+    const summary = document.createElement("span");
+    summary.className = "run-tree-summary";
+    summary.dataset.testid = "run-summary";
+    row.append(dot, label, count, summary);
+    item.append(row);
+    list.append(item);
+    file.row = row;
+    paintRunFile(file);
+  }
+  for (const [name, child] of [...node.dirs.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    const item = document.createElement("li");
+    item.className = "run-tree-dir";
+    const row = document.createElement("div");
+    row.className = "run-tree-row";
+    const label = document.createElement("span");
+    label.className = "run-tree-name";
+    label.textContent = name + "/";
+    row.append(label);
+    const nested = document.createElement("ul");
+    appendRunTree(nested, child, prefix + name + "/");
+    item.append(row, nested);
+    list.append(item);
+  }
+}
+
+function paintRunFile(file) {
+  if (!file.row) return;
+  const dot = file.row.querySelector(".run-dot");
+  const summary = file.row.querySelector(".run-tree-summary");
+  dot.dataset.status = file.status;
+  file.row.dataset.status = file.status;
+  summary.classList.toggle("is-error", file.status === "error");
+  if (file.status === "waiting") summary.textContent = "";
+  else if (file.status === "skipped") summary.textContent = file.statements ? "Not run" : "Skipped";
+  else if (file.status === "running") summary.textContent = file.counts.queries ? fileSummaryText(file.counts) : "Running…";
+  else summary.textContent = file.error && !file.counts.queries ? file.error : fileSummaryText(file.counts);
+  if (file.error) setTip(summary, file.error);
+}
+
+function paintRunTotals() {
+  const counts = runDialog.counts;
+  runPopTotals.hidden = false;
+  const tiles = [
+    ["queries", "Queries", counts.queries],
+    ["reads", "Reads", counts.reads],
+    ["writes", "Writes", counts.writes],
+    ["success", "Success", counts.success],
+    ["failure", "Failure", counts.failure],
+    ["read-units", "Read units", formatUnits(counts.readUnits)],
+    ["write-units", "Write units", formatUnits(counts.writeUnits)],
+  ];
+  runPopTotals.replaceChildren(...tiles.map(([key, label, value]) => {
+    const tile = document.createElement("div");
+    tile.className = "run-total";
+    tile.dataset.total = key;
+    tile.dataset.testid = "run-total-" + key;
+    if (key === "failure" && !value) tile.dataset.zero = "";
+    const name = document.createElement("span");
+    name.className = "run-total-label";
+    name.textContent = label;
+    const amount = document.createElement("span");
+    amount.className = "run-total-value";
+    amount.textContent = String(value);
+    tile.append(name, amount);
+    return tile;
+  }));
+}
+
+function runDialogFile(doc) {
+  return runDialog?.files.find((file) => file.doc === doc) || null;
+}
+
+async function startRunDialog() {
+  if (!runDialog || runDialog.running || runDialog.done) return;
+  const dialog = runDialog;
+  dialog.running = true;
+  runPopStart.hidden = true;
+  runPopCancel.hidden = true;
+  runPopStop.hidden = false;
+  runPopStatus.textContent = "Running…";
+  paintRunTotals();
+  // A single file opens in the editor first, so its statements get run marks there too.
+  if (dialog.kind !== "dir") {
+    const file = dialog.files[0];
+    if (file.doc.path !== state.path) await openFile(file.doc.path);
+    if (state.path === file.doc.path) file.doc = { text: editorText(), path: state.path, base: 0 };
+  }
+  armRunPane();
+  await runDocuments(dialog.files.map((file) => file.doc), {
+    fileStart(doc) {
+      const file = runDialogFile(doc);
+      if (!file) return;
+      file.status = "running";
+      paintRunFile(file);
+      file.row?.scrollIntoView({ block: "nearest" });
+    },
+    result(doc, result) {
+      const file = runDialogFile(doc);
+      if (!file) return;
+      addResultCounts(file.counts, result);
+      addResultCounts(dialog.counts, result);
+      if (!result.ok) file.error = result.error || result.message || "failed";
+      paintRunFile(file);
+      paintRunTotals();
+    },
+    fileEnd(doc, results, errorMessage) {
+      const file = runDialogFile(doc);
+      if (!file) return;
+      if (errorMessage) file.error = errorMessage;
+      const failed = Boolean(errorMessage) || !results.length || results.some((item) => !item.ok);
+      file.status = failed ? "error" : "ok";
+      paintRunFile(file);
+    },
+  });
+  for (const file of dialog.files) {
+    if (file.status === "running") {
+      file.status = "error";
+      file.error = file.error || "Stopped before the file finished";
+    } else if (file.status === "waiting") {
+      file.status = "skipped";
+    }
+    paintRunFile(file);
+  }
+  dialog.running = false;
+  dialog.done = true;
+  paintRunTotals();
+  const ran = dialog.files.filter((file) => file.status === "ok" || file.status === "error").length;
+  const failed = dialog.files.filter((file) => file.status === "error").length;
+  const notRun = dialog.files.filter((file) => file.status === "skipped" && file.statements).length;
+  const status = failed
+    ? `${amountPhrase(failed, "file", "files")} failed of ${ran} run${notRun ? `; ${notRun} not run` : ""}.`
+    : `Ran ${amountPhrase(ran, "file", "files")}.`;
+  runPopStatus.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+  runPopStop.hidden = true;
+  runPopCancel.hidden = false;
+  runPopCancel.textContent = "Close";
+  runPopCancel.focus();
+}
+
+runPopStart.addEventListener("click", () => {
+  void startRunDialog();
+});
+runPopCancel.addEventListener("click", () => runPop.close());
+document.querySelector("#run-pop-close").addEventListener("click", () => {
+  if (runDialog?.running) return;
+  runPop.close();
+});
+runPopStop.addEventListener("click", stopRun);
+runPop.addEventListener("cancel", (event) => {
+  // Escape during a run stops it (the window handler); the dialog stays to show the result.
+  if (runDialog?.running) event.preventDefault();
+});
+runPop.addEventListener("close", () => {
+  if (!runDialog?.running) runDialog = null;
+});
 
 async function folderDocuments(path) {
   const root = await api("/api/tree");
@@ -3828,7 +4113,9 @@ function dqlFilesUnder(node) {
   return files.concat(nested);
 }
 
-async function runDocuments(documents) {
+// hooks: optional { fileStart(doc), result(doc, result), fileEnd(doc, results, errorMessage) },
+// called as each file runs. The run files dialog uses them for its dots and totals.
+async function runDocuments(documents, hooks = {}) {
   const runnable = documents.filter((doc) => statementSpans(doc.text || "").length);
   if (!runnable.length) {
     hideProgress();
@@ -3862,6 +4149,7 @@ async function runDocuments(documents) {
       }
       const results = [];
       active = { doc, results };
+      hooks.fileStart?.(doc);
       const response = await fetchServer("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3882,11 +4170,13 @@ async function runDocuments(documents) {
         if (event.event === "result") {
           const result = event.result || {};
           results.push(result);
+          hooks.result?.(doc, result);
           markStatement(origins[event.index], result.ok ? "ok" : "error");
           if (result.ok && changesSchema(result.statement)) invalidateCatalog();
         }
       });
       await storeStatementResults(doc.path || "", doc.text, results);
+      hooks.fileEnd?.(doc, results, null);
       const failed = results.findIndex((item) => !item.ok);
       if (marked && failed >= 0) scrollEditorTo(origins[failed]);
       if ((doc.path || "") === state.path) touchedShown = true;
@@ -3906,6 +4196,7 @@ async function runDocuments(documents) {
     }
     const doc = active ? active.doc : runnable[0];
     const done = active ? active.results : [];
+    if (doc) hooks.fileEnd?.(doc, done, error.message || "failed");
     if (doc) {
       try {
         if (done.length) await storeStatementResults(doc.path || "", doc.text, done);

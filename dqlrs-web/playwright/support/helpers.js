@@ -34,6 +34,17 @@ export async function dragAndDrop(page, source, target) {
   }
 }
 
+// "Run file" and "Run folder" in the tree menu open the run dialog. Confirm, wait for the
+// run to finish, and close the dialog.
+export async function runFromDialog(page) {
+  const dialog = page.locator("#run-pop");
+  await expect(dialog).toBeVisible();
+  await page.locator("#run-pop-start").click();
+  await expect(page.locator("#run-pop-cancel")).toHaveText("Close");
+  await page.locator("#run-pop-cancel").click();
+  await expect(dialog).toBeHidden();
+}
+
 export async function reveal(page, filePath) {
   const parts = String(filePath).split("/");
   for (let i = 0; i < parts.length - 1; i += 1) {

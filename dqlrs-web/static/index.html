@@ -271,6 +271,32 @@
       <p id="schema-pop-foot" class="schema-pop-foot"></p>
     </div>
   </dialog>
+  <dialog id="run-pop" aria-labelledby="run-pop-title">
+    <div class="schema-pop-card">
+      <header class="schema-pop-head">
+        <div class="schema-pop-heading">
+          <div class="schema-pop-kicker-row">
+            <span id="run-pop-kicker" class="schema-pop-kicker">Run files</span>
+          </div>
+          <div class="schema-pop-title-row">
+            <h2 id="run-pop-title">Run</h2>
+          </div>
+          <p id="run-pop-summary" class="schema-pop-summary"></p>
+        </div>
+        <button type="button" id="run-pop-close" class="schema-pop-close" data-tip="Close" aria-label="Close run">
+          <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
+        </button>
+      </header>
+      <div id="run-pop-totals" class="run-pop-totals" hidden></div>
+      <div id="run-pop-body" class="run-pop-body"></div>
+      <footer class="run-pop-foot">
+        <span id="run-pop-status" class="run-pop-status"></span>
+        <button type="button" id="run-pop-cancel">Cancel</button>
+        <button type="button" id="run-pop-stop" class="danger" hidden>Stop</button>
+        <button type="button" id="run-pop-start" class="primary">Run</button>
+      </footer>
+    </div>
+  </dialog>
   <dialog id="row-pop" aria-labelledby="row-pop-title">
     <div class="row-pop-card">
       <header class="row-pop-head">
