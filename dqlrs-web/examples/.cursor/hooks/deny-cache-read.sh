@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Examples workspace: deny agent reads and writes of .cache and .dqlrs-web-cache.
+# Examples workspace: deny agent reads and writes of .cache and .dqlrs-cache.
 set -euo pipefail
 
 input=$(cat)
@@ -10,7 +10,7 @@ import re
 import sys
 
 CACHE = re.compile(
-    r"(?:^|[\\/\s\"'`=<>|;])\.(?:dqlrs-web-cache|cache)(?=$|[\\/\s\"'`<>|;])"
+    r"(?:^|[\\/\s\"'`=<>|;])\.(?:dqlrs-cache|cache)(?=$|[\\/\s\"'`<>|;])"
 )
 
 
@@ -49,7 +49,7 @@ def main() -> None:
                 {
                     "permission": "deny",
                     "user_message": (
-                        "Reading and writing .cache and .dqlrs-web-cache is blocked "
+                        "Reading and writing .cache and .dqlrs-cache is blocked "
                         "(including create, edit, and delete). "
                         "Those folders hold the table cache and saved web query results for the examples workspace. "
                         "Infer data from the schema and load scripts checked in under this workspace."

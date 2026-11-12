@@ -184,7 +184,28 @@ fn accept(app: Arc<App>, listener: TcpListener, stop: Arc<AtomicBool>) {
 }
 
 impl App {
-    fn new(session: Session, root: PathBuf, mcp: bool, token: String) -> Self {
+    /// The current connection's key. Query results are saved and read under it.
+    fn connection_key(&self) -> String {
+        lock_state(self).session.connection_key.clone()
+    }
+
+    /// Query results for `connection_key` in this workspace.
+    fn results<'a>(&'a self, connection_key: &'a str) -> query_cache::Store<'a> {
+        query_cache::Store {
+            workspace: &self.root,
+            connection_key,
+        }
+    }
+
+    fn new(mut session: Session, root: PathBuf, mcp: bool, token: String) -> Self {
+        // The served folder is the workspace. lib.rs passes session.workspace, so this only
+        // changes a session built some other way, such as in tests.
+        if session.workspace != root {
+            session.workspace = root.clone();
+            if !session.engine.is_memory() {
+                session.attach_connection_storage();
+            }
+        }
         let endpoint = match &session.local_endpoint {
             Some((host, port)) => format!("{host}:{port}"),
             None => session.region.clone(),
@@ -518,7 +539,8 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
         "/api/presence" => Reply::Json(200, app.presence.snapshot()),
         "/api/query-results" => {
             let relative = query_value(query, "path");
-            match query_cache::list(&app.root, &relative) {
+            let key = app.connection_key();
+            match query_cache::list(app.results(&key), &relative) {
                 Ok(results) => Reply::Json(200, json!({ "results": results })),
                 Err(err) => json_error(400, &err),
             }
@@ -706,11 +728,13 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
             }
             Err(err) => json_error(400, &err),
         },
-        "/api/query-results" => save_query_result(&app.root, &body),
-        "/api/query-results/clear" => match query_cache::clear_at(&app.root, relative) {
-            Ok(paths) => Reply::Json(200, json!({"ok": true, "paths": paths})),
-            Err(err) => json_error(400, &err),
-        },
+        "/api/query-results" => save_query_result(app.results(&app.connection_key()), &body),
+        "/api/query-results/clear" => {
+            match query_cache::clear_at(app.results(&app.connection_key()), relative) {
+                Ok(paths) => Reply::Json(200, json!({"ok": true, "paths": paths})),
+                Err(err) => json_error(400, &err),
+            }
+        }
         "/api/lint" => {
             let text = body.get("text").and_then(Value::as_str).unwrap_or("");
             let mut state = lock_state(app);
@@ -760,7 +784,7 @@ fn dispatch_put(app: &App, path: &str, raw: &[u8]) -> Reply {
     }
 }
 
-fn save_query_result(root: &Path, body: &Value) -> Reply {
+fn save_query_result(store: query_cache::Store<'_>, body: &Value) -> Reply {
     let relative = body.get("path").and_then(Value::as_str).unwrap_or("");
     let query = body.get("query").and_then(Value::as_str).unwrap_or("");
     let Some(success) = body.get("success").and_then(Value::as_bool) else {
@@ -770,7 +794,7 @@ fn save_query_result(root: &Path, body: &Value) -> Reply {
         );
     };
     let result = body.get("result").cloned().unwrap_or(Value::Null);
-    match query_cache::save(root, relative, query, result, success) {
+    match query_cache::save(store, relative, query, result, success) {
         Ok(stored) => Reply::Json(200, serde_json::to_value(stored).unwrap_or(Value::Null)),
         Err(err) => json_error(400, &err),
     }
@@ -1007,7 +1031,8 @@ fn structure_reply(app: &App, query: &str) -> Reply {
             Err(message) => Reply::Json(400, json!({"ok": false, "error": message})),
         };
     }
-    match result_structure(&app.root, &mut state, &result) {
+    let key = state.session.connection_key.clone();
+    match result_structure(app.results(&key), &mut state, &result) {
         Ok(value) => Reply::Json(200, value),
         Err(err) => json_error(400, &err),
     }
@@ -1178,11 +1203,15 @@ fn columns_with_shape_keys(columns: &[Column], shape: Option<&TableShape>) -> Ve
     columns
 }
 
-fn result_structure(root: &Path, state: &mut WebState, id: &str) -> Result<Value, PathError> {
+fn result_structure(
+    store: query_cache::Store<'_>,
+    state: &mut WebState,
+    id: &str,
+) -> Result<Value, PathError> {
     if let Some((statement, items, columns)) = state.held_result(id) {
         return Ok(result_payload(&statement, &columns, &items));
     }
-    let listed = query_cache::load_by_id(root, id)?;
+    let listed = query_cache::load_by_id(store, id)?;
     let items = listed
         .result
         .get("items")
@@ -2170,15 +2199,20 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         assert_eq!(definition[1]["type"], "NUMBER");
         assert_eq!(definition[1]["role"], "range");
 
+        // The test server runs Session::new_memory_headless("memory"): key memory|memory.
+        let results = super::query_cache::Store {
+            workspace: root.path(),
+            connection_key: "memory|memory",
+        };
         let saved = super::query_cache::save(
-            root.path(),
+            results,
             "notes.dql",
             "SCAN * FROM posts",
             serde_json::json!({"items": [{"id": "a", "sk": 1}], "columns": [{"name": "id", "table": "hash"}, {"name": "sk", "table": "range"}]}),
             true,
         )
         .unwrap();
-        let listed = super::query_cache::list(root.path(), "notes.dql").unwrap();
+        let listed = super::query_cache::list(results, "notes.dql").unwrap();
         assert_eq!(listed.len(), 1);
         let result_path = format!("/api/structure?result={}", listed[0].id);
         let result = http_body(addr, "GET", &result_path, "");

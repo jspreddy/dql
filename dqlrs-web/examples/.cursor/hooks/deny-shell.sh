@@ -62,7 +62,7 @@ def main() -> None:
 
     # Any mention of the cache dirs, including create, modify, delete, append, and redirects.
     if re.search(
-        r"(?:^|[\\/\s\"'`=<>|;])\.(?:dqlrs-web-cache|cache)(?=$|[\\/\s\"'`<>|;])",
+        r"(?:^|[\\/\s\"'`=<>|;])\.(?:dqlrs-cache|cache)(?=$|[\\/\s\"'`<>|;])",
         cmd,
     ):
         print(
@@ -70,12 +70,12 @@ def main() -> None:
                 {
                     "permission": "deny",
                     "user_message": (
-                        "Shell access to .cache and .dqlrs-web-cache is blocked, "
+                        "Shell access to .cache and .dqlrs-cache is blocked, "
                         "including reads and writes (create, modify, delete, append, and redirect). "
                         "Those folders hold the table cache and saved web query results."
                     ),
                     "agent_message": (
-                        "Do not read or write .cache or .dqlrs-web-cache from the shell anywhere in the examples workspace. "
+                        "Do not read or write .cache or .dqlrs-cache from the shell anywhere in the examples workspace. "
                         "Infer data from the schema and load scripts checked in under this workspace."
                     ),
                 }

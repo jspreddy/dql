@@ -1,17 +1,16 @@
-//! Encrypted definitions for `CREATE LOCALTABLE`.
+//! Encrypted definitions for `CREATE LOCALTABLE`, one file per connection and workspace.
 //!
-//! The file is the table cache key's AES-256-GCM seal. Temp tables are not written here.
+//! The file is `<workspace>/.dqlrs-cache/<connection>/local-tables.seal`, sealed with the cache
+//! key (AES-256-GCM). Temp tables are not written here.
 
 use std::fs;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use dql_engine::{LocalColumn, LocalDefinition, LocalDefinitionStore};
 use serde::{Deserialize, Serialize};
 
 use crate::cache_seal;
-use crate::table_cache::cache_root;
 
 #[derive(Serialize, Deserialize)]
 struct StoredDefinition {
@@ -106,19 +105,10 @@ impl LocalDefinitionStore for SealedLocalStore {
     }
 }
 
-/// Store used by a session. Tests get a fresh file so they do not share definitions.
-pub fn open_store() -> Arc<SealedLocalStore> {
-    if let Some(path) = std::env::var_os("DQLRS_LOCAL_TABLES_FILE") {
-        return SealedLocalStore::at(PathBuf::from(path));
-    }
-    if cfg!(test) {
-        static NEXT: AtomicU64 = AtomicU64::new(1);
-        let id = NEXT.fetch_add(1, Ordering::Relaxed);
-        let dir =
-            std::env::temp_dir().join(format!("dqlrs-local-test-{}-{}", std::process::id(), id));
-        return SealedLocalStore::at(dir.join("local-tables.seal"));
-    }
-    SealedLocalStore::at(cache_root().join("local-tables.seal"))
+/// The local-table definitions for one connection: `<connection dir>/local-tables.seal` in the
+/// workspace cache.
+pub fn open_store(connection_dir: &Path) -> Arc<SealedLocalStore> {
+    SealedLocalStore::at(connection_dir.join("local-tables.seal"))
 }
 
 #[cfg(test)]

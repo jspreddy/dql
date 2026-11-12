@@ -15,13 +15,25 @@ async function dragAcrossLines(page, fromText, toText) {
   await page.mouse.up();
 }
 
-function cachedResults(workspace) {
-  const root = path.join(workspace, ".dqlrs-web-cache");
+// Results live in <workspace>/.dqlrs-cache/<connection>/results/<file>/query_result_<ms>.json.
+function resultFolders(workspace) {
+  const root = path.join(workspace, ".dqlrs-cache");
   if (!fs.existsSync(root)) return [];
+  const folders = [];
+  for (const connection of fs.readdirSync(root)) {
+    const results = path.join(root, connection, "results");
+    if (!fs.existsSync(results)) continue;
+    for (const dir of fs.readdirSync(results)) {
+      const folder = path.join(results, dir);
+      if (fs.statSync(folder).isDirectory()) folders.push(folder);
+    }
+  }
+  return folders;
+}
+
+function cachedResults(workspace) {
   const files = [];
-  for (const dir of fs.readdirSync(root)) {
-    const folder = path.join(root, dir);
-    if (!fs.statSync(folder).isDirectory()) continue;
+  for (const folder of resultFolders(workspace)) {
     for (const name of fs.readdirSync(folder)) {
       const stamp = /^query_result_(\d+)\.json$/.exec(name);
       if (!stamp) continue;
@@ -585,8 +597,8 @@ test("clears stored results for each file under a right-clicked folder", async (
     expectSealed(file, [one, two, kept, "CREATE"]);
   }
   expect(fs.existsSync(path.join(app.workspace, ".cache"))).toBe(false);
-  expect(fs.existsSync(path.join(app.workspace, ".dqlrs-web-cache"))).toBe(true);
-  expect(fs.statSync(path.join(app.workspace, ".dqlrs-web-cache")).mode & 0o777).toBe(0o700);
+  expect(fs.existsSync(path.join(app.workspace, ".dqlrs-web-cache"))).toBe(false);
+  expect(fs.statSync(path.join(app.workspace, ".dqlrs-cache")).mode & 0o777).toBe(0o700);
 
   await node(page, folder).click({ button: "right" });
   await expect(page.locator("#menu-clear-results")).toBeVisible();
@@ -684,7 +696,7 @@ test("keeps results with the query file and clears them", async ({ page, app }) 
   for (const file of cached) {
     expectSealed(file, [name, "alpha", "INSERT", "DROP"]);
   }
-  expect(fs.statSync(path.join(app.workspace, ".dqlrs-web-cache")).mode & 0o777).toBe(0o700);
+  expect(fs.statSync(path.join(app.workspace, ".dqlrs-cache")).mode & 0o777).toBe(0o700);
 
   await page.locator("#clear-results").click();
   await expect(page.locator(".query-result")).toHaveCount(0);

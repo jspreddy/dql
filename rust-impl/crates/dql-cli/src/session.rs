@@ -464,6 +464,21 @@ pub struct Session {
     pub history: crate::history::HistoryManager,
     pub throttle: crate::throttle::TableLimits,
     pub table_disk: Option<std::sync::Arc<crate::table_cache::DiskTableCache>>,
+    /// The folder dqlrs was started in, or `--dir`. Its `.dqlrs-cache` holds this session's
+    /// table cache, local tables, and web results.
+    pub workspace: std::path::PathBuf,
+    /// Region, endpoint, and caller identity of the current connection. Set by
+    /// [`Session::attach_connection_storage`].
+    pub connection_key: String,
+}
+
+/// `--dir`, else the current directory, as an absolute path.
+pub fn workspace_from_args(args: &crate::args::CliArgs) -> std::path::PathBuf {
+    let dir = match &args.dir {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+    };
+    dir.canonicalize().unwrap_or(dir)
 }
 
 impl Session {
@@ -501,52 +516,66 @@ impl Session {
             history,
             throttle,
             table_disk: None,
+            workspace: workspace_from_args(args),
+            connection_key: String::new(),
         };
-        session.attach_table_cache();
-        session.attach_local_tables();
+        session.attach_connection_storage();
         Ok(session)
     }
 
-    /// Point the engine at the on-disk table cache for this connection.
+    /// The current connection's folder in the workspace cache. Not created.
+    pub fn connection_dir(&self) -> std::path::PathBuf {
+        crate::workspace_cache::connection_dir(&self.workspace, &self.connection_key)
+    }
+
+    /// Point the table cache and local tables at this connection's folder in the workspace
+    /// cache, `<workspace>/.dqlrs-cache/<sha256 of connection key>/`.
     ///
-    /// In-memory sessions skip the disk. `use` and `local` call this again so
-    /// the cache follows the endpoint.
-    pub fn attach_table_cache(&mut self) {
+    /// The key is the region, the endpoint, and the caller identity. `use` and `local` call
+    /// this again after they rebuild the engine, so both follow the connection; the new
+    /// engine loads that connection's local tables. In-memory sessions keep their table
+    /// cache and local tables in memory and write nothing to disk.
+    pub fn attach_connection_storage(&mut self) {
+        let identity = self.engine.session_identity();
+        let port = self
+            .local_endpoint
+            .as_ref()
+            .map(|(_, port)| *port)
+            .unwrap_or(8000);
+        self.connection_key = crate::table_cache::endpoint_key(
+            &self.region,
+            self.local_endpoint.as_ref().map(|(host, _)| host.as_str()),
+            port,
+            &identity,
+        );
         if self.engine.is_memory() {
             self.table_disk = None;
             self.engine.set_table_cache(None);
+            self.engine.set_local_store(None);
             return;
         }
-        let identity = self.engine.session_identity();
-        let key = crate::table_cache::endpoint_key(
-            &self.region,
-            self.local_endpoint.as_ref().map(|(host, _)| host.as_str()),
-            self.local_endpoint
-                .as_ref()
-                .map(|(_, port)| *port)
-                .unwrap_or(8000),
-            &identity,
-        );
+        let dir = match crate::workspace_cache::ensure_connection_dir(
+            &self.workspace,
+            &self.connection_key,
+        ) {
+            Ok(dir) => dir,
+            Err(err) => {
+                eprintln!("dqlrs: workspace cache: {err}");
+                self.connection_dir()
+            }
+        };
         let endpoint = crate::table_cache::CacheEndpoint {
             region: self.region.clone(),
             host: self.local_endpoint.as_ref().map(|(host, _)| host.clone()),
-            port: self
-                .local_endpoint
-                .as_ref()
-                .map(|(_, port)| *port)
-                .unwrap_or(8000),
+            port,
             allow_select_scan: self.config.allow_select_scan,
         };
-        let cache = crate::table_cache::DiskTableCache::open(&key, endpoint);
+        let cache = crate::table_cache::DiskTableCache::open(&dir, endpoint);
         self.engine
             .set_table_cache(Some(cache.clone() as dql_engine::SharedTableCache));
         self.table_disk = Some(cache);
-    }
-
-    /// Load encrypted local-table definitions. Temp tables stay in this process.
-    pub fn attach_local_tables(&mut self) {
         self.engine
-            .set_local_store(Some(crate::local_tables::open_store()));
+            .set_local_store(Some(crate::local_tables::open_store(&dir)));
     }
 
     /// Fetch the full table list and a definition for every table.
@@ -619,6 +648,8 @@ impl Session {
             history,
             throttle,
             table_disk: None,
+            workspace: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+            connection_key: format!("memory|{region}"),
         }
     }
 

@@ -53,10 +53,9 @@ struct DefinitionFile {
 }
 
 impl DiskTableCache {
-    pub fn open(key: &str, endpoint: CacheEndpoint) -> Arc<Self> {
-        let root = cache_root();
-        let _ = cache_seal::ensure_owner_dir(&root);
-        Self::open_at(root.join(sha256_hex(key)), endpoint)
+    /// The table cache for one connection: `<connection dir>/tables` in the workspace cache.
+    pub fn open(connection_dir: &std::path::Path, endpoint: CacheEndpoint) -> Arc<Self> {
+        Self::open_at(connection_dir.join("tables"), endpoint)
     }
 
     pub fn open_at(dir: PathBuf, endpoint: CacheEndpoint) -> Arc<Self> {
@@ -408,36 +407,6 @@ fn name_of(meta: &TableMeta) -> &str {
     meta.name.as_str()
 }
 
-fn cache_env_lock() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    LOCK.lock().unwrap_or_else(|err| err.into_inner())
-}
-
-pub(crate) fn cache_root() -> PathBuf {
-    let _guard = cache_env_lock();
-    cache_root_from_env()
-}
-
-fn cache_root_from_env() -> PathBuf {
-    if let Some(dir) = std::env::var_os("DQLRS_TABLE_CACHE") {
-        return PathBuf::from(dir);
-    }
-    if let Ok(dir) = std::env::var("XDG_CACHE_HOME") {
-        if !dir.is_empty() {
-            return PathBuf::from(dir).join("dqlrs").join("tables");
-        }
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        if !home.is_empty() {
-            return PathBuf::from(home)
-                .join(".cache")
-                .join("dqlrs")
-                .join("tables");
-        }
-    }
-    PathBuf::from(".cache").join("dqlrs").join("tables")
-}
-
 fn sha256_hex(text: &str) -> String {
     let digest = Sha256::digest(text.as_bytes());
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -473,9 +442,11 @@ fn status_from_label(label: &str) -> TableStatus {
     }
 }
 
+/// The connection key that names a connection's folder in the workspace cache. It includes
+/// the caller identity for both AWS and a local endpoint.
 pub fn endpoint_key(region: &str, host: Option<&str>, port: u16, identity: &str) -> String {
     match host {
-        Some(host) => format!("local|{region}|{host}|{port}"),
+        Some(host) => format!("local|{region}|{host}|{port}|{identity}"),
         None => format!("aws|{region}|{identity}"),
     }
 }
@@ -585,18 +556,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         #[cfg(unix)]
         let before = crate::cache_seal::mode_bits(dir.path());
-        let root = {
-            let _guard = cache_env_lock();
-            let previous = std::env::var_os("DQLRS_TABLE_CACHE");
-            std::env::set_var("DQLRS_TABLE_CACHE", dir.path());
-            let root = cache_root_from_env();
-            match previous {
-                Some(value) => std::env::set_var("DQLRS_TABLE_CACHE", value),
-                None => std::env::remove_var("DQLRS_TABLE_CACHE"),
-            }
-            root
-        };
-        assert_eq!(root, dir.path());
+        let root = dir.path().to_path_buf();
         let cache = DiskTableCache::open_at(root.join("endpoint"), endpoint());
         cache.put_names(&["posts".to_string()]);
         cache.put_definition(&posts());

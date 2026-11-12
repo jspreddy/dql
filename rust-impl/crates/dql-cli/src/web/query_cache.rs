@@ -1,4 +1,5 @@
-//! One directory per query file: `workspace/.dqlrs-web-cache/<sha256 of the workspace-relative path>/`.
+//! Web query results, per connection and per query file:
+//! `<workspace>/.dqlrs-cache/<sha256 of connection key>/results/<sha256 of the workspace-relative path>/`.
 //! Each `query_result_<unix-ms>.json` is one statement, sealed with AES-256-GCM.
 //! The plaintext JSON is `{ "query": "<one statement>", "result": { ... }, "success": bool }`.
 
@@ -12,9 +13,24 @@ use sha2::{Digest, Sha256};
 
 use super::files::{self, PathError};
 use crate::cache_seal;
+use crate::workspace_cache;
 
 const MAX_RESULTS: usize = 50;
-const CACHE_DIR: &str = ".dqlrs-web-cache";
+const RESULTS_DIR: &str = "results";
+
+/// One connection's results in one workspace.
+#[derive(Clone, Copy, Debug)]
+pub struct Store<'a> {
+    pub workspace: &'a Path,
+    pub connection_key: &'a str,
+}
+
+impl Store<'_> {
+    /// `<workspace>/.dqlrs-cache/<connection>/results`.
+    fn base(&self) -> PathBuf {
+        workspace_cache::connection_dir(self.workspace, self.connection_key).join(RESULTS_DIR)
+    }
+}
 
 /// One executed statement. `result` is that statement's result object.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -33,8 +49,8 @@ pub struct ListedQuery {
     pub success: bool,
 }
 
-pub fn list(root: &Path, relative: &str) -> Result<Vec<ListedQuery>, PathError> {
-    let dir = cache_dir(root, relative)?;
+pub fn list(store: Store<'_>, relative: &str) -> Result<Vec<ListedQuery>, PathError> {
+    let dir = cache_dir(store, relative)?;
     let digest = dir
         .file_name()
         .and_then(|name| name.to_str())
@@ -42,7 +58,7 @@ pub fn list(root: &Path, relative: &str) -> Result<Vec<ListedQuery>, PathError> 
         .to_string();
     let mut files = result_files(&dir)?;
     files.sort_by_key(|(stamp, _)| *stamp);
-    restrict_query_dirs(&dir);
+    restrict_query_dirs(store, &dir);
     let mut stored = Vec::with_capacity(files.len());
     for (stamp, path) in files {
         let Some(entry) = read_stored(&path) else {
@@ -59,7 +75,7 @@ pub fn list(root: &Path, relative: &str) -> Result<Vec<ListedQuery>, PathError> 
 }
 
 /// Load one cached statement by the id returned from [`list`].
-pub fn load_by_id(root: &Path, id: &str) -> Result<ListedQuery, PathError> {
+pub fn load_by_id(store: Store<'_>, id: &str) -> Result<ListedQuery, PathError> {
     let (digest, stamp) = id
         .split_once(':')
         .ok_or_else(|| PathError("query result is not loaded".to_string()))?;
@@ -69,8 +85,8 @@ pub fn load_by_id(root: &Path, id: &str) -> Result<ListedQuery, PathError> {
     let stamp = stamp
         .parse::<u128>()
         .map_err(|_| PathError("query result is not loaded".to_string()))?;
-    let path = root
-        .join(CACHE_DIR)
+    let path = store
+        .base()
         .join(digest)
         .join(format!("query_result_{stamp}.json"));
     let entry =
@@ -90,14 +106,14 @@ fn read_stored(path: &Path) -> Option<StoredQuery> {
 }
 
 pub fn save(
-    root: &Path,
+    store: Store<'_>,
     relative: &str,
     query: &str,
     result: Value,
     success: bool,
 ) -> Result<StoredQuery, PathError> {
-    let dir = cache_dir(root, relative)?;
-    ensure_query_dirs(&dir)?;
+    let dir = cache_dir(store, relative)?;
+    ensure_query_dirs(store, &dir)?;
     let stored = StoredQuery {
         query: query.to_string(),
         result,
@@ -117,38 +133,34 @@ pub fn save(
     Ok(stored)
 }
 
-fn ensure_query_dirs(dir: &Path) -> Result<(), PathError> {
-    if let Some(parent) = dir.parent() {
-        if parent.file_name().and_then(|name| name.to_str()) == Some(CACHE_DIR) {
-            cache_seal::ensure_owner_dir(parent).map_err(|err| PathError(err.to_string()))?;
-        }
-    }
-    cache_seal::ensure_owner_dir(dir).map_err(|err| PathError(err.to_string()))
+/// Create `.dqlrs-cache` (with its `.gitignore`), the connection folder, `results`, and the
+/// file's folder, each `0700`.
+fn ensure_query_dirs(store: Store<'_>, dir: &Path) -> Result<(), PathError> {
+    let error = |err: std::io::Error| PathError(err.to_string());
+    workspace_cache::ensure_connection_dir(store.workspace, store.connection_key).map_err(error)?;
+    cache_seal::ensure_owner_dir(&store.base()).map_err(error)?;
+    cache_seal::ensure_owner_dir(dir).map_err(error)
 }
 
-fn restrict_query_dirs(dir: &Path) {
-    if let Some(parent) = dir.parent() {
-        if parent.file_name().and_then(|name| name.to_str()) == Some(CACHE_DIR) {
-            let _ = cache_seal::restrict_dir(parent);
-        }
-    }
+fn restrict_query_dirs(store: Store<'_>, dir: &Path) {
+    let _ = cache_seal::restrict_dir(&store.base());
     let _ = cache_seal::restrict_dir(dir);
 }
 
-pub fn clear(root: &Path, relative: &str) -> Result<(), PathError> {
-    let dir = cache_dir(root, relative)?;
+pub fn clear(store: Store<'_>, relative: &str) -> Result<(), PathError> {
+    let dir = cache_dir(store, relative)?;
     if dir.is_dir() {
         fs::remove_dir_all(&dir).map_err(|err| PathError(err.to_string()))?;
     }
     Ok(())
 }
 
-/// Drop the cache directories for a file, or for every `.dql` file under a folder.
-/// The directory name is the sha256 of the workspace-relative path.
-pub fn clear_at(root: &Path, relative: &str) -> Result<Vec<String>, PathError> {
-    let paths = covered_paths(root, relative)?;
+/// Drop this connection's result directories for a file, or for every `.dql` file under a
+/// folder. The directory name is the sha256 of the workspace-relative path.
+pub fn clear_at(store: Store<'_>, relative: &str) -> Result<Vec<String>, PathError> {
+    let paths = covered_paths(store.workspace, relative)?;
     for path in &paths {
-        clear(root, path)?;
+        clear(store, path)?;
     }
     Ok(paths)
 }
@@ -188,10 +200,10 @@ fn collect_files(node: &files::Node, paths: &mut Vec<String>) {
     }
 }
 
-fn cache_dir(root: &Path, relative: &str) -> Result<PathBuf, PathError> {
-    let relative = files::normalized_dql(root, relative)?;
+fn cache_dir(store: Store<'_>, relative: &str) -> Result<PathBuf, PathError> {
+    let relative = files::normalized_dql(store.workspace, relative)?;
     let digest = Sha256::digest(relative.as_bytes());
-    Ok(root.join(CACHE_DIR).join(hex_encode(&digest)))
+    Ok(store.base().join(hex_encode(&digest)))
 }
 
 fn result_files(dir: &Path) -> Result<Vec<(u128, PathBuf)>, PathError> {
@@ -249,6 +261,29 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    const KEY: &str = "local|us-west-1|localhost|8000|test";
+
+    fn store(workspace: &Path) -> Store<'_> {
+        Store {
+            workspace,
+            connection_key: KEY,
+        }
+    }
+
+    /// `results/<file>` sits in this connection's folder in `<workspace>/.dqlrs-cache`.
+    fn assert_results_layout(workspace: &Path, dir: &Path) {
+        let results = dir.parent().unwrap();
+        assert_eq!(results.file_name(), Some(std::ffi::OsStr::new(RESULTS_DIR)));
+        assert_eq!(
+            results.parent().unwrap(),
+            workspace_cache::connection_dir(workspace, KEY)
+        );
+        assert_eq!(
+            results.parent().unwrap().parent().unwrap(),
+            workspace.join(".dqlrs-cache")
+        );
+    }
+
     #[test]
     fn stores_each_file_separately_and_keeps_the_latest_50() {
         let root = tempfile::tempdir().unwrap();
@@ -258,7 +293,7 @@ mod tests {
 
         for index in 0..51 {
             save(
-                root.path(),
+                store(root.path()),
                 "notes.dql",
                 &format!("SELECT {index};"),
                 json!({"statement": format!("SELECT {index};"), "ok": index != 3}),
@@ -267,7 +302,7 @@ mod tests {
             .unwrap();
         }
         save(
-            root.path(),
+            store(root.path()),
             "queries/other.dql",
             "SELECT 'other';",
             json!({"statement": "SELECT 'other';", "ok": true}),
@@ -275,7 +310,7 @@ mod tests {
         )
         .unwrap();
 
-        let notes = list(root.path(), "notes.dql").unwrap();
+        let notes = list(store(root.path()), "notes.dql").unwrap();
         assert_eq!(notes.len(), 50);
         assert_eq!(notes[0].query, "SELECT 1;");
         assert_eq!(notes[49].query, "SELECT 50;");
@@ -284,7 +319,7 @@ mod tests {
         assert!(notes[2].result.is_object());
         assert_eq!(notes[2].result["ok"], json!(false));
 
-        let names: Vec<_> = fs::read_dir(cache_dir(root.path(), "notes.dql").unwrap())
+        let names: Vec<_> = fs::read_dir(cache_dir(store(root.path()), "notes.dql").unwrap())
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
@@ -294,11 +329,8 @@ mod tests {
                 .and_then(|rest| rest.parse::<u128>().ok())
                 .is_some()
         }));
-        let notes_dir = cache_dir(root.path(), "notes.dql").unwrap();
-        assert_eq!(
-            notes_dir.parent().and_then(|path| path.file_name()),
-            Some(std::ffi::OsStr::new(CACHE_DIR))
-        );
+        let notes_dir = cache_dir(store(root.path()), "notes.dql").unwrap();
+        assert_results_layout(root.path(), &notes_dir);
         assert!(!root.path().join(".cache").exists());
         let hash = notes_dir
             .file_name()
@@ -308,18 +340,21 @@ mod tests {
         assert_eq!(hash.len(), 64);
         assert!(hash.chars().all(|ch| ch.is_ascii_hexdigit()));
 
-        let other = list(root.path(), "queries/other.dql").unwrap();
+        let other = list(store(root.path()), "queries/other.dql").unwrap();
         assert_eq!(other.len(), 1);
         assert_eq!(other[0].query, "SELECT 'other';");
         assert!(other[0].success);
-        let loaded = load_by_id(root.path(), &other[0].id).unwrap();
+        let loaded = load_by_id(store(root.path()), &other[0].id).unwrap();
         assert_eq!(loaded.query, "SELECT 'other';");
-        assert!(load_by_id(root.path(), "not-an-id").is_err());
+        assert!(load_by_id(store(root.path()), "not-an-id").is_err());
 
-        clear(root.path(), "notes.dql").unwrap();
-        assert!(list(root.path(), "notes.dql").unwrap().is_empty());
-        assert!(!cache_dir(root.path(), "notes.dql").unwrap().exists());
-        assert_eq!(list(root.path(), "queries/other.dql").unwrap().len(), 1);
+        clear(store(root.path()), "notes.dql").unwrap();
+        assert!(list(store(root.path()), "notes.dql").unwrap().is_empty());
+        assert!(!cache_dir(store(root.path()), "notes.dql").unwrap().exists());
+        assert_eq!(
+            list(store(root.path()), "queries/other.dql").unwrap().len(),
+            1
+        );
     }
 
     #[test]
@@ -331,10 +366,17 @@ mod tests {
         fs::write(root.path().join("queries/nested/two.dql"), "").unwrap();
         fs::write(root.path().join("keep.dql"), "").unwrap();
         for path in ["queries/one.dql", "queries/nested/two.dql", "keep.dql"] {
-            save(root.path(), path, "SELECT 1;", json!({"ok": true}), true).unwrap();
+            save(
+                store(root.path()),
+                path,
+                "SELECT 1;",
+                json!({"ok": true}),
+                true,
+            )
+            .unwrap();
         }
 
-        let cleared = clear_at(root.path(), "queries").unwrap();
+        let cleared = clear_at(store(root.path()), "queries").unwrap();
         assert_eq!(
             cleared,
             vec![
@@ -342,16 +384,20 @@ mod tests {
                 "queries/one.dql".to_string(),
             ]
         );
-        assert!(list(root.path(), "queries/one.dql").unwrap().is_empty());
-        assert!(list(root.path(), "queries/nested/two.dql")
+        assert!(list(store(root.path()), "queries/one.dql")
             .unwrap()
             .is_empty());
-        assert!(!cache_dir(root.path(), "queries/one.dql").unwrap().exists());
-        assert_eq!(list(root.path(), "keep.dql").unwrap().len(), 1);
+        assert!(list(store(root.path()), "queries/nested/two.dql")
+            .unwrap()
+            .is_empty());
+        assert!(!cache_dir(store(root.path()), "queries/one.dql")
+            .unwrap()
+            .exists());
+        assert_eq!(list(store(root.path()), "keep.dql").unwrap().len(), 1);
 
-        let one = clear_at(root.path(), "keep.dql").unwrap();
+        let one = clear_at(store(root.path()), "keep.dql").unwrap();
         assert_eq!(one, vec!["keep.dql".to_string()]);
-        assert!(list(root.path(), "keep.dql").unwrap().is_empty());
+        assert!(list(store(root.path()), "keep.dql").unwrap().is_empty());
     }
 
     #[test]
@@ -362,22 +408,19 @@ mod tests {
         fs::write(root.path().join("notes.dql"), "").unwrap();
         let query = "SELECT marker_row FROM posts;";
         save(
-            root.path(),
+            store(root.path()),
             "notes.dql",
             query,
             json!({"ok": true, "label": "alpha"}),
             true,
         )
         .unwrap();
-        let listed = list(root.path(), "notes.dql").unwrap();
+        let listed = list(store(root.path()), "notes.dql").unwrap();
         assert_eq!(listed[0].query, query);
         assert_eq!(listed[0].result["label"], json!("alpha"));
         assert!(listed[0].success);
-        let dir = cache_dir(root.path(), "notes.dql").unwrap();
-        assert_eq!(
-            dir.parent().and_then(|path| path.file_name()),
-            Some(std::ffi::OsStr::new(CACHE_DIR))
-        );
+        let dir = cache_dir(store(root.path()), "notes.dql").unwrap();
+        assert_results_layout(root.path(), &dir);
         let file = fs::read_dir(&dir).unwrap().next().unwrap().unwrap().path();
         let bytes = fs::read(&file).unwrap();
         assert_eq!(bytes[0], 1);
@@ -398,12 +441,12 @@ mod tests {
     fn plaintext_result_is_rewritten_in_place() {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("notes.dql"), "").unwrap();
-        let dir = cache_dir(root.path(), "notes.dql").unwrap();
+        let dir = cache_dir(store(root.path()), "notes.dql").unwrap();
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("query_result_1.json");
         let body = r#"{"query":"SELECT marker_row;","result":{"ok":true},"success":true}"#;
         fs::write(&path, body).unwrap();
-        let listed = list(root.path(), "notes.dql").unwrap();
+        let listed = list(store(root.path()), "notes.dql").unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].query, "SELECT marker_row;");
         assert!(listed[0].success);
@@ -422,18 +465,69 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("notes.dql"), "").unwrap();
         save(
-            root.path(),
+            store(root.path()),
             "notes.dql",
             "SELECT kept;",
             json!({"ok": true}),
             true,
         )
         .unwrap();
-        let dir = cache_dir(root.path(), "notes.dql").unwrap();
+        let dir = cache_dir(store(root.path()), "notes.dql").unwrap();
         fs::write(dir.join("query_result_1.json"), vec![1u8; 40]).unwrap();
-        let listed = list(root.path(), "notes.dql").unwrap();
+        let listed = list(store(root.path()), "notes.dql").unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].query, "SELECT kept;");
+    }
+
+    #[test]
+    fn each_connection_keeps_its_own_results_for_the_same_file() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("notes.dql"), "").unwrap();
+        let local = store(root.path());
+        let aws = Store {
+            workspace: root.path(),
+            connection_key: "aws|us-east-1|arn:aws:iam::123456789012:user/me",
+        };
+        save(
+            local,
+            "notes.dql",
+            "SCAN * FROM local_only;",
+            json!({"ok": true}),
+            true,
+        )
+        .unwrap();
+        save(
+            aws,
+            "notes.dql",
+            "SCAN * FROM aws_only;",
+            json!({"ok": true}),
+            true,
+        )
+        .unwrap();
+
+        let from_local: Vec<_> = list(local, "notes.dql")
+            .unwrap()
+            .into_iter()
+            .map(|e| e.query)
+            .collect();
+        let from_aws: Vec<_> = list(aws, "notes.dql")
+            .unwrap()
+            .into_iter()
+            .map(|e| e.query)
+            .collect();
+        assert_eq!(from_local, vec!["SCAN * FROM local_only;".to_string()]);
+        assert_eq!(from_aws, vec!["SCAN * FROM aws_only;".to_string()]);
+
+        // An id from one connection does not read the other connection's result.
+        let id = list(local, "notes.dql").unwrap()[0].id.clone();
+        assert!(load_by_id(aws, &id).is_err());
+
+        clear_at(local, "notes.dql").unwrap();
+        assert!(list(local, "notes.dql").unwrap().is_empty());
+        assert_eq!(list(aws, "notes.dql").unwrap().len(), 1);
+
+        let ignore = fs::read_to_string(root.path().join(".dqlrs-cache/.gitignore")).unwrap();
+        assert!(ignore.lines().any(|line| line == "*"), "{ignore}");
     }
 
     fn hides(bytes: &[u8], secret: &[u8]) -> bool {

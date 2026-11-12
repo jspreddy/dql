@@ -25,7 +25,7 @@ pub fn handle_use(
             session.config.allow_select_scan,
         )
         .map_err(|err| err.to_string())?;
-    session.attach_table_cache();
+    session.attach_connection_storage();
     Ok(())
 }
 

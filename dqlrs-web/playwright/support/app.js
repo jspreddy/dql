@@ -32,10 +32,13 @@ function dqlrsBinary() {
 
 function dropTable(binary, name) {
   if (!binary) return;
+  // dqlrs keeps its cache in <working directory>/.dqlrs-cache, so run it in a throwaway folder.
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-drop-"));
   const result = spawnSync(
     binary,
     ["-c", `DROP TABLE IF EXISTS ${name}`, "-H", "localhost", "-p", "8000"],
     {
+      cwd,
       encoding: "utf8",
       timeout: 20_000,
       env: {
@@ -44,10 +47,10 @@ function dropTable(binary, name) {
         AWS_SECRET_ACCESS_KEY: "fakekey",
         AWS_REGION: "us-west-1",
         AWS_EC2_METADATA_DISABLED: "true",
-        DQLRS_TABLE_CACHE: fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-table-cache-")),
       },
     },
   );
+  fs.rmSync(cwd, { recursive: true, force: true });
   if (result.status !== 0) {
     console.warn(`DROP ${name} failed`, result.stderr || result.stdout || result.error);
   }
@@ -127,7 +130,6 @@ export const test = base.extend({
           AWS_SECRET_ACCESS_KEY: "fakekey",
           AWS_REGION: "us-west-1",
           AWS_EC2_METADATA_DISABLED: "true",
-          DQLRS_TABLE_CACHE: fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-table-cache-")),
         },
         stdio: ["ignore", "pipe", "pipe"],
       },

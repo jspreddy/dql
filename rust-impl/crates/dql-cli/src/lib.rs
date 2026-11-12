@@ -15,6 +15,7 @@ pub mod session;
 pub mod table_cache;
 pub mod throttle;
 pub mod web;
+pub mod workspace_cache;
 
 use args::{help_text, CliArgs};
 use clap::Parser;
@@ -135,21 +136,17 @@ pub fn run() -> color_eyre::Result<()> {
                 .parse()
                 .expect("default web listen address"),
         };
-        let dir = match args.dir.clone() {
-            Some(dir) => std::path::PathBuf::from(dir),
-            None => std::env::current_dir().wrap_err("current directory")?,
-        };
+        // The workspace is --dir or the current directory; Session resolves it once.
         let session = Session::new_for_serve(&args).wrap_err("failed to start session")?;
+        let dir = session.workspace.clone();
         web::run(session, dir, listen, args.mcp, args.load_tables)?;
         return Ok(());
     }
 
     if args.mcp {
-        let dir = match args.dir.clone() {
-            Some(dir) => std::path::PathBuf::from(dir),
-            None => std::env::current_dir().wrap_err("current directory")?,
-        };
+        // The workspace is --dir or the current directory; Session resolves it once.
         let session = Session::new_for_serve(&args).wrap_err("failed to start session")?;
+        let dir = session.workspace.clone();
         mcp::run(session, dir)?;
         return Ok(());
     }
