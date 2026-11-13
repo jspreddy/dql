@@ -26,7 +26,9 @@ strip = true
 panic = "abort"
 
 [workspace.dependencies]
-aws-sdk-sts = "1.96.0"
+# Default features add the SDK's legacy `rustls` connector (hyper 0.14, rustls 0.21), which
+# cargo audit flags. `default-https-client` is the client the SDK uses.
+aws-sdk-sts = { version = "1.96.0", default-features = false, features = ["default-https-client", "rt-tokio", "sigv4a"] }
 clap = { version = "4.5.47", features = ["derive"] }
 crossterm = "0.28.1"
 glob = "0.3.3"
