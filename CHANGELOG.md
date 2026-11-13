@@ -5,6 +5,10 @@ Generated from the first-parent history of `origin/v-rust` by the `changelog` sk
 rewritten the next time it runs. Newest first. Each section is the version in the tree
 when those changes landed.
 
+## dqlrs 0.7.9-dev0 (2026-11-13)
+
+- Color what the dqlrs command prints to the console (#196)
+
 ## dqlrs 0.7.8-dev0 (2026-11-12 to 2026-11-13)
 
 - Fix the vulnerabilities cargo audit and pip-audit report (#187)
