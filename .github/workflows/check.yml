@@ -18,18 +18,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      # Plain git, no `uses:`. The repository's Actions policy rejects every action, including
-      # actions/checkout, and a run that names one fails at startup before any job runs.
+      # GitHub's own checkout, pinned to a commit (the Actions policy requires pinned actions).
+      # The job only reads, so it does not keep the token in .git/config.
       - name: Check out repository code
-        env:
-          TOKEN: ${{ github.token }}
-        run: |
-          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
-          git init -q .
-          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
-          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch -q --depth 1 origin "$GITHUB_SHA"
-          git checkout -q --detach FETCH_HEAD
-          git log --oneline -1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
 
       - name: Install just and uv
         run: |
