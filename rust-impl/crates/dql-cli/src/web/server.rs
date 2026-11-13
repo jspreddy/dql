@@ -139,10 +139,10 @@ pub fn serve(
 /// how many loaded. Only failures get their own line. A failure is reported and the server
 /// starts anyway, as with a background load.
 fn load_tables_with_progress(app: &Arc<App>, progress: &Progress) -> usize {
+    progress.say(&format!("Connected to {}", connection_line(app)));
     let started = std::time::Instant::now();
     let mut loaded = 0;
-    let label = format!("Loading table definitions from {}", app.endpoint);
-    let result = progress.step(&label, |detail| {
+    let result = progress.step("Loading table definitions", |detail| {
         detail.set("listing tables");
         let mut failed = 0;
         let outcome = run_table_load(app, &mut |event| {
@@ -167,6 +167,53 @@ fn load_tables_with_progress(app: &Arc<App>, progress: &Progress) -> usize {
     }
     progress.say("");
     loaded
+}
+
+/// Line 1 of the load progress: the connection, and on AWS the account and the role or user
+/// it runs as. The identity is cached for the UI's identity panel.
+fn connection_line(app: &App) -> String {
+    let (local, memory) = {
+        let state = lock_state(app);
+        (
+            state.session.local_endpoint.is_some(),
+            state.session.engine.is_memory(),
+        )
+    };
+    if memory {
+        return "the in-memory backend".to_string();
+    }
+    if local {
+        return format!("{} · DynamoDB Local", app.endpoint);
+    }
+    let fetched = lock_state(app).session.engine.caller_identity();
+    match fetched {
+        Ok(identity) => {
+            let line = format!(
+                "{} · account {} · {}",
+                app.endpoint,
+                identity.account,
+                principal_label(&identity.arn)
+            );
+            *app.identity.lock().expect("caller identity") = Some(identity);
+            line
+        }
+        Err(err) => format!("{} · identity unknown ({err})", app.endpoint),
+    }
+}
+
+/// `role Admin (jonsmith)` for an assumed role, `user alice` for an IAM user, else the
+/// principal as the ARN names it.
+fn principal_label(arn: &str) -> String {
+    let principal = super::environment::principal_from_arn(arn);
+    if arn.contains(":assumed-role/") || arn.contains(":role/") {
+        format!("role {principal}")
+    } else if arn.contains(":user/") {
+        format!("user {principal}")
+    } else if arn.ends_with(":root") {
+        "root".to_string()
+    } else {
+        principal
+    }
 }
 
 /// Advance the bar. A table that fails to load gets a line of its own with the error.
@@ -2198,6 +2245,19 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
                 let _ = thread.join();
             }
         }
+    }
+
+    #[test]
+    fn the_connection_line_names_the_role_or_user() {
+        assert_eq!(
+            principal_label("arn:aws:sts::123456789012:assumed-role/Admin/jonsmith"),
+            "role Admin (jonsmith)"
+        );
+        assert_eq!(
+            principal_label("arn:aws:iam::123456789012:user/alice"),
+            "user alice"
+        );
+        assert_eq!(principal_label("arn:aws:iam::123456789012:root"), "root");
     }
 
     #[test]

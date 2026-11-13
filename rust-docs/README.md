@@ -124,8 +124,9 @@ dqlrs web --load-tables -H localhost -p 8000
 ```
 
 `--load-tables` loads the table list and every table definition before the
-server starts. In a terminal it shows a progress bar and a count, then how many
-definitions loaded and how long it took. Only a table whose definition fails to
+server starts. In a terminal the first line names the connection (on AWS, the
+region, account, and the role or user from STS) and the second shows a progress
+bar and a count, then how many definitions loaded and how long it took. Only a table whose definition fails to
 load gets its own line, a red cross with the error; the server starts either way.
 
 `--init-examples` sets up an empty (or missing) folder before serving it. It

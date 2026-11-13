@@ -150,7 +150,7 @@ impl SdkBackend {
                 let sts = aws_sdk_sts::Client::new(&sts_config);
                 sts.get_caller_identity().send().await
             })
-            .map_err(|err| EngineError::Runtime(err.to_string()))?;
+            .map_err(|err| EngineError::Runtime(aws_error_text(&err)))?;
         Ok(CallerIdentity {
             account: output.account().unwrap_or("").to_string(),
             arn: output.arn().unwrap_or("").to_string(),
