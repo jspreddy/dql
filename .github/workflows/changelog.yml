@@ -31,15 +31,17 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
-      # Plain git, no `uses:`, like check.yml. changelog.py walks the whole first-parent
-      # history of origin/v-rust, so this fetch is not shallow.
+      # GitHub's own checkout, pinned to a commit (the Actions policy requires pinned actions).
+      # changelog.py walks the whole first-parent history of origin/v-rust, so fetch it all.
+      # The checkout keeps the job token in .git/config (masked) for the push below.
       - name: Check out v-rust
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: v-rust
+          fetch-depth: 0
+
+      - name: Start from the latest v-rust
         run: |
-          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
-          git init -q .
-          git config http.extraheader "AUTHORIZATION: basic $auth"
-          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
-          git fetch -q origin +refs/heads/v-rust:refs/remotes/origin/v-rust
           git checkout -q -B changelog origin/v-rust
           git log --oneline -1
 
