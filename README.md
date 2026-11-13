@@ -251,7 +251,9 @@ EXPLAIN SELECT * FROM sample_cosmos
 WHERE pk = 'PLANET#jupiter' AND begins_with(sk, 'MOON#');
 ```
 
-## Documentation
+## Maintainer
+
+### Documentation
 
 | Where | What |
 | --- | --- |
@@ -264,7 +266,7 @@ WHERE pk = 'PLANET#jupiter' AND begins_with(sk, 'MOON#');
 | [`CHANGELOG.md`](CHANGELOG.md) | What changed in each version (generated from `v-rust`) |
 | [`MAINTAINER.md`](MAINTAINER.md) | Repository layout, builds, releases |
 
-## About this fork
+### About this fork
 
 `dqlrs` (Rust) is the primary client. `dql` (Python) remains available for the
 original CLI and for places Rust is not a fit. Both speak the same DQL language
