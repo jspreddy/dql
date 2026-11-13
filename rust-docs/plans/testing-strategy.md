@@ -127,7 +127,7 @@ runtime.
 ## Black-box acceptance (`black-box-tests/`)
 
 Crate tests and Python pytest import implementation packages. User-facing
-acceptance lives in [`black-box-tests/`](../black-box-tests/) and must not.
+acceptance lives in [`black-box-tests/`](../../black-box-tests/) and must not.
 
 That suite:
 
@@ -144,8 +144,8 @@ That suite:
 ```
 
 Add tests as `black-box-tests/tests/test_<NNN>_*.py` (see
-[`black-box-tests/README.md`](../black-box-tests/README.md) and
-[`black-box-tests/ordering.md`](../black-box-tests/ordering.md)). Do not treat
+[`black-box-tests/README.md`](../../black-box-tests/README.md) and
+[`black-box-tests/ordering.md`](../../black-box-tests/ordering.md)). Do not treat
 `manual-cases/` as pytest tests; they are ad-hoc notes.
 
 This layer does **not** replace parser/engine unit tests. It is the check that

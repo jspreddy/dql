@@ -1061,7 +1061,7 @@ def render_html(
       <div class="figure">{fig_div(figures["agents"], "agents")}</div>
       <p class="caption">Named agents are the cloud agents on this repo. Their usage stays even in an hour with no commit. Rows with no id stay together, and only in hours that have a commit here.</p>
       <footer>
-        <p>Day and hour pages from the earlier pass: <a href="rewrite-metrics.html">rewrite-metrics.html</a>, <a href="rewrite-metrics-hours.html">rewrite-metrics-hours.html</a>. Back to the <a href="README.md">Rust user guide</a>.</p>
+        <p>Day and hour pages from the earlier pass: <a href="rewrite-metrics.html">rewrite-metrics.html</a>, <a href="rewrite-metrics-hours.html">rewrite-metrics-hours.html</a>. Back to the <a href="../README.md">Rust user guide</a>.</p>
       </footer>
     </main>
   </div>

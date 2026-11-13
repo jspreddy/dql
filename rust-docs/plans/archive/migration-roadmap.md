@@ -107,7 +107,7 @@ Status:
   DynamoDB Local and fail if it is not running
 - `python_engine_query_model_parity` mirrors `py-impl/tests/test_queries.py`; one Local
   GSI throughput case remains `#[ignore]`. Design debt for engine/backend
-  boundaries is tracked in `todo_engine_backend_boundaries.md`.
+  boundaries is tracked in [`todo/engine_backend_boundaries.md`](../todo/engine_backend_boundaries.md).
 
 Compatibility gate:
 
@@ -142,7 +142,7 @@ Status:
 
 - Implemented under `dql-cli` + `dql-output`
 - Design follow-ups: unify `-c`/REPL pipelines and invert output dependencies
-  (`todo_unify_cli_pipelines.md`, `todo_invert_output_dependencies.md`)
+  ([`todo/unify_cli_pipelines.md`](../todo/unify_cli_pipelines.md), [`todo/invert_output_dependencies.md`](../todo/invert_output_dependencies.md))
 
 Compatibility gate:
 
@@ -187,14 +187,14 @@ Primary risks:
 
 Phases 1–6 are implemented in `rust-impl/`.
 
-**Feature parity** (mostly done) — plans under `.cursor/plans/`:
+**Feature parity** (mostly done) — plans under [`cursor/`](cursor/):
 
-1. [Default AWS connection](../.cursor/plans/parity_1_default_aws.plan.md)
-2. [ORDER BY / ScanIndexForward](../.cursor/plans/parity_2_order_by.plan.md)
-3. [Index projection + count](../.cursor/plans/parity_3_index_projection.plan.md)
-4. [Expression regressions](../.cursor/plans/parity_4_expression_regressions.plan.md)
-5. [SAVE/LOAD + MessagePack](../.cursor/plans/parity_5_save_load.plan.md) (pickle replaced by MessagePack)
-6. [CLI polish](../.cursor/plans/parity_6_cli_polish.plan.md)
-7. [Rich query format](../.cursor/plans/rich_format_ratatui_78c8339d.plan.md)
+1. [Default AWS connection](cursor/parity_1_default_aws.plan.md)
+2. [ORDER BY / ScanIndexForward](cursor/parity_2_order_by.plan.md)
+3. [Index projection + count](cursor/parity_3_index_projection.plan.md)
+4. [Expression regressions](cursor/parity_4_expression_regressions.plan.md)
+5. [SAVE/LOAD + MessagePack](cursor/parity_5_save_load.plan.md) (pickle replaced by MessagePack)
+6. [CLI polish](cursor/parity_6_cli_polish.plan.md)
+7. [Rich query format](cursor/rich_format_ratatui_78c8339d.plan.md)
 
-**Design / SOLID debt** — `todo_*.md` in this folder (see `README.md`).
+**Design / SOLID debt** — [`../todo/`](../todo/) (see [`../README.md`](../README.md)).

@@ -36,12 +36,12 @@ Then run the report with that interpreter:
   .cursor/skills/work-metrics/work_metrics.py \
   --bin day \
   --out "$(mktemp -d)" \
-  --html rust-docs/work-metrics.html
+  --html rust-docs/metrics/work-metrics.html
 ```
 
 `--bin` defaults to `day`. The other value is `month`. Pass `--csv` only when the user names a file, or after the script reports that `.data/usage-metrics/` has no `usage-metrics-*.csv` or `usage-events-*.csv`.
 
-The script prints `out:` and `html:`. `out` holds the JSON and the graph fragments. `html` is the page to show. In this repository that page is `rust-docs/work-metrics.html`. Add a link from `rust-docs/README.md` if it is missing.
+The script prints `out:` and `html:`. `out` holds the JSON and the graph fragments. `html` is the page to show. In this repository that page is `rust-docs/metrics/work-metrics.html`. Add a link from `rust-docs/README.md` if it is missing.
 
 Defaults are `--base origin/v-next` and `--head origin/v-rust`. Author dates are converted to UTC before any binning. `%aI` without that conversion buckets days wrong.
 

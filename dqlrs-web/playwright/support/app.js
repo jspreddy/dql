@@ -99,6 +99,8 @@ export const test = base.extend({
   // SAVE and LOAD resolve relative paths from the dqlrs process directory.
   // Tests that opt in get a temp directory so those files stay out of the repo.
   isolateCwd: [false, { option: true }],
+  // Folder copied into the temp workspace the server opens. README screenshots use dqlrs-web/examples.
+  workspaceSource: [fixtureRoot, { option: true }],
   themeInit: [async ({ page }, use, testInfo) => {
     if (testInfo.project.name === "dark") {
       await page.addInitScript(() => {
@@ -113,10 +115,10 @@ export const test = base.extend({
     }
     await use();
   }, { auto: true }],
-  app: async ({ isolateCwd }, use) => {
+  app: async ({ isolateCwd, workspaceSource }, use) => {
     // The server reports paths under its canonical root, and macOS links /var to /private/var.
     const workspace = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-web-")));
-    fs.cpSync(fixtureRoot, workspace, { recursive: true });
+    fs.cpSync(workspaceSource, workspace, { recursive: true });
     const cwd = isolateCwd ? fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-web-cwd-")) : webRoot;
     const port = await freePort();
     const binary = dqlrsBinary();

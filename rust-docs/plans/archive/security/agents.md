@@ -1,6 +1,6 @@
 # Plan: agents and workspace readers
 
-**Group:** agents. **Status:** plan.
+**Group:** agents. **Status:** done. This plan adds no code of its own. The behavior in the table below comes from the sealed caches and the API token. Tests: `query_cache.rs` checks that a result file hides the query and rows, and `web/server.rs` `query_results_round_trip_and_clear` reads them back through the API.
 
 The query-result cache stays in the workspace. An agent that can read the project can open `.dqlrs-web-cache`. This plan says what that agent is allowed to learn, and what still requires the user.
 

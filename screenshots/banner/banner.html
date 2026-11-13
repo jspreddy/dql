@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>dqlrs banner</title>
+<!--
+  Source for screenshots/banner.png (the top of the README).
+  Colors are the dark tokens from dqlrs-web/static/theme.css.
+  Icons are the Material outlined SVGs already vendored in dqlrs-web/static/vendor/icons/.
+  Render: see screenshots/README.md.
+-->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;650;750;800&display=swap">
+<style>
+  :root {
+    --bar: #0c1117;
+    --canvas: #0e141b;
+    --paper: #17202b;
+    --paper-2: #1c2836;
+    --raised: #1e2936;
+    --line: #2a3848;
+    --line-strong: #334556;
+    --text: #e7eef6;
+    --text-strong: #f5f9fc;
+    --text-secondary: #c5d2e0;
+    --muted: #8b9eb3;
+    --teal: #0f766e;
+    --teal-ink: #5eead4;
+    --teal-wash: #16352f;
+    --blue: #60a5fa;
+    --blue-wash: #152033;
+    --purple: #c4b5fd;
+    --purple-bg: #241c33;
+    --ok: #4ade80;
+    --ok-bg: #12261c;
+    --ok-border: #1f6b45;
+    --orange: #fdba74;
+    --orange-bg: #2a1c14;
+    --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { background: var(--canvas); }
+  body {
+    width: 1280px;
+    height: 640px;
+    overflow: hidden;
+    font-family: "Noto Sans", "DejaVu Sans", sans-serif;
+    color: var(--text);
+  }
+  #banner {
+    position: relative;
+    width: 1280px;
+    height: 640px;
+    overflow: hidden;
+    background:
+      radial-gradient(700px 420px at 88% 18%, rgba(15, 118, 110, 0.30), transparent 70%),
+      radial-gradient(520px 360px at 8% 100%, rgba(96, 165, 250, 0.12), transparent 70%),
+      var(--canvas);
+  }
+  /* Faint grid, like a table. */
+  #banner::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.18;
+    mask-image: linear-gradient(90deg, #000 0%, transparent 55%);
+  }
+
+  /* Brand mark: the slanted header block from the web UI. */
+  .brand-mark {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 58px 0 48px;
+    background: var(--teal);
+    color: #fff;
+    clip-path: polygon(0 0, 100% 0, calc(100% - 39px) 100%, 0 100%);
+    font-weight: 750;
+    font-size: 19px;
+    letter-spacing: 0.02em;
+  }
+  .brand-mark small {
+    font-weight: 500;
+    font-size: 14px;
+    opacity: 0.85;
+    letter-spacing: 0.01em;
+  }
+
+  .copy {
+    position: absolute;
+    left: 48px;
+    top: 92px;
+    width: 480px;
+  }
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 11px;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    background: var(--paper);
+    color: var(--teal-ink);
+    font-size: 13px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin-top: 18px;
+    font-size: 50px;
+    line-height: 1.04;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text-strong);
+  }
+  h1 em {
+    font-style: normal;
+    color: var(--teal-ink);
+  }
+  .lede {
+    margin-top: 16px;
+    font-size: 18px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+  }
+  .commands {
+    margin-top: 22px;
+    padding: 12px 16px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--bar);
+    font: 15px/1.75 var(--mono);
+    color: var(--text);
+  }
+  .commands .p { color: var(--teal-ink); }
+  .commands .c { color: var(--muted); }
+  .commands .row { display: flex; justify-content: space-between; }
+
+  /* Window frames for the three surfaces. */
+  .win {
+    position: absolute;
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--paper);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.4);
+  }
+  .win .chrome {
+    height: 26px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    background: var(--bar);
+    border-bottom: 1px solid var(--line);
+  }
+  .win .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line-strong); }
+  .win .chrome span:last-child {
+    margin-left: 8px;
+    font: 12px var(--mono);
+    color: var(--muted);
+  }
+  .win img { display: block; width: 100%; }
+  .tag {
+    position: absolute;
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px 5px 9px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 650;
+    border: 1px solid;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  }
+  .tag svg { width: 16px; height: 16px; }
+  .tag.web { color: var(--teal-ink); background: var(--teal-wash); border-color: var(--teal); }
+  .tag.tui { color: var(--ok); background: var(--ok-bg); border-color: var(--ok-border); }
+  .tag.nb { color: var(--orange); background: var(--orange-bg); border-color: #7c3a12; }
+
+  #web { left: 590px; top: 70px; width: 650px; height: 300px; }
+  #web img { margin-top: -2px; }
+  #tui { left: 560px; top: 280px; width: 370px; height: 206px; }
+  #tui img { width: 470px; margin-top: -54px; }
+  #nb { left: 902px; top: 270px; width: 340px; height: 216px; }
+  #nb img { width: 560px; margin-left: -128px; margin-top: -74px; }
+
+  /* Feature strip. */
+  .features {
+    position: absolute;
+    left: 48px;
+    right: 48px;
+    bottom: 34px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+  }
+  .feature {
+    padding: 13px 15px 14px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: rgba(23, 32, 43, 0.92);
+  }
+  .feature h2 {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 14.5px;
+    font-weight: 750;
+    color: var(--text-strong);
+  }
+  .feature h2 svg { width: 18px; height: 18px; flex: none; }
+  .feature p {
+    margin-top: 5px;
+    font-size: 13px;
+    line-height: 1.42;
+    color: var(--text-secondary);
+  }
+  .f-mcp svg { color: var(--purple); }
+  .f-sec svg { color: var(--ok); }
+  .f-local svg { color: var(--blue); }
+  .f-dql svg { color: var(--teal-ink); }
+</style>
+</head>
+<body>
+<div id="banner">
+  <div class="brand-mark">DQLRS <small>for Amazon DynamoDB</small></div>
+
+  <div class="copy">
+    <div class="eyebrow">One Rust binary · three surfaces</div>
+    <h1>Query DynamoDB<br>like it's <em>SQL</em>.</h1>
+    <p class="lede">SELECT, SCAN, INSERT, UPDATE, EXPLAIN, and more, from a terminal, a browser, or a notebook. Your AI agent gets the same workspace over MCP.</p>
+    <div class="commands">
+      <div class="row"><span><span class="p">$</span> dqlrs</span><span class="c"># terminal UI</span></div>
+      <div class="row"><span><span class="p">$</span> dqlrs web --mcp</span><span class="c"># browser + agents</span></div>
+      <div class="row"><span><span class="p">$</span> dqlrs notebook</span><span class="c"># JupyterLab</span></div>
+    </div>
+  </div>
+
+  <div class="win" id="web">
+    <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>127.0.0.1:8765</span></div>
+    <img src="web.png" alt="">
+  </div>
+  <span class="tag web" style="left: 1132px; top: 56px;">
+    <svg viewBox="0 0 24 24"><use href="../../dqlrs-web/static/vendor/icons/table_chart.svg#icon"></use></svg>Web
+  </span>
+
+  <div class="win" id="tui">
+    <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>dqlrs</span></div>
+    <img src="tui.png" alt="">
+  </div>
+  <span class="tag tui" style="left: 548px; top: 266px;">
+    <svg viewBox="0 0 24 24"><use href="../../dqlrs-web/static/vendor/icons/terminal.svg#icon"></use></svg>Terminal
+  </span>
+
+  <div class="win" id="nb">
+    <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i><span>cosmos.ipynb</span></div>
+    <img src="notebook.png" alt="">
+  </div>
+  <span class="tag nb" style="left: 1130px; top: 256px;">
+    <svg viewBox="0 0 24 24"><use href="../../dqlrs-web/static/vendor/icons/description.svg#icon"></use></svg>Notebook
+  </span>
+
+  <div class="features">
+    <div class="feature f-mcp">
+      <h2><svg viewBox="0 0 24 24"><use href="../../dqlrs-web/static/vendor/icons/code.svg#icon"></use></svg>MCP for agents</h2>
+      <p>Agents search tables, lint, and write <code>.dql</code> files. They never run queries.</p>
+    </div>
+    <div class="feature f-sec">
+      <h2><svg viewBox="0 0 24 24"><use href="../../dqlrs-web/static/vendor/icons/check_circle.svg#icon"></use></svg>Encrypted caches</h2>
+      <p>AES-256-GCM on disk. The key lives in your OS keychain.</p>
+    </div>
+    <div class="feature f-local">
+      <h2><svg viewBox="0 0 24 24"><use href="../../dqlrs-web/static/vendor/icons/visibility.svg#icon"></use></svg>Local only</h2>
+      <p>Loopback servers. A per-user token guards the API and MCP.</p>
+    </div>
+    <div class="feature f-dql">
+      <h2><svg viewBox="0 0 24 24"><use href="../../dqlrs-web/static/vendor/icons/search.svg#icon"></use></svg>Built for real tables</h2>
+      <p>Index-aware plans, lint, SAVE/LOAD to JSON, CSV, and MessagePack.</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

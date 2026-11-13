@@ -21,16 +21,16 @@ The public binary is a thin shell around `dql-cli`. Library users can depend on
 
 ### Known boundary gaps (tracked as todos)
 
-Code is ahead of the ideal boundaries in a few places; see `todo_*.md`:
+Code is ahead of the ideal boundaries in a few places; see [`todo/`](todo/):
 
 - Selection/update expressions are still partly opaque strings
-(`todo_typed_expression_ast.md`).
+([`todo/typed_expression_ast.md`](todo/typed_expression_ast.md)).
 - `dql-output` currently depends on `dql-engine` for result types
-(`todo_invert_output_dependencies.md`).
+([`todo/invert_output_dependencies.md`](todo/invert_output_dependencies.md)).
 - Several crates are large single-file modules
-(`todo_split_monolith_modules.md`).
+([`todo/split_monolith_modules.md`](todo/split_monolith_modules.md)).
 - CLI one-shot and REPL still have divergent execution paths
-(`todo_unify_cli_pipelines.md`).
+([`todo/unify_cli_pipelines.md`](todo/unify_cli_pipelines.md)).
 
 
 
@@ -76,7 +76,7 @@ handling, list indexing, nested map paths, and stable placeholder generation.
 
 **Current gap:** projections and update RHS are often stored/rendered as
 strings with ad hoc tokenization. Target state is a typed expression AST shared
-by parser, planner, and renderer (`todo_typed_expression_ast.md`).
+by parser, planner, and renderer ([`todo/typed_expression_ast.md`](todo/typed_expression_ast.md)).
 
 ### Query planning
 
@@ -122,7 +122,7 @@ pipe-friendly.
 
 **Current gap:** presentation still depends on `dql-engine` types, and rich
 ratatui scraping lives partly under `dql-cli/repl`
-(`todo_invert_output_dependencies.md`).
+([`todo/invert_output_dependencies.md`](todo/invert_output_dependencies.md)).
 
 ## Initial dependency candidates
 

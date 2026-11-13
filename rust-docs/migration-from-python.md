@@ -9,23 +9,24 @@ or remain incomplete.
 
 | Topic | Python | Rust |
 | --- | --- | --- |
-| Recommended install | `pip install dql` or PEX from releases | GitHub release binary or `cargo install --git` |
-| Install script | PEX builder in Python tree | `scripts/rust-install.sh` |
+| Recommended install | `uv tool install` from the git URL | `cargo install --git` from the git URL |
 | Development branch | `v-next` | `v-rust` |
 
 Rust install examples:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/HEAD/scripts/rust-install.sh | sh
+cargo install --git https://github.com/jspreddy/dql.git --branch v-rust \
+  --locked --root ~/.local dql-cli
 
+# or, from a checkout
 cd rust-impl && cargo install --path crates/dql-cli --locked --root ~/.local
 ```
 
+There are no prebuilt binaries or GitHub releases yet.
+
 This repository is a fork of [`stevearc/dql`](https://github.com/stevearc/dql).
 Install URLs, Cargo `--git` sources, and CI badges in these docs point at
-[`jspreddy/dql`](https://github.com/jspreddy/dql). Upstream may also publish
-binaries; override with `DQL_REPO=owner/repo` when using
-`scripts/rust-install.sh`.
+[`jspreddy/dql`](https://github.com/jspreddy/dql).
 
 ## Configuration and history
 
@@ -112,8 +113,8 @@ One engine parity test remains `#[ignore]` in
 Python readline stay ignored.
 
 Design-debt follow-ups (not user-facing parity) are listed in
-`rust-plans/todo_*.md`. See `rust-impl/README.md` and
-`rust-plans/migration-roadmap.md` for overall status.
+[`plans/todo/`](plans/todo/). See `rust-impl/README.md` and
+[`plans/archive/migration-roadmap.md`](plans/archive/migration-roadmap.md) for the rewrite history.
 
 ## Python package status
 

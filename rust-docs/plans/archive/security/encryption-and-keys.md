@@ -1,6 +1,6 @@
 # Plan: encryption and keys
 
-**Group:** keys. **Status:** done.
+**Group:** keys. **Status:** done (`5c6a30e`, `c5833df`, `1e3cd92`, `abc93e6`). Code: `rust-impl/crates/dql-cli/src/cache_seal.rs`.
 
 Encrypt both caches from [`disk-caches.md`](disk-caches.md). The query-result files stay in the workspace, so this cipher is what keeps a workspace reader from seeing rows.
 
