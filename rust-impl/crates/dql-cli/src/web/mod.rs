@@ -10,6 +10,7 @@ pub(crate) mod files;
 pub(crate) mod init;
 pub(crate) mod lint;
 mod presence;
+pub(crate) mod progress;
 mod query_cache;
 pub(crate) mod search;
 mod server;

@@ -12,6 +12,8 @@ use std::process::Command;
 use color_eyre::eyre::{bail, eyre, WrapErr};
 use include_dir::{include_dir, Dir};
 
+use super::progress::Progress;
+
 /// `dqlrs-web/examples`, staged by build.rs without ignored caches.
 static EXAMPLES: Dir<'_> = include_dir!("$OUT_DIR/examples");
 
@@ -20,8 +22,19 @@ pub(crate) const COMMIT_MESSAGE: &str = "Initialized dqlrs web examples";
 /// Run the checks, ask, then initialize `dir`. `yes` skips the question. Returns false when
 /// the user answers no; nothing was changed then.
 pub(crate) fn run(dir: &Path, yes: bool) -> color_eyre::Result<bool> {
-    check_empty(dir)?;
-    check_git()?;
+    let progress = Progress::stdout();
+    progress.step("Checking the folder", |_| {
+        check_empty(dir).map(|()| ((), format!("{} is empty", dir.display())))
+    })?;
+    progress.step("Checking git", |_| {
+        check_git().map(|git| {
+            (
+                (),
+                format!("{}, committing as {}", git.version, git.identity),
+            )
+        })
+    })?;
+    progress.say("");
     let plan = plan_text(dir);
     if !yes {
         if !io::stdin().is_terminal() {
@@ -38,8 +51,10 @@ pub(crate) fn run(dir: &Path, yes: bool) -> color_eyre::Result<bool> {
     } else {
         print!("{plan}");
     }
-    initialize(dir)?;
-    println!("Initialized {}", dir.display());
+    progress.say("");
+    initialize(dir, &progress)?;
+    progress.say("");
+    progress.say(&format!("Ready. Serving {}", dir.display()));
     Ok(true)
 }
 
@@ -73,14 +88,25 @@ pub(crate) fn check_empty(dir: &Path) -> color_eyre::Result<()> {
     )
 }
 
+/// What `check_git` found, for the progress line.
+pub(crate) struct GitInfo {
+    /// `git 2.43.0`
+    pub(crate) version: String,
+    /// `Name <email>` of the author.
+    pub(crate) identity: String,
+}
+
 /// git must run, and it must know the author and committer (user.name and user.email, or the
 /// GIT_* variables), so the commit cannot fail halfway.
-pub(crate) fn check_git() -> color_eyre::Result<()> {
-    let version = Command::new("git").arg("--version").output();
-    match version {
-        Ok(output) if output.status.success() => {}
+pub(crate) fn check_git() -> color_eyre::Result<GitInfo> {
+    let version = match Command::new("git").arg("--version").output() {
+        Ok(output) if output.status.success() => {
+            let text = String::from_utf8_lossy(&output.stdout);
+            text.trim().replacen("git version", "git", 1)
+        }
         _ => bail!("dqlrs web --init-examples needs git, and git was not found on PATH"),
-    }
+    };
+    let mut identity = String::new();
     for ident in ["GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"] {
         let output = Command::new("git")
             .args(["var", ident])
@@ -91,8 +117,16 @@ pub(crate) fn check_git() -> color_eyre::Result<()> {
                 "git does not know who is committing; set it with\n  git config --global user.name \"Your Name\"\n  git config --global user.email you@example.com"
             );
         }
+        if identity.is_empty() {
+            // `Name <email> 1700000000 +0000`: keep the name and email.
+            let text = String::from_utf8_lossy(&output.stdout);
+            identity = match text.find('>') {
+                Some(end) => text[..=end].to_string(),
+                None => text.trim().to_string(),
+            };
+        }
     }
-    Ok(())
+    Ok(GitInfo { version, identity })
 }
 
 /// What `--init-examples` is about to do, shown before the question.
@@ -124,29 +158,55 @@ pub(crate) fn confirm(
     ))
 }
 
-/// Create the folder, `git init`, copy the examples in, and commit them.
-pub(crate) fn initialize(dir: &Path) -> color_eyre::Result<()> {
-    std::fs::create_dir_all(dir).wrap_err_with(|| format!("create {}", dir.display()))?;
-    git(dir, &["init", "-q"])?;
-    let written = write_examples(dir)?;
-    git(dir, &["add", "-A"])?;
-    git(dir, &["commit", "-q", "-m", COMMIT_MESSAGE])?;
-    println!(
-        "Copied {} example files and committed them as \"{COMMIT_MESSAGE}\"",
-        written.len()
-    );
-    Ok(())
+/// Create the folder, `git init`, copy the examples in, and commit them, one progress step
+/// each.
+pub(crate) fn initialize(dir: &Path, progress: &Progress) -> color_eyre::Result<()> {
+    progress.step("Creating a git repository", |_| {
+        std::fs::create_dir_all(dir).wrap_err_with(|| format!("create {}", dir.display()))?;
+        git(dir, &["init", "-q"])?;
+        Ok(((), "Created a git repository".to_string()))
+    })?;
+    progress.step("Copying the examples", |detail| {
+        let total = example_file_count();
+        let written = write_examples(dir, &mut |done| detail.set(format!("{done}/{total}")))?;
+        Ok(((), format!("Copied {} example files", written.len())))
+    })?;
+    progress.step("Committing", |_| {
+        git(dir, &["add", "-A"])?;
+        git(dir, &["commit", "-q", "-m", COMMIT_MESSAGE])?;
+        let head = Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(["rev-parse", "--short", "HEAD"])
+            .output()
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+            .unwrap_or_default();
+        let summary = if head.is_empty() {
+            format!("Committed \"{COMMIT_MESSAGE}\"")
+        } else {
+            format!("Committed \"{COMMIT_MESSAGE}\" ({head})")
+        };
+        Ok(((), summary))
+    })
 }
 
-/// Write the bundled examples into `dir` and return the paths written. Shell scripts (the
-/// agent hooks) are made executable.
-pub(crate) fn write_examples(dir: &Path) -> color_eyre::Result<Vec<PathBuf>> {
+/// Write the bundled examples into `dir` and return the paths written. `on_file` gets the
+/// count so far after each file. Shell scripts (the agent hooks) are made executable.
+pub(crate) fn write_examples(
+    dir: &Path,
+    on_file: &mut dyn FnMut(usize),
+) -> color_eyre::Result<Vec<PathBuf>> {
     let mut written = Vec::new();
-    write_dir(&EXAMPLES, dir, &mut written)?;
+    write_dir(&EXAMPLES, dir, &mut written, on_file)?;
     Ok(written)
 }
 
-fn write_dir(source: &Dir<'_>, root: &Path, written: &mut Vec<PathBuf>) -> color_eyre::Result<()> {
+fn write_dir(
+    source: &Dir<'_>,
+    root: &Path,
+    written: &mut Vec<PathBuf>,
+    on_file: &mut dyn FnMut(usize),
+) -> color_eyre::Result<()> {
     for file in source.files() {
         let target = root.join(file.path());
         if let Some(parent) = target.parent() {
@@ -159,9 +219,10 @@ fn write_dir(source: &Dir<'_>, root: &Path, written: &mut Vec<PathBuf>) -> color
             make_executable(&target)?;
         }
         written.push(target);
+        on_file(written.len());
     }
     for child in source.dirs() {
-        write_dir(child, root, written)?;
+        write_dir(child, root, written, on_file)?;
     }
     Ok(())
 }
@@ -282,8 +343,10 @@ mod tests {
         std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
         std::env::set_var("GIT_COMMITTER_NAME", "dqlrs test");
         std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
-        check_git().unwrap();
-        initialize(&dir).unwrap();
+        let git = check_git().unwrap();
+        assert!(git.version.starts_with("git "), "{}", git.version);
+        assert_eq!(git.identity, "dqlrs test <test@example.com>");
+        initialize(&dir, &Progress::quiet()).unwrap();
 
         let log = Command::new("git")
             .arg("-C")
