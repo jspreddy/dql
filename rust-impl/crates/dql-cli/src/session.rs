@@ -567,7 +567,10 @@ impl Session {
         ) {
             Ok(dir) => dir,
             Err(err) => {
-                eprintln!("dqlrs: workspace cache: {err}");
+                eprintln!(
+                    "{}",
+                    crate::style::Style::stderr().warn(&format!("dqlrs: workspace cache: {err}"))
+                );
                 self.connection_dir()
             }
         };

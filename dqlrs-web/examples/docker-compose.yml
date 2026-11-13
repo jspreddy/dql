@@ -1,0 +1,18 @@
+# DynamoDB Local for these examples: `docker compose up -d`, then
+# `dqlrs web -H localhost -p 8000`. Data lives in the `dynamodb-local-data` volume;
+# `docker compose down -v` removes it.
+services:
+  dynamodb-local:
+    image: "amazon/dynamodb-local:latest"
+    container_name: dqlrs-dynamodb-local
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
+    working_dir: /home/dynamodblocal
+    # The image's own user cannot write to a fresh volume.
+    user: root
+    ports:
+      - "8000:8000"
+    volumes:
+      - "dynamodb-local-data:/home/dynamodblocal/data"
+
+volumes:
+  dynamodb-local-data:

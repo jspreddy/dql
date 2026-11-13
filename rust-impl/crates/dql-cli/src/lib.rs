@@ -12,6 +12,7 @@ pub mod notebook;
 pub mod repl;
 pub mod serve;
 pub mod session;
+mod style;
 pub mod table_cache;
 pub mod throttle;
 pub mod web;
@@ -47,6 +48,9 @@ const KNOWN_FLAGS: &[&str] = &[
     "--listen",
     "--dir",
     "--load-tables",
+    "--init-examples",
+    "--yes",
+    "--dynamodb",
     "--version",
     "-h",
     "--help",
@@ -65,7 +69,12 @@ pub fn run() -> color_eyre::Result<()> {
         }
         if arg.starts_with('-') {
             if !KNOWN_FLAGS.contains(&arg.as_str()) {
-                eprintln!("unknown argument '{arg}'\n\n{}", help_text());
+                let style = style::Style::stderr();
+                eprintln!(
+                    "{}\n\n{}",
+                    style.error(&format!("unknown argument '{arg}'")),
+                    style.help(&help_text())
+                );
                 return Ok(());
             }
             if matches!(
@@ -80,6 +89,7 @@ pub fn run() -> color_eyre::Result<()> {
                     | "--bind"
                     | "--listen"
                     | "--dir"
+                    | "--dynamodb"
             ) {
                 args_iter.next();
             }
@@ -91,7 +101,7 @@ pub fn run() -> color_eyre::Result<()> {
 
     if args.help {
         let mut stderr = io::stderr();
-        stderr.write_all(help_text().as_bytes())?;
+        stderr.write_all(style::Style::stderr().help(&help_text()).as_bytes())?;
         return Ok(());
     }
 
@@ -112,6 +122,21 @@ pub fn run() -> color_eyre::Result<()> {
     if args.load_tables && !args.web {
         bail!("--load-tables requires `dqlrs web`");
     }
+    if args.init_examples && !args.web {
+        bail!("--init-examples requires `dqlrs web`");
+    }
+    if args.yes && !args.init_examples {
+        bail!("--yes requires `dqlrs web --init-examples`");
+    }
+    if args.dynamodb.is_some() && !args.init_examples {
+        bail!("--dynamodb requires `dqlrs web --init-examples`");
+    }
+    let dynamodb = args
+        .dynamodb
+        .as_deref()
+        .map(str::parse::<web::dynamodb_local::Runtime>)
+        .transpose()
+        .map_err(|err| color_eyre::eyre::eyre!(err))?;
     if args.serve && args.command.is_some() {
         bail!("--serve cannot be used with -c/--command");
     }
@@ -140,6 +165,28 @@ pub fn run() -> color_eyre::Result<()> {
                 .parse()
                 .expect("default web listen address"),
         };
+        // --init-examples runs first: the session creates .dqlrs-cache in the workspace, and
+        // --init-examples needs the folder empty.
+        if args.init_examples {
+            // Absolute, so the plan names the real folder. It may not exist yet.
+            let cwd = std::env::current_dir().wrap_err("current directory")?;
+            let dir = match &args.dir {
+                Some(dir) => cwd.join(dir),
+                None => cwd,
+            };
+            let outcome = web::init::run(&dir, args.yes, dynamodb)?;
+            if !outcome.initialized {
+                return Ok(());
+            }
+            // The examples run against DynamoDB Local: serve against it unless -H chose a host.
+            if outcome.dynamodb_local && args.host.is_none() {
+                args.host = Some(web::dynamodb_local::HOST.to_string());
+                args.port = web::dynamodb_local::PORT;
+                set_default_env("AWS_ACCESS_KEY_ID", "fakeid");
+                set_default_env("AWS_SECRET_ACCESS_KEY", "fakekey");
+                set_default_env("AWS_EC2_METADATA_DISABLED", "true");
+            }
+        }
         // The workspace is --dir or the current directory; Session resolves it once.
         let session = Session::new_for_serve(&args).wrap_err("failed to start session")?;
         let dir = session.workspace.clone();
@@ -170,7 +217,7 @@ pub fn run() -> color_eyre::Result<()> {
     let mut session = Session::new(&args).wrap_err("failed to start session")?;
     if let Some(command) = args.command {
         if let Err(err) = session.run_command(command.trim(), args.json) {
-            eprintln!("{err}");
+            eprintln!("{}", style::Style::stderr().error(&err.to_string()));
         }
     } else {
         repl::run_repl(&mut session).wrap_err("repl failed")?;

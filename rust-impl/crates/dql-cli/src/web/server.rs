@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 
 use super::files::{self, PathError};
 use super::presence::{self, Kind};
+use super::progress::{Detail, Progress};
 use super::query_cache;
 use super::shape::{
     changed_tables, column_order, explain_index, parse_table_shape, read_query, safe_table_name,
@@ -27,6 +28,7 @@ use super::shape::{
 use super::structure;
 use crate::serve::protocol::{envelope_from_error, ServeEnvelope};
 use crate::session::Session;
+use crate::table_cache::LoadEvent;
 
 static ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../../dqlrs-web/static");
 
@@ -101,63 +103,223 @@ pub fn serve(
     let token = crate::api_token::load()?;
     let app = Arc::new(App::new(session, root, mcp, token));
     super::events::start(&app);
+    // Bind first so a busy port fails before a long table load. Connections wait in the
+    // backlog until `accept` runs.
     let listener = TcpListener::bind(listen)?;
     let bound = listener.local_addr().unwrap_or(listen);
-    println!("DQLRS Web  http://{bound}");
-    if load_tables {
-        begin_table_load(&app);
-        println!("tables     loading in the background");
+    let loaded = if load_tables {
+        Some(load_tables_with_progress(&app, &Progress::stdout()))
+    } else {
+        None
+    };
+    // Colors only in a terminal; piped, this is the same plain text as before.
+    let style = crate::style::Style::stdout();
+    const WIDTH: usize = 11;
+    println!(
+        "{}  {}",
+        style.title("DQLRS Web"),
+        style.url(&format!("http://{bound}"))
+    );
+    if let Some(count) = loaded {
+        println!(
+            "{}",
+            style.row("tables", WIDTH, &format!("{count} definitions loaded"))
+        );
     }
     if mcp {
         let url = format!("http://{bound}/mcp");
-        println!("MCP        {url}");
-        println!("workspace  {}", app.root.display());
-        println!("endpoint   {}", app.endpoint);
+        println!("{}", style.row("MCP", WIDTH, &style.url(&url)));
+        println!(
+            "{}",
+            style.row(
+                "workspace",
+                WIDTH,
+                &style.path(&app.root.display().to_string())
+            )
+        );
+        println!("{}", style.row("endpoint", WIDTH, &app.endpoint));
         println!();
-        println!("{}", crate::mcp::http_client_config(&url, &app.token));
+        println!(
+            "{}",
+            style.config(&crate::mcp::http_client_config(&url, &app.token))
+        );
     } else {
-        println!("{}", crate::mcp::web_mcp_hint(&bound.to_string()));
-        println!("workspace  {}", app.root.display());
-        println!("endpoint   {}", app.endpoint);
+        println!(
+            "{}{}{}{}{}",
+            style.label(&format!("{:<WIDTH$}", "MCP")),
+            style.dim("off. Pass "),
+            style.code("--mcp"),
+            style.dim(" to serve "),
+            style.url(&format!("http://{bound}/mcp"))
+        );
+        println!(
+            "{}",
+            style.row(
+                "workspace",
+                WIDTH,
+                &style.path(&app.root.display().to_string())
+            )
+        );
+        println!("{}", style.row("endpoint", WIDTH, &app.endpoint));
     }
     let _ = io::stdout().flush();
-    eprintln!("{}", crate::api_token::stderr_line(&app.token));
+    let err_style = crate::style::Style::stderr();
+    eprintln!(
+        "{}{}",
+        err_style.label("dqlrs token "),
+        err_style.dim(&app.token)
+    );
     let _ = io::stderr().flush();
     accept(app, listener, Arc::new(AtomicBool::new(false)));
     Ok(())
 }
 
-fn begin_table_load(app: &Arc<App>) {
+/// Load every table definition before the server starts, with a progress bar, and return
+/// how many loaded. Only failures get their own line. A failure is reported and the server
+/// starts anyway, as with a background load.
+fn load_tables_with_progress(app: &Arc<App>, progress: &Progress) -> usize {
+    progress.say(&format!("Connected to {}", connection_line(app)));
+    let started = std::time::Instant::now();
+    let mut loaded = 0;
+    let result = progress.step("Loading table definitions", |detail| {
+        detail.set("listing tables");
+        let mut failed = 0;
+        let outcome = run_table_load(app, &mut |event| {
+            report_load_event(detail, event, &mut loaded, &mut failed)
+        });
+        let seconds = started.elapsed().as_secs_f64();
+        outcome.map_err(|err| color_eyre::eyre::eyre!(err))?;
+        let noun = if loaded == 1 {
+            "definition"
+        } else {
+            "definitions"
+        };
+        let summary = if failed == 0 {
+            format!("Loaded {loaded} table {noun} in {seconds:.1}s")
+        } else {
+            format!("Loaded {loaded} table {noun} in {seconds:.1}s, {failed} failed")
+        };
+        Ok(((), summary))
+    });
+    if let Err(err) = result {
+        println!("    {err}");
+    }
+    progress.say("");
+    loaded
+}
+
+/// Line 1 of the load progress: the connection, and on AWS the account and the role or user
+/// it runs as. The identity is cached for the UI's identity panel.
+fn connection_line(app: &App) -> String {
+    let (local, memory) = {
+        let state = lock_state(app);
+        (
+            state.session.local_endpoint.is_some(),
+            state.session.engine.is_memory(),
+        )
+    };
+    if memory {
+        return "the in-memory backend".to_string();
+    }
+    if local {
+        return format!("{} · DynamoDB Local", app.endpoint);
+    }
+    let fetched = lock_state(app).session.engine.caller_identity();
+    match fetched {
+        Ok(identity) => {
+            let line = format!(
+                "{} · account {} · {}",
+                app.endpoint,
+                identity.account,
+                principal_label(&identity.arn)
+            );
+            *app.identity.lock().expect("caller identity") = Some(identity);
+            line
+        }
+        Err(err) => format!("{} · identity unknown ({err})", app.endpoint),
+    }
+}
+
+/// `role Admin (jonsmith)` for an assumed role, `user alice` for an IAM user, else the
+/// principal as the ARN names it.
+fn principal_label(arn: &str) -> String {
+    let principal = super::environment::principal_from_arn(arn);
+    if arn.contains(":assumed-role/") || arn.contains(":role/") {
+        format!("role {principal}")
+    } else if arn.contains(":user/") {
+        format!("user {principal}")
+    } else if arn.ends_with(":root") {
+        "root".to_string()
+    } else {
+        principal
+    }
+}
+
+/// Advance the bar. A table that fails to load gets a line of its own with the error.
+fn report_load_event(detail: &Detail, event: LoadEvent, loaded: &mut usize, failed: &mut usize) {
+    match event {
+        LoadEvent::Listed(total) => {
+            detail.set_bar(0, total);
+            detail.set("");
+        }
+        LoadEvent::Described {
+            index,
+            total,
+            name,
+            result,
+        } => {
+            match result {
+                Ok(Some(_)) => *loaded += 1,
+                // Dropped between the listing and the describe: nothing to load.
+                Ok(None) => {}
+                Err(err) => {
+                    *failed += 1;
+                    detail.log(false, name, &err);
+                }
+            }
+            detail.set_bar(index, total);
+        }
+    }
+}
+
+/// The table list and every definition, through the workspace's disk cache when there is
+/// one, else through the session.
+fn run_table_load(app: &Arc<App>, report: &mut dyn FnMut(LoadEvent)) -> Result<(), String> {
     let disk = {
         let state = lock_state(app);
         state.session.table_disk.clone()
     };
-    if let Some(cache) = disk {
-        cache.start_load();
-        return;
+    match disk {
+        Some(cache) => cache.load_with(report),
+        None => load_session_tables(app, report),
     }
-    let app = Arc::clone(app);
-    thread::spawn(move || load_session_tables(app));
 }
 
-fn load_session_tables(app: Arc<App>) {
+fn load_session_tables(app: &Arc<App>, report: &mut dyn FnMut(LoadEvent)) -> Result<(), String> {
     let names = {
-        let mut state = lock_state(&app);
-        match state.session.engine.cached_table_names(true) {
-            Ok(names) => names,
-            Err(err) => {
-                eprintln!("dqlrs: load tables: {err}");
-                return;
-            }
-        }
+        let mut state = lock_state(app);
+        state
+            .session
+            .engine
+            .cached_table_names(true)
+            .map_err(|err| err.to_string())?
     };
-    for name in names {
-        let mut state = lock_state(&app);
-        match state.session.engine.describe(&name, false) {
-            Ok(_) => {}
-            Err(err) => eprintln!("dqlrs: load tables: {name}: {err}"),
-        }
+    report(LoadEvent::Listed(names.len()));
+    for (index, name) in names.iter().enumerate() {
+        let mut state = lock_state(app);
+        let described = state.session.engine.describe(name, false);
+        let result = match &described {
+            Ok(meta) => Ok(meta.as_ref()),
+            Err(err) => Err(err.to_string()),
+        };
+        report(LoadEvent::Described {
+            index: index + 1,
+            total: names.len(),
+            name,
+            result,
+        });
     }
+    Ok(())
 }
 
 fn accept(app: Arc<App>, listener: TcpListener, stop: Arc<AtomicBool>) {
@@ -176,7 +338,10 @@ fn accept(app: Arc<App>, listener: TcpListener, stop: Arc<AtomicBool>) {
         thread::spawn(move || {
             if let Err(err) = handle_connection(app, stream) {
                 if !is_disconnect(&err) {
-                    eprintln!("dqlrs web: {err}");
+                    eprintln!(
+                        "{}",
+                        crate::style::Style::stderr().warn(&format!("dqlrs web: {err}"))
+                    );
                 }
             }
         });
@@ -2125,6 +2290,19 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
     }
 
     #[test]
+    fn the_connection_line_names_the_role_or_user() {
+        assert_eq!(
+            principal_label("arn:aws:sts::123456789012:assumed-role/Admin/jonsmith"),
+            "role Admin (jonsmith)"
+        );
+        assert_eq!(
+            principal_label("arn:aws:iam::123456789012:user/alice"),
+            "user alice"
+        );
+        assert_eq!(principal_label("arn:aws:iam::123456789012:root"), "root");
+    }
+
+    #[test]
     fn load_tables_describes_every_memory_table() {
         let root = tempfile::tempdir().unwrap();
         let app = Arc::new(App::new(
@@ -2145,7 +2323,25 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             assert!(created.ok, "{created:?}");
             state.session.engine.set_table_cache(None);
         }
-        load_session_tables(Arc::clone(&app));
+        let mut events = Vec::new();
+        load_session_tables(&app, &mut |event| {
+            events.push(match event {
+                LoadEvent::Listed(total) => format!("listed {total}"),
+                LoadEvent::Described {
+                    index,
+                    total,
+                    name,
+                    result,
+                } => {
+                    format!(
+                        "{index}/{total} {name} {}",
+                        result.map(|meta| meta.is_some()).unwrap_or(false)
+                    )
+                }
+            })
+        })
+        .unwrap();
+        assert_eq!(events, ["listed 2", "1/2 comments true", "2/2 posts true"]);
         let mut state = lock_state(&app);
         let posts = state
             .session

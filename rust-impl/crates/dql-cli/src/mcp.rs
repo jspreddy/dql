@@ -382,7 +382,7 @@ pub fn run(session: Session, root: PathBuf) -> std::io::Result<()> {
         endpoint.as_ref().map(|(host, port)| (host.as_str(), *port)),
         session.engine.is_memory(),
     );
-    eprintln!("{config}");
+    eprintln!("{}", crate::style::Style::stderr().config(&config));
     let mut server = McpServer::new(session, root);
     let stdin = io::stdin();
     let mut stdout = io::stdout();

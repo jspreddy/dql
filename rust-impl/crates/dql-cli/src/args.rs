@@ -80,9 +80,28 @@ pub struct CliArgs {
 
     #[arg(
         long = "load-tables",
-        help = "With `web`, load every table and its definition in the background"
+        help = "With `web`, load every table definition, with progress, before the server starts"
     )]
     pub load_tables: bool,
+
+    #[arg(
+        long = "init-examples",
+        help = "With `web`, after a confirm: git init an empty folder, copy the examples in, commit"
+    )]
+    pub init_examples: bool,
+
+    #[arg(
+        long = "dynamodb",
+        value_name = "java|docker|skip",
+        help = "With `web --init-examples`, how to run DynamoDB Local instead of asking"
+    )]
+    pub dynamodb: Option<String>,
+
+    #[arg(
+        long = "yes",
+        help = "With `web --init-examples`, skip the confirmation"
+    )]
+    pub yes: bool,
 
     #[arg(long = "version", help = "Print the version and exit")]
     pub version: bool,
@@ -104,6 +123,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--bind",
     "--listen",
     "--dir",
+    "--dynamodb",
 ];
 
 /// Remove a `web` subcommand word from `argv` and say whether it was there. The word can sit
@@ -138,6 +158,8 @@ pub fn help_text() -> String {
         "Usage:",
         "  dqlrs [options]          Start the REPL (or run -c)",
         "  dqlrs web [options]      Serve the query editor and table browser",
+        "  dqlrs web --init-examples",
+        "                           Start a new workspace in an empty folder from the examples",
         "  dqlrs notebook           Start JupyterLab with a DQL (Rust) kernel (this binary)",
         "",
         "Options:",
@@ -151,7 +173,14 @@ pub fn help_text() -> String {
         "      --mcp                MCP tools. Alone, stdio. With web, HTTP at /mcp",
         "      --listen <ADDR>      With web, listen on loopback HOST:PORT (default 127.0.0.1:8765)",
         "      --dir <DIR>          With web or --mcp, folder of .dql files (default: current directory)",
-        "      --load-tables        With web, load every table and its definition in the background",
+        "      --load-tables        With web, load every table definition (with progress)",
+        "                           before the server starts",
+        "      --init-examples      With web, after a confirm: git init an empty folder, copy the",
+        "                           examples in, and commit them",
+        "      --dynamodb <java|docker|skip>",
+        "                           With web --init-examples, how to run DynamoDB Local (else it asks;",
+        "                           with --yes it skips)",
+        "      --yes                With web --init-examples, skip the confirmation",
         "      --version            Print the version and exit",
         "",
         "Environment:",

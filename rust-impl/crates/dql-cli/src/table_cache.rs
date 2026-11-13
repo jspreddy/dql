@@ -2,7 +2,7 @@
 //!
 //! A refresh reloads those entries. It does not describe tables that have never
 //! been fetched. `--load-tables` is the startup load: it fetches the full list
-//! and a definition for every table, in the background.
+//! and a definition for every table, with progress, before the web server starts.
 
 use std::cell::Cell;
 use std::fs;
@@ -26,6 +26,19 @@ pub struct CacheEndpoint {
     pub host: Option<String>,
     pub port: u16,
     pub allow_select_scan: bool,
+}
+
+/// Progress from loading every table, for `dqlrs web --load-tables`.
+pub enum LoadEvent<'a> {
+    /// The table list arrived.
+    Listed(usize),
+    /// One table was described (1-based `index` of `total`).
+    Described {
+        index: usize,
+        total: usize,
+        name: &'a str,
+        result: Result<Option<&'a dql_models::TableMeta>, String>,
+    },
 }
 
 pub struct DiskTableCache {
@@ -116,24 +129,48 @@ impl DiskTableCache {
         }
         let cache = Arc::clone(self);
         let job = self.job_id.load(Ordering::Acquire);
-        std::thread::spawn(move || cache.load_job(job));
+        std::thread::spawn(move || {
+            let _ = cache.load_job(job, &mut |_| {});
+        });
         true
     }
 
-    fn load_job(self: Arc<Self>, job: u64) {
-        REFRESH_JOB.with(|slot| slot.set(job));
-        let result = self.load_from_endpoint();
-        REFRESH_JOB.with(|slot| slot.set(0));
-        if self.job_id.load(Ordering::Acquire) != job {
-            return;
+    /// The same load as [`start_load`](Self::start_load), on this thread, reporting each step
+    /// to `report`. `dqlrs web --load-tables` runs this before the server starts.
+    pub fn load_with(self: &Arc<Self>, report: &mut dyn FnMut(LoadEvent)) -> Result<(), String> {
+        if self
+            .refreshing
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err("a table load is already running".to_string());
         }
-        if let Ok(mut error) = self.last_error.lock() {
-            *error = result.err();
-        }
-        self.refreshing.store(false, Ordering::Release);
+        let job = self.job_id.load(Ordering::Acquire);
+        Arc::clone(self).load_job(job, report)
     }
 
-    fn load_from_endpoint(self: &Arc<Self>) -> Result<(), String> {
+    fn load_job(
+        self: Arc<Self>,
+        job: u64,
+        report: &mut dyn FnMut(LoadEvent),
+    ) -> Result<(), String> {
+        REFRESH_JOB.with(|slot| slot.set(job));
+        let result = self.load_from_endpoint(report);
+        REFRESH_JOB.with(|slot| slot.set(0));
+        if self.job_id.load(Ordering::Acquire) != job {
+            return result;
+        }
+        if let Ok(mut error) = self.last_error.lock() {
+            *error = result.clone().err();
+        }
+        self.refreshing.store(false, Ordering::Release);
+        result
+    }
+
+    fn load_from_endpoint(
+        self: &Arc<Self>,
+        report: &mut dyn FnMut(LoadEvent),
+    ) -> Result<(), String> {
         let mut engine = RuntimeEngine::build(
             &self.endpoint.region,
             self.endpoint.host.as_deref(),
@@ -143,22 +180,38 @@ impl DiskTableCache {
         .map_err(|err| err.to_string())?;
         let store: SharedTableCache = Arc::clone(self) as SharedTableCache;
         engine.set_table_cache(Some(store));
-        self.load_catalog(&mut engine)
+        self.load_catalog(&mut engine, report)
     }
 
-    fn load_catalog(&self, engine: &mut RuntimeEngine) -> Result<(), String> {
+    fn load_catalog(
+        &self,
+        engine: &mut RuntimeEngine,
+        report: &mut dyn FnMut(LoadEvent),
+    ) -> Result<(), String> {
         if !self.writes_allowed() {
             return Ok(());
         }
         let names = engine
             .cached_table_names(true)
             .map_err(|err| err.to_string())?;
+        report(LoadEvent::Listed(names.len()));
         let mut failed = Vec::new();
-        for name in &names {
+        for (index, name) in names.iter().enumerate() {
             if !self.writes_allowed() {
                 return Ok(());
             }
-            match engine.describe(name, false) {
+            let described = engine.describe(name, false);
+            let result = match &described {
+                Ok(meta) => Ok(meta.as_ref()),
+                Err(err) => Err(err.to_string()),
+            };
+            report(LoadEvent::Described {
+                index: index + 1,
+                total: names.len(),
+                name,
+                result,
+            });
+            match described {
                 Ok(Some(_)) => {}
                 Ok(None) => self.remove_definition(name),
                 Err(err) => failed.push(format!("{name}: {err}")),
@@ -531,7 +584,7 @@ mod tests {
         let gone = parse_statement("CREATE TABLE gone (id STRING HASH KEY);").unwrap();
         cache.put_definition(&TableMeta::from_create_statement(&gone).unwrap());
 
-        cache.load_catalog(&mut engine).unwrap();
+        cache.load_catalog(&mut engine, &mut |_| {}).unwrap();
 
         let names = cache.get_names().unwrap().names;
         assert_eq!(names, vec!["comments".to_string(), "posts".to_string()]);

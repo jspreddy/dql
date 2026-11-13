@@ -28,4 +28,4 @@ flowchart TD
   numbered --> history
 ```
 
-[Open the diagram](diagram.html). Hover a box to follow that chain. Click a box to pin it.
+In the dqlrs web UI, hover a box to follow that chain, click a box to pin it, and use the full-screen button to enlarge the diagram.

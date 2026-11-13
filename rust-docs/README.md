@@ -74,6 +74,8 @@ You can use `$HOME/.aws/credentials` or `AWS_ACCESS_KEY_ID` /
 ```text
 dqlrs [options]          Start the REPL (or run -c)
 dqlrs web [options]      Serve the query editor and table browser
+dqlrs web --init-examples
+                         Start a new workspace in an empty folder from the examples
 dqlrs notebook           Start JupyterLab with a DQL (Rust) kernel (this binary)
 
 -c, --command <command>  Run this command and exit
@@ -86,7 +88,13 @@ dqlrs notebook           Start JupyterLab with a DQL (Rust) kernel (this binary)
     --mcp                MCP tools. Alone, stdio. With web, HTTP at /mcp
     --listen <ADDR>      With web, listen on loopback HOST:PORT (default 127.0.0.1:8765)
     --dir <DIR>          With web or --mcp, folder of .dql files (default: current directory)
-    --load-tables        With web, load every table and its definition in the background
+    --load-tables        With web, load every table definition (with progress)
+                         before the server starts
+    --init-examples      With web, after a confirm: git init an empty folder, copy the
+                         examples in, and commit them
+    --dynamodb <MODE>    With web --init-examples, run DynamoDB Local with java or docker,
+                         or skip (else it asks; with --yes it skips)
+    --yes                With web --init-examples, skip the confirmation
     --version            Print the version and exit
     -h, --help           Print help
 ```
@@ -113,7 +121,34 @@ The server runs inside this binary. Browser assets are bundled with it.
 ```bash
 dqlrs web -H localhost -p 8000
 dqlrs web --listen 127.0.0.1:9000 --dir ~/queries
+dqlrs web --init-examples --dir ~/dql-examples
+dqlrs web --load-tables -H localhost -p 8000
 ```
+
+`--load-tables` loads the table list and every table definition before the
+server starts. In a terminal the first line names the connection (on AWS, the
+region, account, and the role or user from STS) and the second shows a progress
+bar and a count, then how many definitions loaded and how long it took. Only a table whose definition fails to
+load gets its own line, a red cross with the error; the server starts either way.
+
+`--init-examples` sets up an empty (or missing) folder before serving it. It
+checks that the folder is empty and that git is properly installed and ready to
+commit. For DynamoDB Local, which the examples run against, it checks for Java 17
+or newer and for a running Docker with compose, and notes when DynamoDB Local
+already answers on `localhost:8000`. It asks which to use (Java, Docker, or
+skip), prints the plan, and asks before it changes anything (`--yes` skips both
+questions and skips DynamoDB Local unless `--dynamodb java|docker` is given;
+without a terminal `--yes` is required). Then it runs `git init`, copies
+`dqlrs-web/examples` (bundled into the binary without its ignored caches), and
+commits it as "Initialized dqlrs web examples".
+
+DynamoDB Local is not bundled. With Java, `--init-examples` downloads AWS's
+`dynamodb_local_latest.tar.gz` into `.dynamodb-local/` (ignored by git), checks
+it against AWS's published SHA-256, unpacks it, and starts it in the background
+with a log in `.dynamodb-local/dynamodb-local.log`. With Docker, it runs
+`docker compose up -d` with the examples' `docker-compose.yml`
+(`amazon/dynamodb-local`, data in a named volume). Either way it waits for
+`localhost:8000`, and when no `-H` was given the web UI serves against it.
 
 From a checkout, `just web` builds `dqlrs`, starts DynamoDB Local when port 8000
 is down, and opens the UI on `dqlrs-web/examples`. Details:
