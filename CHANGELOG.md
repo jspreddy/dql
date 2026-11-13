@@ -5,6 +5,11 @@ Generated from the first-parent history of `origin/v-rust` by the `changelog` sk
 rewritten the next time it runs. Newest first. Each section is the version in the tree
 when those changes landed.
 
+## dqlrs 0.7.7-dev0 (2026-11-12)
+
+- Organize Rust docs, add a README banner, refresh screenshots (#170)
+- Make the listed-table search test create its own table (#172)
+
 ## dqlrs 0.7.6-dev0 (2026-11-11)
 
 - Use local and temp table definitions in the linter and structure view (#155)
