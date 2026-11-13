@@ -27,7 +27,7 @@ Pick a surface:
 
 `dqlrs` uses the standard AWS credential chain. To keep long-lived keys out of
 `~/.aws/credentials`, store them with
-[aws-vault](https://github.com/99designs/aws-vault) and run
+[aws-vault](https://github.com/ByteNess/aws-vault) and run
 `aws-vault exec <profile> -- dqlrs`. Point any surface at
 [DynamoDB Local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html)
 with `-H localhost -p 8000`. See [Credentials](#credentials).
@@ -208,7 +208,7 @@ omit `-H` for live AWS.
 Same as the AWS CLI: `~/.aws/credentials` or `AWS_ACCESS_KEY_ID` /
 `AWS_SECRET_ACCESS_KEY`. Default region is `us-west-1` (`AWS_REGION` or `-r`).
 
-[aws-vault](https://github.com/99designs/aws-vault) keeps your AWS keys in the
+[aws-vault](https://github.com/ByteNess/aws-vault) keeps your AWS keys in the
 OS keychain instead of a plaintext file. It hands `dqlrs` short-lived session
 credentials through the environment:
 
