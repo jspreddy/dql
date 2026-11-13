@@ -11,14 +11,26 @@ AI agent can use the same workspace over MCP.
 ```bash
 cargo install --git https://github.com/jspreddy/dql.git --branch v-rust \
   --locked --root ~/.local dql-cli
-dqlrs web            # open http://127.0.0.1:8765, using your usual AWS credentials
 ```
 
 Needs [Rust/Cargo](https://rustup.rs/). The binary lands in `~/.local/bin`.
+More options: [Install](#install).
 
-Add `-H localhost -p 8000` to any command to use
+Pick a surface:
+
+- [**Terminal UI**](#repl): an interactive REPL with rich tables.
+- [**Web editor**](#web-ui): `.dql` files, lint, `EXPLAIN` cards, a table
+  browser, and MCP for agents.
+- [**Notebook**](#notebook): JupyterLab with a DQL (Rust) kernel.
+- [**One-shot commands**](#run-a-query-from-the-cli): `-c` and `--json` for
+  scripts.
+
+`dqlrs` uses the standard AWS credential chain. To keep long-lived keys out of
+`~/.aws/credentials`, store them with
+[aws-vault](https://github.com/99designs/aws-vault) and run
+`aws-vault exec <profile> -- dqlrs`. Point any surface at
 [DynamoDB Local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html)
-instead.
+with `-H localhost -p 8000`. See [Credentials](#credentials).
 
 ## Why dqlrs
 
@@ -196,8 +208,15 @@ omit `-H` for live AWS.
 Same as the AWS CLI: `~/.aws/credentials` or `AWS_ACCESS_KEY_ID` /
 `AWS_SECRET_ACCESS_KEY`. Default region is `us-west-1` (`AWS_REGION` or `-r`).
 
+[aws-vault](https://github.com/99designs/aws-vault) keeps your AWS keys in the
+OS keychain instead of a plaintext file. It hands `dqlrs` short-lived session
+credentials through the environment:
+
 ```bash
-aws-vault exec <profile> -- dqlrs
+aws-vault add <profile>                      # once: store the keys
+aws-vault exec <profile> -- dqlrs            # terminal UI
+aws-vault exec <profile> -- dqlrs web        # web editor
+aws-vault exec <profile> -- dqlrs notebook   # notebook
 ```
 
 | Mode | How |
