@@ -131,13 +131,17 @@ pub fn serve(
         println!("{}", style.row("MCP", WIDTH, &style.url(&url)));
         println!(
             "{}",
-            style.row("workspace", WIDTH, &app.root.display().to_string())
+            style.row(
+                "workspace",
+                WIDTH,
+                &style.path(&app.root.display().to_string())
+            )
         );
         println!("{}", style.row("endpoint", WIDTH, &app.endpoint));
         println!();
         println!(
             "{}",
-            crate::mcp::styled_config(&style, &crate::mcp::http_client_config(&url, &app.token))
+            style.config(&crate::mcp::http_client_config(&url, &app.token))
         );
     } else {
         println!(
@@ -146,11 +150,15 @@ pub fn serve(
             style.dim("off. Pass "),
             style.code("--mcp"),
             style.dim(" to serve "),
-            style.dim(&format!("http://{bound}/mcp"))
+            style.url(&format!("http://{bound}/mcp"))
         );
         println!(
             "{}",
-            style.row("workspace", WIDTH, &app.root.display().to_string())
+            style.row(
+                "workspace",
+                WIDTH,
+                &style.path(&app.root.display().to_string())
+            )
         );
         println!("{}", style.row("endpoint", WIDTH, &app.endpoint));
     }

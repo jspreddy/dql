@@ -203,10 +203,30 @@ impl Progress {
         self.line(true, text);
     }
 
-    /// A blank line or a heading between groups of steps.
+    /// The style for this output: colored in a terminal (unless `NO_COLOR`), plain otherwise.
+    pub(crate) fn style(&self) -> crate::style::Style {
+        crate::style::Style::new(matches!(self.mode, Mode::Live { color: true }))
+    }
+
+    /// A line of text, with its commands, paths, URLs and variables colored. A blank line
+    /// separates groups of steps.
     pub(crate) fn say(&self, text: &str) {
         if self.mode != Mode::Quiet {
-            println!("{text}");
+            println!("{}", self.style().rich(text));
+        }
+    }
+
+    /// An important notice, such as `Ready. Serving …`.
+    pub(crate) fn say_notice(&self, text: &str) {
+        if self.mode != Mode::Quiet {
+            println!("{}", self.style().notice(text));
+        }
+    }
+
+    /// A command sample to copy, indented by `indent` spaces.
+    pub(crate) fn say_code(&self, indent: usize, text: &str) {
+        if self.mode != Mode::Quiet {
+            println!("{}{}", " ".repeat(indent), self.style().code(text));
         }
     }
 
@@ -217,7 +237,12 @@ impl Progress {
             Mode::Plain => println!("  {mark} {text}"),
             Mode::Live { color } => {
                 let mut out = io::stdout().lock();
-                let _ = writeln!(out, "\r\x1b[2K  {} {text}", paint(mark, code, color));
+                let _ = writeln!(
+                    out,
+                    "\r\x1b[2K  {} {}",
+                    paint(mark, code, color),
+                    self.style().rich(text)
+                );
                 let _ = out.flush();
             }
         }

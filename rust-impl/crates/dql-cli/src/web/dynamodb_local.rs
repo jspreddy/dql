@@ -258,6 +258,7 @@ pub(crate) fn choose(
     ask: bool,
     input: &mut impl BufRead,
     out: &mut impl Write,
+    style: crate::style::Style,
 ) -> color_eyre::Result<Runtime> {
     if detected.running {
         return Ok(Runtime::Skip);
@@ -280,12 +281,13 @@ pub(crate) fn choose(
     options.push(Runtime::Skip);
     writeln!(
         out,
-        "\nThe examples run against DynamoDB Local. How should it run?"
+        "\n{}",
+        style.prompt("The examples run against DynamoDB Local. How should it run?")
     )?;
     for (index, runtime) in options.iter().enumerate() {
-        writeln!(out, "  {}. {}", index + 1, describe(*runtime))?;
+        writeln!(out, "  {}. {}", index + 1, style.rich(&describe(*runtime)))?;
     }
-    write!(out, "Choose [1]: ")?;
+    write!(out, "{} ", style.prompt("Choose [1]:"))?;
     out.flush()?;
     let mut line = String::new();
     input.read_line(&mut line)?;
@@ -472,8 +474,12 @@ fn set_up_java(dir: &Path, progress: &Progress) -> color_eyre::Result<()> {
         ))
     })?;
     progress.say(&format!(
-        "    Stop it with `kill {pid}`. Start it again from {INSTALL_DIR}/ with:\n    java -Djava.library.path=./DynamoDBLocal_lib -jar DynamoDBLocal.jar -sharedDb -dbPath ./data"
+        "    Stop it with `kill {pid}`. Start it again from {INSTALL_DIR}/ with:"
     ));
+    progress.say_code(
+        4,
+        "java -Djava.library.path=./DynamoDBLocal_lib -jar DynamoDBLocal.jar -sharedDb -dbPath ./data",
+    );
     Ok(())
 }
 
@@ -658,7 +664,15 @@ mod tests {
     fn only_runnable_options_are_offered_and_enter_picks_the_first() {
         let both = detected(JavaState::Ready("21".into()), ready_docker());
         let mut out = Vec::new();
-        let choice = choose(&both, None, true, &mut "\n".as_bytes(), &mut out).unwrap();
+        let choice = choose(
+            &both,
+            None,
+            true,
+            &mut "\n".as_bytes(),
+            &mut out,
+            crate::style::Style::new(false),
+        )
+        .unwrap();
         assert_eq!(choice, Runtime::Java);
         let shown = String::from_utf8(out).unwrap();
         assert!(
@@ -674,7 +688,15 @@ mod tests {
         let docker_only = detected(JavaState::TooOld("11.0.2".into()), ready_docker());
         let mut out = Vec::new();
         assert_eq!(
-            choose(&docker_only, None, true, &mut "\n".as_bytes(), &mut out).unwrap(),
+            choose(
+                &docker_only,
+                None,
+                true,
+                &mut "\n".as_bytes(),
+                &mut out,
+                crate::style::Style::new(false)
+            )
+            .unwrap(),
             Runtime::Docker
         );
         assert!(!String::from_utf8(out).unwrap().contains("Java:"));
@@ -684,7 +706,8 @@ mod tests {
                 None,
                 true,
                 &mut "2\n".as_bytes(),
-                &mut Vec::new()
+                &mut Vec::new(),
+                crate::style::Style::new(false),
             )
             .unwrap(),
             Runtime::Skip
@@ -695,7 +718,8 @@ mod tests {
                 None,
                 true,
                 &mut "skip\n".as_bytes(),
-                &mut Vec::new()
+                &mut Vec::new(),
+                crate::style::Style::new(false),
             )
             .unwrap(),
             Runtime::Skip
@@ -705,7 +729,8 @@ mod tests {
             None,
             true,
             &mut "9\n".as_bytes(),
-            &mut Vec::new()
+            &mut Vec::new(),
+            crate::style::Style::new(false),
         )
         .is_err());
     }
@@ -714,12 +739,28 @@ mod tests {
     fn nothing_is_asked_without_options_a_terminal_or_when_already_running() {
         let none = detected(JavaState::Missing, DockerState::NotRunning("27.1.1".into()));
         assert_eq!(
-            choose(&none, None, true, &mut "".as_bytes(), &mut Vec::new()).unwrap(),
+            choose(
+                &none,
+                None,
+                true,
+                &mut "".as_bytes(),
+                &mut Vec::new(),
+                crate::style::Style::new(false)
+            )
+            .unwrap(),
             Runtime::Skip
         );
         let both = detected(JavaState::Ready("21".into()), ready_docker());
         assert_eq!(
-            choose(&both, None, false, &mut "".as_bytes(), &mut Vec::new()).unwrap(),
+            choose(
+                &both,
+                None,
+                false,
+                &mut "".as_bytes(),
+                &mut Vec::new(),
+                crate::style::Style::new(false)
+            )
+            .unwrap(),
             Runtime::Skip
         );
         let running = Detected {
@@ -732,7 +773,8 @@ mod tests {
                 Some(Runtime::Java),
                 true,
                 &mut "".as_bytes(),
-                &mut Vec::new()
+                &mut Vec::new(),
+                crate::style::Style::new(false),
             )
             .unwrap(),
             Runtime::Skip
@@ -751,6 +793,7 @@ mod tests {
             false,
             &mut "".as_bytes(),
             &mut Vec::new(),
+            crate::style::Style::new(false),
         )
         .unwrap_err()
         .to_string();
@@ -764,7 +807,8 @@ mod tests {
                 Some(Runtime::Java),
                 false,
                 &mut "".as_bytes(),
-                &mut Vec::new()
+                &mut Vec::new(),
+                crate::style::Style::new(false),
             )
             .unwrap(),
             Runtime::Java

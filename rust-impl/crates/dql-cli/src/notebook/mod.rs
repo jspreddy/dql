@@ -164,27 +164,31 @@ fn print_banner(
     let style = crate::style::Style::stdout();
     const WIDTH: usize = 11;
     let row = |label: &str, value: &str| println!("{}", style.row(label, WIDTH, value));
-    row("dqlrs:", dqlrs);
+    row("dqlrs:", &style.path(dqlrs));
     row(
         "kernel:",
         &format!(
-            "{}  {}",
+            "{}  {}{}{}",
             style.title("DQL (Rust)"),
-            style.dim(&format!("(files in {})", data_dir.display()))
+            style.dim("(files in "),
+            style.path(&data_dir.display().to_string()),
+            style.dim(")")
         ),
     );
-    row("notebooks:", &notebook_dir.display().to_string());
+    row(
+        "notebooks:",
+        &style.path(&notebook_dir.display().to_string()),
+    );
     if let Some(host) = std::env::var_os("DQL_HOST") {
         let port = std::env::var("DQL_PORT").unwrap_or_else(|_| "8000".into());
         let region = std::env::var("AWS_REGION").unwrap_or_else(|_| "us-west-1".into());
         row(
             "endpoint:",
-            &format!(
-                "{}:{}  {}",
+            &style.rich(&format!(
+                "{}:{}  region={region}",
                 host.to_string_lossy(),
-                port,
-                style.dim(&format!("region={region}"))
-            ),
+                port
+            )),
         );
     } else {
         let region = args
@@ -194,25 +198,20 @@ fn print_banner(
             .unwrap_or_else(|| "us-west-1".into());
         row(
             "endpoint:",
-            &format!("live AWS  {}", style.dim(&format!("region={region}"))),
+            &style.rich(&format!("live AWS  region={region}")),
         );
     }
     let example = data_dir.join("examples/getting-started-rust.ipynb");
     if example.is_file() {
-        row("example:", &example.display().to_string());
+        row("example:", &style.path(&example.display().to_string()));
     }
     let starter = notebook_dir.join("getting-started-dqlrs.ipynb");
     if starter.is_file() {
-        row("starter:", &starter.display().to_string());
+        row("starter:", &style.path(&starter.display().to_string()));
     }
     row(
         "stop:",
-        &format!(
-            "{}{}{}",
-            style.dim("Ctrl-C, or "),
-            style.code("`dqlrs notebook --shutdown`"),
-            style.dim(" from another terminal")
-        ),
+        &style.rich("Ctrl-C, or `dqlrs notebook --shutdown` from another terminal"),
     );
 }
 

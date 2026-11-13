@@ -59,6 +59,7 @@ pub(crate) fn run(dir: &Path, yes: bool, dynamodb: Option<Runtime>) -> color_eyr
         !yes,
         &mut stdin.lock(),
         &mut io::stdout(),
+        progress.style(),
     )?;
     if !detected.running && detected.available().is_empty() && dynamodb.is_none() {
         progress.say(
@@ -70,7 +71,12 @@ pub(crate) fn run(dir: &Path, yes: bool, dynamodb: Option<Runtime>) -> color_eyr
     progress.say("");
     let plan = plan_text(dir, runtime);
     if !yes {
-        if !confirm(&mut stdin.lock(), &mut io::stdout(), &plan)? {
+        if !confirm(
+            &mut stdin.lock(),
+            &mut io::stdout(),
+            &plan,
+            progress.style(),
+        )? {
             println!("Cancelled. {} was not changed.", dir.display());
             return Ok(Outcome {
                 initialized: false,
@@ -78,14 +84,14 @@ pub(crate) fn run(dir: &Path, yes: bool, dynamodb: Option<Runtime>) -> color_eyr
             });
         }
     } else {
-        print!("{plan}");
+        print!("{}", progress.style().rich(&plan));
     }
     progress.say("");
     initialize(dir, &progress)?;
     let dynamodb_local =
         detected.running || dynamodb_local::set_up(dir, runtime, &detected, &progress);
     progress.say("");
-    progress.say(&format!("Ready. Serving {}", dir.display()));
+    progress.say_notice(&format!("Ready. Serving {}", dir.display()));
     Ok(Outcome {
         initialized: true,
         dynamodb_local,
@@ -184,8 +190,14 @@ pub(crate) fn confirm(
     input: &mut impl BufRead,
     out: &mut impl Write,
     plan: &str,
+    style: crate::style::Style,
 ) -> color_eyre::Result<bool> {
-    write!(out, "{plan}Continue? [y/N] ")?;
+    write!(
+        out,
+        "{}{} ",
+        style.rich(plan),
+        style.prompt("Continue? [y/N]")
+    )?;
     out.flush()?;
     let mut line = String::new();
     input.read_line(&mut line)?;
@@ -372,7 +384,13 @@ mod tests {
             ("sure\n", false),
         ] {
             let mut out = Vec::new();
-            let ok = confirm(&mut answer.as_bytes(), &mut out, "plan\n").unwrap();
+            let ok = confirm(
+                &mut answer.as_bytes(),
+                &mut out,
+                "plan\n",
+                crate::style::Style::new(false),
+            )
+            .unwrap();
             assert_eq!(ok, expected, "answer {answer:?}");
             assert!(String::from_utf8(out)
                 .unwrap()
