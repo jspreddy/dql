@@ -98,11 +98,11 @@ mkdir dql-examples && cd dql-examples
 dqlrs web --init-examples -H localhost -p 8000
 ```
 
-It checks that the folder is empty and that git is installed, shows what it
-will do, and asks before it changes anything. Then it runs `git init`, copies
-the examples (queries, data model walkthroughs, agent rules), and commits them
-as "Initialized dqlrs web examples". Pass `--yes` to skip the question, for
-example in a script.
+It checks that the folder is empty and that git is properly installed and ready
+to commit, shows what it will do, and asks before it changes anything. Then it
+runs `git init`, copies the examples (queries, data model walkthroughs, agent
+rules), and commits them as "Initialized dqlrs web examples". Pass `--yes` to
+skip the question, for example in a script.
 
 ![dqlrs web UI query editor](screenshots/web/query.png)
 
