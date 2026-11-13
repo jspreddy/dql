@@ -112,24 +112,55 @@ pub fn serve(
     } else {
         None
     };
-    println!("DQLRS Web  http://{bound}");
+    // Colors only in a terminal; piped, this is the same plain text as before.
+    let style = crate::style::Style::stdout();
+    const WIDTH: usize = 11;
+    println!(
+        "{}  {}",
+        style.title("DQLRS Web"),
+        style.url(&format!("http://{bound}"))
+    );
     if let Some(count) = loaded {
-        println!("tables     {count} definitions loaded");
+        println!(
+            "{}",
+            style.row("tables", WIDTH, &format!("{count} definitions loaded"))
+        );
     }
     if mcp {
         let url = format!("http://{bound}/mcp");
-        println!("MCP        {url}");
-        println!("workspace  {}", app.root.display());
-        println!("endpoint   {}", app.endpoint);
+        println!("{}", style.row("MCP", WIDTH, &style.url(&url)));
+        println!(
+            "{}",
+            style.row("workspace", WIDTH, &app.root.display().to_string())
+        );
+        println!("{}", style.row("endpoint", WIDTH, &app.endpoint));
         println!();
-        println!("{}", crate::mcp::http_client_config(&url, &app.token));
+        println!(
+            "{}",
+            crate::mcp::styled_config(&style, &crate::mcp::http_client_config(&url, &app.token))
+        );
     } else {
-        println!("{}", crate::mcp::web_mcp_hint(&bound.to_string()));
-        println!("workspace  {}", app.root.display());
-        println!("endpoint   {}", app.endpoint);
+        println!(
+            "{}{}{}{}{}",
+            style.label(&format!("{:<WIDTH$}", "MCP")),
+            style.dim("off. Pass "),
+            style.code("--mcp"),
+            style.dim(" to serve "),
+            style.dim(&format!("http://{bound}/mcp"))
+        );
+        println!(
+            "{}",
+            style.row("workspace", WIDTH, &app.root.display().to_string())
+        );
+        println!("{}", style.row("endpoint", WIDTH, &app.endpoint));
     }
     let _ = io::stdout().flush();
-    eprintln!("{}", crate::api_token::stderr_line(&app.token));
+    let err_style = crate::style::Style::stderr();
+    eprintln!(
+        "{}{}",
+        err_style.label("dqlrs token "),
+        err_style.dim(&app.token)
+    );
     let _ = io::stderr().flush();
     accept(app, listener, Arc::new(AtomicBool::new(false)));
     Ok(())
@@ -299,7 +330,10 @@ fn accept(app: Arc<App>, listener: TcpListener, stop: Arc<AtomicBool>) {
         thread::spawn(move || {
             if let Err(err) = handle_connection(app, stream) {
                 if !is_disconnect(&err) {
-                    eprintln!("dqlrs web: {err}");
+                    eprintln!(
+                        "{}",
+                        crate::style::Style::stderr().warn(&format!("dqlrs web: {err}"))
+                    );
                 }
             }
         });

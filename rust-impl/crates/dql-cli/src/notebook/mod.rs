@@ -20,7 +20,7 @@ pub fn run(argv: &[String]) -> color_eyre::Result<()> {
     let args = parse_args(argv).map_err(|err| color_eyre::eyre::eyre!("{err}"))?;
     if args.help {
         let mut stderr = io::stderr();
-        stderr.write_all(help_text().as_bytes())?;
+        stderr.write_all(crate::style::Style::stderr().help(&help_text()).as_bytes())?;
         stderr.write_all(b"\n")?;
         return Ok(());
     }
@@ -146,7 +146,10 @@ fn warn_if_local_down(args: &NotebookArgs) {
     });
     if std::net::TcpStream::connect((host.as_str(), port)).is_err() {
         eprintln!(
-            "warning: nothing is listening on {host}:{port}. Start DynamoDB Local or omit --local to use live AWS."
+            "{}",
+            crate::style::Style::stderr().warn(&format!(
+                "warning: nothing is listening on {host}:{port}. Start DynamoDB Local or omit --local to use live AWS."
+            ))
         );
     }
 }
@@ -157,16 +160,31 @@ fn print_banner(
     notebook_dir: &std::path::Path,
     args: &NotebookArgs,
 ) {
-    println!("dqlrs:     {dqlrs}");
-    println!("kernel:    DQL (Rust)  (files in {})", data_dir.display());
-    println!("notebooks: {}", notebook_dir.display());
+    // Colors only in a terminal; piped, this is the same plain text as before.
+    let style = crate::style::Style::stdout();
+    const WIDTH: usize = 11;
+    let row = |label: &str, value: &str| println!("{}", style.row(label, WIDTH, value));
+    row("dqlrs:", dqlrs);
+    row(
+        "kernel:",
+        &format!(
+            "{}  {}",
+            style.title("DQL (Rust)"),
+            style.dim(&format!("(files in {})", data_dir.display()))
+        ),
+    );
+    row("notebooks:", &notebook_dir.display().to_string());
     if let Some(host) = std::env::var_os("DQL_HOST") {
         let port = std::env::var("DQL_PORT").unwrap_or_else(|_| "8000".into());
         let region = std::env::var("AWS_REGION").unwrap_or_else(|_| "us-west-1".into());
-        println!(
-            "endpoint:  {}:{}  region={region}",
-            host.to_string_lossy(),
-            port
+        row(
+            "endpoint:",
+            &format!(
+                "{}:{}  {}",
+                host.to_string_lossy(),
+                port,
+                style.dim(&format!("region={region}"))
+            ),
         );
     } else {
         let region = args
@@ -174,17 +192,28 @@ fn print_banner(
             .clone()
             .or_else(|| std::env::var("AWS_REGION").ok())
             .unwrap_or_else(|| "us-west-1".into());
-        println!("endpoint:  live AWS  region={region}");
+        row(
+            "endpoint:",
+            &format!("live AWS  {}", style.dim(&format!("region={region}"))),
+        );
     }
     let example = data_dir.join("examples/getting-started-rust.ipynb");
     if example.is_file() {
-        println!("example:   {}", example.display());
+        row("example:", &example.display().to_string());
     }
     let starter = notebook_dir.join("getting-started-dqlrs.ipynb");
     if starter.is_file() {
-        println!("starter:   {}", starter.display());
+        row("starter:", &starter.display().to_string());
     }
-    println!("stop:      Ctrl-C, or `dqlrs notebook --shutdown` from another terminal");
+    row(
+        "stop:",
+        &format!(
+            "{}{}{}",
+            style.dim("Ctrl-C, or "),
+            style.code("`dqlrs notebook --shutdown`"),
+            style.dim(" from another terminal")
+        ),
+    );
 }
 
 #[derive(Clone)]
@@ -285,7 +314,10 @@ fn choose_servers(servers: Vec<RunningServer>) -> color_eyre::Result<Vec<Running
             "several notebook servers are running; run `dqlrs notebook --shutdown` in a terminal to choose which ones to stop"
         );
     }
-    println!("Notebook servers:");
+    println!(
+        "{}",
+        crate::style::Style::stdout().heading("Notebook servers:")
+    );
     for (index, server) in servers.iter().enumerate() {
         match &server.root_dir {
             Some(root) => println!(
@@ -348,8 +380,11 @@ fn shutdown_notebook_servers(data_dir: &Path) -> color_eyre::Result<()> {
             .success();
         if !signaled {
             eprintln!(
-                "could not stop notebook server on port {} (pid {})",
-                server.port, server.pid
+                "{}",
+                crate::style::Style::stderr().error(&format!(
+                    "could not stop notebook server on port {} (pid {})",
+                    server.port, server.pid
+                ))
             );
             failed = true;
         }

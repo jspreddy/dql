@@ -18,8 +18,11 @@ pub fn ensure_jupyter(data_dir: &Path) -> color_eyre::Result<PathBuf> {
         return Ok(python);
     }
     eprintln!(
-        "Preparing JupyterLab in {} (first run downloads packages)...",
-        data_dir.display()
+        "{}",
+        crate::style::Style::stderr().dim(&format!(
+            "Preparing JupyterLab in {} (first run downloads packages)...",
+            data_dir.display()
+        ))
     );
     fs_create_venv(data_dir)?;
     let python = python_bin(data_dir);
@@ -60,7 +63,12 @@ fn fs_create_venv(data_dir: &Path) -> color_eyre::Result<()> {
         if status.success() {
             return Ok(());
         }
-        eprintln!("uv venv failed ({status}); trying python3 -m venv");
+        eprintln!(
+            "{}",
+            crate::style::Style::stderr().warn(&format!(
+                "uv venv failed ({status}); trying python3 -m venv"
+            ))
+        );
     }
     let python = find_python().ok_or_else(|| {
         eyre!(
@@ -101,7 +109,12 @@ fn install_packages(python: &Path) -> color_eyre::Result<()> {
         if status.success() {
             return Ok(());
         }
-        eprintln!("uv pip install failed ({status}); trying python -m pip");
+        eprintln!(
+            "{}",
+            crate::style::Style::stderr().warn(&format!(
+                "uv pip install failed ({status}); trying python -m pip"
+            ))
+        );
     }
     let status = Command::new(python)
         .args([

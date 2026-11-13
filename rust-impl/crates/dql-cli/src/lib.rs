@@ -12,6 +12,7 @@ pub mod notebook;
 pub mod repl;
 pub mod serve;
 pub mod session;
+mod style;
 pub mod table_cache;
 pub mod throttle;
 pub mod web;
@@ -68,7 +69,12 @@ pub fn run() -> color_eyre::Result<()> {
         }
         if arg.starts_with('-') {
             if !KNOWN_FLAGS.contains(&arg.as_str()) {
-                eprintln!("unknown argument '{arg}'\n\n{}", help_text());
+                let style = style::Style::stderr();
+                eprintln!(
+                    "{}\n\n{}",
+                    style.error(&format!("unknown argument '{arg}'")),
+                    style.help(&help_text())
+                );
                 return Ok(());
             }
             if matches!(
@@ -95,7 +101,7 @@ pub fn run() -> color_eyre::Result<()> {
 
     if args.help {
         let mut stderr = io::stderr();
-        stderr.write_all(help_text().as_bytes())?;
+        stderr.write_all(style::Style::stderr().help(&help_text()).as_bytes())?;
         return Ok(());
     }
 
@@ -211,7 +217,7 @@ pub fn run() -> color_eyre::Result<()> {
     let mut session = Session::new(&args).wrap_err("failed to start session")?;
     if let Some(command) = args.command {
         if let Err(err) = session.run_command(command.trim(), args.json) {
-            eprintln!("{err}");
+            eprintln!("{}", style::Style::stderr().error(&err.to_string()));
         }
     } else {
         repl::run_repl(&mut session).wrap_err("repl failed")?;

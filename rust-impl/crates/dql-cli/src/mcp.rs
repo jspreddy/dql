@@ -311,6 +311,20 @@ pub fn web_mcp_hint(listen: &str) -> String {
     format!("MCP        off. Pass --mcp to serve http://{listen}/mcp")
 }
 
+/// Client config snippets with their `Cursor (...)` / `Claude (...)` headings bold.
+pub(crate) fn styled_config(style: &crate::style::Style, text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            if !line.starts_with([' ', '{', '}']) && line.ends_with(':') {
+                style.heading(line)
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Cursor and Claude snippets for the HTTP MCP endpoint.
 pub fn http_client_config(url: &str, token: &str) -> String {
     let headers = json!({ "Authorization": format!("Bearer {token}") });
@@ -382,7 +396,7 @@ pub fn run(session: Session, root: PathBuf) -> std::io::Result<()> {
         endpoint.as_ref().map(|(host, port)| (host.as_str(), *port)),
         session.engine.is_memory(),
     );
-    eprintln!("{config}");
+    eprintln!("{}", styled_config(&crate::style::Style::stderr(), &config));
     let mut server = McpServer::new(session, root);
     let stdin = io::stdin();
     let mut stdout = io::stdout();

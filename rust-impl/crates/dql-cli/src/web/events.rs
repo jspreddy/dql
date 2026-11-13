@@ -135,7 +135,10 @@ pub(crate) fn start(app: &Arc<App>) {
         .recv()
         .unwrap_or_else(|_| Err("stopped before it started".to_string()))
     {
-        eprintln!("dqlrs: workspace watch: {err}");
+        eprintln!(
+            "{}",
+            crate::style::Style::stderr().warn(&format!("dqlrs: workspace watch: {err}"))
+        );
     }
 }
 

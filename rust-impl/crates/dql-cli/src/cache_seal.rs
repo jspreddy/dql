@@ -89,7 +89,10 @@ pub(crate) fn cache_key() -> Result<[u8; KEY_LEN], String> {
         }
         Err(err) => {
             if !KEY_ERROR_LOGGED.swap(true, Ordering::Relaxed) {
-                eprintln!("dqlrs cache key: {err}");
+                eprintln!(
+                    "{}",
+                    crate::style::Style::stderr().warn(&format!("dqlrs cache key: {err}"))
+                );
             }
             Err(err)
         }
@@ -210,8 +213,11 @@ fn load_secret_service_key(secret: &SecretId) -> Result<[u8; KEY_LEN], String> {
             let key = random_key()?;
             if let Err(err) = secret_store(secret.kind, secret.label, secret.noun, &key) {
                 eprintln!(
-                    "dqlrs {}: secret service store failed ({err}); using the file fallback",
-                    secret.noun
+                    "{}",
+                    crate::style::Style::stderr().warn(&format!(
+                        "dqlrs {}: secret service store failed ({err}); using the file fallback",
+                        secret.noun
+                    ))
                 );
                 return load_or_create_file(&default_key_file(secret.file_name), secret);
             }
@@ -232,8 +238,11 @@ fn load_keychain_key(secret: &SecretId) -> Result<[u8; KEY_LEN], String> {
             let key = random_key()?;
             if let Err(err) = keychain_store(secret.keychain_service, secret.noun, &key) {
                 eprintln!(
-                    "dqlrs {}: keychain store failed ({err}); using the file fallback",
-                    secret.noun
+                    "{}",
+                    crate::style::Style::stderr().warn(&format!(
+                        "dqlrs {}: keychain store failed ({err}); using the file fallback",
+                        secret.noun
+                    ))
                 );
                 return load_or_create_file(&default_key_file(secret.file_name), secret);
             }
@@ -242,8 +251,11 @@ fn load_keychain_key(secret: &SecretId) -> Result<[u8; KEY_LEN], String> {
         }
         Err(err) if keychain_unavailable(&err) => {
             eprintln!(
-                "dqlrs {}: keychain lookup failed ({err}); using the file fallback",
-                secret.noun
+                "{}",
+                crate::style::Style::stderr().warn(&format!(
+                    "dqlrs {}: keychain lookup failed ({err}); using the file fallback",
+                    secret.noun
+                ))
             );
             load_or_create_file(&default_key_file(secret.file_name), secret)
         }
@@ -277,7 +289,13 @@ fn load_dpapi_key(secret: &SecretId) -> Result<[u8; KEY_LEN], String> {
 }
 
 fn announce(secret: &SecretId, place: &str) {
-    eprintln!("saved a new {} in {place}. {}", secret.noun, secret.lost);
+    eprintln!(
+        "{}",
+        crate::style::Style::stderr().dim(&format!(
+            "saved a new {} in {place}. {}",
+            secret.noun, secret.lost
+        ))
+    );
 }
 
 fn random_key() -> Result<[u8; KEY_LEN], String> {

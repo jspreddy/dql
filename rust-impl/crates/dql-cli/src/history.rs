@@ -49,7 +49,10 @@ impl HistoryManager {
 
     pub fn try_to_load_history(&mut self) {
         if let Err(err) = self.load_history() {
-            eprintln!("Error reading history file: {err}");
+            eprintln!(
+                "{}",
+                crate::style::Style::stderr().warn(&format!("Error reading history file: {err}"))
+            );
             self.initial_history_length = 0;
         }
     }
@@ -68,11 +71,17 @@ impl HistoryManager {
 
     pub fn try_to_write_history(&mut self) {
         if let Err(err) = self.prep_history_file().map(|_| ()) {
-            eprintln!("Error writing history file: {err}");
+            eprintln!(
+                "{}",
+                crate::style::Style::stderr().warn(&format!("Error writing history file: {err}"))
+            );
             return;
         }
         if let Err(err) = self.write_history() {
-            eprintln!("Error writing history file: {err}");
+            eprintln!(
+                "{}",
+                crate::style::Style::stderr().warn(&format!("Error writing history file: {err}"))
+            );
         }
     }
 

@@ -35,28 +35,35 @@ pub fn is_notebook_invocation(argv: &[String]) -> bool {
 }
 
 pub fn help_text() -> String {
-    "Start JupyterLab with a DQL (Rust) kernel backed by this dqlrs binary.\n\n\
-     Usage:\n\
-       dqlrs notebook [options]\n\
-       dqlrs --notebook [options]\n\n\
-     Options:\n\
-       --local              DynamoDB Local (localhost:8000) and dummy AWS keys if unset\n\
-       --no-browser         Do not open a browser\n\
-       --dry-run            Write kernel files, ensure Jupyter, list kernels, exit\n\
-       --shutdown           Stop notebook servers started by dqlrs (from another terminal;\n\
-                            if several are running, choose which ones)\n\
-       --jupyter-port PORT  Jupyter port (else Jupyter picks one)\n\
-       --port PORT          Same as --jupyter-port\n\
-       -r, --region REGION  AWS region (default AWS_REGION or us-west-1)\n\
-       -H, --host HOST      DynamoDB host (implies local-style -p)\n\
-       -p PORT              DynamoDB port (default 8000, with -H or --local)\n\
-       -h, --help           Show this help\n\n\
-     Extra arguments after -- are passed to jupyter lab.\n\
-     Ctrl-C shuts the server down. From another terminal: dqlrs notebook --shutdown\n\n\
-     JupyterLab is downloaded into ~/.local/share/dqlrs/notebook on first run\n\
-     (needs Python 3.10+ or uv). This binary is not Jupyter; it only ships the\n\
-     DQL kernel and then starts Lab pointed at DQLRS_BIN."
-        .to_string()
+    // One line per entry: a `\` continuation would strip the leading spaces.
+    [
+        "Start JupyterLab with a DQL (Rust) kernel backed by this dqlrs binary.",
+        "",
+        "Usage:",
+        "  dqlrs notebook [options]",
+        "  dqlrs --notebook [options]",
+        "",
+        "Options:",
+        "  --local              DynamoDB Local (localhost:8000) and dummy AWS keys if unset",
+        "  --no-browser         Do not open a browser",
+        "  --dry-run            Write kernel files, ensure Jupyter, list kernels, exit",
+        "  --shutdown           Stop notebook servers started by dqlrs (from another terminal;",
+        "                       if several are running, choose which ones)",
+        "  --jupyter-port PORT  Jupyter port (else Jupyter picks one)",
+        "  --port PORT          Same as --jupyter-port",
+        "  -r, --region REGION  AWS region (default AWS_REGION or us-west-1)",
+        "  -H, --host HOST      DynamoDB host (implies local-style -p)",
+        "  -p PORT              DynamoDB port (default 8000, with -H or --local)",
+        "  -h, --help           Show this help",
+        "",
+        "Extra arguments after -- are passed to jupyter lab.",
+        "Ctrl-C shuts the server down. From another terminal: dqlrs notebook --shutdown",
+        "",
+        "JupyterLab is downloaded into ~/.local/share/dqlrs/notebook on first run",
+        "(needs Python 3.10+ or uv). This binary is not Jupyter; it only ships the",
+        "DQL kernel and then starts Lab pointed at DQLRS_BIN.",
+    ]
+    .join("\n")
 }
 
 pub fn parse_args(argv: &[String]) -> Result<NotebookArgs, String> {
