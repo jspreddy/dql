@@ -5,11 +5,12 @@ Do not edit by hand: changes are rewritten the next time it runs. Newest first.
 A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists.
 
-## Unreleased (2026-11-13)
+## dqlrs 0.7.10-dev0 (2026-11-13)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [0a76795](https://github.com/jspreddy/dql/commit/0a76795deb468e4d3af7b40f4e770523ef370aef) Bump version: 0.7.9-dev0 → 0.7.10-dev0 ([#206](https://github.com/jspreddy/dql/pull/206))
 - [6925478](https://github.com/jspreddy/dql/commit/6925478449b4ec6c0df51d9996891055d7d56710) Do not link pull requests merged before 2024-10-01 in the changelog ([#203](https://github.com/jspreddy/dql/pull/203))
 - [520f45f](https://github.com/jspreddy/dql/commit/520f45fdb305ec9200b32d39831a13fa1326731b) Document HELP and LS in the README's supported queries ([#202](https://github.com/jspreddy/dql/pull/202))
 - [cd68307](https://github.com/jspreddy/dql/commit/cd683077684ac3a5e2fdfafc2ac4386597929990) Group the changelog by Bump version commits ([#198](https://github.com/jspreddy/dql/pull/198))
