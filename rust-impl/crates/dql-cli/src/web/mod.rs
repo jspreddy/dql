@@ -7,6 +7,7 @@
 mod environment;
 mod events;
 pub(crate) mod files;
+pub(crate) mod init;
 pub(crate) mod lint;
 mod presence;
 mod query_cache;

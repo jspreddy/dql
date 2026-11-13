@@ -1,5 +1,8 @@
 //! Pack `notebook/src/dql_notebook_kernel` (and the Rust example notebook)
 //! into the binary so `dqlrs notebook` works after `cargo install`.
+//!
+//! Also stage `dqlrs-web/examples` in `OUT_DIR/examples` for `dqlrs web --init --examples`,
+//! leaving out what that folder's `.gitignore` ignores (caches a local run leaves behind).
 
 use std::env;
 use std::fs;
@@ -54,8 +57,60 @@ fn main() {
     rust.push_str(&format!("{example_body:?}"));
     rust.push_str(";\n");
 
-    let out = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR")).join("embedded_notebook.rs");
-    write_if_changed(&out, &rust);
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
+    write_if_changed(&out_dir.join("embedded_notebook.rs"), &rust);
+
+    stage_examples(
+        &manifest.join("../../../dqlrs-web/examples"),
+        &out_dir.join("examples"),
+    );
+}
+
+/// Copy the examples workspace into `dest`, skipping names its `.gitignore` lists and
+/// `.DS_Store`. `dest` is rebuilt each time so removed examples do not linger.
+fn stage_examples(src: &Path, dest: &Path) {
+    println!("cargo:rerun-if-changed={}", src.display());
+    if !src.is_dir() {
+        panic!(
+            "dqlrs web --init needs {} (build from a full dql checkout)",
+            src.display()
+        );
+    }
+    let mut skip: Vec<String> = vec![".DS_Store".to_string()];
+    if let Ok(ignore) = fs::read_to_string(src.join(".gitignore")) {
+        for line in ignore.lines() {
+            let name = line.trim().trim_start_matches('/').trim_end_matches('/');
+            if !name.is_empty() && !name.starts_with('#') {
+                skip.push(name.to_string());
+            }
+        }
+    }
+    if dest.exists() {
+        fs::remove_dir_all(dest).unwrap_or_else(|err| panic!("clear {}: {err}", dest.display()));
+    }
+    copy_tree(src, dest, &skip);
+}
+
+fn copy_tree(src: &Path, dest: &Path, skip: &[String]) {
+    fs::create_dir_all(dest).unwrap_or_else(|err| panic!("create {}: {err}", dest.display()));
+    let mut entries: Vec<_> = fs::read_dir(src)
+        .unwrap_or_else(|err| panic!("read {}: {err}", src.display()))
+        .map(|entry| entry.expect("examples entry"))
+        .collect();
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if skip.contains(&name) {
+            continue;
+        }
+        let path = entry.path();
+        let target = dest.join(&name);
+        if path.is_dir() {
+            copy_tree(&path, &target, skip);
+        } else {
+            fs::copy(&path, &target).unwrap_or_else(|err| panic!("copy {}: {err}", path.display()));
+        }
+    }
 }
 
 fn write_if_changed(path: &Path, contents: &str) {

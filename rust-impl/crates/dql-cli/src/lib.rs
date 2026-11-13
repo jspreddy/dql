@@ -47,6 +47,9 @@ const KNOWN_FLAGS: &[&str] = &[
     "--listen",
     "--dir",
     "--load-tables",
+    "--init",
+    "--examples",
+    "--yes",
     "--version",
     "-h",
     "--help",
@@ -112,6 +115,15 @@ pub fn run() -> color_eyre::Result<()> {
     if args.load_tables && !args.web {
         bail!("--load-tables requires `dqlrs web`");
     }
+    if args.init && !args.web {
+        bail!("--init requires `dqlrs web`");
+    }
+    if args.examples && !args.init {
+        bail!("--examples requires `dqlrs web --init`");
+    }
+    if args.yes && !args.init {
+        bail!("--yes requires `dqlrs web --init`");
+    }
     if args.serve && args.command.is_some() {
         bail!("--serve cannot be used with -c/--command");
     }
@@ -140,6 +152,19 @@ pub fn run() -> color_eyre::Result<()> {
                 .parse()
                 .expect("default web listen address"),
         };
+        // --init runs first: the session creates .dqlrs-cache in the workspace, and --init
+        // needs the folder empty.
+        if args.init {
+            // Absolute, so the plan names the real folder. It may not exist yet.
+            let cwd = std::env::current_dir().wrap_err("current directory")?;
+            let dir = match &args.dir {
+                Some(dir) => cwd.join(dir),
+                None => cwd,
+            };
+            if !web::init::run(&dir, args.examples, args.yes)? {
+                return Ok(());
+            }
+        }
         // The workspace is --dir or the current directory; Session resolves it once.
         let session = Session::new_for_serve(&args).wrap_err("failed to start session")?;
         let dir = session.workspace.clone();

@@ -74,6 +74,8 @@ You can use `$HOME/.aws/credentials` or `AWS_ACCESS_KEY_ID` /
 ```text
 dqlrs [options]          Start the REPL (or run -c)
 dqlrs web [options]      Serve the query editor and table browser
+dqlrs web --init --examples
+                         Start a new workspace in an empty folder from the examples
 dqlrs notebook           Start JupyterLab with a DQL (Rust) kernel (this binary)
 
 -c, --command <command>  Run this command and exit
@@ -87,6 +89,9 @@ dqlrs notebook           Start JupyterLab with a DQL (Rust) kernel (this binary)
     --listen <ADDR>      With web, listen on loopback HOST:PORT (default 127.0.0.1:8765)
     --dir <DIR>          With web or --mcp, folder of .dql files (default: current directory)
     --load-tables        With web, load every table and its definition in the background
+    --init               With web, set up an empty folder first (git init), after a confirm
+    --examples           With web --init, copy the dqlrs examples in and commit them
+    --yes                With web --init, skip the confirmation
     --version            Print the version and exit
     -h, --help           Print help
 ```
@@ -113,7 +118,16 @@ The server runs inside this binary. Browser assets are bundled with it.
 ```bash
 dqlrs web -H localhost -p 8000
 dqlrs web --listen 127.0.0.1:9000 --dir ~/queries
+dqlrs web --init --examples --dir ~/dql-examples
 ```
+
+`--init` sets up an empty (or missing) folder before serving it. It checks that
+the folder is empty and that git is on `PATH`, prints the plan, and asks before
+it changes anything (`--yes` skips the question; without a terminal it is
+required). It runs `git init`. With `--examples` it also copies
+`dqlrs-web/examples`, bundled into the binary without its ignored caches, and
+commits it as "Initialized dqlrs web examples"; git must know your name and
+email for that commit, and that is checked first too.
 
 From a checkout, `just web` builds `dqlrs`, starts DynamoDB Local when port 8000
 is down, and opens the UI on `dqlrs-web/examples`. Details:

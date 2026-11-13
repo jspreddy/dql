@@ -88,6 +88,22 @@ the browser assets are bundled into it.
 - Search across tables, columns, and queries, and a light or dark theme.
 - `--mcp` also serves MCP tools at `/mcp` on the same host.
 
+### Start from the examples
+
+In an empty folder, `dqlrs web --init --examples` sets up a workspace from the
+examples bundled with `dqlrs`, then serves it:
+
+```bash
+mkdir dql-examples && cd dql-examples
+dqlrs web --init --examples -H localhost -p 8000
+```
+
+It checks that the folder is empty and that git is installed and knows your
+name and email, shows what it will do, and asks before it changes anything.
+Then it runs `git init`, copies the examples (queries, data model walkthroughs,
+agent rules), and commits them as "Initialized dqlrs web examples". Pass
+`--yes` to skip the question, for example in a script.
+
 ![dqlrs web UI query editor](screenshots/web/query.png)
 
 `EXPLAIN` shows the plan as a card, with a JSON toggle:
