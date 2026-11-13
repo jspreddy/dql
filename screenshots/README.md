@@ -7,7 +7,7 @@ Local.
 
 | File | Shows |
 | --- | --- |
-| [`banner.png`](banner.png) | README banner: the three surfaces, MCP, and security, in the web UI's dark colors |
+| [`banner.png`](banner.png) | README banner: `dqlrs web --init-examples`, the three surfaces, MCP, and security, in the web UI's dark colors |
 | [`cli/repl.png`](cli/repl.png) | REPL: `opt format rich`, then Sol's planets as a table |
 | [`cli/cosmos-planets.png`](cli/cosmos-planets.png) | REPL: default `smart` format, expanded rows with nested maps |
 | [`web/query.png`](web/query.png) | `dqlrs web` query editor with a result (dark theme) |
