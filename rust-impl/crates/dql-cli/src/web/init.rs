@@ -1,10 +1,9 @@
-//! `dqlrs web --init [--examples]`: set up an empty folder as a dqlrs workspace before the
-//! web UI serves it.
+//! `dqlrs web --init-examples`: set up an empty folder as a dqlrs workspace holding the
+//! examples, before the web UI serves it.
 //!
 //! The checks run before anything is written: the folder is empty (or missing), git is on
-//! PATH, and, when examples are copied and committed, git knows who is committing. The user
-//! confirms the plan, then the folder gets `git init`, the examples bundled into this binary,
-//! and one commit.
+//! PATH, and git knows who is committing. The user confirms the plan, then the folder gets
+//! `git init`, the examples bundled into this binary, and one commit.
 
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
@@ -20,14 +19,14 @@ pub(crate) const COMMIT_MESSAGE: &str = "Initialized dqlrs web examples";
 
 /// Run the checks, ask, then initialize `dir`. `yes` skips the question. Returns false when
 /// the user answers no; nothing was changed then.
-pub(crate) fn run(dir: &Path, examples: bool, yes: bool) -> color_eyre::Result<bool> {
+pub(crate) fn run(dir: &Path, yes: bool) -> color_eyre::Result<bool> {
     check_empty(dir)?;
-    check_git(examples)?;
-    let plan = plan_text(dir, examples);
+    check_git()?;
+    let plan = plan_text(dir);
     if !yes {
         if !io::stdin().is_terminal() {
             bail!(
-                "dqlrs web --init asks before it changes {}; run it in a terminal, or pass --yes",
+                "dqlrs web --init-examples asks before it changes {}; run it in a terminal, or pass --yes",
                 dir.display()
             );
         }
@@ -39,7 +38,7 @@ pub(crate) fn run(dir: &Path, examples: bool, yes: bool) -> color_eyre::Result<b
     } else {
         print!("{plan}");
     }
-    initialize(dir, examples)?;
+    initialize(dir)?;
     println!("Initialized {}", dir.display());
     Ok(true)
 }
@@ -69,46 +68,42 @@ pub(crate) fn check_empty(dir: &Path) -> color_eyre::Result<()> {
         String::new()
     };
     bail!(
-        "dqlrs web --init needs an empty folder; {} has {shown}{more}",
+        "dqlrs web --init-examples needs an empty folder; {} has {shown}{more}",
         dir.display()
     )
 }
 
-/// git must run. When examples are committed, git must also know the author and committer
-/// (user.name and user.email, or the GIT_* variables), so the commit cannot fail halfway.
-pub(crate) fn check_git(examples: bool) -> color_eyre::Result<()> {
+/// git must run, and it must know the author and committer (user.name and user.email, or the
+/// GIT_* variables), so the commit cannot fail halfway.
+pub(crate) fn check_git() -> color_eyre::Result<()> {
     let version = Command::new("git").arg("--version").output();
     match version {
         Ok(output) if output.status.success() => {}
-        _ => bail!("dqlrs web --init needs git, and git was not found on PATH"),
+        _ => bail!("dqlrs web --init-examples needs git, and git was not found on PATH"),
     }
-    if examples {
-        for ident in ["GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"] {
-            let output = Command::new("git")
-                .args(["var", ident])
-                .output()
-                .wrap_err("run git var")?;
-            if !output.status.success() {
-                bail!(
-                    "git does not know who is committing; set it with\n  git config --global user.name \"Your Name\"\n  git config --global user.email you@example.com"
-                );
-            }
+    for ident in ["GIT_AUTHOR_IDENT", "GIT_COMMITTER_IDENT"] {
+        let output = Command::new("git")
+            .args(["var", ident])
+            .output()
+            .wrap_err("run git var")?;
+        if !output.status.success() {
+            bail!(
+                "git does not know who is committing; set it with\n  git config --global user.name \"Your Name\"\n  git config --global user.email you@example.com"
+            );
         }
     }
     Ok(())
 }
 
-/// What `--init` is about to do, shown before the question.
-pub(crate) fn plan_text(dir: &Path, examples: bool) -> String {
-    let mut text = format!("dqlrs web --init will set up {}:\n", dir.display());
+/// What `--init-examples` is about to do, shown before the question.
+pub(crate) fn plan_text(dir: &Path) -> String {
+    let mut text = format!("dqlrs web --init-examples will set up {}:\n", dir.display());
     text.push_str("  1. Create a git repository (git init).\n");
-    if examples {
-        text.push_str(&format!(
-            "  2. Copy the dqlrs examples ({} files: queries, data model walkthroughs, agent rules).\n",
-            example_file_count()
-        ));
-        text.push_str(&format!("  3. Commit them as \"{COMMIT_MESSAGE}\".\n"));
-    }
+    text.push_str(&format!(
+        "  2. Copy the dqlrs examples ({} files: queries, data model walkthroughs, agent rules).\n",
+        example_file_count()
+    ));
+    text.push_str(&format!("  3. Commit them as \"{COMMIT_MESSAGE}\".\n"));
     text.push_str("Then the web UI serves this folder.\n");
     text
 }
@@ -129,19 +124,17 @@ pub(crate) fn confirm(
     ))
 }
 
-/// `git init`, then with `examples` copy them in and commit.
-pub(crate) fn initialize(dir: &Path, examples: bool) -> color_eyre::Result<()> {
+/// Create the folder, `git init`, copy the examples in, and commit them.
+pub(crate) fn initialize(dir: &Path) -> color_eyre::Result<()> {
     std::fs::create_dir_all(dir).wrap_err_with(|| format!("create {}", dir.display()))?;
     git(dir, &["init", "-q"])?;
-    if examples {
-        let written = write_examples(dir)?;
-        git(dir, &["add", "-A"])?;
-        git(dir, &["commit", "-q", "-m", COMMIT_MESSAGE])?;
-        println!(
-            "Copied {} example files and committed them as \"{COMMIT_MESSAGE}\"",
-            written.len()
-        );
-    }
+    let written = write_examples(dir)?;
+    git(dir, &["add", "-A"])?;
+    git(dir, &["commit", "-q", "-m", COMMIT_MESSAGE])?;
+    println!(
+        "Copied {} example files and committed them as \"{COMMIT_MESSAGE}\"",
+        written.len()
+    );
     Ok(())
 }
 
@@ -242,7 +235,7 @@ mod tests {
 
     #[test]
     fn the_plan_lists_each_step_and_the_commit_message() {
-        let plan = plan_text(Path::new("/work/demo"), true);
+        let plan = plan_text(Path::new("/work/demo"));
         assert!(plan.contains("/work/demo"));
         assert!(plan.contains("1. Create a git repository"));
         assert!(plan.contains(&format!(
@@ -250,8 +243,6 @@ mod tests {
             example_file_count()
         )));
         assert!(plan.contains("3. Commit them as \"Initialized dqlrs web examples\""));
-        let bare = plan_text(Path::new("/work/demo"), false);
-        assert!(!bare.contains("Copy the dqlrs examples"));
     }
 
     #[test]
@@ -291,8 +282,8 @@ mod tests {
         std::env::set_var("GIT_AUTHOR_EMAIL", "test@example.com");
         std::env::set_var("GIT_COMMITTER_NAME", "dqlrs test");
         std::env::set_var("GIT_COMMITTER_EMAIL", "test@example.com");
-        check_git(true).unwrap();
-        initialize(&dir, true).unwrap();
+        check_git().unwrap();
+        initialize(&dir).unwrap();
 
         let log = Command::new("git")
             .arg("-C")

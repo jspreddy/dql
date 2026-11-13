@@ -47,8 +47,7 @@ const KNOWN_FLAGS: &[&str] = &[
     "--listen",
     "--dir",
     "--load-tables",
-    "--init",
-    "--examples",
+    "--init-examples",
     "--yes",
     "--version",
     "-h",
@@ -115,14 +114,11 @@ pub fn run() -> color_eyre::Result<()> {
     if args.load_tables && !args.web {
         bail!("--load-tables requires `dqlrs web`");
     }
-    if args.init && !args.web {
-        bail!("--init requires `dqlrs web`");
+    if args.init_examples && !args.web {
+        bail!("--init-examples requires `dqlrs web`");
     }
-    if args.examples && !args.init {
-        bail!("--examples requires `dqlrs web --init`");
-    }
-    if args.yes && !args.init {
-        bail!("--yes requires `dqlrs web --init`");
+    if args.yes && !args.init_examples {
+        bail!("--yes requires `dqlrs web --init-examples`");
     }
     if args.serve && args.command.is_some() {
         bail!("--serve cannot be used with -c/--command");
@@ -152,16 +148,16 @@ pub fn run() -> color_eyre::Result<()> {
                 .parse()
                 .expect("default web listen address"),
         };
-        // --init runs first: the session creates .dqlrs-cache in the workspace, and --init
-        // needs the folder empty.
-        if args.init {
+        // --init-examples runs first: the session creates .dqlrs-cache in the workspace, and
+        // --init-examples needs the folder empty.
+        if args.init_examples {
             // Absolute, so the plan names the real folder. It may not exist yet.
             let cwd = std::env::current_dir().wrap_err("current directory")?;
             let dir = match &args.dir {
                 Some(dir) => cwd.join(dir),
                 None => cwd,
             };
-            if !web::init::run(&dir, args.examples, args.yes)? {
+            if !web::init::run(&dir, args.yes)? {
                 return Ok(());
             }
         }

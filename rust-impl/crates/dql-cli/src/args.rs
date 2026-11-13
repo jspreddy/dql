@@ -85,18 +85,15 @@ pub struct CliArgs {
     pub load_tables: bool,
 
     #[arg(
-        long = "init",
-        help = "With `web`, set up an empty folder first: git init (and --examples), after a confirm"
+        long = "init-examples",
+        help = "With `web`, after a confirm: git init an empty folder, copy the examples in, commit"
     )]
-    pub init: bool,
+    pub init_examples: bool,
 
     #[arg(
-        long = "examples",
-        help = "With `web --init`, copy the dqlrs examples into the folder and commit them"
+        long = "yes",
+        help = "With `web --init-examples`, skip the confirmation"
     )]
-    pub examples: bool,
-
-    #[arg(long = "yes", help = "With `web --init`, skip the confirmation")]
     pub yes: bool,
 
     #[arg(long = "version", help = "Print the version and exit")]
@@ -153,7 +150,7 @@ pub fn help_text() -> String {
         "Usage:",
         "  dqlrs [options]          Start the REPL (or run -c)",
         "  dqlrs web [options]      Serve the query editor and table browser",
-        "  dqlrs web --init --examples",
+        "  dqlrs web --init-examples",
         "                           Start a new workspace in an empty folder from the examples",
         "  dqlrs notebook           Start JupyterLab with a DQL (Rust) kernel (this binary)",
         "",
@@ -169,9 +166,9 @@ pub fn help_text() -> String {
         "      --listen <ADDR>      With web, listen on loopback HOST:PORT (default 127.0.0.1:8765)",
         "      --dir <DIR>          With web or --mcp, folder of .dql files (default: current directory)",
         "      --load-tables        With web, load every table and its definition in the background",
-        "      --init               With web, set up an empty folder first (git init), after a confirm",
-        "      --examples           With web --init, copy the dqlrs examples in and commit them",
-        "      --yes                With web --init, skip the confirmation",
+        "      --init-examples      With web, after a confirm: git init an empty folder, copy the",
+        "                           examples in, and commit them",
+        "      --yes                With web --init-examples, skip the confirmation",
         "      --version            Print the version and exit",
         "",
         "Environment:",

@@ -90,12 +90,12 @@ the browser assets are bundled into it.
 
 ### Start from the examples
 
-In an empty folder, `dqlrs web --init --examples` sets up a workspace from the
+In an empty folder, `dqlrs web --init-examples` sets up a workspace from the
 examples bundled with `dqlrs`, then serves it:
 
 ```bash
 mkdir dql-examples && cd dql-examples
-dqlrs web --init --examples -H localhost -p 8000
+dqlrs web --init-examples -H localhost -p 8000
 ```
 
 It checks that the folder is empty and that git is installed and knows your

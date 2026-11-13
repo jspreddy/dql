@@ -1,4 +1,4 @@
-//! `dqlrs web --init --examples`, run as the real binary.
+//! `dqlrs web --init-examples`, run as the real binary.
 
 use std::io::{BufRead, BufReader};
 use std::net::TcpListener;
@@ -62,20 +62,12 @@ fn free_port() -> u16 {
 }
 
 #[test]
-fn init_needs_the_web_subcommand_and_examples_needs_init() {
+fn init_examples_needs_the_web_subcommand_and_yes_needs_init_examples() {
     let cwd = tempfile::tempdir().unwrap();
-    let output = run(cwd.path(), &["--init"]);
+    let output = run(cwd.path(), &["--init-examples"]);
     assert!(!output.status.success());
     assert!(
-        stderr(&output).contains("--init requires `dqlrs web`"),
-        "{}",
-        stderr(&output)
-    );
-
-    let output = run(cwd.path(), &["web", "--examples"]);
-    assert!(!output.status.success());
-    assert!(
-        stderr(&output).contains("--examples requires `dqlrs web --init`"),
+        stderr(&output).contains("--init-examples requires `dqlrs web`"),
         "{}",
         stderr(&output)
     );
@@ -83,17 +75,26 @@ fn init_needs_the_web_subcommand_and_examples_needs_init() {
     let output = run(cwd.path(), &["web", "--yes"]);
     assert!(!output.status.success());
     assert!(
-        stderr(&output).contains("--yes requires `dqlrs web --init`"),
+        stderr(&output).contains("--yes requires `dqlrs web --init-examples`"),
         "{}",
         stderr(&output)
     );
+
+    // The old two-flag spelling is not a flag.
+    let output = run(cwd.path(), &["web", "--init"]);
+    assert!(
+        stderr(&output).contains("unknown argument '--init'"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!cwd.path().join(".git").exists());
 }
 
 #[test]
 fn init_refuses_a_folder_that_is_not_empty() {
     let cwd = tempfile::tempdir().unwrap();
     std::fs::write(cwd.path().join("mine.dql"), "SCAN * FROM t;\n").unwrap();
-    let output = run(cwd.path(), &["web", "--init", "--examples", "--yes"]);
+    let output = run(cwd.path(), &["web", "--init-examples", "--yes"]);
     assert!(!output.status.success());
     assert!(
         stderr(&output).contains("needs an empty folder"),
@@ -107,7 +108,7 @@ fn init_refuses_a_folder_that_is_not_empty() {
 #[test]
 fn init_without_a_terminal_asks_for_yes_and_changes_nothing() {
     let cwd = tempfile::tempdir().unwrap();
-    let output = run(cwd.path(), &["web", "--init", "--examples", "--dir", "new"]);
+    let output = run(cwd.path(), &["web", "--init-examples", "--dir", "new"]);
     assert!(!output.status.success());
     assert!(
         stderr(&output).contains("pass --yes"),
@@ -128,8 +129,7 @@ fn init_with_yes_copies_and_commits_the_examples_then_serves_them() {
     let mut child = dqlrs(cwd.path())
         .args([
             "web",
-            "--init",
-            "--examples",
+            "--init-examples",
             "--yes",
             "--dir",
             "workspace",
@@ -140,7 +140,7 @@ fn init_with_yes_copies_and_commits_the_examples_then_serves_them() {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .expect("spawn dqlrs web --init");
+        .expect("spawn dqlrs web --init-examples");
 
     // Read stdout until the server says it is listening.
     let mut lines = Vec::new();
