@@ -10,6 +10,7 @@ next bump, or to Unreleased when no later bump exists.
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [6925478](https://github.com/jspreddy/dql/commit/6925478449b4ec6c0df51d9996891055d7d56710) Do not link pull requests merged before 2024-10-01 in the changelog ([#203](https://github.com/jspreddy/dql/pull/203))
 - [520f45f](https://github.com/jspreddy/dql/commit/520f45fdb305ec9200b32d39831a13fa1326731b) Document HELP and LS in the README's supported queries ([#202](https://github.com/jspreddy/dql/pull/202))
 - [cd68307](https://github.com/jspreddy/dql/commit/cd683077684ac3a5e2fdfafc2ac4386597929990) Group the changelog by Bump version commits ([#198](https://github.com/jspreddy/dql/pull/198))
 - [33eeec6](https://github.com/jspreddy/dql/commit/33eeec6137127637e20b802c464301e1ec53da07) Add dqlrs web --init-examples to the README banner ([#199](https://github.com/jspreddy/dql/pull/199))
