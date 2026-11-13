@@ -73,7 +73,7 @@ async function settle(page) {
 }
 
 test("README web shots: query, explain, tables", async ({ page, app }, testInfo) => {
-  // light: the README body. dark: the panels in screenshots/banner.png.
+  // dark: screenshots/web/ and the banner panel. light: kept for anyone who wants light shots.
   const shot = (name) =>
     playwrightArtifact(`readme-web-${name}${testInfo.project.name === "dark" ? "-dark" : ""}.png`);
   // Leave sample_cosmos in place: it is the same table `just web` users load from the cosmos example.

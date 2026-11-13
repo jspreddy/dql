@@ -10,9 +10,9 @@ Local.
 | [`banner.png`](banner.png) | README banner: the three surfaces, MCP, and security, in the web UI's dark colors |
 | [`cli/repl.png`](cli/repl.png) | REPL: `opt format rich`, then Sol's planets as a table |
 | [`cli/cosmos-planets.png`](cli/cosmos-planets.png) | REPL: default `smart` format, expanded rows with nested maps |
-| [`web/query.png`](web/query.png) | `dqlrs web` query editor with a result |
-| [`web/explain.png`](web/explain.png) | `dqlrs web` explain plan card |
-| [`web/tables.png`](web/tables.png) | `dqlrs web` table browser |
+| [`web/query.png`](web/query.png) | `dqlrs web` query editor with a result (dark theme) |
+| [`web/explain.png`](web/explain.png) | `dqlrs web` explain plan card (dark theme) |
+| [`web/tables.png`](web/tables.png) | `dqlrs web` table browser (dark theme) |
 | [`notebook/cosmos.png`](notebook/cosmos.png) | `dqlrs notebook`: a DQL (Rust) cell and its table |
 | [`notebook/getting-started.png`](notebook/getting-started.png) | `dqlrs notebook`: the starter notebook it writes |
 | [`notebook/launcher.png`](notebook/launcher.png) | `dqlrs notebook`: launcher with the DQL (Rust) kernel |
@@ -29,12 +29,14 @@ dqlrs -H localhost -p 8000 -c "file dqlrs-web/examples/cosmos/10-bodies.dql"
 
 **Web.** The Playwright spec
 [`readme-screenshots.spec.js`](../dqlrs-web/playwright/tests/readme-screenshots.spec.js)
-seeds the table itself and writes three 1440×900 shots to
-`.playwright-artifacts/`:
+seeds the table itself and writes three 1440×900 shots per theme to
+`.playwright-artifacts/`. The README uses the dark ones (`readme-web-*-dark.png`
+from the `dark` project); the light ones are there if you need them:
 
 ```bash
-just web-test -- tests/readme-screenshots.spec.js --project light
-for n in query explain tables; do cp .playwright-artifacts/readme-web-$n.png screenshots/web/$n.png; done
+just web-test -- tests/readme-screenshots.spec.js --project dark
+for n in query explain tables; do cp .playwright-artifacts/readme-web-$n-dark.png screenshots/web/$n.png; done
+cp .playwright-artifacts/readme-web-query-dark.png screenshots/banner/web.png
 ```
 
 **CLI.** Run `dqlrs -H localhost -p 8000` in a 110×34 terminal with a black
