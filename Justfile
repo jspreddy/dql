@@ -402,10 +402,19 @@ notebook-test-slow *args: (_title "notebook-test-slow")
         just notebook-test -- --slowmo 500 -m slow
     fi
 
-# Regenerate CHANGELOG.md from origin/v-rust. Fetch v-rust first. See scripts/changelog.py.
+# Regenerate CHANGELOG.md from origin/v-rust. Fetch v-rust first.
+# Extra script flags need `--`: just changelog -- --stdout
 [group('other')]
-changelog: (_title "changelog")
-    cd "{{justfile_directory()}}" && python3 scripts/changelog.py
+changelog *args: (_title "changelog")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    # `just recipe -- --flag` includes the separator in the variadic args.
+    args=({{args}})
+    if [[ ${#args[@]} -gt 0 && "${args[0]}" == "--" ]]; then
+        args=("${args[@]:1}")
+    fi
+    python3 scripts/changelog.py "${args[@]}"
 
 # Exit 1 when CHANGELOG.md does not match origin/v-rust. Not part of verify.
 [group('other')]

@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
-"""Run the changelog script. See scripts/changelog.py and this skill's SKILL.md."""
+"""Regenerate or check CHANGELOG.md by running the just recipe."""
 
-import runpy
+import subprocess
+import sys
 from pathlib import Path
 
-runpy.run_path(str(Path(__file__).resolve().parents[3] / "scripts" / "changelog.py"), run_name="__main__")
+root = Path(__file__).resolve().parents[3]
+args = sys.argv[1:]
+if args == ["--check"]:
+    command = ["just", "changelog-check"]
+else:
+    command = ["just", "changelog"]
+    if args:
+        command.extend(["--", *args])
+raise SystemExit(subprocess.call(command, cwd=root))
