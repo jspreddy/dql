@@ -130,11 +130,11 @@ bar and a count, then how many definitions loaded and how long it took. Only a t
 load gets its own line, a red cross with the error; the server starts either way.
 
 `--init-examples` sets up an empty (or missing) folder before serving it. It
-checks that the folder is empty, that git is on `PATH`, and that git knows your
-name and email, prints the plan, and asks before it changes anything (`--yes`
-skips the question; without a terminal it is required). Then it runs `git init`,
-copies `dqlrs-web/examples` (bundled into the binary without its ignored caches),
-and commits it as "Initialized dqlrs web examples".
+checks that the folder is empty and that git is installed, prints the plan, and
+asks before it changes anything (`--yes` skips the question; without a terminal
+it is required). Then it runs `git init`, copies `dqlrs-web/examples` (bundled
+into the binary without its ignored caches), and commits it as "Initialized
+dqlrs web examples".
 
 From a checkout, `just web` builds `dqlrs`, starts DynamoDB Local when port 8000
 is down, and opens the UI on `dqlrs-web/examples`. Details:
