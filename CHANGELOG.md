@@ -8,8 +8,9 @@ next bump, or to Unreleased when no later bump exists.
 ## Unreleased (2026-11-13)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
-Agents: Claude Opus 5.5
+Agents: Claude Opus 5.5, Cursor Agent
 
+- [cd68307](https://github.com/jspreddy/dql/commit/cd683077684ac3a5e2fdfafc2ac4386597929990) Group the changelog by Bump version commits ([#198](https://github.com/jspreddy/dql/pull/198))
 - [33eeec6](https://github.com/jspreddy/dql/commit/33eeec6137127637e20b802c464301e1ec53da07) Add dqlrs web --init-examples to the README banner ([#199](https://github.com/jspreddy/dql/pull/199))
 
 ## dqlrs 0.7.9-dev0 (2026-11-12 to 2026-11-13)
