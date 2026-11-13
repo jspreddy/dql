@@ -5,8 +5,9 @@ Generated from the first-parent history of `origin/v-rust` by the `changelog` sk
 rewritten the next time it runs. Newest first. Each section is the version in the tree
 when those changes landed.
 
-## dqlrs 0.7.8-dev0 (2026-11-12)
+## dqlrs 0.7.8-dev0 (2026-11-12 to 2026-11-13)
 
+- Fix the vulnerabilities cargo audit and pip-audit report (#187)
 - Add a filetype-report skill that renders a PNG of file types in git (#186)
 - Bump certifi from 2026.7.22 to 2026.10.18 in /notebook (#184)
 - Bump certifi from 2026.7.22 to 2026.10.18 in /notebook-tests (#181)
