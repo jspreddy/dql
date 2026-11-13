@@ -7,6 +7,7 @@ when those changes landed.
 
 ## dqlrs 0.7.8-dev0 (2026-11-12)
 
+- github actions: Run just check and update the changelog (#175)
 - Bump dqlrs to 0.7.8-dev0 and update the changelog (#173)
 
 ## dqlrs 0.7.7-dev0 (2026-11-12)
