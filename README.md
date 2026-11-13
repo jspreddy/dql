@@ -155,6 +155,8 @@ The launcher lists the DQL (Rust) notebook and console:
 | `DUMP SCHEMA` | Emit `CREATE TABLE` DDL |
 | `LOAD` / `SAVE` | Import / export `.json`, `.csv`, `.msgpack` (+ `.gz`) |
 | `EXPLAIN` / `ANALYZE` | Plan and capacity |
+| `LS` | List tables, or `LS <table>` to describe one |
+| `HELP` / `HELP <topic>` | Every statement and meta-command, or one topic's syntax and examples |
 
 **Where filters:** `= != <> < <= > >=`, `BETWEEN`, `IN`, `AND` / `OR` / `NOT`,
 `begins_with`, `contains`, `attribute_exists`, `attribute_not_exists`,
@@ -163,7 +165,20 @@ The launcher lists the DQL (Rust) notebook and console:
 **Update ops:** `SET`, `ADD`, `REMOVE`, `DELETE`, plus `if_not_exists` and
 `list_append`.
 
-In the REPL: `help` or `help <statement>`.
+### Help
+
+`HELP;` lists every statement and meta-command, grouped (queries, connection,
+files, configuration, history, session). `HELP <topic>;` prints that topic's
+syntax and runnable examples:
+
+```sql
+HELP;
+HELP SELECT;   -- same page as HELP SCAN
+HELP opt;      -- display options: format, width, pagesize, ...
+```
+
+It works everywhere DQL runs: the REPL, the web editor, a notebook cell, and
+`dqlrs -c "HELP SELECT;"`. Topic names are case-insensitive.
 
 ## Install
 
