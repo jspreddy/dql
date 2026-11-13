@@ -6,6 +6,8 @@ file from git. Entries are the first-parent history, newest first:
 
 - a merged pull request starts with a link to the merge commit, then its title and a link to the pull request;
 - a commit made on the branch starts with a link to that commit, then its subject;
+- each version lists the people who authored those changes, linked to their GitHub
+  profile when the commit email is a GitHub noreply address;
 - "Bump version:" commits and lockfile sync commits are left out, since the section
   heading names the version;
 - changelog updates ("Update the changelog ...") are left out, so the workflow that
@@ -31,6 +33,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import quote
 
 DEFAULT_REFS = ("origin/v-rust", "v-rust")
 # Newest layout first. The first file that exists at a commit names the product.
@@ -48,6 +51,8 @@ SKIP_SUBJECTS = (
 # Merged pull requests whose title matches are not entries.
 SKIP_TITLES = (re.compile(r"^Update the changelog\b"),)
 MERGE_SUBJECT = re.compile(r"^Merge pull request #(\d+) from [^/\s]+/(\S+)")
+COAUTHOR = re.compile(r"^Co-authored-by:\s*(.+?)\s*<([^>]+?)>\s*$", re.IGNORECASE)
+GITHUB_NOREPLY = re.compile(r"(?:\d+\+)?([^@]+)@users\.noreply\.github\.com\Z", re.IGNORECASE)
 HEADER = """# Changelog
 
 Generated from the first-parent history of `{ref}` by `scripts/changelog.py`.
@@ -62,6 +67,8 @@ class Record:
     sha: str
     short: str
     date: str
+    author: str
+    email: str
     subject: str
     body: str
 
@@ -76,6 +83,9 @@ class Entry:
 class Section:
     heading: str
     entries: list[Entry] = field(default_factory=list)
+    # key -> {display name: count}. key is a GitHub login or an email.
+    names: dict[str, dict[str, int]] = field(default_factory=dict)
+    logins: dict[str, str] = field(default_factory=dict)
 
 
 def git(root: Path, *args: str) -> str:
@@ -108,7 +118,7 @@ def history(root: Path, ref: str) -> list[Record]:
         "log",
         "--first-parent",
         "--date=short",
-        "--format=%H%x1f%h%x1f%ad%x1f%s%x1f%b%x1e",
+        "--format=%H%x1f%h%x1f%ad%x1f%an%x1f%ae%x1f%s%x1f%b%x1e",
         ref,
     )
     records: list[Record] = []
@@ -116,8 +126,10 @@ def history(root: Path, ref: str) -> list[Record]:
         record = record.strip("\n")
         if not record:
             continue
-        sha, short, date, subject, body = (record.split("\x1f") + ["", "", "", "", ""])[:5]
-        records.append(Record(sha, short, date, subject, body))
+        parts = record.split("\x1f")
+        sha, short, date, author, email, subject = (parts + ["", "", "", "", "", ""])[:6]
+        body = "\x1f".join(parts[6:])
+        records.append(Record(sha, short, date, author, email, subject, body))
     return records
 
 
@@ -220,6 +232,79 @@ def pull_link(base: str, number: str) -> str:
     return f"[{label}]({base}/pull/{number})"
 
 
+def github_login(email: str) -> str:
+    match = GITHUB_NOREPLY.fullmatch(email.strip())
+    return match.group(1) if match else ""
+
+
+def people_in(name: str, email: str, body: str) -> list[tuple[str, str]]:
+    people: list[tuple[str, str]] = []
+    if name.strip() and email.strip():
+        people.append((name.strip(), email.strip()))
+    for line in body.splitlines():
+        match = COAUTHOR.match(line.strip())
+        if match:
+            people.append((match.group(1).strip(), match.group(2).strip()))
+    return people
+
+
+def entry_people(root: Path, record: Record) -> list[tuple[str, str]]:
+    """Authors of the changes this entry brought in, including co-authors."""
+    people: list[tuple[str, str]] = []
+    if MERGE_SUBJECT.match(record.subject):
+        second = subprocess.run(
+            ["git", "rev-parse", "-q", "--verify", f"{record.sha}^2"],
+            cwd=root,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if second.returncode == 0:
+            raw = git(root, "log", "--format=%an%x1f%ae%x1f%b%x1e", f"{record.sha}^1..{record.sha}^2")
+            for piece in raw.split("\x1e"):
+                piece = piece.strip("\n")
+                if not piece:
+                    continue
+                parts = piece.split("\x1f")
+                author, email = (parts + ["", ""])[:2]
+                body = "\x1f".join(parts[2:])
+                people.extend(people_in(author, email, body))
+    if not people:
+        people = people_in(record.author, record.email, record.body)
+    return people
+
+
+def add_people(section: Section, people: list[tuple[str, str]]) -> None:
+    for name, email in people:
+        login = github_login(email)
+        key = login.lower() if login else email.lower()
+        if not key:
+            key = name.casefold()
+        counts = section.names.setdefault(key, {})
+        counts[name] = counts.get(name, 0) + 1
+        if login:
+            section.logins[key] = login
+
+
+def contributor_lines(section: Section) -> list[str]:
+    rows: list[tuple[str, str]] = []
+    for key, counts in section.names.items():
+        name = sorted(counts, key=lambda item: (-counts[item], -len(item), item.casefold()))[0]
+        rows.append((name, section.logins.get(key, "")))
+    rows.sort(key=lambda item: item[0].casefold())
+    return [f"- {person_link(name, login)}" for name, login in rows]
+
+
+def person_link(name: str, login: str) -> str:
+    if not login:
+        return name
+    href = "https://github.com/" + quote(login, safe="")
+    if "[" in name or "]" in name:
+        safe = name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        return f'<a href="{href}">{safe}</a>'
+    return f"[{name}]({href})"
+
+
 def entry_text(record: Record, base: str) -> str | None:
     link = commit_link(base, record)
     merge = MERGE_SUBJECT.match(record.subject)
@@ -253,6 +338,7 @@ def collect(root: Path, ref: str) -> list[Section]:
         text = entry_text(record, base)
         if text:
             current.entries.append(Entry(record.date, text))
+            add_people(current, entry_people(root, record))
     if current.entries:
         sections.append(current)
     return sections
@@ -265,6 +351,10 @@ def render(ref: str, sections: list[Section]) -> str:
         span = dates[-1] if dates[-1] == dates[0] else f"{dates[-1]} to {dates[0]}"
         out.append(f"\n## {section.heading} ({span})\n\n")
         out.extend(f"- {entry.text}\n" for entry in section.entries)
+        contributors = contributor_lines(section)
+        if contributors:
+            out.append("\nContributors:\n\n")
+            out.extend(f"{line}\n" for line in contributors)
     return "".join(out)
 
 

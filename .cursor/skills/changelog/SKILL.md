@@ -9,6 +9,8 @@ description: Regenerate, preview, or check CHANGELOG.md with the just recipes. `
 `origin/v-rust`, the target branch. Regenerate it with `just changelog`. Each line starts with a
 Markdown link to that commit's short hash, so GitHub shows it as a link. A merged pull request
 then gives its title and a link to the pull request; a commit made on `v-rust` gives its subject.
+Each version ends with a Contributors list: the authors of those changes, linked to a GitHub
+profile when the commit email is a GitHub noreply address.
 `Bump version:` commits and lockfile sync commits are left out, and so are merged
 pull requests titled `Update the changelog ...`.
 
