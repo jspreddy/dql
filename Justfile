@@ -402,15 +402,15 @@ notebook-test-slow *args: (_title "notebook-test-slow")
         just notebook-test -- --slowmo 500 -m slow
     fi
 
-# Regenerate CHANGELOG.md from origin/v-rust. Fetch v-rust first. See the changelog skill.
+# Regenerate CHANGELOG.md from origin/v-rust. Fetch v-rust first. See scripts/changelog.py.
 [group('other')]
 changelog: (_title "changelog")
-    cd "{{justfile_directory()}}" && python3 .cursor/skills/changelog/changelog.py
+    cd "{{justfile_directory()}}" && python3 scripts/changelog.py
 
 # Exit 1 when CHANGELOG.md does not match origin/v-rust. Not part of verify.
 [group('other')]
 changelog-check: (_title "changelog-check")
-    cd "{{justfile_directory()}}" && python3 .cursor/skills/changelog/changelog.py --check
+    cd "{{justfile_directory()}}" && python3 scripts/changelog.py --check
 
 # Bump Python or Rust and refresh that lockfile. Flags need `--`: just version -- rust --dry-run build
 [group('other')]

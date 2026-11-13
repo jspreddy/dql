@@ -1,37 +1,37 @@
 # Changelog
 
-Generated from the first-parent history of `origin/v-rust` by the `changelog` skill
-(`python3 .cursor/skills/changelog/changelog.py`). Do not edit by hand: changes are
-rewritten the next time it runs. Newest first. Each section is the version in the tree
-when those changes landed.
+Generated from the first-parent history of `origin/v-rust` by `scripts/changelog.py`.
+Do not edit by hand: changes are rewritten the next time it runs. Newest first.
+A "Bump version" commit closes a section. Changes after that bump belong to the
+next bump, or to Unreleased when no later bump exists.
 
-## dqlrs 0.7.9-dev0 (2026-11-13)
+## Unreleased (2026-11-13)
 
 - Add dqlrs web --init-examples to the README banner (#199)
+
+## dqlrs 0.7.9-dev0 (2026-11-12 to 2026-11-13)
+
 - Color what the dqlrs command prints to the console (#196)
-
-## dqlrs 0.7.8-dev0 (2026-11-12 to 2026-11-13)
-
 - Fix the vulnerabilities cargo audit and pip-audit report (#187)
 - Add a filetype-report skill that renders a PNG of file types in git (#186)
 - Bump certifi from 2026.7.22 to 2026.10.18 in /notebook (#184)
 - Bump certifi from 2026.7.22 to 2026.10.18 in /notebook-tests (#181)
 - Bump certifi from 2025.7.14 to 2026.10.18 in /py-impl (#179)
 - github actions: Run just check and update the changelog (#175)
+
+## dqlrs 0.7.8-dev0 (2026-11-12)
+
 - Bump dqlrs to 0.7.8-dev0 and update the changelog (#173)
-
-## dqlrs 0.7.7-dev0 (2026-11-12)
-
 - Organize Rust docs, add a README banner, refresh screenshots (#170)
+
+## dqlrs 0.7.7-dev0 (2026-11-11 to 2026-11-12)
+
 - Make the listed-table search test create its own table (#172)
-
-## dqlrs 0.7.6-dev0 (2026-11-11)
-
 - Use local and temp table definitions in the linter and structure view (#155)
+
+## dqlrs 0.7.6-dev0 (2026-11-10 to 2026-11-11)
+
 - Bump Rust version: 0.7.5-dev0 → 0.7.6-dev0 (#153)
-
-## dqlrs 0.7.5-dev0 (2026-11-10 to 2026-11-11)
-
 - Keep a folder open when a pending folder click fires (#152)
 - Fix flaky file-tree drag and rename web tests (#147)
 - Fix two racy web tests (#146)
@@ -42,30 +42,30 @@ when those changes landed.
 - Expose .cursor/rules to Claude Code via .claude/rules symlink (7d07a86)
 - Expose .cursor/skills to Claude Code via .claude/skills symlink (2e90233)
 
-## dqlrs 0.7.4-dev0 (2026-11-08)
+## dqlrs 0.7.5-dev0 (2026-11-08)
 
 - Replace browser confirm and prompt with in-app dialogs (#141)
 - Add Sai Phaninder Reddy Jonnala's copyright to the MIT notice (#138)
 
-## dqlrs 0.7.3-dev0 (2026-11-07 to 2026-11-08)
+## dqlrs 0.7.4-dev0 (2026-11-07 to 2026-11-08)
 
 - Let the git graph take a commit count and a cutoff (#136)
 - Write each git graph to a new SVG file (#135)
+
+## dqlrs 0.7.3-dev0 (2026-11-07)
+
 - Wait for the tree event in the events stream test (#134)
-
-## dqlrs 0.7.2-dev0 (2026-11-07)
-
 - Lint the open file on save, fetch, and open (#133)
+
+## dqlrs 0.7.2-dev0 (2026-11-01 to 2026-11-07)
+
 - Add LOCALTABLE and TEMPTABLE beside DynamoDB tables (#130)
-
-## dqlrs 0.7.1-dev0 (2026-11-01 to 2026-11-06)
-
 - Use Playwright screenshots for web UI evidence (#131)
 - Add Run file to the file context menu (#121)
 - Keep the API and MCP token across restarts (#120)
 - Add DynamoDB Local just aliases and dd-clean (#119)
 
-## dqlrs 0.7.0-dev0 (2026-10-22 to 2026-10-30)
+## dqlrs 0.7.1-dev0 (2026-10-22 to 2026-10-30)
 
 - Seal both disk caches with AES-256-GCM (#113)
 - Make just check report-only and add just fix (#110)
@@ -89,27 +89,27 @@ when those changes landed.
 - skill + data (80f50b8)
 - Add rewrite metrics to the Rust docs (#84)
 - Drop the extra columns table ported from Python (#80)
+
+## dqlrs 0.7.0-dev0 (2026-10-12 to 2026-10-22)
+
 - Match analyze scans to scan cards and show real RCU (#95)
-
-## dqlrs 0.6.5-dev1 (2026-10-12 to 2026-10-18)
-
 - Show the full structure sample and scroll sideways (#79)
 - Scroll clear so the REPL input returns to the top (#62)
 - Document installs from the v-rust branch (#56)
 - just check (73be2bf)
 - Reapply "Add a Stop control for a running web query." (8b13a78)
+
+## dqlrs 0.6.5-dev1 (2026-10-10 to 2026-10-12)
+
 - Fix WHERE contains() errors on reserved fields (#54)
-
-## dqlrs 0.6.5-dev0 (2026-10-10 to 2026-10-11)
-
 - Soften key column borders to match the grid (#47)
 - Cursor/grouped changes (#46)
 - Fix duplicated editor imports that break the web UI (#40)
 - Merge branch 'sai/test' into v-rust (a213428)
+
+## dqlrs 0.6.5-dev0 (2026-08-20 to 2026-10-10)
+
 - Add a floating play button for the current selection (#35)
-
-## dqlrs 0.6.4-dev12 (2026-08-20 to 2026-10-03)
-
 - test(black-box-tests): fail the run when teardown DROP exits non-zero (9de655a)
 - Sai/pexpect acceptance tests (#24)
 - Sai/test case file renames (#18)
@@ -126,45 +126,42 @@ when those changes landed.
 
 - Bug: Index auto-select when not specified. (#5)
 
-## dql (Python) 0.6.4-dev9 (2025-08-01)
+## dql (Python) 0.6.4-dev9 (2024-12-19 to 2025-08-01)
 
 - 0.6.4-dev9: Rich format update + Bugfixes + CI (#3)
-
-## dql (Python) 0.6.4-dev8 (2024-12-19)
-
 - formatting of changes.rst file (7790973)
+
+## dql (Python) 0.6.4-dev8 (2024-10-17 to 2024-12-19)
+
 - sai/dev (#2)
-
-## dql (Python) 0.6.4-dev6 (2024-10-17)
-
 - github job changes (08fa8a1)
 - readme updates for v-next (1863d23)
 
-## dql (Python) 0.6.4-dev5 (2024-10-17)
+## dql (Python) 0.6.4-dev6 (2024-10-17)
 
 - try again to fix packaging issue. (00a1be2)
 
-## dql (Python) 0.6.4-dev4 (2024-10-17)
+## dql (Python) 0.6.4-dev5 (2024-10-17)
 
 - Fixing packaging with pyproject.toml (5b8b042)
 - readme (27cbdfe)
 - Readme updates (65dfd68)
 
-## dql (Python) 0.6.4-dev3 (2024-10-13)
+## dql (Python) 0.6.4-dev4 (2024-10-13)
 
 - Fixing some cli prompt bugs. (0308870)
 
-## dql (Python) 0.6.4-dev2 (2024-09-28)
+## dql (Python) 0.6.4-dev3 (2024-09-28)
 
 - Most tests cases are passing with local dynamodb (131ecb2)
 
-## dql (Python) 0.6.4-dev1 (2024-09-21 to 2024-09-28)
+## dql (Python) 0.6.4-dev2 (2024-09-21 to 2024-09-28)
 
 - removing setup.py and migrating to pyproject.toml completely (77fb8da)
 - minor code formatting (77f5014)
 - adding command whoami to print the session identity. (6a70572)
 
-## dql (Python) 0.6.4-dev0 (2024-07-30 to 2024-09-21)
+## dql (Python) 0.6.4-dev1 (2024-07-30 to 2024-09-21)
 
 - BugFix: <LS> command breaks if using semicolon. - "ls tablename;" caused error on semicolon. Fixed it. (c1f38fa)
 - trying to modernize the build / test tooling (056c365)
@@ -172,13 +169,13 @@ when those changes landed.
 - maintainer install notes (8a90990)
 - lint fix (9418b4a)
 
-## dql (Python) 0.6.3-dev1 (2024-05-24 to 2024-07-30)
+## dql (Python) 0.6.4-dev0 (2024-05-24 to 2024-07-30)
 
 - add ability to force "no index" when querying (9ee27ab)
 - attempt to fix not selecting index (7d4e5d5)
 - re-using progress bars (3c8a508)
 
-## dql (Python) 0.6.3-dev0 (2022-11-01 to 2024-05-24)
+## dql (Python) 0.6.3-dev1 (2022-11-01 to 2024-05-24)
 
 - lint fixes for test cases (8ed003c)
 - Adding progress bar to batching operations (3eccf1a)
@@ -189,41 +186,44 @@ when those changes landed.
 - wip: ls command: rich rendering + updates (3d3ead6)
 - wip: ls command: partial rich rendering (e6bc1cd)
 
-## dql (Python) 0.6.2 (2021-12-23)
+## dql (Python) 0.6.3-dev0 (2021-12-23)
 
 - wip: colorizing JsonFormat (7e28f19)
 - doc: forgot to remove 'unreleased' from 0.6.2 (9666cfb)
 
-## dql (Python) 0.6.2-dev0 (2021-12-07 to 2021-12-23)
+## dql (Python) 0.6.2 (2021-12-07 to 2021-12-23)
 
 - doc: update readme installation instructions (d8c2862)
 - Adding clear command and excluding clear, exit from history (#43)
 - chore: configure workflow to auto-publish on tag (continues #42) (4951ffe)
 - doc: fix title underline in changelog (9383e32)
 - doc: update the build badge in the readme (50574c2)
+
+## dql (Python) 0.6.2-dev0 (2021-12-07)
+
 - WIP: Fixing missing dependency (typing_extensions) + chores (#42)
 
-## dql (Python) 0.6.1-dev1 (2021-01-24)
+## dql (Python) 0.6.1 (2021-01-24)
 
 - Updating changelog (52290e1)
 - Clean up history test (0656b25)
 - Add .envrc for direnv (6e3fb27)
+
+## dql (Python) 0.6.1-dev1 (2020-11-29 to 2021-01-24)
+
 - Feature: Retain query history across sessions. (#41)
-
-## dql (Python) 0.6.1-dev0 (2020-11-23 to 2020-11-29)
-
 - Add a note about PartiQL in the README (d37f07f)
+
+## dql (Python) 0.6.1-dev0 (2020-10-18 to 2020-11-23)
+
 - Dynamo local path to be within project root + gitignore (#38)
-
-## dql (Python) 0.6.0 (2020-10-18 to 2020-10-19)
-
 - Fix #36: Constraint functions should accept quoted field names (4706ad7)
 - Parser extracts values during parsing for conditional constraints (3c95123)
 - Change the parsing logic for constraint expressions (e245229)
 - Fix save and load file logic (03cfea1)
 - Fix #37: Cannot count(*) on an index (4c6fb35)
 
-## dql (Python) 0.5.29-dev0 (2020-09-07 to 2020-10-03)
+## dql (Python) 0.6.0 (2020-09-09 to 2020-10-03)
 
 - Updating changelog (01bfeb3)
 - Update dynamo3 requirement (8d18520)
@@ -247,10 +247,10 @@ when those changes landed.
 - Add mypy checking in lint step (9e54053)
 - Use requirements files to manage test/dev dependencies (f997bff)
 - Better errors (#28)
+
+## dql (Python) 0.5.29-dev0 (2020-08-20 to 2020-09-07)
+
 - Development environment updates + CI updates to run with proper java version (#27)
-
-## dql (Python) 0.5.28 (2019-11-20 to 2020-08-20)
-
 - Typo (265a3ab)
 - Remove python 2 code from the install.py file (192325b)
 - Remove python 2-to-3 compatibility code (59fe0eb)
@@ -259,18 +259,21 @@ when those changes landed.
 - Reformat files with black and isort (7b1830d)
 - Use isort with black, and provide a tox command for autoformatting (161db92)
 - Remove run_autopep8.sh script (251f616)
+
+## dql (Python) 0.5.28 (2019-11-20)
+
 - Merge tag '0.5.28' (c8aaa84)
 
-## dql (Python) 0.5.27 (2019-10-26)
+## dql (Python) 0.5.27 (2019-03-04 to 2019-10-26)
 
 - Merge tag '0.5.27' (3d88d47)
-
-## dql (Python) 0.5.26 (2018-03-17 to 2019-03-04)
-
 - Format everything with black (e9d3aa2)
 - Mention tox in docs on developing (1adf345)
 - Fix linter errors (81d3f6f)
 - Fix #20: Update docs for developing (b3e2611)
+
+## dql (Python) 0.5.26 (2018-03-17)
+
 - Merge tag '0.5.26' (fad509b)
 
 ## dql (Python) 0.5.25 (2017-12-10)
@@ -305,13 +308,13 @@ when those changes landed.
 
 - Merge tag '0.5.18' (0c7ffbe)
 
-## dql (Python) 0.5.17 (2016-05-06)
+## dql (Python) 0.5.17 (2016-05-03 to 2016-05-06)
 
 - Merge tag '0.5.17' (bb930d1)
-
-## dql (Python) 0.5.16 (2016-03-05 to 2016-05-03)
-
 - Fix incorrect grammar for USING in doc examples (#5)
+
+## dql (Python) 0.5.16 (2016-03-05)
+
 - Merge tag '0.5.16' (187a9e6)
 
 ## dql (Python) 0.5.15 (2016-02-16)
@@ -398,17 +401,11 @@ when those changes landed.
 
 - Merge tag '0.3.0' (6f906b2)
 
-## dql (Python) 0.2.1 (2014-05-12)
+## dql (Python) 0.2.1 (2013-12-05 to 2014-05-12)
 
 - Merge tag '0.2.1' (8fdc8df)
-
-## dql (Python) 0.2.0 (2014-03-11)
-
 - Updating documentation (6692a35)
 - Use bumpversion to manage version number (a4904f0)
-
-## dql (Python) unversioned (2013-12-05 to 2014-03-11)
-
 - Merge branch 'py3' (4ba9755)
 - Documentation improvements (bdf8b72)
 - Setting up for release (adaccee)
