@@ -7,6 +7,7 @@ when those changes landed.
 
 ## dqlrs 0.7.9-dev0 (2026-11-13)
 
+- Add dqlrs web --init-examples to the README banner (#199)
 - Color what the dqlrs command prints to the console (#196)
 
 ## dqlrs 0.7.8-dev0 (2026-11-12 to 2026-11-13)
