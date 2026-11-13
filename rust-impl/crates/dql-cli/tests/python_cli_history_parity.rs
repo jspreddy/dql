@@ -141,7 +141,7 @@ mod current_cli_surface {
     fn version_flag_prints_package_version() {
         let output = dql().arg("--version").output().unwrap();
         assert!(output.status.success());
-        assert_eq!(String::from_utf8(output.stdout).unwrap(), "0.7.7-dev0\n");
+        assert_eq!(String::from_utf8(output.stdout).unwrap(), "0.7.8-dev0\n");
     }
 
     #[test]
