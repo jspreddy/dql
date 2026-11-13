@@ -86,6 +86,8 @@ class Section:
     # key -> {display name: count}. key is a GitHub login or an email.
     names: dict[str, dict[str, int]] = field(default_factory=dict)
     logins: dict[str, str] = field(default_factory=dict)
+    # Keys whose author is an AI agent or a bot account.
+    agents: set[str] = field(default_factory=set)
 
 
 def git(root: Path, *args: str) -> str:
@@ -242,6 +244,20 @@ JSPREDDY_ALIASES = {
 }
 
 
+# AI agents and bot accounts go on the Agents line instead of Contributors.
+AGENT_EMAIL_DOMAINS = ("cursor.com", "anthropic.com", "openai.com")
+AGENT_NAME = re.compile(r"^(?:cursor|claude|copilot|github copilot|codex|devin|gemini|chatgpt)\b", re.IGNORECASE)
+
+
+def is_agent(name: str, email: str, login: str) -> bool:
+    domain = email.strip().lower().rpartition("@")[2]
+    if domain in AGENT_EMAIL_DOMAINS:
+        return True
+    if login.lower().endswith("[bot]") or name.strip().lower().endswith("[bot]"):
+        return True
+    return bool(AGENT_NAME.match(name.strip()))
+
+
 def github_login(email: str) -> str:
     match = GITHUB_NOREPLY.fullmatch(email.strip())
     return match.group(1) if match else ""
@@ -301,15 +317,27 @@ def add_people(section: Section, people: list[tuple[str, str]]) -> None:
         counts[name] = counts.get(name, 0) + 1
         if login:
             section.logins[key] = login
+        if is_agent(name, email, login):
+            section.agents.add(key)
 
 
-def contributor_lines(section: Section) -> list[str]:
-    rows: list[tuple[str, str]] = []
+def credit_lines(section: Section) -> list[str]:
+    """`Contributors:` (people) and `Agents:` (AI agents and bots), one comma-separated line each."""
+    people: dict[str, str] = {}
+    agents: dict[str, str] = {}
     for key, counts in section.names.items():
         name = sorted(counts, key=lambda item: (-counts[item], -len(item), item.casefold()))[0]
-        rows.append((name, section.logins.get(key, "")))
-    rows.sort(key=lambda item: item[0].casefold())
-    return [f"- {person_link(name, login)}" for name, login in rows]
+        login = section.logins.get(key, "")
+        bucket = agents if key in section.agents else people
+        # One person can commit from several emails; list each display name once,
+        # and keep the linked form when any of those emails has a GitHub login.
+        if login or name.casefold() not in bucket:
+            bucket[name.casefold()] = person_link(name, login)
+    lines = []
+    for label, bucket in (("Contributors", people), ("Agents", agents)):
+        if bucket:
+            lines.append(f"{label}: " + ", ".join(bucket[k] for k in sorted(bucket)))
+    return lines
 
 
 def person_link(name: str, login: str) -> str:
@@ -367,11 +395,11 @@ def render(ref: str, sections: list[Section]) -> str:
         dates = [entry.date for entry in section.entries]
         span = dates[-1] if dates[-1] == dates[0] else f"{dates[-1]} to {dates[0]}"
         out.append(f"\n## {section.heading} ({span})\n\n")
+        credits = credit_lines(section)
+        if credits:
+            # A trailing backslash is a Markdown line break, so each line renders on its own.
+            out.append("\\\n".join(credits) + "\n\n")
         out.extend(f"- {entry.text}\n" for entry in section.entries)
-        contributors = contributor_lines(section)
-        if contributors:
-            out.append("\nContributors:\n\n")
-            out.extend(f"{line}\n" for line in contributors)
     return "".join(out)
 
 

@@ -9,9 +9,11 @@ description: Regenerate, preview, or check CHANGELOG.md with the just recipes. `
 `origin/v-rust`, the target branch. Regenerate it with `just changelog`. Each line starts with a
 Markdown link to that commit's short hash, so GitHub shows it as a link. A merged pull request
 then gives its title and a link to the pull request; a commit made on `v-rust` gives its subject.
-Each version ends with a Contributors list: the authors of those changes, linked to a GitHub
-profile when the commit email is a GitHub noreply address. Sai Jonnala, saiphaninderreddy, and
-Sai Phaninder Reddy Jonnala are one person, linked to `jspreddy`.
+Right under each version heading, `Contributors:` lists the people who authored or co-authored
+those changes, and `Agents:` lists the AI agents and bots (Cursor, Claude, `[bot]` accounts), each
+as one comma-separated line. A name links to a GitHub profile when the commit email is a GitHub
+noreply address. Sai Jonnala, saiphaninderreddy, and Sai Phaninder Reddy Jonnala are one person,
+linked to `jspreddy`.
 `Bump version:` commits and lockfile sync commits are left out, and so are merged
 pull requests titled `Update the changelog ...`.
 
