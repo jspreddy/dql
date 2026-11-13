@@ -5,6 +5,8 @@ The changelog is generated, never edited by hand: run this again and it rewrites
 file from git. Entries are the first-parent history, newest first:
 
 - a merged pull request starts with a link to the merge commit, then its title and a link to the pull request;
+  pull requests merged before PULL_LINKS_SINCE keep a plain "#N", since those numbers belong
+  to a different repository;
 - a commit made on the branch starts with a link to that commit, then its subject;
 - each version lists the people who authored those changes, linked to their GitHub
   profile when the commit email is a GitHub noreply address;
@@ -50,6 +52,9 @@ SKIP_SUBJECTS = (
 )
 # Merged pull requests whose title matches are not entries.
 SKIP_TITLES = (re.compile(r"^Update the changelog\b"),)
+# Pull requests merged before this date were on a different repository, so a link to
+# /pull/N here would open the wrong pull request. They show a plain "#N" instead.
+PULL_LINKS_SINCE = "2024-10-01"
 MERGE_SUBJECT = re.compile(r"^Merge pull request #(\d+) from [^/\s]+/(\S+)")
 COAUTHOR = re.compile(r"^Co-authored-by:\s*(.+?)\s*<([^>]+?)>\s*$", re.IGNORECASE)
 GITHUB_NOREPLY = re.compile(r"(?:\d+\+)?([^@]+)@users\.noreply\.github\.com\Z", re.IGNORECASE)
@@ -227,9 +232,9 @@ def commit_link(base: str, record: Record) -> str:
     return f"[{record.short}]({base}/commit/{record.sha})"
 
 
-def pull_link(base: str, number: str) -> str:
+def pull_link(base: str, number: str, date: str) -> str:
     label = f"#{number}"
-    if not base:
+    if not base or date < PULL_LINKS_SINCE:
         return label
     return f"[{label}]({base}/pull/{number})"
 
@@ -362,7 +367,7 @@ def entry_text(record: Record, base: str) -> str | None:
         title = next((line.strip() for line in record.body.splitlines() if line.strip()), "")
         if any(pattern.match(title) for pattern in SKIP_TITLES):
             return None
-        return f"{link} {title or branch} ({pull_link(base, number)})"
+        return f"{link} {title or branch} ({pull_link(base, number, record.date)})"
     if any(pattern.match(record.subject) for pattern in (*SKIP_SUBJECTS, *SKIP_TITLES)):
         return None
     return f"{link} {record.subject}"

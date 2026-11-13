@@ -9,6 +9,8 @@ description: Regenerate, preview, or check CHANGELOG.md with the just recipes. `
 `origin/v-rust`, the target branch. Regenerate it with `just changelog`. Each line starts with a
 Markdown link to that commit's short hash, so GitHub shows it as a link. A merged pull request
 then gives its title and a link to the pull request; a commit made on `v-rust` gives its subject.
+Pull requests merged before 2024-10-01 (`PULL_LINKS_SINCE`) were on a different repository, so they
+show a plain `#N` with no link.
 Right under each version heading, `Contributors:` lists the people who authored or co-authored
 those changes, and `Agents:` lists the AI agents and bots (Cursor, Claude, `[bot]` accounts), each
 as one comma-separated line. A name links to a GitHub profile when the commit email is a GitHub
