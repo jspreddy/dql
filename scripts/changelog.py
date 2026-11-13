@@ -4,7 +4,7 @@
 The changelog is generated, never edited by hand: run this again and it rewrites the
 file from git. Entries are the first-parent history, newest first:
 
-- a merged pull request is one entry, its title from the merge commit body, with its number;
+- a merged pull request is one entry, its title from the merge commit body, with its number and short hash;
 - a commit made on the branch itself is one entry, its subject and short hash;
 - "Bump version:" commits and lockfile sync commits are left out, since the section
   heading names the version;
@@ -202,7 +202,7 @@ def entry_text(record: Record) -> str | None:
         title = next((line.strip() for line in record.body.splitlines() if line.strip()), "")
         if any(pattern.match(title) for pattern in SKIP_TITLES):
             return None
-        return f"{title or branch} (#{number})"
+        return f"{title or branch} (#{number}, {record.short})"
     if any(pattern.match(record.subject) for pattern in (*SKIP_SUBJECTS, *SKIP_TITLES)):
         return None
     return f"{record.subject} ({record.short})"

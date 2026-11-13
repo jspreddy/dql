@@ -7,36 +7,36 @@ next bump, or to Unreleased when no later bump exists.
 
 ## Unreleased (2026-11-13)
 
-- Add dqlrs web --init-examples to the README banner (#199)
+- Add dqlrs web --init-examples to the README banner (#199, 33eeec6)
 
 ## dqlrs 0.7.9-dev0 (2026-11-12 to 2026-11-13)
 
-- Color what the dqlrs command prints to the console (#196)
-- Fix the vulnerabilities cargo audit and pip-audit report (#187)
-- Add a filetype-report skill that renders a PNG of file types in git (#186)
-- Bump certifi from 2026.7.22 to 2026.10.18 in /notebook (#184)
-- Bump certifi from 2026.7.22 to 2026.10.18 in /notebook-tests (#181)
-- Bump certifi from 2025.7.14 to 2026.10.18 in /py-impl (#179)
-- github actions: Run just check and update the changelog (#175)
+- Color what the dqlrs command prints to the console (#196, 7923d09)
+- Fix the vulnerabilities cargo audit and pip-audit report (#187, 20e052d)
+- Add a filetype-report skill that renders a PNG of file types in git (#186, 55de3f6)
+- Bump certifi from 2026.7.22 to 2026.10.18 in /notebook (#184, b3945aa)
+- Bump certifi from 2026.7.22 to 2026.10.18 in /notebook-tests (#181, a0aa631)
+- Bump certifi from 2025.7.14 to 2026.10.18 in /py-impl (#179, e0f7f29)
+- github actions: Run just check and update the changelog (#175, 415f2dd)
 
 ## dqlrs 0.7.8-dev0 (2026-11-12)
 
-- Bump dqlrs to 0.7.8-dev0 and update the changelog (#173)
-- Organize Rust docs, add a README banner, refresh screenshots (#170)
+- Bump dqlrs to 0.7.8-dev0 and update the changelog (#173, cffaff7)
+- Organize Rust docs, add a README banner, refresh screenshots (#170, 91ef155)
 
 ## dqlrs 0.7.7-dev0 (2026-11-11 to 2026-11-12)
 
-- Make the listed-table search test create its own table (#172)
-- Use local and temp table definitions in the linter and structure view (#155)
+- Make the listed-table search test create its own table (#172, f0a8870)
+- Use local and temp table definitions in the linter and structure view (#155, 5c033fa)
 
 ## dqlrs 0.7.6-dev0 (2026-11-10 to 2026-11-11)
 
-- Bump Rust version: 0.7.5-dev0 → 0.7.6-dev0 (#153)
-- Keep a folder open when a pending folder click fires (#152)
-- Fix flaky file-tree drag and rename web tests (#147)
-- Fix two racy web tests (#146)
-- git-graph skill: always output a PNG (#145)
-- Add branching rule: v-rust is the target branch, use stacked PRs (#143)
+- Bump Rust version: 0.7.5-dev0 → 0.7.6-dev0 (#153, 19976a9)
+- Keep a folder open when a pending folder click fires (#152, 4dfee18)
+- Fix flaky file-tree drag and rename web tests (#147, e82478a)
+- Fix two racy web tests (#146, 125f2b4)
+- git-graph skill: always output a PNG (#145, acc9313)
+- Add branching rule: v-rust is the target branch, use stacked PRs (#143, 8fda720)
 - notebook-tests: pass --allow-root to JupyterLab when running as root (a4b2ccc)
 - Use per-file .md symlinks in .claude/rules for Cursor .mdc rules (652b4e8)
 - Expose .cursor/rules to Claude Code via .claude/rules symlink (7d07a86)
@@ -44,96 +44,96 @@ next bump, or to Unreleased when no later bump exists.
 
 ## dqlrs 0.7.5-dev0 (2026-11-08)
 
-- Replace browser confirm and prompt with in-app dialogs (#141)
-- Add Sai Phaninder Reddy Jonnala's copyright to the MIT notice (#138)
+- Replace browser confirm and prompt with in-app dialogs (#141, c611335)
+- Add Sai Phaninder Reddy Jonnala's copyright to the MIT notice (#138, 9ec5563)
 
 ## dqlrs 0.7.4-dev0 (2026-11-07 to 2026-11-08)
 
-- Let the git graph take a commit count and a cutoff (#136)
-- Write each git graph to a new SVG file (#135)
+- Let the git graph take a commit count and a cutoff (#136, bfab7d5)
+- Write each git graph to a new SVG file (#135, 9620ca2)
 
 ## dqlrs 0.7.3-dev0 (2026-11-07)
 
-- Wait for the tree event in the events stream test (#134)
-- Lint the open file on save, fetch, and open (#133)
+- Wait for the tree event in the events stream test (#134, ad7cce5)
+- Lint the open file on save, fetch, and open (#133, da931d7)
 
 ## dqlrs 0.7.2-dev0 (2026-11-01 to 2026-11-07)
 
-- Add LOCALTABLE and TEMPTABLE beside DynamoDB tables (#130)
-- Use Playwright screenshots for web UI evidence (#131)
-- Add Run file to the file context menu (#121)
-- Keep the API and MCP token across restarts (#120)
-- Add DynamoDB Local just aliases and dd-clean (#119)
+- Add LOCALTABLE and TEMPTABLE beside DynamoDB tables (#130, ee4f2e5)
+- Use Playwright screenshots for web UI evidence (#131, a311ec8)
+- Add Run file to the file context menu (#121, 7beba3c)
+- Keep the API and MCP token across restarts (#120, c34616b)
+- Add DynamoDB Local just aliases and dd-clean (#119, 8427878)
 
 ## dqlrs 0.7.1-dev0 (2026-10-22 to 2026-10-30)
 
-- Seal both disk caches with AES-256-GCM (#113)
-- Make just check report-only and add just fix (#110)
-- Keep the editor outline on the dragged lines (#109)
-- Say when just verify succeeded, and describe the failure (#108)
-- Load every table definition when the web server starts (#107)
-- Add Ctrl+\ to run the selection (#106)
+- Seal both disk caches with AES-256-GCM (#113, fb44c4c)
+- Make just check report-only and add just fix (#110, 7ae753e)
+- Keep the editor outline on the dragged lines (#109, 85ce1be)
+- Say when just verify succeeded, and describe the failure (#108, 2be49e9)
+- Load every table definition when the web server starts (#107, 7381e8a)
+- Add Ctrl+\ to run the selection (#106, c913a00)
 - rules (8c6660d)
 - guard rails specificity (a4aa3e5)
 - adding hooks and other guard rails for the examples directory (4db98d6)
-- Refresh query files changed elsewhere and show connected clients (#103)
-- Add a just-verify skill that reports headings and the exit code (#105)
-- Add an MCP help tool for DQL syntax (#104)
-- Refresh the day-binned work metrics page (#102)
-- Show local and global indexes as tables on the describe card (#101)
-- Fix the needless borrow flagged by rust-clippy (#100)
-- Keep the row view button at the left edge while a table scrolls sideways (#99)
-- Format the CREATE TABLE statement shown when describing a table (#98)
-- Keep table column headers fixed while rows scroll (#97)
-- Match LS, SHOW TABLES, and search against the table list (#96)
+- Refresh query files changed elsewhere and show connected clients (#103, 822a6c8)
+- Add a just-verify skill that reports headings and the exit code (#105, 2b9916f)
+- Add an MCP help tool for DQL syntax (#104, c95187c)
+- Refresh the day-binned work metrics page (#102, 8e71084)
+- Show local and global indexes as tables on the describe card (#101, 55abbb3)
+- Fix the needless borrow flagged by rust-clippy (#100, a241f8b)
+- Keep the row view button at the left edge while a table scrolls sideways (#99, 0e37845)
+- Format the CREATE TABLE statement shown when describing a table (#98, 327dfee)
+- Keep table column headers fixed while rows scroll (#97, 0b4fb7d)
+- Match LS, SHOW TABLES, and search against the table list (#96, 748af47)
 - skill + data (80f50b8)
-- Add rewrite metrics to the Rust docs (#84)
-- Drop the extra columns table ported from Python (#80)
+- Add rewrite metrics to the Rust docs (#84, 06906e8)
+- Drop the extra columns table ported from Python (#80, e8755d2)
 
 ## dqlrs 0.7.0-dev0 (2026-10-12 to 2026-10-22)
 
-- Match analyze scans to scan cards and show real RCU (#95)
-- Show the full structure sample and scroll sideways (#79)
-- Scroll clear so the REPL input returns to the top (#62)
-- Document installs from the v-rust branch (#56)
+- Match analyze scans to scan cards and show real RCU (#95, 2330f06)
+- Show the full structure sample and scroll sideways (#79, b663e01)
+- Scroll clear so the REPL input returns to the top (#62, cf624e4)
+- Document installs from the v-rust branch (#56, 2c5b407)
 - just check (73be2bf)
 - Reapply "Add a Stop control for a running web query." (8b13a78)
 
 ## dqlrs 0.6.5-dev1 (2026-10-10 to 2026-10-12)
 
-- Fix WHERE contains() errors on reserved fields (#54)
-- Soften key column borders to match the grid (#47)
-- Cursor/grouped changes (#46)
-- Fix duplicated editor imports that break the web UI (#40)
+- Fix WHERE contains() errors on reserved fields (#54, 0ad28b9)
+- Soften key column borders to match the grid (#47, 4077f4e)
+- Cursor/grouped changes (#46, 66b9682)
+- Fix duplicated editor imports that break the web UI (#40, df2f68c)
 - Merge branch 'sai/test' into v-rust (a213428)
 
 ## dqlrs 0.6.5-dev0 (2026-08-20 to 2026-10-10)
 
-- Add a floating play button for the current selection (#35)
+- Add a floating play button for the current selection (#35, 67bf93c)
 - test(black-box-tests): fail the run when teardown DROP exits non-zero (9de655a)
-- Sai/pexpect acceptance tests (#24)
-- Sai/test case file renames (#18)
-- Black-box SELECT with pk, sk, and extra filters (#16)
-- Print hierarchical Setup/Input/Expect/Teardown in -v (#15)
-- Black-box acceptance tests against DynamoDB Local (#14)
-- Rust Implementation (#13)
+- Sai/pexpect acceptance tests (#24, b4bc473)
+- Sai/test case file renames (#18, 87662dd)
+- Black-box SELECT with pk, sk, and extra filters (#16, cb4c107)
+- Print hierarchical Setup/Input/Expect/Teardown in -v (#15, b2b9d01)
+- Black-box acceptance tests against DynamoDB Local (#14, 481d531)
+- Rust Implementation (#13, f01415b)
 
 ## dql (Python) 0.6.4-dev12 (2026-07-02)
 
-- Use `uv` (#4)
+- Use `uv` (#4, 8bae5e4)
 
 ## dql (Python) 0.6.4-dev10 (2025-12-05)
 
-- Bug: Index auto-select when not specified. (#5)
+- Bug: Index auto-select when not specified. (#5, 377b54b)
 
 ## dql (Python) 0.6.4-dev9 (2024-12-19 to 2025-08-01)
 
-- 0.6.4-dev9: Rich format update + Bugfixes + CI (#3)
+- 0.6.4-dev9: Rich format update + Bugfixes + CI (#3, affbc43)
 - formatting of changes.rst file (7790973)
 
 ## dql (Python) 0.6.4-dev8 (2024-10-17 to 2024-12-19)
 
-- sai/dev (#2)
+- sai/dev (#2, fdde996)
 - github job changes (08fa8a1)
 - readme updates for v-next (1863d23)
 
@@ -194,14 +194,14 @@ next bump, or to Unreleased when no later bump exists.
 ## dql (Python) 0.6.2 (2021-12-07 to 2021-12-23)
 
 - doc: update readme installation instructions (d8c2862)
-- Adding clear command and excluding clear, exit from history (#43)
+- Adding clear command and excluding clear, exit from history (#43, e8c6aa7)
 - chore: configure workflow to auto-publish on tag (continues #42) (4951ffe)
 - doc: fix title underline in changelog (9383e32)
 - doc: update the build badge in the readme (50574c2)
 
 ## dql (Python) 0.6.2-dev0 (2021-12-07)
 
-- WIP: Fixing missing dependency (typing_extensions) + chores (#42)
+- WIP: Fixing missing dependency (typing_extensions) + chores (#42, 6850068)
 
 ## dql (Python) 0.6.1 (2021-01-24)
 
@@ -211,12 +211,12 @@ next bump, or to Unreleased when no later bump exists.
 
 ## dql (Python) 0.6.1-dev1 (2020-11-29 to 2021-01-24)
 
-- Feature: Retain query history across sessions. (#41)
+- Feature: Retain query history across sessions. (#41, 3750d37)
 - Add a note about PartiQL in the README (d37f07f)
 
 ## dql (Python) 0.6.1-dev0 (2020-10-18 to 2020-11-23)
 
-- Dynamo local path to be within project root + gitignore (#38)
+- Dynamo local path to be within project root + gitignore (#38, acb03f1)
 - Fix #36: Constraint functions should accept quoted field names (4706ad7)
 - Parser extracts values during parsing for conditional constraints (3c95123)
 - Change the parsing logic for constraint expressions (e245229)
@@ -234,23 +234,23 @@ next bump, or to Unreleased when no later bump exists.
 - Add a --json argument to output queries in line-by-line json (bfa6ea7)
 - Add new formatter for JSON output (6a30999)
 - Update changelog (33f9443)
-- CHANGES.rst: new line (#33)
+- CHANGES.rst: new line (#33, 4179c3f)
 - Fix tests and lint (bfaef96)
 - Fix #30: ls command accepts glob patterns (99d0216)
 - Leave the stack trace out of the parse exception display (3cb64a1)
 - Upgrade dynamo3 to pre-release version (aa86dd3)
-- Fixed #31: On-Demand tables cause ZeroDivisionError with ls (#32)
+- Fixed #31: On-Demand tables cause ZeroDivisionError with ls (#32, b41482c)
 - Enable mypy checking for untyped defs (550c86d)
 - Add mypy as a test requirement (374e736)
 - Make the mypy checking slightly stricter (5e73670)
 - Replace old assertItemsEqual method with assertCountEqual (667067c)
 - Add mypy checking in lint step (9e54053)
 - Use requirements files to manage test/dev dependencies (f997bff)
-- Better errors (#28)
+- Better errors (#28, 731b500)
 
 ## dql (Python) 0.5.29-dev0 (2020-08-20 to 2020-09-07)
 
-- Development environment updates + CI updates to run with proper java version (#27)
+- Development environment updates + CI updates to run with proper java version (#27, 66b0b4e)
 - Typo (265a3ab)
 - Remove python 2 code from the install.py file (192325b)
 - Remove python 2-to-3 compatibility code (59fe0eb)
@@ -311,7 +311,7 @@ next bump, or to Unreleased when no later bump exists.
 ## dql (Python) 0.5.17 (2016-05-03 to 2016-05-06)
 
 - Merge tag '0.5.17' (bb930d1)
-- Fix incorrect grammar for USING in doc examples (#5)
+- Fix incorrect grammar for USING in doc examples (#5, 56b1ca8)
 
 ## dql (Python) 0.5.16 (2016-03-05)
 

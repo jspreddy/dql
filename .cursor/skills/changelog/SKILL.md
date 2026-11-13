@@ -7,8 +7,8 @@ description: Regenerate, preview, or check CHANGELOG.md with the just recipes. `
 
 `CHANGELOG.md` at the repository root is generated from the first-parent history of
 `origin/v-rust`, the target branch. Regenerate it with `just changelog`. Each merged pull request is one
-entry (its title and number); each commit made on `v-rust` itself is one entry (its subject and
-short hash). `Bump version:` commits and lockfile sync commits are left out, and so are merged
+entry (its title, number, and short hash); each commit made on `v-rust` itself is one entry (its
+subject and short hash). `Bump version:` commits and lockfile sync commits are left out, and so are merged
 pull requests titled `Update the changelog ...`.
 
 A `Bump version: OLD → NEW` commit closes a section. Changes after that bump belong to the next
