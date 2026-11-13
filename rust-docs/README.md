@@ -88,7 +88,7 @@ dqlrs notebook           Start JupyterLab with a DQL (Rust) kernel (this binary)
     --mcp                MCP tools. Alone, stdio. With web, HTTP at /mcp
     --listen <ADDR>      With web, listen on loopback HOST:PORT (default 127.0.0.1:8765)
     --dir <DIR>          With web or --mcp, folder of .dql files (default: current directory)
-    --load-tables        With web, load every table and its definition (with progress)
+    --load-tables        With web, load every table definition (with progress)
                          before the server starts
     --init-examples      With web, after a confirm: git init an empty folder, copy the
                          examples in, and commit them
@@ -123,10 +123,10 @@ dqlrs web --init-examples --dir ~/dql-examples
 dqlrs web --load-tables -H localhost -p 8000
 ```
 
-`--load-tables` fetches the table list and every table's definition before the
-server starts. In a terminal it shows a progress bar with the count and the table
-being described, and one line per table with its keys and index count. A table
-that cannot be described gets a red cross; the server starts either way.
+`--load-tables` loads the table list and every table definition before the
+server starts. In a terminal it shows a progress bar and a count, then how many
+definitions loaded and how long it took. Only a table whose definition fails to
+load gets its own line, a red cross with the error; the server starts either way.
 
 `--init-examples` sets up an empty (or missing) folder before serving it. It
 checks that the folder is empty, that git is on `PATH`, and that git knows your

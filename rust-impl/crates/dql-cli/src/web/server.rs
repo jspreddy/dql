@@ -114,7 +114,7 @@ pub fn serve(
     };
     println!("DQLRS Web  http://{bound}");
     if let Some(count) = loaded {
-        println!("tables     {count} loaded");
+        println!("tables     {count} definitions loaded");
     }
     if mcp {
         let url = format!("http://{bound}/mcp");
@@ -135,26 +135,30 @@ pub fn serve(
     Ok(())
 }
 
-/// Load every table and its definition before the server starts, one line per table, and
-/// return how many were described. A failure is reported and the server starts anyway, as
-/// with a background load.
+/// Load every table definition before the server starts, with a progress bar, and return
+/// how many loaded. Only failures get their own line. A failure is reported and the server
+/// starts anyway, as with a background load.
 fn load_tables_with_progress(app: &Arc<App>, progress: &Progress) -> usize {
-    progress.say(&format!("Loading tables from {}", app.endpoint));
     let started = std::time::Instant::now();
-    let mut described = 0;
-    let result = progress.step("Loading tables", |detail| {
-        detail.set("listing");
+    let mut loaded = 0;
+    let label = format!("Loading table definitions from {}", app.endpoint);
+    let result = progress.step(&label, |detail| {
+        detail.set("listing tables");
         let mut failed = 0;
         let outcome = run_table_load(app, &mut |event| {
-            report_load_event(detail, event, &mut described, &mut failed)
+            report_load_event(detail, event, &mut loaded, &mut failed)
         });
         let seconds = started.elapsed().as_secs_f64();
         outcome.map_err(|err| color_eyre::eyre::eyre!(err))?;
-        let tables = if described == 1 { "table" } else { "tables" };
-        let summary = if failed == 0 {
-            format!("Loaded {described} {tables} in {seconds:.1}s")
+        let noun = if loaded == 1 {
+            "definition"
         } else {
-            format!("Loaded {described} {tables} in {seconds:.1}s, {failed} failed")
+            "definitions"
+        };
+        let summary = if failed == 0 {
+            format!("Loaded {loaded} table {noun} in {seconds:.1}s")
+        } else {
+            format!("Loaded {loaded} table {noun} in {seconds:.1}s, {failed} failed")
         };
         Ok(((), summary))
     });
@@ -162,10 +166,11 @@ fn load_tables_with_progress(app: &Arc<App>, progress: &Progress) -> usize {
         println!("    {err}");
     }
     progress.say("");
-    described
+    loaded
 }
 
-fn report_load_event(detail: &Detail, event: LoadEvent, described: &mut usize, failed: &mut usize) {
+/// Advance the bar. A table that fails to load gets a line of its own with the error.
+fn report_load_event(detail: &Detail, event: LoadEvent, loaded: &mut usize, failed: &mut usize) {
     match event {
         LoadEvent::Listed(total) => {
             detail.set_bar(0, total);
@@ -178,36 +183,17 @@ fn report_load_event(detail: &Detail, event: LoadEvent, described: &mut usize, f
             result,
         } => {
             match result {
-                Ok(Some(meta)) => {
-                    *described += 1;
-                    detail.log(true, name, &table_note(meta));
-                }
-                Ok(None) => detail.log(false, name, "no longer exists"),
+                Ok(Some(_)) => *loaded += 1,
+                // Dropped between the listing and the describe: nothing to load.
+                Ok(None) => {}
                 Err(err) => {
                     *failed += 1;
                     detail.log(false, name, &err);
                 }
             }
             detail.set_bar(index, total);
-            detail.set(name);
         }
     }
-}
-
-/// `id · sk  2 indexes`: the keys, then the index count when there are any.
-fn table_note(meta: &dql_models::TableMeta) -> String {
-    let mut note = meta.hash_key.clone();
-    if let Some(range) = &meta.range_key {
-        note.push_str(" · ");
-        note.push_str(range);
-    }
-    let indexes = meta.global_indexes.len() + meta.local_indexes.len();
-    match indexes {
-        0 => {}
-        1 => note.push_str("  1 index"),
-        n => note.push_str(&format!("  {n} indexes")),
-    }
-    note
 }
 
 /// The table list and every definition, through the workspace's disk cache when there is
