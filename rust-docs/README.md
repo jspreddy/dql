@@ -1,6 +1,6 @@
 # DQL Rust client (`dqlrs`)
 
-[![Rust CI](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml)
+[![Check](https://github.com/jspreddy/dql/actions/workflows/check.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/check.yml)
 
 User guide for the Rust implementation of DynamoDB Query Language. The CLI
 binary is `dqlrs`. Source lives in [`rust-impl/`](../rust-impl/). Maintainer
