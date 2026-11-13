@@ -91,6 +91,13 @@ pub struct CliArgs {
     pub init_examples: bool,
 
     #[arg(
+        long = "dynamodb",
+        value_name = "java|docker|skip",
+        help = "With `web --init-examples`, how to run DynamoDB Local instead of asking"
+    )]
+    pub dynamodb: Option<String>,
+
+    #[arg(
         long = "yes",
         help = "With `web --init-examples`, skip the confirmation"
     )]
@@ -116,6 +123,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--bind",
     "--listen",
     "--dir",
+    "--dynamodb",
 ];
 
 /// Remove a `web` subcommand word from `argv` and say whether it was there. The word can sit
@@ -169,6 +177,9 @@ pub fn help_text() -> String {
         "                           before the server starts",
         "      --init-examples      With web, after a confirm: git init an empty folder, copy the",
         "                           examples in, and commit them",
+        "      --dynamodb <java|docker|skip>",
+        "                           With web --init-examples, how to run DynamoDB Local (else it asks;",
+        "                           with --yes it skips)",
         "      --yes                With web --init-examples, skip the confirmation",
         "      --version            Print the version and exit",
         "",

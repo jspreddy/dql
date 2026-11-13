@@ -95,14 +95,20 @@ examples bundled with `dqlrs`, then serves it:
 
 ```bash
 mkdir dql-examples && cd dql-examples
-dqlrs web --init-examples -H localhost -p 8000
+dqlrs web --init-examples
 ```
 
 It checks that the folder is empty and that git is properly installed and ready
-to commit, shows what it will do, and asks before it changes anything. Then it
-runs `git init`, copies the examples (queries, data model walkthroughs, agent
-rules), and commits them as "Initialized dqlrs web examples". Pass `--yes` to
-skip the question, for example in a script.
+to commit. The examples run against DynamoDB Local, so it also looks for Java 17
+or newer and for Docker, and asks how to run DynamoDB Local: with Java, it
+downloads DynamoDB Local from AWS into `.dynamodb-local/`; with Docker, it uses
+the `docker-compose.yml` that comes with the examples. You can also skip that
+step. It shows what it will do and asks before it changes anything. Then it runs
+`git init`, copies the examples (queries, data model walkthroughs, agent rules),
+commits them as "Initialized dqlrs web examples", starts DynamoDB Local, and
+serves the folder against it. Pass `--yes` to skip the questions, for example in
+a script; add `--dynamodb java` or `--dynamodb docker` to set up DynamoDB Local
+too.
 
 ![dqlrs web UI query editor](screenshots/web/query.png)
 

@@ -49,6 +49,7 @@ const KNOWN_FLAGS: &[&str] = &[
     "--load-tables",
     "--init-examples",
     "--yes",
+    "--dynamodb",
     "--version",
     "-h",
     "--help",
@@ -82,6 +83,7 @@ pub fn run() -> color_eyre::Result<()> {
                     | "--bind"
                     | "--listen"
                     | "--dir"
+                    | "--dynamodb"
             ) {
                 args_iter.next();
             }
@@ -120,6 +122,15 @@ pub fn run() -> color_eyre::Result<()> {
     if args.yes && !args.init_examples {
         bail!("--yes requires `dqlrs web --init-examples`");
     }
+    if args.dynamodb.is_some() && !args.init_examples {
+        bail!("--dynamodb requires `dqlrs web --init-examples`");
+    }
+    let dynamodb = args
+        .dynamodb
+        .as_deref()
+        .map(str::parse::<web::dynamodb_local::Runtime>)
+        .transpose()
+        .map_err(|err| color_eyre::eyre::eyre!(err))?;
     if args.serve && args.command.is_some() {
         bail!("--serve cannot be used with -c/--command");
     }
@@ -157,8 +168,17 @@ pub fn run() -> color_eyre::Result<()> {
                 Some(dir) => cwd.join(dir),
                 None => cwd,
             };
-            if !web::init::run(&dir, args.yes)? {
+            let outcome = web::init::run(&dir, args.yes, dynamodb)?;
+            if !outcome.initialized {
                 return Ok(());
+            }
+            // The examples run against DynamoDB Local: serve against it unless -H chose a host.
+            if outcome.dynamodb_local && args.host.is_none() {
+                args.host = Some(web::dynamodb_local::HOST.to_string());
+                args.port = web::dynamodb_local::PORT;
+                set_default_env("AWS_ACCESS_KEY_ID", "fakeid");
+                set_default_env("AWS_SECRET_ACCESS_KEY", "fakekey");
+                set_default_env("AWS_EC2_METADATA_DISABLED", "true");
             }
         }
         // The workspace is --dir or the current directory; Session resolves it once.

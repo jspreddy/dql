@@ -1,2 +1,3 @@
 .cache/
 .dqlrs-cache/
+.dynamodb-local/

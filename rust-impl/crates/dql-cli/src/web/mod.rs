@@ -4,6 +4,7 @@
 //! A checkout of that directory is preferred at runtime so UI edits show up
 //! without a rebuild. The installed binary falls back to the embedded copy.
 
+pub(crate) mod dynamodb_local;
 mod environment;
 mod events;
 pub(crate) mod files;

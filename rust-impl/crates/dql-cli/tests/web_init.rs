@@ -91,6 +91,29 @@ fn init_examples_needs_the_web_subcommand_and_yes_needs_init_examples() {
 }
 
 #[test]
+fn dynamodb_needs_init_examples_and_a_known_runtime() {
+    let cwd = tempfile::tempdir().unwrap();
+    let output = run(cwd.path(), &["web", "--dynamodb", "java"]);
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("--dynamodb requires `dqlrs web --init-examples`"),
+        "{}",
+        stderr(&output)
+    );
+    let output = run(
+        cwd.path(),
+        &["web", "--init-examples", "--yes", "--dynamodb", "podman"],
+    );
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("--dynamodb takes java, docker, or skip, not 'podman'"),
+        "{}",
+        stderr(&output)
+    );
+    assert!(!cwd.path().join(".git").exists());
+}
+
+#[test]
 fn init_refuses_a_folder_that_is_not_empty() {
     let cwd = tempfile::tempdir().unwrap();
     std::fs::write(cwd.path().join("mine.dql"), "SCAN * FROM t;\n").unwrap();

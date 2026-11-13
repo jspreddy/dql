@@ -9,7 +9,7 @@ dqlrs web --init-examples --dir /path/to/new-folder
 just web
 ```
 
-`dqlrs web --init-examples` turns an empty folder into a git repository holding a copy of `examples/`, committed as "Initialized dqlrs web examples", after a confirm. The examples are bundled into the binary at build time.
+`dqlrs web --init-examples` turns an empty folder into a git repository holding a copy of `examples/`, committed as "Initialized dqlrs web examples", after a confirm. The examples are bundled into the binary at build time. It also offers to start DynamoDB Local, either by downloading it from AWS (Java 17 or newer) or with `examples/docker-compose.yml` (Docker).
 
 The server is the `dqlrs` binary. `just web` builds it, serves `examples/`, and starts DynamoDB Local when port 8000 is down. Extra arguments are passed through to `dqlrs-web/run.sh`: `just web -- --port 9000`. `just web -- --aws` talks to AWS and does not start Local. Set `DQLRS_BIN` if `dqlrs` is not on `PATH` or under `rust-impl/target`. `--listen` stays on loopback.
 

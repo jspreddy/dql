@@ -12,6 +12,7 @@ use std::process::Command;
 use color_eyre::eyre::{bail, eyre, WrapErr};
 use include_dir::{include_dir, Dir};
 
+use super::dynamodb_local::{self, Runtime};
 use super::progress::Progress;
 
 /// `dqlrs-web/examples`, staged by build.rs without ignored caches.
@@ -19,9 +20,19 @@ static EXAMPLES: Dir<'_> = include_dir!("$OUT_DIR/examples");
 
 pub(crate) const COMMIT_MESSAGE: &str = "Initialized dqlrs web examples";
 
-/// Run the checks, ask, then initialize `dir`. `yes` skips the question. Returns false when
-/// the user answers no; nothing was changed then.
-pub(crate) fn run(dir: &Path, yes: bool) -> color_eyre::Result<bool> {
+/// What `run` did.
+pub(crate) struct Outcome {
+    /// False when the user answered no; nothing was changed then.
+    pub(crate) initialized: bool,
+    /// DynamoDB Local answers on localhost:8000 (already running, or started here).
+    pub(crate) dynamodb_local: bool,
+}
+
+/// Run the checks, ask how to run DynamoDB Local and whether to go ahead, then initialize
+/// `dir` and set up DynamoDB Local. `yes` skips both questions; `dynamodb` (from
+/// `--dynamodb`) answers the first. With `yes` and no `dynamodb`, DynamoDB Local is skipped,
+/// so nothing is downloaded without a choice.
+pub(crate) fn run(dir: &Path, yes: bool, dynamodb: Option<Runtime>) -> color_eyre::Result<Outcome> {
     let progress = Progress::stdout();
     progress.step("Checking the folder", |_| {
         check_empty(dir).map(|()| ((), format!("{} is empty", dir.display())))
@@ -34,28 +45,51 @@ pub(crate) fn run(dir: &Path, yes: bool) -> color_eyre::Result<bool> {
             )
         })
     })?;
+    let detected = dynamodb_local::detect(&progress);
+    if !yes && !io::stdin().is_terminal() {
+        bail!(
+            "dqlrs web --init-examples asks before it changes {}; run it in a terminal, or pass --yes",
+            dir.display()
+        );
+    }
+    let stdin = io::stdin();
+    let runtime = dynamodb_local::choose(
+        &detected,
+        dynamodb,
+        !yes,
+        &mut stdin.lock(),
+        &mut io::stdout(),
+    )?;
+    if !detected.running && detected.available().is_empty() && dynamodb.is_none() {
+        progress.say(
+            "    The examples run against DynamoDB Local, which needs Java 17 or newer, or Docker.",
+        );
+        progress.say("    Install Docker and run `docker compose up -d` in this folder later, or install Java");
+        progress.say("    and run `dqlrs web --init-examples` in a new empty folder.");
+    }
     progress.say("");
-    let plan = plan_text(dir);
+    let plan = plan_text(dir, runtime);
     if !yes {
-        if !io::stdin().is_terminal() {
-            bail!(
-                "dqlrs web --init-examples asks before it changes {}; run it in a terminal, or pass --yes",
-                dir.display()
-            );
-        }
-        let stdin = io::stdin();
         if !confirm(&mut stdin.lock(), &mut io::stdout(), &plan)? {
             println!("Cancelled. {} was not changed.", dir.display());
-            return Ok(false);
+            return Ok(Outcome {
+                initialized: false,
+                dynamodb_local: false,
+            });
         }
     } else {
         print!("{plan}");
     }
     progress.say("");
     initialize(dir, &progress)?;
+    let dynamodb_local =
+        detected.running || dynamodb_local::set_up(dir, runtime, &detected, &progress);
     progress.say("");
     progress.say(&format!("Ready. Serving {}", dir.display()));
-    Ok(true)
+    Ok(Outcome {
+        initialized: true,
+        dynamodb_local,
+    })
 }
 
 /// The folder must be empty. A missing folder counts as empty; `initialize` creates it after
@@ -130,7 +164,7 @@ pub(crate) fn check_git() -> color_eyre::Result<GitInfo> {
 }
 
 /// What `--init-examples` is about to do, shown before the question.
-pub(crate) fn plan_text(dir: &Path) -> String {
+pub(crate) fn plan_text(dir: &Path, runtime: Runtime) -> String {
     let mut text = format!("dqlrs web --init-examples will set up {}:\n", dir.display());
     text.push_str("  1. Create a git repository (git init).\n");
     text.push_str(&format!(
@@ -138,6 +172,9 @@ pub(crate) fn plan_text(dir: &Path) -> String {
         example_file_count()
     ));
     text.push_str(&format!("  3. Commit them as \"{COMMIT_MESSAGE}\".\n"));
+    if let Some(line) = dynamodb_local::plan_line(runtime) {
+        text.push_str(&format!("  4. {line}\n"));
+    }
     text.push_str("Then the web UI serves this folder.\n");
     text
 }
@@ -241,6 +278,14 @@ fn make_executable(_path: &Path) -> color_eyre::Result<()> {
     Ok(())
 }
 
+/// A bundled example file's text, by path inside the examples folder.
+#[cfg(test)]
+pub(crate) fn bundled_file(path: &str) -> Option<&'static str> {
+    EXAMPLES
+        .get_file(path)
+        .and_then(|file| file.contents_utf8())
+}
+
 pub(crate) fn example_file_count() -> usize {
     fn count(dir: &Dir<'_>) -> usize {
         dir.files().count() + dir.dirs().map(count).sum::<usize>()
@@ -296,7 +341,7 @@ mod tests {
 
     #[test]
     fn the_plan_lists_each_step_and_the_commit_message() {
-        let plan = plan_text(Path::new("/work/demo"));
+        let plan = plan_text(Path::new("/work/demo"), Runtime::Skip);
         assert!(plan.contains("/work/demo"));
         assert!(plan.contains("1. Create a git repository"));
         assert!(plan.contains(&format!(
@@ -304,6 +349,17 @@ mod tests {
             example_file_count()
         )));
         assert!(plan.contains("3. Commit them as \"Initialized dqlrs web examples\""));
+        assert!(!plan.contains("4."));
+        let java = plan_text(Path::new("/work/demo"), Runtime::Java);
+        assert!(
+            java.contains("4. Download DynamoDB Local from AWS into .dynamodb-local/"),
+            "{java}"
+        );
+        let docker = plan_text(Path::new("/work/demo"), Runtime::Docker);
+        assert!(
+            docker.contains("4. Start DynamoDB Local with docker compose on localhost:8000."),
+            "{docker}"
+        );
     }
 
     #[test]

@@ -92,6 +92,8 @@ dqlrs notebook           Start JupyterLab with a DQL (Rust) kernel (this binary)
                          before the server starts
     --init-examples      With web, after a confirm: git init an empty folder, copy the
                          examples in, and commit them
+    --dynamodb <MODE>    With web --init-examples, run DynamoDB Local with java or docker,
+                         or skip (else it asks; with --yes it skips)
     --yes                With web --init-examples, skip the confirmation
     --version            Print the version and exit
     -h, --help           Print help
@@ -131,10 +133,22 @@ load gets its own line, a red cross with the error; the server starts either way
 
 `--init-examples` sets up an empty (or missing) folder before serving it. It
 checks that the folder is empty and that git is properly installed and ready to
-commit, prints the plan, and asks before it changes anything (`--yes` skips the
-question; without a terminal it is required). Then it runs `git init`, copies
+commit. For DynamoDB Local, which the examples run against, it checks for Java 17
+or newer and for a running Docker with compose, and notes when DynamoDB Local
+already answers on `localhost:8000`. It asks which to use (Java, Docker, or
+skip), prints the plan, and asks before it changes anything (`--yes` skips both
+questions and skips DynamoDB Local unless `--dynamodb java|docker` is given;
+without a terminal `--yes` is required). Then it runs `git init`, copies
 `dqlrs-web/examples` (bundled into the binary without its ignored caches), and
 commits it as "Initialized dqlrs web examples".
+
+DynamoDB Local is not bundled. With Java, `--init-examples` downloads AWS's
+`dynamodb_local_latest.tar.gz` into `.dynamodb-local/` (ignored by git), checks
+it against AWS's published SHA-256, unpacks it, and starts it in the background
+with a log in `.dynamodb-local/dynamodb-local.log`. With Docker, it runs
+`docker compose up -d` with the examples' `docker-compose.yml`
+(`amazon/dynamodb-local`, data in a named volume). Either way it waits for
+`localhost:8000`, and when no `-H` was given the web UI serves against it.
 
 From a checkout, `just web` builds `dqlrs`, starts DynamoDB Local when port 8000
 is down, and opens the UI on `dqlrs-web/examples`. Details:

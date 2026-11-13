@@ -34,8 +34,8 @@ pub(crate) struct Progress {
 #[derive(Clone)]
 pub(crate) struct Detail {
     text: Arc<Mutex<String>>,
-    /// `(done, total)` for a bar drawn before the text.
-    bar: Arc<Mutex<Option<(usize, usize)>>>,
+    /// `(done, total, show the count)` for a bar drawn before the text.
+    bar: Arc<Mutex<Option<(usize, usize, bool)>>>,
     mode: Mode,
     /// Held while writing, so the spinner and logged lines never interleave.
     out: Arc<Mutex<()>>,
@@ -60,11 +60,18 @@ impl Detail {
     /// Show a bar for `done` of `total` before the detail text.
     pub(crate) fn set_bar(&self, done: usize, total: usize) {
         if let Ok(mut bar) = self.bar.lock() {
-            *bar = Some((done, total));
+            *bar = Some((done, total, true));
         }
     }
 
-    fn get_bar(&self) -> Option<(usize, usize)> {
+    /// A bar without the `done/total` count, for when the text says it better (megabytes).
+    pub(crate) fn set_bar_only(&self, done: usize, total: usize) {
+        if let Ok(mut bar) = self.bar.lock() {
+            *bar = Some((done, total, false));
+        }
+    }
+
+    fn get_bar(&self) -> Option<(usize, usize, bool)> {
         self.bar.lock().ok().and_then(|bar| *bar)
     }
 
@@ -124,14 +131,19 @@ fn bar(done: usize, total: usize, width: usize) -> String {
     format!("{}{}", "█".repeat(filled), "░".repeat(width - filled))
 }
 
-/// The bar in color: done cells cyan, the rest dim, then `done/total`.
-fn painted_bar(done: usize, total: usize, color: bool) -> String {
+/// The bar in color: done cells cyan, the rest dim, then `done/total` when `count`.
+fn painted_bar(done: usize, total: usize, count: bool, color: bool) -> String {
     let full = filled(done, total, BAR_WIDTH);
-    format!(
-        "{}{}  {done}/{total}",
+    let bar = format!(
+        "{}{}",
         paint(&"━".repeat(full), "36", color),
         paint(&"━".repeat(BAR_WIDTH - full), "2;37", color)
-    )
+    );
+    if count {
+        format!("{bar}  {done}/{total}")
+    } else {
+        bar
+    }
 }
 
 impl Progress {
@@ -175,6 +187,22 @@ impl Progress {
         result.map(|(value, _)| value)
     }
 
+    /// A finished check that found something missing but not fatal: a dimmed `–` and `text`.
+    pub(crate) fn note(&self, text: &str) {
+        match self.mode {
+            Mode::Quiet => {}
+            Mode::Plain => println!("  – {text}"),
+            Mode::Live { color } => {
+                println!("  {} {}", paint("–", "33", color), paint(text, "2", color))
+            }
+        }
+    }
+
+    /// A check that passed without a spinner: a green check and `text`.
+    pub(crate) fn say_check(&self, text: &str) {
+        self.line(true, text);
+    }
+
     /// A blank line or a heading between groups of steps.
     pub(crate) fn say(&self, text: &str) {
         if self.mode != Mode::Quiet {
@@ -213,9 +241,9 @@ impl Spinner {
                 let guard = detail.out.lock();
                 let text = detail.get();
                 let mut extra = String::new();
-                if let Some((done, total)) = detail.get_bar() {
+                if let Some((done, total, count)) = detail.get_bar() {
                     extra.push_str("  ");
-                    extra.push_str(&painted_bar(done, total, color));
+                    extra.push_str(&painted_bar(done, total, count, color));
                 }
                 if !text.is_empty() {
                     extra.push_str("  ");
