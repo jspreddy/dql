@@ -1,8 +1,6 @@
 # Maintainer notes
 
-[![Python CI](https://github.com/jspreddy/dql/actions/workflows/python-workflows.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/python-workflows.yml)
-
-[![Rust CI](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml)
+[![Check](https://github.com/jspreddy/dql/actions/workflows/check.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/check.yml)
 
 | Path | Contents |
 | --- | --- |

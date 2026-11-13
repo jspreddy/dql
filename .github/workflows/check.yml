@@ -1,0 +1,45 @@
+name: Check
+
+# Run `just check` (Python and Rust lint, no edits) on every merge into v-rust.
+on:
+  push:
+    branches: [v-rust]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # GitHub's own checkout, pinned to a commit (the Actions policy requires pinned actions).
+      # The job only reads, so it does not keep the token in .git/config.
+      - name: Check out repository code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install just and uv
+        run: |
+          pipx install rust-just
+          pipx install uv
+          just --version
+          uv --version
+
+      # rust-impl/rust-toolchain.toml selects stable. rustfmt and clippy are what `just check` runs.
+      - name: Install Rust components
+        working-directory: rust-impl
+        run: |
+          rustup show active-toolchain
+          rustup component add rustfmt clippy
+
+      - name: just check
+        env:
+          NO_COLOR: "1"
+        run: just check

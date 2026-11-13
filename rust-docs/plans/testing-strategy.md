@@ -153,13 +153,14 @@ an installed CLI behaves like a user expects against Local.
 
 ## CI gates
 
-Implemented in GitHub Actions (``.github/workflows/rust-workflows.yml``):
+GitHub Actions (`.github/workflows/check.yml`) runs `just check` on every merge into
+`v-rust`:
 
+- Python lint (`py-sync`, `py-lint`)
 - `cargo fmt --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo test --workspace`
-- DynamoDB Local integration suite
-- Binary smoke tests for `--version`, `-c`, `--json`, and local endpoint flags (`rust-impl/scripts/smoke_test.sh`)
+
+Tests, the DynamoDB Local suites, and the binary smoke tests run locally with `just verify`.
 
 ## Manual validation checklist
 
