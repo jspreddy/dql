@@ -1,6 +1,6 @@
 # DQL Rust Implementation
 
-[![Rust CI](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/rust-workflows.yml)
+[![Check](https://github.com/jspreddy/dql/actions/workflows/check.yml/badge.svg)](https://github.com/jspreddy/dql/actions/workflows/check.yml)
 
 Maintainer guide for the Cargo workspace that builds `dqlrs`. User install,
 flags, and examples: [`rust-docs/`](../rust-docs/). Python-to-Rust differences:
@@ -84,8 +84,8 @@ Harness: `crates/dql-engine/tests/support/mod.rs` (`LocalHarness`).
 
 ## Toolchain
 
-See `rust-toolchain.toml`. CI: `.github/workflows/rust-workflows.yml` (fmt,
-clippy, tests, smoke).
+See `rust-toolchain.toml`. CI: `.github/workflows/check.yml` runs `just check`
+(Python and Rust lint) on every merge into `v-rust`.
 
 ## Versioning
 

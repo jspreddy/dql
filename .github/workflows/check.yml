@@ -1,0 +1,51 @@
+name: Check
+
+# Run `just check` (Python and Rust lint, no edits) on every merge into v-rust.
+on:
+  push:
+    branches: [v-rust]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Plain git, no `uses:`. The repository's Actions policy rejects every action, including
+      # actions/checkout, and a run that names one fails at startup before any job runs.
+      - name: Check out repository code
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          git init -q .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" fetch -q --depth 1 origin "$GITHUB_SHA"
+          git checkout -q --detach FETCH_HEAD
+          git log --oneline -1
+
+      - name: Install just and uv
+        run: |
+          pipx install rust-just
+          pipx install uv
+          just --version
+          uv --version
+
+      # rust-impl/rust-toolchain.toml selects stable. rustfmt and clippy are what `just check` runs.
+      - name: Install Rust components
+        working-directory: rust-impl
+        run: |
+          rustup show active-toolchain
+          rustup component add rustfmt clippy
+
+      - name: just check
+        env:
+          NO_COLOR: "1"
+        run: just check
