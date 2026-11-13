@@ -88,7 +88,7 @@ fn install_packages(python: &Path) -> color_eyre::Result<()> {
         let status = Command::new(uv)
             .args(["pip", "install", "--python"])
             .arg(python)
-            .args(["jupyterlab>=4.2,<5", "ipykernel>=6.29"])
+            .args(["jupyterlab>=4.6.4,<5", "ipykernel>=6.29"])
             .env("UV_NO_PROJECT", "1")
             .current_dir(
                 python
@@ -109,7 +109,7 @@ fn install_packages(python: &Path) -> color_eyre::Result<()> {
             "pip",
             "install",
             "--disable-pip-version-check",
-            "jupyterlab>=4.2,<5",
+            "jupyterlab>=4.6.4,<5",
             "ipykernel>=6.29",
         ])
         .status()
