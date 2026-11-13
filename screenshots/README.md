@@ -13,9 +13,9 @@ Local.
 | [`web/query.png`](web/query.png) | `dqlrs web` query editor with a result (dark theme) |
 | [`web/explain.png`](web/explain.png) | `dqlrs web` explain plan card (dark theme) |
 | [`web/tables.png`](web/tables.png) | `dqlrs web` table browser (dark theme) |
-| [`notebook/cosmos.png`](notebook/cosmos.png) | `dqlrs notebook`: a DQL (Rust) cell and its table |
-| [`notebook/getting-started.png`](notebook/getting-started.png) | `dqlrs notebook`: the starter notebook it writes |
-| [`notebook/launcher.png`](notebook/launcher.png) | `dqlrs notebook`: launcher with the DQL (Rust) kernel |
+| [`notebook/cosmos.png`](notebook/cosmos.png) | `dqlrs notebook`: a DQL (Rust) cell and its table (JupyterLab Dark) |
+| [`notebook/getting-started.png`](notebook/getting-started.png) | `dqlrs notebook`: the starter notebook it writes (JupyterLab Dark) |
+| [`notebook/launcher.png`](notebook/launcher.png) | `dqlrs notebook`: launcher with the DQL (Rust) kernel (JupyterLab Dark) |
 
 ## Recapture
 
@@ -48,7 +48,9 @@ terrestrial filter query. The current shots were captured from tmux
 **Notebook.** From an empty folder that holds only `cosmos.ipynb` (a heading and
 the Sol planets query), run `dqlrs notebook --local`. Open
 `getting-started-dqlrs.ipynb` and `cosmos.ipynb`, run the query cell, and
-capture Lab at 1440×900 with the news toast dismissed.
+capture Lab at 1440×900 with the news toast dismissed. Switch to
+**Settings → Theme → JupyterLab Dark** first; start Lab with a fresh
+`JUPYTERLAB_SETTINGS_DIR` so an earlier theme choice does not carry over.
 
 **Banner.** [`banner/banner.html`](banner/banner.html) is the source. It uses
 the dark tokens from `dqlrs-web/static/theme.css` and the vendored Material
