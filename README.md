@@ -9,9 +9,12 @@ ways to work: a terminal UI, a browser editor, and a JupyterLab notebook. Your
 AI agent can use the same workspace over MCP.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/HEAD/scripts/rust-install.sh | sh
+cargo install --git https://github.com/jspreddy/dql.git --branch v-rust \
+  --locked --root ~/.local dql-cli
 dqlrs web            # open http://127.0.0.1:8765, using your usual AWS credentials
 ```
+
+Needs [Rust/Cargo](https://rustup.rs/). The binary lands in `~/.local/bin`.
 
 Add `-H localhost -p 8000` to any command to use
 [DynamoDB Local](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html)
@@ -130,17 +133,12 @@ In the REPL: `help` or `help <statement>`.
 
 ## Install
 
-Install from the **`v-rust`** branch on GitHub.
+Both clients install straight from the **`v-rust`** branch on GitHub. There
+are no prebuilt binaries or releases yet.
 
 ### Rust `dqlrs` (recommended)
 
-Prebuilt binary from [GitHub releases](https://github.com/jspreddy/dql/releases):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/HEAD/scripts/rust-install.sh | sh
-```
-
-Or build it with [Rust/Cargo](https://rustup.rs/):
+Requires [Rust/Cargo](https://rustup.rs/). This builds `dqlrs` from source:
 
 ```bash
 cargo install --git https://github.com/jspreddy/dql.git --branch v-rust \
@@ -254,6 +252,6 @@ original CLI and for places Rust is not a fit. Both speak the same DQL language
 and can be installed side by side.
 
 This repository ([jspreddy/dql](https://github.com/jspreddy/dql)) is a fork of
-[stevearc/dql](https://github.com/stevearc/dql). Use this repo for source,
-issues, and GitHub releases. The PyPI package `dql` and
+[stevearc/dql](https://github.com/stevearc/dql). Use this repo for source
+and issues. The PyPI package `dql` and
 [Read the Docs](http://dql.readthedocs.org/) still ship from upstream.

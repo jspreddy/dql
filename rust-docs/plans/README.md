@@ -32,10 +32,12 @@ Keep these current when the code changes.
 ## Open: design debt (`todo/`)
 
 Phases 1–6 are implemented in `rust-impl/`. A SOLID / code-smell review of that
-tree produced these follow-ups. None are done yet.
+tree produced most of these follow-ups; `installers.md` covers packaging. None
+are done yet.
 
 | Todo | Priority | Focus |
 | --- | --- | --- |
+| [`installers.md`](todo/installers.md) | High | Prebuilt binaries, CI releases, and an installer that works (README offers git-URL installs only until then) |
 | [`split_monolith_modules.md`](todo/split_monolith_modules.md) | High | Split god files (`parser`, `expr`, `models`, `engine`) |
 | [`typed_expression_ast.md`](todo/typed_expression_ast.md) | High | Typed selection/update AST end-to-end |
 | [`engine_backend_boundaries.md`](todo/engine_backend_boundaries.md) | High | Slim `Engine` / `DynamoBackend`, plan-aware SDK delete, typed AWS errors |

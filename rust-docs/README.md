@@ -23,11 +23,14 @@ This repository ([jspreddy/dql](https://github.com/jspreddy/dql)) is a fork of
 
 ## Install
 
-Download a prebuilt binary from
-[GitHub releases](https://github.com/jspreddy/dql/releases):
+There are no prebuilt binaries or GitHub releases yet. Build from source with
+[Rust/Cargo](https://rustup.rs/).
+
+**From the git URL** (no checkout needed):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jspreddy/dql/HEAD/scripts/rust-install.sh | sh
+cargo install --git https://github.com/jspreddy/dql.git --branch v-rust \
+  --locked --root ~/.local dql-cli
 ```
 
 **Local release build:**
@@ -50,9 +53,6 @@ cargo install --path crates/dql-cli --locked --root ~/.local
 ```
 
 The binary is `~/.local/bin/dqlrs`. Add that directory to your `PATH` if needed.
-
-Override the GitHub repo with `DQL_REPO=owner/repo` when using the install
-script.
 
 ## Connect
 
