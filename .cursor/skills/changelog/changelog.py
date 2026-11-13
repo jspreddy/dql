@@ -6,7 +6,9 @@ from git. Entries are the first-parent history of the branch, newest first:
 
 - a merged pull request is one entry, its title from the merge commit body, with its number;
 - a commit made on the branch itself is one entry, its subject and short hash;
-- version bump and lockfile sync commits are left out, since each section names its version.
+- version bump and lockfile sync commits are left out, since each section names its version;
+- changelog updates ("Update the changelog ...") are left out, so the update the changelog
+  workflow merges after each pull request does not make the file stale again.
 
 Sections group entries by the version in the tree at that commit: dqlrs (rust-impl) once the
 Rust workspace exists, dql (py-impl) before it. A version bump that arrives inside a pull
@@ -40,6 +42,8 @@ SKIP_SUBJECTS = (
     re.compile(r"^Bump version: "),
     re.compile(r"^Sync (Cargo\.lock|lockfile) with "),
 )
+# Merged pull requests whose title matches are not entries.
+SKIP_TITLES = (re.compile(r"^Update the changelog\b"),)
 MERGE_SUBJECT = re.compile(r"^Merge pull request #(\d+) from [^/\s]+/(\S+)")
 HEADER = """# Changelog
 
@@ -105,8 +109,10 @@ def entry_text(subject: str, body: str, sha: str) -> str | None:
     if merge:
         number, branch = merge.groups()
         title = next((line.strip() for line in body.splitlines() if line.strip()), "")
+        if any(pattern.match(title) for pattern in SKIP_TITLES):
+            return None
         return f"{title or branch} (#{number})"
-    if any(pattern.match(subject) for pattern in SKIP_SUBJECTS):
+    if any(pattern.match(subject) for pattern in (*SKIP_SUBJECTS, *SKIP_TITLES)):
         return None
     return f"{subject} ({sha})"
 
