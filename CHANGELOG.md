@@ -7,6 +7,7 @@ when those changes landed.
 
 ## dqlrs 0.7.8-dev0 (2026-11-12)
 
+- Add a filetype-report skill that renders a PNG of file types in git (#186)
 - Bump certifi from 2026.7.22 to 2026.10.18 in /notebook (#184)
 - Bump certifi from 2026.7.22 to 2026.10.18 in /notebook-tests (#181)
 - Bump certifi from 2025.7.14 to 2026.10.18 in /py-impl (#179)
