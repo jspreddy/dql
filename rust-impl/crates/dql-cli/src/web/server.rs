@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 
 use super::files::{self, PathError};
 use super::presence::{self, Kind};
+use super::progress::{Detail, Progress};
 use super::query_cache;
 use super::shape::{
     changed_tables, column_order, explain_index, parse_table_shape, read_query, safe_table_name,
@@ -27,6 +28,7 @@ use super::shape::{
 use super::structure;
 use crate::serve::protocol::{envelope_from_error, ServeEnvelope};
 use crate::session::Session;
+use crate::table_cache::LoadEvent;
 
 static ASSETS: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../../dqlrs-web/static");
 
@@ -101,12 +103,18 @@ pub fn serve(
     let token = crate::api_token::load()?;
     let app = Arc::new(App::new(session, root, mcp, token));
     super::events::start(&app);
+    // Bind first so a busy port fails before a long table load. Connections wait in the
+    // backlog until `accept` runs.
     let listener = TcpListener::bind(listen)?;
     let bound = listener.local_addr().unwrap_or(listen);
+    let loaded = if load_tables {
+        Some(load_tables_with_progress(&app, &Progress::stdout()))
+    } else {
+        None
+    };
     println!("DQLRS Web  http://{bound}");
-    if load_tables {
-        begin_table_load(&app);
-        println!("tables     loading in the background");
+    if let Some(count) = loaded {
+        println!("tables     {count} loaded");
     }
     if mcp {
         let url = format!("http://{bound}/mcp");
@@ -127,37 +135,119 @@ pub fn serve(
     Ok(())
 }
 
-fn begin_table_load(app: &Arc<App>) {
+/// Load every table and its definition before the server starts, one line per table, and
+/// return how many were described. A failure is reported and the server starts anyway, as
+/// with a background load.
+fn load_tables_with_progress(app: &Arc<App>, progress: &Progress) -> usize {
+    progress.say(&format!("Loading tables from {}", app.endpoint));
+    let started = std::time::Instant::now();
+    let mut described = 0;
+    let result = progress.step("Loading tables", |detail| {
+        detail.set("listing");
+        let mut failed = 0;
+        let outcome = run_table_load(app, &mut |event| {
+            report_load_event(detail, event, &mut described, &mut failed)
+        });
+        let seconds = started.elapsed().as_secs_f64();
+        outcome.map_err(|err| color_eyre::eyre::eyre!(err))?;
+        let tables = if described == 1 { "table" } else { "tables" };
+        let summary = if failed == 0 {
+            format!("Loaded {described} {tables} in {seconds:.1}s")
+        } else {
+            format!("Loaded {described} {tables} in {seconds:.1}s, {failed} failed")
+        };
+        Ok(((), summary))
+    });
+    if let Err(err) = result {
+        println!("    {err}");
+    }
+    progress.say("");
+    described
+}
+
+fn report_load_event(detail: &Detail, event: LoadEvent, described: &mut usize, failed: &mut usize) {
+    match event {
+        LoadEvent::Listed(total) => {
+            detail.set_bar(0, total);
+            detail.set("");
+        }
+        LoadEvent::Described {
+            index,
+            total,
+            name,
+            result,
+        } => {
+            match result {
+                Ok(Some(meta)) => {
+                    *described += 1;
+                    detail.log(true, name, &table_note(meta));
+                }
+                Ok(None) => detail.log(false, name, "no longer exists"),
+                Err(err) => {
+                    *failed += 1;
+                    detail.log(false, name, &err);
+                }
+            }
+            detail.set_bar(index, total);
+            detail.set(name);
+        }
+    }
+}
+
+/// `id · sk  2 indexes`: the keys, then the index count when there are any.
+fn table_note(meta: &dql_models::TableMeta) -> String {
+    let mut note = meta.hash_key.clone();
+    if let Some(range) = &meta.range_key {
+        note.push_str(" · ");
+        note.push_str(range);
+    }
+    let indexes = meta.global_indexes.len() + meta.local_indexes.len();
+    match indexes {
+        0 => {}
+        1 => note.push_str("  1 index"),
+        n => note.push_str(&format!("  {n} indexes")),
+    }
+    note
+}
+
+/// The table list and every definition, through the workspace's disk cache when there is
+/// one, else through the session.
+fn run_table_load(app: &Arc<App>, report: &mut dyn FnMut(LoadEvent)) -> Result<(), String> {
     let disk = {
         let state = lock_state(app);
         state.session.table_disk.clone()
     };
-    if let Some(cache) = disk {
-        cache.start_load();
-        return;
+    match disk {
+        Some(cache) => cache.load_with(report),
+        None => load_session_tables(app, report),
     }
-    let app = Arc::clone(app);
-    thread::spawn(move || load_session_tables(app));
 }
 
-fn load_session_tables(app: Arc<App>) {
+fn load_session_tables(app: &Arc<App>, report: &mut dyn FnMut(LoadEvent)) -> Result<(), String> {
     let names = {
-        let mut state = lock_state(&app);
-        match state.session.engine.cached_table_names(true) {
-            Ok(names) => names,
-            Err(err) => {
-                eprintln!("dqlrs: load tables: {err}");
-                return;
-            }
-        }
+        let mut state = lock_state(app);
+        state
+            .session
+            .engine
+            .cached_table_names(true)
+            .map_err(|err| err.to_string())?
     };
-    for name in names {
-        let mut state = lock_state(&app);
-        match state.session.engine.describe(&name, false) {
-            Ok(_) => {}
-            Err(err) => eprintln!("dqlrs: load tables: {name}: {err}"),
-        }
+    report(LoadEvent::Listed(names.len()));
+    for (index, name) in names.iter().enumerate() {
+        let mut state = lock_state(app);
+        let described = state.session.engine.describe(name, false);
+        let result = match &described {
+            Ok(meta) => Ok(meta.as_ref()),
+            Err(err) => Err(err.to_string()),
+        };
+        report(LoadEvent::Described {
+            index: index + 1,
+            total: names.len(),
+            name,
+            result,
+        });
     }
+    Ok(())
 }
 
 fn accept(app: Arc<App>, listener: TcpListener, stop: Arc<AtomicBool>) {
@@ -2145,7 +2235,25 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             assert!(created.ok, "{created:?}");
             state.session.engine.set_table_cache(None);
         }
-        load_session_tables(Arc::clone(&app));
+        let mut events = Vec::new();
+        load_session_tables(&app, &mut |event| {
+            events.push(match event {
+                LoadEvent::Listed(total) => format!("listed {total}"),
+                LoadEvent::Described {
+                    index,
+                    total,
+                    name,
+                    result,
+                } => {
+                    format!(
+                        "{index}/{total} {name} {}",
+                        result.map(|meta| meta.is_some()).unwrap_or(false)
+                    )
+                }
+            })
+        })
+        .unwrap();
+        assert_eq!(events, ["listed 2", "1/2 comments true", "2/2 posts true"]);
         let mut state = lock_state(&app);
         let posts = state
             .session

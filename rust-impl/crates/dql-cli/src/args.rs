@@ -80,7 +80,7 @@ pub struct CliArgs {
 
     #[arg(
         long = "load-tables",
-        help = "With `web`, load every table and its definition in the background"
+        help = "With `web`, load every table and its definition, with progress, before the server starts"
     )]
     pub load_tables: bool,
 
@@ -165,7 +165,8 @@ pub fn help_text() -> String {
         "      --mcp                MCP tools. Alone, stdio. With web, HTTP at /mcp",
         "      --listen <ADDR>      With web, listen on loopback HOST:PORT (default 127.0.0.1:8765)",
         "      --dir <DIR>          With web or --mcp, folder of .dql files (default: current directory)",
-        "      --load-tables        With web, load every table and its definition in the background",
+        "      --load-tables        With web, load every table and its definition (with progress)",
+        "                           before the server starts",
         "      --init-examples      With web, after a confirm: git init an empty folder, copy the",
         "                           examples in, and commit them",
         "      --yes                With web --init-examples, skip the confirmation",
