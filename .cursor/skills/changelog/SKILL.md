@@ -13,7 +13,7 @@ Right under each version heading, `Contributors:` lists the people who authored 
 those changes, and `Agents:` lists the AI agents and bots (Cursor, Claude, `[bot]` accounts), each
 as one comma-separated line. A name links to a GitHub profile when the commit email is a GitHub
 noreply address. Sai Jonnala, saiphaninderreddy, and Sai Phaninder Reddy Jonnala are one person,
-linked to `jspreddy`.
+always shown as Sai Jonnala and linked to `jspreddy`.
 `Bump version:` commits and lockfile sync commits are left out, and so are merged
 pull requests titled `Update the changelog ...`.
 

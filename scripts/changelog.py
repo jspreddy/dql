@@ -234,8 +234,10 @@ def pull_link(base: str, number: str) -> str:
     return f"[{label}]({base}/pull/{number})"
 
 
-# Git author names and logins for https://github.com/jspreddy.
+# Git author names and logins for https://github.com/jspreddy. Every one of them is shown
+# as JSPREDDY_NAME and linked to the JSPREDDY GitHub user.
 JSPREDDY = "jspreddy"
+JSPREDDY_NAME = "Sai Jonnala"
 JSPREDDY_ALIASES = {
     "sai jonnala",
     "saiphaninderreddy",
@@ -310,6 +312,8 @@ def entry_people(root: Path, record: Record) -> list[tuple[str, str]]:
 def add_people(section: Section, people: list[tuple[str, str]]) -> None:
     for name, email in people:
         login = mapped_login(name, email)
+        if login == JSPREDDY:
+            name = JSPREDDY_NAME
         key = login.lower() if login else email.lower()
         if not key:
             key = name.casefold()

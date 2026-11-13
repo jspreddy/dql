@@ -59,7 +59,7 @@ Agents: Claude Opus 5.5, Cursor Agent
 
 ## dqlrs 0.7.5-dev0 (2026-11-08)
 
-Contributors: [saiphaninderreddy](https://github.com/jspreddy)\
+Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [c611335](https://github.com/jspreddy/dql/commit/c611335736bfc1ef12d38ce3860c8a35e1b4eb39) Replace browser confirm and prompt with in-app dialogs ([#141](https://github.com/jspreddy/dql/pull/141))
@@ -67,7 +67,7 @@ Agents: Cursor Agent
 
 ## dqlrs 0.7.4-dev0 (2026-11-07 to 2026-11-08)
 
-Contributors: [saiphaninderreddy](https://github.com/jspreddy)\
+Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [bfab7d5](https://github.com/jspreddy/dql/commit/bfab7d58b5ca8e1bc896c5d3cd514a973451e4c0) Let the git graph take a commit count and a cutoff ([#136](https://github.com/jspreddy/dql/pull/136))
@@ -75,7 +75,7 @@ Agents: Cursor Agent
 
 ## dqlrs 0.7.3-dev0 (2026-11-07)
 
-Contributors: [saiphaninderreddy](https://github.com/jspreddy)\
+Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [ad7cce5](https://github.com/jspreddy/dql/commit/ad7cce58d9518ed498a5500ad6d0ce8a7f798302) Wait for the tree event in the events stream test ([#134](https://github.com/jspreddy/dql/pull/134))
@@ -83,7 +83,7 @@ Agents: Cursor Agent
 
 ## dqlrs 0.7.2-dev0 (2026-11-01 to 2026-11-07)
 
-Contributors: [saiphaninderreddy](https://github.com/jspreddy)\
+Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [ee4f2e5](https://github.com/jspreddy/dql/commit/ee4f2e59cd432c59da672fb22507275f28197471) Add LOCALTABLE and TEMPTABLE beside DynamoDB tables ([#130](https://github.com/jspreddy/dql/pull/130))
@@ -94,7 +94,7 @@ Agents: Cursor Agent
 
 ## dqlrs 0.7.1-dev0 (2026-10-22 to 2026-10-30)
 
-Contributors: [Sai Phaninder Reddy Jonnala](https://github.com/jspreddy)\
+Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [fb44c4c](https://github.com/jspreddy/dql/commit/fb44c4ccc3dd5ad1bf5a5ba6888d687b0259ef07) Seal both disk caches with AES-256-GCM ([#113](https://github.com/jspreddy/dql/pull/113))
@@ -122,7 +122,7 @@ Agents: Cursor Agent
 
 ## dqlrs 0.7.0-dev0 (2026-10-12 to 2026-10-22)
 
-Contributors: [saiphaninderreddy](https://github.com/jspreddy)\
+Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [2330f06](https://github.com/jspreddy/dql/commit/2330f0619738310725fe57d55f1e242a221f4472) Match analyze scans to scan cards and show real RCU ([#95](https://github.com/jspreddy/dql/pull/95))
@@ -134,7 +134,7 @@ Agents: Cursor Agent
 
 ## dqlrs 0.6.5-dev1 (2026-10-10 to 2026-10-12)
 
-Contributors: [saiphaninderreddy](https://github.com/jspreddy)\
+Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [0ad28b9](https://github.com/jspreddy/dql/commit/0ad28b97ea17e5d98fa905c91314cb6586cfc201) Fix WHERE contains() errors on reserved fields ([#54](https://github.com/jspreddy/dql/pull/54))
