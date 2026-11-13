@@ -69,7 +69,6 @@ Contributors:
 - Claude Opus 5.5
 - Cursor Agent
 - [Sai Jonnala](https://github.com/jspreddy)
-- saiphaninderreddy
 
 ## dqlrs 0.7.5-dev0 (2026-11-08)
 
@@ -79,8 +78,7 @@ Contributors:
 Contributors:
 
 - Cursor Agent
-- [Sai Jonnala](https://github.com/jspreddy)
-- saiphaninderreddy
+- [saiphaninderreddy](https://github.com/jspreddy)
 
 ## dqlrs 0.7.4-dev0 (2026-11-07 to 2026-11-08)
 
@@ -90,8 +88,7 @@ Contributors:
 Contributors:
 
 - Cursor Agent
-- [Sai Jonnala](https://github.com/jspreddy)
-- saiphaninderreddy
+- [saiphaninderreddy](https://github.com/jspreddy)
 
 ## dqlrs 0.7.3-dev0 (2026-11-07)
 
@@ -101,7 +98,7 @@ Contributors:
 Contributors:
 
 - Cursor Agent
-- saiphaninderreddy
+- [saiphaninderreddy](https://github.com/jspreddy)
 
 ## dqlrs 0.7.2-dev0 (2026-11-01 to 2026-11-07)
 
@@ -114,8 +111,7 @@ Contributors:
 Contributors:
 
 - Cursor Agent
-- [Sai Jonnala](https://github.com/jspreddy)
-- saiphaninderreddy
+- [saiphaninderreddy](https://github.com/jspreddy)
 
 ## dqlrs 0.7.1-dev0 (2026-10-22 to 2026-10-30)
 
@@ -146,7 +142,6 @@ Contributors:
 
 - Cursor Agent
 - [Sai Phaninder Reddy Jonnala](https://github.com/jspreddy)
-- saiphaninderreddy
 
 ## dqlrs 0.7.0-dev0 (2026-10-12 to 2026-10-22)
 
@@ -160,8 +155,7 @@ Contributors:
 Contributors:
 
 - Cursor Agent
-- [Sai Jonnala](https://github.com/jspreddy)
-- saiphaninderreddy
+- [saiphaninderreddy](https://github.com/jspreddy)
 
 ## dqlrs 0.6.5-dev1 (2026-10-10 to 2026-10-12)
 
@@ -174,8 +168,7 @@ Contributors:
 Contributors:
 
 - Cursor Agent
-- [Sai Jonnala](https://github.com/jspreddy)
-- saiphaninderreddy
+- [saiphaninderreddy](https://github.com/jspreddy)
 
 ## dqlrs 0.6.5-dev0 (2026-08-20 to 2026-10-10)
 
@@ -192,7 +185,6 @@ Contributors:
 
 - Cursor Agent
 - [Sai Jonnala](https://github.com/jspreddy)
-- saiphaninderreddy
 
 ## dql (Python) 0.6.4-dev12 (2026-07-02)
 
@@ -229,7 +221,6 @@ Contributors:
 Contributors:
 
 - [Sai Jonnala](https://github.com/jspreddy)
-- Sai Jonnala
 
 ## dql (Python) 0.6.4-dev6 (2024-10-17)
 
@@ -237,7 +228,7 @@ Contributors:
 
 Contributors:
 
-- Sai Jonnala
+- [Sai Jonnala](https://github.com/jspreddy)
 
 ## dql (Python) 0.6.4-dev5 (2024-10-17)
 
@@ -247,7 +238,7 @@ Contributors:
 
 Contributors:
 
-- Sai Jonnala
+- [Sai Jonnala](https://github.com/jspreddy)
 
 ## dql (Python) 0.6.4-dev4 (2024-10-13)
 
@@ -274,7 +265,6 @@ Contributors:
 Contributors:
 
 - [Sai Jonnala](https://github.com/jspreddy)
-- Sai Jonnala
 
 ## dql (Python) 0.6.4-dev1 (2024-07-30 to 2024-09-21)
 
@@ -286,7 +276,7 @@ Contributors:
 
 Contributors:
 
-- Sai Jonnala
+- [Sai Jonnala](https://github.com/jspreddy)
 
 ## dql (Python) 0.6.4-dev0 (2024-05-24 to 2024-07-30)
 
@@ -296,7 +286,7 @@ Contributors:
 
 Contributors:
 
-- Sai Jonnala
+- [Sai Jonnala](https://github.com/jspreddy)
 
 ## dql (Python) 0.6.3-dev1 (2022-11-01 to 2024-05-24)
 
@@ -311,7 +301,6 @@ Contributors:
 
 Contributors:
 
-- Sai Jonnala
 - [Sai Jonnala](https://github.com/jspreddy)
 
 ## dql (Python) 0.6.3-dev0 (2021-12-23)

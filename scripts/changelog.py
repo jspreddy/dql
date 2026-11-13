@@ -232,9 +232,26 @@ def pull_link(base: str, number: str) -> str:
     return f"[{label}]({base}/pull/{number})"
 
 
+# Git author names and logins for https://github.com/jspreddy.
+JSPREDDY = "jspreddy"
+JSPREDDY_ALIASES = {
+    "sai jonnala",
+    "saiphaninderreddy",
+    "sai phaninder reddy jonnala",
+    JSPREDDY,
+}
+
+
 def github_login(email: str) -> str:
     match = GITHUB_NOREPLY.fullmatch(email.strip())
     return match.group(1) if match else ""
+
+
+def mapped_login(name: str, email: str) -> str:
+    login = github_login(email)
+    if name.casefold() in JSPREDDY_ALIASES or login.casefold() in JSPREDDY_ALIASES:
+        return JSPREDDY
+    return login
 
 
 def people_in(name: str, email: str, body: str) -> list[tuple[str, str]]:
@@ -276,7 +293,7 @@ def entry_people(root: Path, record: Record) -> list[tuple[str, str]]:
 
 def add_people(section: Section, people: list[tuple[str, str]]) -> None:
     for name, email in people:
-        login = github_login(email)
+        login = mapped_login(name, email)
         key = login.lower() if login else email.lower()
         if not key:
             key = name.casefold()
