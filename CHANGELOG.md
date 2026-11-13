@@ -264,7 +264,7 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 
 - [d8c2862](https://github.com/jspreddy/dql/commit/d8c28621d9c378b6416f87c6b5863c573861096a) doc: update readme installation instructions
-- [e8c6aa7](https://github.com/jspreddy/dql/commit/e8c6aa7d72dd19a1825ade9b846ef6cfed8ea68b) Adding clear command and excluding clear, exit from history ([#43](https://github.com/jspreddy/dql/pull/43))
+- [e8c6aa7](https://github.com/jspreddy/dql/commit/e8c6aa7d72dd19a1825ade9b846ef6cfed8ea68b) Adding clear command and excluding clear, exit from history (#43)
 - [4951ffe](https://github.com/jspreddy/dql/commit/4951ffe3eb75c93176f0267330106b87ef2214f3) chore: configure workflow to auto-publish on tag (continues #42)
 - [9383e32](https://github.com/jspreddy/dql/commit/9383e3208edbe762ead499c288fead81e1ae3a46) doc: fix title underline in changelog
 - [50574c2](https://github.com/jspreddy/dql/commit/50574c2f45a8de2de5f880136d1896b6c5c87b96) doc: update the build badge in the readme
@@ -273,7 +273,7 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)
 
-- [6850068](https://github.com/jspreddy/dql/commit/6850068b058556bbdcdd6a4fa527b2bee925747f) WIP: Fixing missing dependency (typing_extensions) + chores ([#42](https://github.com/jspreddy/dql/pull/42))
+- [6850068](https://github.com/jspreddy/dql/commit/6850068b058556bbdcdd6a4fa527b2bee925747f) WIP: Fixing missing dependency (typing_extensions) + chores (#42)
 
 ## dql (Python) 0.6.1 (2021-01-24)
 
@@ -287,14 +287,14 @@ Contributors: Steven Arcangeli
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 
-- [3750d37](https://github.com/jspreddy/dql/commit/3750d375ca3dc0cead8235fcd4590d432ab2cd90) Feature: Retain query history across sessions. ([#41](https://github.com/jspreddy/dql/pull/41))
+- [3750d37](https://github.com/jspreddy/dql/commit/3750d375ca3dc0cead8235fcd4590d432ab2cd90) Feature: Retain query history across sessions. (#41)
 - [d37f07f](https://github.com/jspreddy/dql/commit/d37f07f04a588d55d889e4da0aa7cf5827c29e2f) Add a note about PartiQL in the README
 
 ## dql (Python) 0.6.1-dev0 (2020-10-18 to 2020-11-23)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 
-- [acb03f1](https://github.com/jspreddy/dql/commit/acb03f10387715c9f39ffd48eb26b2d5310c488c) Dynamo local path to be within project root + gitignore ([#38](https://github.com/jspreddy/dql/pull/38))
+- [acb03f1](https://github.com/jspreddy/dql/commit/acb03f10387715c9f39ffd48eb26b2d5310c488c) Dynamo local path to be within project root + gitignore (#38)
 - [4706ad7](https://github.com/jspreddy/dql/commit/4706ad7762a2027db3bbf21da6f4ef915f8c6c6b) Fix #36: Constraint functions should accept quoted field names
 - [3c95123](https://github.com/jspreddy/dql/commit/3c95123566723d4e9ef863583f81cec5a704a1f3) Parser extracts values during parsing for conditional constraints
 - [e245229](https://github.com/jspreddy/dql/commit/e2452294b68e1e117e73e5949a5cb1b9e817c45f) Change the parsing logic for constraint expressions
@@ -314,25 +314,25 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 - [bfa6ea7](https://github.com/jspreddy/dql/commit/bfa6ea731003802fd99fb1ad81c95097442efcf4) Add a --json argument to output queries in line-by-line json
 - [6a30999](https://github.com/jspreddy/dql/commit/6a30999845d92c05c3b55b4d1b6c6b83c3c58c14) Add new formatter for JSON output
 - [33f9443](https://github.com/jspreddy/dql/commit/33f944338113bb46381d6d8fb49fe95f1fc2ea4f) Update changelog
-- [4179c3f](https://github.com/jspreddy/dql/commit/4179c3f4366c0dd3b4c6063d289f4881ce617b92) CHANGES.rst: new line ([#33](https://github.com/jspreddy/dql/pull/33))
+- [4179c3f](https://github.com/jspreddy/dql/commit/4179c3f4366c0dd3b4c6063d289f4881ce617b92) CHANGES.rst: new line (#33)
 - [bfaef96](https://github.com/jspreddy/dql/commit/bfaef969ca41781807b5e7935e691199e1eca0c5) Fix tests and lint
 - [99d0216](https://github.com/jspreddy/dql/commit/99d021616af5bc131fdb7e014393ca6fff38a2df) Fix #30: ls command accepts glob patterns
 - [3cb64a1](https://github.com/jspreddy/dql/commit/3cb64a17688d81275ce3073dedfc7d655cde8311) Leave the stack trace out of the parse exception display
 - [aa86dd3](https://github.com/jspreddy/dql/commit/aa86dd30eb4e10b17c042bca5263f29972b760ba) Upgrade dynamo3 to pre-release version
-- [b41482c](https://github.com/jspreddy/dql/commit/b41482c55524289f3dfffad304af31495c7c6f32) Fixed #31: On-Demand tables cause ZeroDivisionError with ls ([#32](https://github.com/jspreddy/dql/pull/32))
+- [b41482c](https://github.com/jspreddy/dql/commit/b41482c55524289f3dfffad304af31495c7c6f32) Fixed #31: On-Demand tables cause ZeroDivisionError with ls (#32)
 - [550c86d](https://github.com/jspreddy/dql/commit/550c86d706bd82517b8fe0dd2ee2fd9a5469c37d) Enable mypy checking for untyped defs
 - [374e736](https://github.com/jspreddy/dql/commit/374e736baef35a2112ec8fe6e5a3eec461e9c5c9) Add mypy as a test requirement
 - [5e73670](https://github.com/jspreddy/dql/commit/5e73670f29d21eed1d96d4a74dbd73e818d6aad7) Make the mypy checking slightly stricter
 - [667067c](https://github.com/jspreddy/dql/commit/667067cb3b07df0d1cb48bcaa1a96a328e96315d) Replace old assertItemsEqual method with assertCountEqual
 - [9e54053](https://github.com/jspreddy/dql/commit/9e540531a17c43247c06e0c4acc0f1ee60529808) Add mypy checking in lint step
 - [f997bff](https://github.com/jspreddy/dql/commit/f997bffcf6d1cd9f239a04ae06f0e3c9c200c17a) Use requirements files to manage test/dev dependencies
-- [731b500](https://github.com/jspreddy/dql/commit/731b50074f62be5bcccb74012c9608c16b9b7444) Better errors ([#28](https://github.com/jspreddy/dql/pull/28))
+- [731b500](https://github.com/jspreddy/dql/commit/731b50074f62be5bcccb74012c9608c16b9b7444) Better errors (#28)
 
 ## dql (Python) 0.5.29-dev0 (2020-08-20 to 2020-09-07)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 
-- [66b0b4e](https://github.com/jspreddy/dql/commit/66b0b4e88c4e3a73143f065c669b25de8853aade) Development environment updates + CI updates to run with proper java version ([#27](https://github.com/jspreddy/dql/pull/27))
+- [66b0b4e](https://github.com/jspreddy/dql/commit/66b0b4e88c4e3a73143f065c669b25de8853aade) Development environment updates + CI updates to run with proper java version (#27)
 - [265a3ab](https://github.com/jspreddy/dql/commit/265a3ab548e27206c60f6a40d9de3fe20fc1089c) Typo
 - [192325b](https://github.com/jspreddy/dql/commit/192325ba7c95418ddf94ba540ae578886ae1dd06) Remove python 2 code from the install.py file
 - [59fe0eb](https://github.com/jspreddy/dql/commit/59fe0eb2b6cfe3cbe584d2eba3fd3393838d0abc) Remove python 2-to-3 compatibility code
@@ -417,7 +417,7 @@ Contributors: Steven Arcangeli
 Contributors: Garrett Heel, Steven Arcangeli
 
 - [bb930d1](https://github.com/jspreddy/dql/commit/bb930d1dad4b6fdfe0714a7d9e1d4515113b41b9) Merge tag '0.5.17'
-- [56b1ca8](https://github.com/jspreddy/dql/commit/56b1ca8ff0e7c04fb3d19ac2018f2d018b629b12) Fix incorrect grammar for USING in doc examples ([#5](https://github.com/jspreddy/dql/pull/5))
+- [56b1ca8](https://github.com/jspreddy/dql/commit/56b1ca8ff0e7c04fb3d19ac2018f2d018b629b12) Fix incorrect grammar for USING in doc examples (#5)
 
 ## dql (Python) 0.5.16 (2016-03-05)
 
