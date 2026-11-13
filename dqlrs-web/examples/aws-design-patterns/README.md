@@ -23,4 +23,4 @@ mindmap
       Number based
 ```
 
-[Open the diagram](diagram.html).
+In the dqlrs web UI, use the full-screen button to enlarge the diagram.
