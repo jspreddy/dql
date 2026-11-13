@@ -4,8 +4,8 @@
 The changelog is generated, never edited by hand: run this again and it rewrites the
 file from git. Entries are the first-parent history, newest first:
 
-- a merged pull request is one entry, its title from the merge commit body, with its number and short hash;
-- a commit made on the branch itself is one entry, its subject and short hash;
+- a merged pull request starts with a link to the merge commit, then its title and a link to the pull request;
+- a commit made on the branch starts with a link to that commit, then its subject;
 - "Bump version:" commits and lockfile sync commits are left out, since the section
   heading names the version;
 - changelog updates ("Update the changelog ...") are left out, so the workflow that
@@ -195,23 +195,50 @@ def bump_headings(root: Path, ref: str, oldest_first: list[str]) -> dict[str, st
     return headings
 
 
-def entry_text(record: Record) -> str | None:
+def github_base(root: Path) -> str:
+    """https://github.com/owner/repo from origin, or empty when origin is not GitHub."""
+    try:
+        url = git(root, "remote", "get-url", "origin").strip()
+    except RuntimeError:
+        return ""
+    # origin may be git@github.com:owner/repo.git or https://<token>@github.com/owner/repo.
+    # Keep only owner/repo. Never write credentials into the changelog.
+    match = re.search(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?$", url)
+    return f"https://github.com/{match.group(1)}" if match else ""
+
+
+def commit_link(base: str, record: Record) -> str:
+    if not base:
+        return record.short
+    return f"[{record.short}]({base}/commit/{record.sha})"
+
+
+def pull_link(base: str, number: str) -> str:
+    label = f"#{number}"
+    if not base:
+        return label
+    return f"[{label}]({base}/pull/{number})"
+
+
+def entry_text(record: Record, base: str) -> str | None:
+    link = commit_link(base, record)
     merge = MERGE_SUBJECT.match(record.subject)
     if merge:
         number, branch = merge.groups()
         title = next((line.strip() for line in record.body.splitlines() if line.strip()), "")
         if any(pattern.match(title) for pattern in SKIP_TITLES):
             return None
-        return f"{title or branch} (#{number}, {record.short})"
+        return f"{link} {title or branch} ({pull_link(base, number)})"
     if any(pattern.match(record.subject) for pattern in (*SKIP_SUBJECTS, *SKIP_TITLES)):
         return None
-    return f"{record.subject} ({record.short})"
+    return f"{link} {record.subject}"
 
 
 def collect(root: Path, ref: str) -> list[Section]:
     records = history(root, ref)
     oldest_first = [record.sha for record in reversed(records)]
     headings = bump_headings(root, ref, oldest_first)
+    base = github_base(root)
     sections: list[Section] = []
     # Newer than the latest bump until a bump commit says otherwise.
     current = Section("Unreleased")
@@ -223,7 +250,7 @@ def collect(root: Path, ref: str) -> list[Section]:
             if current.entries:
                 sections.append(current)
             current = Section(headings[record.sha])
-        text = entry_text(record)
+        text = entry_text(record, base)
         if text:
             current.entries.append(Entry(record.date, text))
     if current.entries:
