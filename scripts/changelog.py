@@ -40,6 +40,7 @@ from urllib.parse import quote
 DEFAULT_REFS = ("origin/v-rust", "v-rust")
 # Newest layout first. The first file that exists at a commit names the product.
 VERSION_FILES = (
+    ("dqlrs", "rust-impl/release.toml"),
     ("dqlrs", "rust-impl/.bumpversion.cfg"),
     ("dql", "py-impl/.bumpversion.cfg"),
     ("dql", ".bumpversion.cfg"),
