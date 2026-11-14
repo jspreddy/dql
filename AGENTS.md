@@ -1,5 +1,7 @@
 # Agent notes
 
+Start with [MEMORY.md](MEMORY.md): high-level pointers to the rules, layout and tooling.
+
 ## Target state is Rust
 
 `dqlrs` is the primary tool. The target state of this repository is Rust, not Python.
