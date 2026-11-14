@@ -5,6 +5,13 @@ Do not edit by hand: changes are rewritten the next time it runs. Newest first.
 A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists.
 
+## dqlrs 0.7.10 (2026-11-14)
+
+Contributors: [Sai Jonnala](https://github.com/jspreddy)\
+Agents: Claude Opus 5.5
+
+- [2bd5846](https://github.com/jspreddy/dql/commit/2bd58460615c009c13f722287536acdf9860c079) Bump the Rust version with cargo-release; drop -dev0 (0.7.10) ([#210](https://github.com/jspreddy/dql/pull/210))
+
 ## dqlrs 0.7.10-dev0 (2026-11-13)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
