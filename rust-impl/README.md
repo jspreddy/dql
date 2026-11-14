@@ -89,14 +89,28 @@ See `rust-toolchain.toml`. CI: `.github/workflows/check.yml` runs `just check`
 
 ## Versioning
 
-Python and Rust versions bump independently. From the repository root:
+Python and Rust versions bump independently. Rust uses
+[cargo-release](https://github.com/crate-ci/cargo-release) with
+[`release.toml`](release.toml); install it once with
+`cargo install cargo-release --locked`. The version lives only in `Cargo.toml`
+(`[workspace.package]`); every crate inherits it. From the repository root:
 
 ```bash
-./scripts/bump-version.sh rust --dry-run build
-./scripts/bump-version.sh rust build
-./scripts/bump-version.sh rust --tag release
+just version -- rust --dry-run patch   # print what would change
+just version rust patch                # 0.7.10 -> 0.7.11
+just version rust minor                # 0.7.10 -> 0.8.0
+just version rust alpha                # pre-release: 0.7.10 -> 0.7.11-alpha.1, then -alpha.2
+just version rust beta                 # also rc
+just version rust release              # drop the pre-release: 0.7.11-alpha.2 -> 0.7.11
+just version rust 0.8.0-rc.1           # or set an exact version
+just version -- rust release --tag     # also tag rust-<version>
 ```
 
-Release tags are `rust-<version>` (for example `rust-0.6.4`) so they do not
-collide with Python `python-<version>` tags. Requires `bump2version` (from
-`py-impl` `uv sync --dev`, or on `PATH`).
+Pre-release levels only move forward (alpha, then beta, then rc); `release`
+drops the suffix. Versions use semver pre-release identifiers (`-alpha.1`), not
+the old `-devN` builds.
+
+Each bump is one commit, `Bump version: OLD → NEW`, holding `Cargo.toml` and
+`Cargo.lock`; [`scripts/changelog.py`](../scripts/changelog.py) starts a
+changelog section at it. Nothing is published or pushed. Release tags are
+`rust-<version>` so they do not collide with Python `python-<version>` tags.

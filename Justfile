@@ -421,7 +421,7 @@ changelog *args: (_title "changelog")
 changelog-check: (_title "changelog-check")
     cd "{{justfile_directory()}}" && python3 scripts/changelog.py --check
 
-# Bump Python or Rust and refresh that lockfile. Flags need `--`: just version -- rust --dry-run build
+# Bump Python (bump2version) or Rust (cargo-release) and refresh that lockfile. Flags need `--`: just version -- rust --dry-run patch
 [group('other')]
 version *args: (_title "version")
     #!/usr/bin/env bash

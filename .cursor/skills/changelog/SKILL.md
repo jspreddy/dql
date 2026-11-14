@@ -22,7 +22,7 @@ pull requests titled `Update the changelog ...`.
 A `Bump version: OLD → NEW` commit closes a section. Changes after that bump belong to the next
 bump's version. Changes after the latest bump are under `Unreleased`. A bump that lands inside a
 pull request counts when that pull request merges. The product name is `dqlrs` once
-`rust-impl/.bumpversion.cfg` exists, and `dql (Python)` before that. Newest first.
+`rust-impl/release.toml` (or, earlier, `rust-impl/.bumpversion.cfg`) exists, and `dql (Python)` before that. Newest first.
 
 ## Automatic updates
 
