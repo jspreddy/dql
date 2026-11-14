@@ -11,6 +11,8 @@ usage() {
 }
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# The Rust bump runs this bump2version from uvx; keep it equal to the one py-impl/uv.lock pins.
+BUMP2VERSION_VERSION="1.0.1"
 
 if [[ $# -lt 1 ]]; then
   usage
@@ -90,13 +92,9 @@ bump_python() {
 bump_rust() {
   cd "$REPO_ROOT/rust-impl"
 
-  local bump2version_bin=""
-  if command -v bump2version >/dev/null 2>&1; then
-    bump2version_bin="$(command -v bump2version)"
-  elif [[ -x "$REPO_ROOT/py-impl/.venv/bin/bump2version" ]]; then
-    bump2version_bin="$REPO_ROOT/py-impl/.venv/bin/bump2version"
-  else
-    echo "error: bump2version not found; run uv sync --dev in py-impl or install bump2version" >&2
+  # Run bump2version from uvx so the Rust bump does not depend on py-impl's venv.
+  if ! command -v uvx >/dev/null 2>&1; then
+    echo "error: uvx not found; install uv (https://docs.astral.sh/uv/)" >&2
     exit 1
   fi
 
@@ -118,7 +116,7 @@ bump_rust() {
   local tags_before
   tags_before=$(git tag -l | LC_ALL=C sort)
 
-  "$bump2version_bin" "$@"
+  uvx --from "bump2version==${BUMP2VERSION_VERSION}" bump2version "$@"
 
   if [[ "$dry_run" == true || "$no_commit" == true ]]; then
     exit 0
