@@ -32,7 +32,7 @@
 <body>
 <main>
 <h1>Versioning and release: what uses what</h1>
-<p>Entry points on the left (orange). Edges are drawn as direct lines. Hover a node to light its chain; click to pin. Includes the Release dqlrs workflow from PR #215.</p>
+<p>Entry points on the left (orange), grouped into GitHub Actions and manual. Edges are drawn as direct lines. Hover a node to light its chain; click to pin. Includes the Release dqlrs workflow from PR #215.</p>
 <div id="call-graph">
 <pre class="mermaid">
 flowchart LR
@@ -40,10 +40,13 @@ flowchart LR
   classDef file fill:#e0f2fe,stroke:#0369a1,color:#0c4a6e
   classDef out fill:#dcfce7,stroke:#15803d,color:#14532d
 
-  subgraph entries [Entry points]
-    relDispatch["Actions: Release dqlrs<br/>(Run workflow: level / version / dry_run)"]
-    justVersion["just version rust|python"]
+  subgraph actionEntries [GitHub Actions entry points]
+    relDispatch["Release dqlrs<br/>(Run workflow: level / version / dry_run)"]
     mergeVrust["PR merged into v-rust<br/>(push)"]
+  end
+
+  subgraph manualEntries [Manual entry points]
+    justVersion["just version rust|python"]
     justChangelog["just changelog<br/>just changelog-check"]
   end
 
