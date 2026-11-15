@@ -41,7 +41,13 @@ jobs:
           rustup component add rustfmt clippy
           echo "rustc=$(rustc -V | cut -d' ' -f2)" >> "$GITHUB_OUTPUT"
 
-      # Downloaded crates, keyed on the lockfile. A changed lockfile starts from the last cache
+      # Cache keys use the dependencies in Cargo.lock without the workspace's own crates, whose
+      # versions change on every release (scripts/cargo-deps-hash.sh).
+      - name: Hash the dependencies
+        id: deps
+        run: echo "hash=$(scripts/cargo-deps-hash.sh)" >> "$GITHUB_OUTPUT"
+
+      # Downloaded crates, keyed on the dependencies. A dependency change starts from the last cache
       # and downloads only what is new. Shared with the other workflows on v-rust.
       - name: Cache the cargo registry
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -50,17 +56,17 @@ jobs:
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-          key: cargo-registry-${{ runner.os }}-${{ hashFiles('rust-impl/Cargo.lock') }}
+          key: cargo-registry-${{ runner.os }}-${{ steps.deps.outputs.hash }}
           restore-keys: cargo-registry-${{ runner.os }}-
 
-      # Compiled dependencies for clippy, keyed on the compiler and the lockfile. No restore-keys:
-      # a new compiler or lockfile builds once from scratch, so stale artifacts never pile up.
+      # Compiled dependencies for clippy, keyed on the compiler and the dependencies. No restore-keys:
+      # a new compiler or dependency change builds once from scratch, so stale artifacts never pile up.
       # Workspace crates still rebuild every run; the dependencies are what this saves.
       - name: Cache the build directory
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: rust-impl/target
-          key: cargo-target-check-${{ runner.os }}-${{ steps.rust.outputs.rustc }}-${{ hashFiles('rust-impl/Cargo.lock') }}
+          key: cargo-target-check-${{ runner.os }}-${{ steps.rust.outputs.rustc }}-${{ steps.deps.outputs.hash }}
 
       - name: just check
         env:
