@@ -45,7 +45,6 @@ flowchart LR
     justVersion["just version rust|python"]
     mergeVrust["PR merged into v-rust<br/>(push)"]
     justChangelog["just changelog<br/>just changelog-check"]
-    clSkill["changelog skill"]
   end
 
   subgraph wfs [GitHub workflows]
@@ -83,7 +82,6 @@ flowchart LR
   justVersion -->|"python"| bumpScript
   mergeVrust --> changelogYml
   mergeVrust --> checkYml
-  clSkill --> justChangelog
   justChangelog --> changelogPy
 
   releaseYml -->|"1. bump"| bumpScript
@@ -112,7 +110,7 @@ flowchart LR
   ghPr --> vrust
   gitTag --> tagRef
 
-  class relDispatch,justVersion,mergeVrust,justChangelog,clSkill entry
+  class relDispatch,justVersion,mergeVrust,justChangelog entry
   class wsRelease,cliRelease,pyBumpCfg file
   class cargoToml,readmes,pyFiles,changelogMd,bumpCommit,vrust,tagRef out
 </pre>
