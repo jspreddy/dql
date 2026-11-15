@@ -4,7 +4,7 @@ alwaysApply: true
 
 # Branching
 
-`v-rust` is the target branch for this repository, even though it is not the GitHub default branch. Treat it the way you would treat `main`.
+`v-rust` is the target branch and the GitHub default branch for this repository. Treat it the way you would treat `main`.
 
 Never commit to `v-rust` directly. Never push commits to `v-rust`. Changes reach it only through merged pull requests.
 
