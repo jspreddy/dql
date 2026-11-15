@@ -45,7 +45,10 @@ jobs:
       # versions change on every release (scripts/cargo-deps-hash.sh).
       - name: Hash the dependencies
         id: deps
-        run: echo "hash=$(scripts/cargo-deps-hash.sh)" >> "$GITHUB_OUTPUT"
+        # An assignment, so a failing script fails the step (echo "$(...)" would not).
+        run: |
+          hash=$(scripts/cargo-deps-hash.sh)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
 
       # Downloaded crates, keyed on the dependencies. A dependency change starts from the last cache
       # and downloads only what is new. Shared with the other workflows on v-rust.
