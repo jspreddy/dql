@@ -67,17 +67,22 @@ flowchart LR
     justCheck["just check"]
   end
 
-  subgraph outputs ["Config read (blue), files and refs changed (green)"]
-    wsRelease["rust-impl/release.toml<br/>(no publish, push, tag)"]
-    cliRelease["crates/dql-cli/release.toml<br/>(pre-release-replacements)"]
-    pyBumpCfg["py-impl/.bumpversion.cfg"]
-    cargoToml["Cargo.toml + Cargo.lock<br/>(workspace version)"]
-    readmes["README.md + rust-docs/README.md<br/>(--tag dqlrs-VERSION, stable only)"]
-    pyFiles["pyproject.toml, conf.py, cli.py, uv.lock"]
-    changelogMd["CHANGELOG.md"]
-    bumpCommit["commit: Bump version: OLD → NEW"]
-    vrust["v-rust"]
-    tagRef["tag dqlrs-VERSION"]
+  subgraph files [Files]
+    direction TB
+    subgraph readFiles [Files read]
+      wsRelease["rust-impl/release.toml<br/>(no publish, push, tag)"]
+      cliRelease["crates/dql-cli/release.toml<br/>(pre-release-replacements)"]
+      pyBumpCfg["py-impl/.bumpversion.cfg"]
+    end
+    subgraph writtenFiles [Files and refs written]
+      cargoToml["Cargo.toml + Cargo.lock<br/>(workspace version)"]
+      readmes["README.md + rust-docs/README.md<br/>(--tag dqlrs-VERSION, stable only)"]
+      pyFiles["pyproject.toml, conf.py, cli.py, uv.lock"]
+      changelogMd["CHANGELOG.md"]
+      bumpCommit["commit: Bump version: OLD → NEW"]
+      vrust["v-rust"]
+      tagRef["tag dqlrs-VERSION"]
+    end
   end
 
   relDispatch --> releaseYml
