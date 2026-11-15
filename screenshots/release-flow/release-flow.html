@@ -32,7 +32,7 @@
 <body>
 <main>
 <h1>Versioning and release: what uses what</h1>
-<p>Entry points on the left (orange). Hover a node to light its chain; click to pin. Includes the Release dqlrs workflow from PR #215.</p>
+<p>Entry points on the left (orange). Edges are drawn as direct lines. Hover a node to light its chain; click to pin. Includes the Release dqlrs workflow from PR #215.</p>
 <div id="call-graph">
 <pre class="mermaid">
 flowchart LR
@@ -66,13 +66,10 @@ flowchart LR
     justCheck["just check"]
   end
 
-  subgraph config [Config]
+  subgraph outputs ["Config read (blue), files and refs changed (green)"]
     wsRelease["rust-impl/release.toml<br/>(no publish, push, tag)"]
     cliRelease["crates/dql-cli/release.toml<br/>(pre-release-replacements)"]
     pyBumpCfg["py-impl/.bumpversion.cfg"]
-  end
-
-  subgraph outputs [Files and refs changed]
     cargoToml["Cargo.toml + Cargo.lock<br/>(workspace version)"]
     readmes["README.md + rust-docs/README.md<br/>(--tag dqlrs-VERSION, stable only)"]
     pyFiles["pyproject.toml, conf.py, cli.py, uv.lock"]
@@ -129,8 +126,23 @@ flowchart LR
   const pre = document.querySelector('#call-graph pre.mermaid');
   const source = pre.textContent;
   await mermaid.run();
+  straightenEdges(document.querySelector('#call-graph svg'));
   highlightCallChain(document.querySelector('#call-graph svg'), source);
   document.body.dataset.rendered = '1';
+
+  // Mermaid routes edges with corners. Redraw each one as a single straight line from where it
+  // leaves its source to where it enters its target, and move its label to the middle.
+  function straightenEdges(svg) {
+    for (const path of svg.querySelectorAll('path.flowchart-link')) {
+      const length = path.getTotalLength();
+      const start = path.getPointAtLength(0);
+      const end = path.getPointAtLength(length);
+      path.setAttribute('d', `M${start.x},${start.y} L${end.x},${end.y}`);
+      const marker = path.id.match(/L_.+_\d+$/)?.[0];
+      const label = marker && svg.querySelector(`.edgeLabel .label[data-id="${marker}"]`)?.closest('.edgeLabel');
+      if (label) label.setAttribute('transform', `translate(${(start.x + end.x) / 2}, ${(start.y + end.y) / 2})`);
+    }
+  }
 
   function highlightCallChain(svg, source) {
     const edges = [];
