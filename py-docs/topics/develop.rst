@@ -121,21 +121,17 @@ maintained. Configuration lives in ``py-impl/.bumpversion.cfg``.
 
 Config based on: `<https://medium.com/@williamhayes/versioning-using-bumpversion-4d13c914e9b8>`_
 
-From ``py-impl/``, ``uv run task bump`` runs ``../scripts/bump-version.sh python``,
-which runs ``uv lock`` and amends the bump commit to include ``uv.lock``. You
-can also call the script from the repository root::
+From the repository root, ``just version python`` runs
+``scripts/bump-version.sh python``, which runs ``uv lock`` and amends the bump
+commit to include ``uv.lock``. Flags need ``--``::
 
-    ./scripts/bump-version.sh python --dry-run build
-
-From ``py-impl/``::
-
-    uv run task bump --dry-run build   # preview dev build bump
-    uv run task bump --dry-run patch   # preview patch bump
-    uv run task bump patch             # bump patch and reset to x.x.x-dev0
-    uv run task bump minor             # bump minor and reset to x.x.x-dev0
-    uv run task bump major             # bump major and reset to x.x.x-dev0
-    uv run task bump build             # increment dev build (x.x.x-dev0 -> x.x.x-dev1)
-    uv run task bump --tag release     # release as x.x.x (creates git tag)
+    just version -- python --dry-run build   # preview dev build bump
+    just version -- python --dry-run patch   # preview patch bump
+    just version python patch                # bump patch and reset to x.x.x-dev0
+    just version python minor                # bump minor and reset to x.x.x-dev0
+    just version python major                # bump major and reset to x.x.x-dev0
+    just version python build                # increment dev build (x.x.x-dev0 -> x.x.x-dev1)
+    just version -- python --tag release     # release as x.x.x (creates git tag)
 
 Each bump updates ``py-impl/pyproject.toml``, ``py-docs/conf.py``,
 ``py-impl/dql/cli.py``, and ``py-impl/uv.lock``, and creates a git commit

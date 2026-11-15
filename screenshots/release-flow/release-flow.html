@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Release flow</title>
+<style>
+  :root { --bg: #fffdf8; --fg: #1f2937; --muted: #6b7280; }
+  body { margin: 0; padding: 24px 16px; background: var(--bg); color: var(--fg);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1500px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p { margin: 0 0 16px; color: var(--muted); }
+  pre.mermaid { margin: 0; background: transparent; }
+  .mermaid svg { max-width: 100%; height: auto; }
+  #call-graph svg .node { cursor: pointer; }
+  #call-graph svg.chain .node,
+  #call-graph svg.chain path.flowchart-link,
+  #call-graph svg.chain .edgeLabel { opacity: 0.14; transition: opacity 120ms ease; }
+  #call-graph svg.chain .node.hot,
+  #call-graph svg.chain path.flowchart-link.hot,
+  #call-graph svg.chain .edgeLabel.hot { opacity: 1; }
+  #call-graph svg.chain path.flowchart-link.hot { stroke: #9a3412; }
+  #call-graph svg .node.pinned > rect { fill: #9a3412 !important; stroke: #7c2d12 !important; stroke-width: 3px; }
+  #call-graph svg .node.pinned .nodeLabel { color: #fffdf8 !important; }
+  @media (prefers-reduced-motion: reduce) {
+    #call-graph svg.chain .node, #call-graph svg.chain path.flowchart-link,
+    #call-graph svg.chain .edgeLabel { transition: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+<h1>Versioning and release: what uses what</h1>
+<p>Entry points on the left (orange), grouped into GitHub Actions and manual. Edges are drawn as direct lines. Hover a node to light its chain; click to pin. Includes the Release dqlrs workflow from PR #215.</p>
+<div id="call-graph">
+<pre class="mermaid">
+flowchart LR
+  classDef entry fill:#ffedd5,stroke:#c2410c,color:#7c2d12
+  classDef file fill:#e0f2fe,stroke:#0369a1,color:#0c4a6e
+  classDef out fill:#dcfce7,stroke:#15803d,color:#14532d
+
+  subgraph actionEntries [GitHub Actions entry points]
+    relDispatch["Release dqlrs<br/>(Run workflow: level / version / dry_run)"]
+    mergeVrust["PR merged into v-rust<br/>(push)"]
+  end
+
+  subgraph manualEntries [Manual entry points]
+    justVersion["just version rust|python"]
+    justChangelog["just changelog<br/>just changelog-check"]
+  end
+
+  subgraph wfs [GitHub workflows]
+    releaseYml["release.yml"]
+    changelogYml["changelog.yml"]
+    checkYml["check.yml"]
+  end
+
+  subgraph tools [Scripts and tools]
+    bumpScript["scripts/bump-version.sh"]
+    cargoRelVersion["cargo release version"]
+    cargoRelReplace["cargo release replace -p dql-cli"]
+    bump2version["bump2version"]
+    changelogPy["scripts/changelog.py"]
+    ghPr["gh pr create + gh pr merge<br/>(job token)"]
+    gitTag["git tag -a dqlrs-VERSION"]
+    justCheck["just check"]
+  end
+
+  subgraph files [Files]
+    direction TB
+    subgraph readFiles [Files read]
+      wsRelease["rust-impl/release.toml<br/>(no publish, push, tag)"]
+      cliRelease["crates/dql-cli/release.toml<br/>(pre-release-replacements)"]
+      pyBumpCfg["py-impl/.bumpversion.cfg"]
+    end
+    subgraph writtenFiles [Files and refs written]
+      cargoToml["Cargo.toml + Cargo.lock<br/>(workspace version)"]
+      readmes["README.md + rust-docs/README.md<br/>(--tag dqlrs-VERSION, stable only)"]
+      pyFiles["pyproject.toml, conf.py, cli.py, uv.lock"]
+      changelogMd["CHANGELOG.md"]
+      bumpCommit["commit: Bump version: OLD → NEW"]
+      vrust["v-rust"]
+      tagRef["tag dqlrs-VERSION"]
+    end
+  end
+
+  relDispatch --> releaseYml
+  justVersion -->|"rust"| bumpScript
+  justVersion -->|"python"| bumpScript
+  mergeVrust --> changelogYml
+  mergeVrust --> checkYml
+  justChangelog --> changelogPy
+
+  releaseYml -->|"1. bump"| bumpScript
+  releaseYml -->|"2. --ref HEAD --name origin/v-rust"| changelogPy
+  releaseYml -->|"3. Release dqlrs PR"| ghPr
+  releaseYml -->|"4. tag merge commit"| gitTag
+  releaseYml -->|"5. gh workflow run"| changelogYml
+
+  changelogYml --> changelogPy
+  changelogYml -->|"Update the changelog PR"| ghPr
+  checkYml --> justCheck
+
+  bumpScript --> cargoRelVersion
+  bumpScript --> cargoRelReplace
+  bumpScript --> bump2version
+  bumpScript --> bumpCommit
+  cargoRelVersion --> wsRelease
+  cargoRelVersion --> cargoToml
+  cargoRelReplace --> cliRelease
+  cargoRelReplace --> readmes
+  bump2version --> pyBumpCfg
+  bump2version --> pyFiles
+
+  changelogPy -->|"sections start at bumps"| bumpCommit
+  changelogPy --> changelogMd
+  ghPr --> vrust
+  gitTag --> tagRef
+
+  class relDispatch,justVersion,mergeVrust,justChangelog entry
+  class wsRelease,cliRelease,pyBumpCfg file
+  class cargoToml,readmes,pyFiles,changelogMd,bumpCommit,vrust,tagRef out
+</pre>
+</div>
+</main>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@12/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: false, theme: 'neutral', flowchart: { useMaxWidth: true } });
+  const pre = document.querySelector('#call-graph pre.mermaid');
+  const source = pre.textContent;
+  await mermaid.run();
+  straightenEdges(document.querySelector('#call-graph svg'));
+  highlightCallChain(document.querySelector('#call-graph svg'), source);
+  document.body.dataset.rendered = '1';
+
+  // Mermaid routes edges with corners. Redraw each one as a single straight line from where it
+  // leaves its source to where it enters its target, and move its label to the middle.
+  function straightenEdges(svg) {
+    for (const path of svg.querySelectorAll('path.flowchart-link')) {
+      const length = path.getTotalLength();
+      const start = path.getPointAtLength(0);
+      const end = path.getPointAtLength(length);
+      path.setAttribute('d', `M${start.x},${start.y} L${end.x},${end.y}`);
+      const marker = path.id.match(/L_.+_\d+$/)?.[0];
+      const label = marker && svg.querySelector(`.edgeLabel .label[data-id="${marker}"]`)?.closest('.edgeLabel');
+      if (label) label.setAttribute('transform', `translate(${(start.x + end.x) / 2}, ${(start.y + end.y) / 2})`);
+    }
+  }
+
+  function highlightCallChain(svg, source) {
+    const edges = [];
+    for (const line of source.split('\n')) {
+      const match = line.match(/^\s*(\w+)\s+-->\s*(?:\|[^|]*\|\s*)?(\w+)/);
+      if (match) edges.push([match[1], match[2]]);
+    }
+    const nodeEls = new Map();
+    for (const node of svg.querySelectorAll('g.node')) {
+      const match = node.id.match(/-flowchart-(.+)-\d+$/);
+      if (match) nodeEls.set(match[1], node);
+    }
+    const outgoing = new Map();
+    const incoming = new Map();
+    for (const id of nodeEls.keys()) { outgoing.set(id, []); incoming.set(id, []); }
+    const edgeEls = edges.map(([from, to]) => {
+      outgoing.get(from)?.push(to);
+      incoming.get(to)?.push(from);
+      const marker = `L_${from}_${to}_`;
+      return {
+        from, to,
+        path: [...svg.querySelectorAll('path.flowchart-link')].find((path) => path.id.includes(marker)),
+        label: svg.querySelector(`.edgeLabel .label[data-id^="${marker}"]`)?.closest('.edgeLabel')
+      };
+    });
+    function walk(start, neighbors) {
+      const seen = new Set();
+      const stack = [...(neighbors.get(start) || [])];
+      while (stack.length) {
+        const id = stack.pop();
+        if (seen.has(id)) continue;
+        seen.add(id);
+        stack.push(...(neighbors.get(id) || []));
+      }
+      return seen;
+    }
+    function clear() {
+      svg.classList.remove('chain');
+      for (const el of svg.querySelectorAll('.hot, .pinned')) { el.classList.remove('hot'); el.classList.remove('pinned'); }
+    }
+    let pinned = null;
+    function nodeIdFrom(event) {
+      const node = event.target.closest('g.node');
+      if (!node) return null;
+      const match = node.id.match(/-flowchart-(.+)-\d+$/);
+      return match ? match[1] : null;
+    }
+    function show(id) {
+      if (!nodeEls.has(id)) return;
+      clear();
+      const hot = walk(id, incoming);
+      for (const next of walk(id, outgoing)) hot.add(next);
+      hot.add(id);
+      svg.classList.add('chain');
+      for (const nodeId of hot) nodeEls.get(nodeId)?.classList.add('hot');
+      if (pinned) nodeEls.get(pinned)?.classList.add('pinned');
+      for (const edge of edgeEls) {
+        if (!hot.has(edge.from) || !hot.has(edge.to)) continue;
+        edge.path?.classList.add('hot');
+        edge.label?.classList.add('hot');
+      }
+    }
+    svg.addEventListener('mouseover', (event) => { if (pinned) return; const id = nodeIdFrom(event); if (id) show(id); });
+    svg.addEventListener('mouseleave', () => { if (!pinned) clear(); });
+    svg.addEventListener('click', (event) => {
+      const id = nodeIdFrom(event);
+      if (!id) return;
+      pinned = pinned === id ? null : id;
+      if (pinned) show(pinned); else show(id);
+    });
+  }
+</script>
+</body>
+</html>

@@ -58,7 +58,7 @@ bump_python() {
     uv lock
   }
 
-  # `uv run task bump` rebuilds the local package and may leave uv.lock modified.
+  # A rebuild of the local package can leave uv.lock modified. Commit that first.
   sync_lockfile
   if ! git diff --quiet uv.lock; then
     if git diff --quiet -- . ':!uv.lock' && git diff --cached --quiet; then
@@ -139,8 +139,12 @@ bump_rust() {
   # cargo-release cannot fill {{prev_version}} in a one-commit workspace bump, so commit
   # here. scripts/changelog.py starts a section at this subject.
   git commit -m "Bump version: $old → $new" -- Cargo.toml Cargo.lock
+  # Point the README install commands at the new tag (crates/dql-cli/release.toml). Runs after
+  # the commit so cargo-release sees a clean tree; pre-releases change nothing.
+  cargo release replace -p dql-cli --execute --no-confirm
+  git commit -q --amend --no-edit -- "$REPO_ROOT/README.md" "$REPO_ROOT/rust-docs/README.md"
   if [[ "$tag" == true ]]; then
-    git tag -a "rust-$new" -m "dqlrs $new"
+    git tag -a "dqlrs-$new" -m "dqlrs $new"
   fi
 }
 

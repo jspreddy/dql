@@ -18,20 +18,32 @@ This repository ([jspreddy/dql](https://github.com/jspreddy/dql)) is a fork of
 | [architecture.html](architecture.html) | Crate, module, and runtime diagrams |
 | [packaging.html](packaging.html) | How `dqlrs` is packaged, installed, and run (web assets included) |
 | [notebook.html](notebook.html) | How `dqlrs notebook` installs, configures, and launches kernels |
+| [release-plans.md](release-plans.md) | Plans for prebuilt binaries and a `dqlrs update` command |
 | [`metrics/`](metrics/) | How long the rewrite took and what it cost: [by day](metrics/rewrite-metrics.html), [by hour](metrics/rewrite-metrics-hours.html), [Plotly charts](metrics/work-metrics.html) |
 | [`plans/`](plans/README.md) | Architecture notes, testing strategy, open design debt, and the archive of finished plans (including the security design) |
 
 ## Install
 
-There are no prebuilt binaries or GitHub releases yet. Build from source with
+There are no prebuilt binaries yet. Build from source with
 [Rust/Cargo](https://rustup.rs/).
 
-**From the git URL** (no checkout needed):
+**Latest release**, from the git URL (no checkout needed). Releases are tagged
+`dqlrs-<version>`:
+
+```bash
+cargo install --git https://github.com/jspreddy/dql.git --tag dqlrs-0.7.10 \
+  --locked --root ~/.local dql-cli
+```
+
+**Latest on `v-rust`**, the newest changes, released or not:
 
 ```bash
 cargo install --git https://github.com/jspreddy/dql.git --branch v-rust \
   --locked --root ~/.local dql-cli
 ```
+
+Run either command again to update. Plans for prebuilt binaries and a
+`dqlrs update` command are in [release-plans.md](release-plans.md).
 
 **Local release build:**
 

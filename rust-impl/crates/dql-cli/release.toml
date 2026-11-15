@@ -1,0 +1,10 @@
+# cargo-release settings for dql-cli, the package that builds `dqlrs`. The workspace settings
+# are in ../../release.toml.
+#
+# A stable release points the install commands in the READMEs at its tag. Pre-releases leave
+# them on the last stable release (cargo-release's `prerelease = false` default). `exactly`
+# fails the bump when a README stops pinning the tag. Paths are relative to this crate.
+pre-release-replacements = [
+  { file = "../../../README.md", search = "dqlrs-[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?", replace = "dqlrs-{{version}}", exactly = 2 },
+  { file = "../../../rust-docs/README.md", search = "dqlrs-[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?", replace = "dqlrs-{{version}}", exactly = 1 },
+]

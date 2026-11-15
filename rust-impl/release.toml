@@ -1,7 +1,7 @@
 # cargo-release settings for the dqlrs workspace. Run it through `just version rust <level>`
 # (scripts/bump-version.sh): cargo-release writes the new version into Cargo.toml and
 # Cargo.lock, then the script commits "Bump version: OLD → NEW" and, with --tag, tags
-# rust-<version>. (cargo-release cannot fill {{prev_version}} in a one-commit workspace bump.)
+# dqlrs-<version>. (cargo-release cannot fill {{prev_version}} in a one-commit workspace bump.)
 #
 # The version lives once, in Cargo.toml's [workspace.package]; every crate inherits it.
 # Levels: major, minor, patch, release, rc, beta, alpha (semver pre-releases such as

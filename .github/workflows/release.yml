@@ -1,0 +1,176 @@
+name: Release dqlrs
+
+# Start from Actions > Release dqlrs > Run workflow. It bumps the dqlrs version on v-rust and
+# tags the result dqlrs-<version>:
+#
+# 1. scripts/bump-version.sh commits "Bump version: OLD → NEW" (the same script as
+#    `just version rust <level|version>`). For a stable release, cargo-release's
+#    pre-release-replacements (rust-impl/crates/dql-cli/release.toml) also point the README
+#    install commands at the new tag.
+# 2. CHANGELOG.md is regenerated in the same commit.
+# 3. v-rust requires a pull request, so the job opens "Release dqlrs NEW", merges it itself, and
+#    tags the merge commit.
+#
+# When `version` is the current version and has no tag yet, nothing is bumped: the job tags the
+# v-rust commit where that version landed.
+#
+# Needs Settings > Actions > General > "Allow GitHub Actions to create and approve pull
+# requests", as the Changelog workflow does. The job never approves a pull request.
+on:
+  workflow_dispatch:
+    inputs:
+      level:
+        description: "Bump level. Ignored when version is set."
+        type: choice
+        options: [patch, minor, major, alpha, beta, rc, release]
+        default: patch
+      version:
+        description: "Exact version instead of a level, such as 0.8.0 or 0.8.0-rc.1."
+        type: string
+        required: false
+      dry_run:
+        description: "Show the change without opening a pull request or tagging."
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      LEVEL: ${{ inputs.level }}
+      VERSION: ${{ inputs.version }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      GIT_AUTHOR_NAME: github-actions[bot]
+      GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+      GIT_COMMITTER_NAME: github-actions[bot]
+      GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+    steps:
+      # GitHub's own checkout, pinned to a commit (the Actions policy requires pinned actions).
+      # The changelog walks the whole first-parent history, so fetch it all, with tags. The
+      # checkout keeps the job token in .git/config (masked) for the pushes below.
+      - name: Check out v-rust
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: v-rust
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install cargo-release
+        working-directory: rust-impl
+        run: |
+          cargo install cargo-release --locked
+          cargo fetch --locked
+
+      - name: Bump the version
+        id: bump
+        run: |
+          git checkout -q -B release origin/v-rust
+          old=$(cd rust-impl && cargo pkgid --offline -p dql-cli | sed 's/.*[#@]//')
+          target="${VERSION:-$LEVEL}"
+          target="${target#v}"
+          target="${target#dqlrs-}"
+          if [[ "$target" == "$old" ]]; then
+            echo "dqlrs is already $old; tagging where it landed"
+            echo "mode=tag-only" >> "$GITHUB_OUTPUT"
+            echo "version=$old" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ./scripts/bump-version.sh rust "$target"
+          new=$(cd rust-impl && cargo pkgid --offline -p dql-cli | sed 's/.*[#@]//')
+          if [[ "$new" == "$old" ]]; then
+            echo "error: '$target' did not change the version ($old)" >&2
+            exit 1
+          fi
+          echo "mode=bump" >> "$GITHUB_OUTPUT"
+          echo "version=$new" >> "$GITHUB_OUTPUT"
+          echo "Bumped dqlrs $old → $new"
+
+      - name: Check that the tag is new
+        env:
+          NEW: ${{ steps.bump.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/dqlrs-$NEW" >/dev/null; then
+            echo "error: tag dqlrs-$NEW already exists" >&2
+            exit 1
+          fi
+
+      - name: Update the changelog
+        if: steps.bump.outputs.mode == 'bump'
+        run: |
+          # Read the release commit, but name the history as the Changelog workflow does.
+          python3 scripts/changelog.py --ref HEAD --name origin/v-rust
+          git commit -q --amend --no-edit -- CHANGELOG.md
+          git show --stat HEAD
+
+      - name: Open and merge the release
+        if: steps.bump.outputs.mode == 'bump' && inputs.dry_run == false
+        id: merge
+        env:
+          NEW: ${{ steps.bump.outputs.version }}
+        run: |
+          branch="release/dqlrs-$NEW"
+          git push -q --force origin "HEAD:refs/heads/$branch"
+          url=$(gh pr create --base v-rust --head "$branch" --title "Release dqlrs $NEW" \
+            --body "Started from the Release dqlrs workflow by @${GITHUB_ACTOR}. Merging tags it \`dqlrs-$NEW\`.")
+          echo "$url"
+          # A new pull request can report "not mergeable" until GitHub has computed its merge.
+          for attempt in 1 2 3 4 5; do
+            if gh pr merge "$url" --merge --delete-branch; then
+              sha=$(gh pr view "$url" --json mergeCommit -q .mergeCommit.oid)
+              echo "sha=$sha" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "could not merge $url" >&2
+          exit 1
+
+      - name: Find where the version landed
+        if: steps.bump.outputs.mode == 'tag-only'
+        id: landed
+        env:
+          NEW: ${{ steps.bump.outputs.version }}
+        run: |
+          # Walk back the commits that changed Cargo.toml while it still says NEW: the oldest
+          # of them is where NEW landed.
+          sha=""
+          for rev in $(git rev-list --first-parent origin/v-rust -- rust-impl/Cargo.toml); do
+            at=$(git show "$rev:rust-impl/Cargo.toml" | sed -n 's/^version = "\(.*\)"$/\1/p' | head -1)
+            [[ "$at" == "$NEW" ]] || break
+            sha="$rev"
+          done
+          if [[ -z "$sha" ]]; then
+            echo "error: no v-rust commit sets version $NEW" >&2
+            exit 1
+          fi
+          git log --oneline -1 "$sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Tag the release
+        if: inputs.dry_run == false
+        env:
+          NEW: ${{ steps.bump.outputs.version }}
+          SHA: ${{ steps.merge.outputs.sha || steps.landed.outputs.sha }}
+        run: |
+          git fetch -q origin v-rust
+          git tag -a "dqlrs-$NEW" "$SHA" -m "dqlrs $NEW"
+          git push -q origin "refs/tags/dqlrs-$NEW"
+          echo "Tagged $SHA as dqlrs-$NEW"
+
+      # Merges made with the job token do not start workflows. Run the Changelog workflow, in
+      # case another pull request merged while this one was open.
+      - name: Refresh the changelog
+        if: steps.bump.outputs.mode == 'bump' && inputs.dry_run == false
+        run: gh workflow run changelog.yml --ref v-rust
