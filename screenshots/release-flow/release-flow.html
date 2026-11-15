@@ -43,7 +43,6 @@ flowchart LR
   subgraph entries [Entry points]
     relDispatch["Actions: Release dqlrs<br/>(Run workflow: level / version / dry_run)"]
     justVersion["just version rust|python"]
-    uvBump["uv run task bump<br/>(py-impl)"]
     mergeVrust["PR merged into v-rust<br/>(push)"]
     justChangelog["just changelog<br/>just changelog-check"]
     clSkill["changelog skill"]
@@ -82,7 +81,6 @@ flowchart LR
   relDispatch --> releaseYml
   justVersion -->|"rust"| bumpScript
   justVersion -->|"python"| bumpScript
-  uvBump --> bumpScript
   mergeVrust --> changelogYml
   mergeVrust --> checkYml
   clSkill --> justChangelog
@@ -114,7 +112,7 @@ flowchart LR
   ghPr --> vrust
   gitTag --> tagRef
 
-  class relDispatch,justVersion,uvBump,mergeVrust,justChangelog,clSkill entry
+  class relDispatch,justVersion,mergeVrust,justChangelog,clSkill entry
   class wsRelease,cliRelease,pyBumpCfg file
   class cargoToml,readmes,pyFiles,changelogMd,bumpCommit,vrust,tagRef out
 </pre>

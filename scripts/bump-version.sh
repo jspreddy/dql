@@ -58,7 +58,7 @@ bump_python() {
     uv lock
   }
 
-  # `uv run task bump` rebuilds the local package and may leave uv.lock modified.
+  # A rebuild of the local package can leave uv.lock modified. Commit that first.
   sync_lockfile
   if ! git diff --quiet uv.lock; then
     if git diff --quiet -- . ':!uv.lock' && git diff --cached --quiet; then

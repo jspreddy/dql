@@ -110,7 +110,6 @@ port = 8000
 delay = 2
 
 [tool.taskipy.tasks]
-bump = "sh ../scripts/bump-version.sh python"
 version = "which python && python --version"
 
 clean = "rm -rf .dynamo-local ../.dynamo-local build dql.egg-info .pytest_cache .coverage; uv venv --clear"
