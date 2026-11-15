@@ -31,7 +31,7 @@ There are no prebuilt binaries yet. Build from source with
 `dqlrs-<version>`:
 
 ```bash
-cargo install --git https://github.com/jspreddy/dql.git --tag dqlrs-0.7.10 \
+cargo install --git https://github.com/jspreddy/dql.git --tag dqlrs-0.7.11 \
   --locked --root ~/.local dql-cli
 ```
 

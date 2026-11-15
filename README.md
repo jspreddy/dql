@@ -11,7 +11,7 @@ AI agent can use the same workspace over MCP.
 Latest release:
 
 ```bash
-cargo install --git https://github.com/jspreddy/dql.git --tag dqlrs-0.7.10 \
+cargo install --git https://github.com/jspreddy/dql.git --tag dqlrs-0.7.11 \
   --locked --root ~/.local dql-cli
 ```
 
@@ -201,7 +201,7 @@ source. Pick one.
 **Latest release.** Releases are tagged `dqlrs-<version>`:
 
 ```bash
-cargo install --git https://github.com/jspreddy/dql.git --tag dqlrs-0.7.10 \
+cargo install --git https://github.com/jspreddy/dql.git --tag dqlrs-0.7.11 \
   --locked --root ~/.local dql-cli
 ```
 
