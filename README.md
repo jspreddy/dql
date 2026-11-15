@@ -8,14 +8,22 @@
 ways to work: a terminal UI, a browser editor, and a JupyterLab notebook. Your
 AI agent can use the same workspace over MCP.
 
+Latest release:
+
 ```bash
 cargo install --git https://github.com/jspreddy/dql.git --tag dqlrs-0.7.10 \
   --locked --root ~/.local dql-cli
 ```
 
+Latest on `v-rust` (newest changes, released or not):
+
+```bash
+cargo install --git https://github.com/jspreddy/dql.git --branch v-rust \
+  --locked --root ~/.local dql-cli
+```
+
 Needs [Rust/Cargo](https://rustup.rs/). The binary lands in `~/.local/bin`.
-That installs the latest release. For the newest changes on `v-rust`, see
-[Install](#install).
+More options: [Install](#install).
 
 Pick a surface:
 
