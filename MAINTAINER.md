@@ -6,7 +6,6 @@
 | --- | --- |
 | [`py-impl/`](py-impl/) | Python package, tests, packaging, tooling |
 | [`py-docs/`](py-docs/) | Sphinx docs for the Python client |
-| [`py-plans/`](py-plans/) | Python-only design notes |
 | [`rust-impl/`](rust-impl/) | Rust Cargo workspace (`dqlrs`) |
 | [`rust-docs/`](rust-docs/) | User docs for the Rust client; plans and archive under [`rust-docs/plans/`](rust-docs/plans/README.md) |
 | [`black-box-tests/`](black-box-tests/) | Black-box acceptance cases (binaries + DynamoDB Local) |

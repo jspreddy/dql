@@ -4,8 +4,7 @@ Python package, tests, and tooling for DynamoDB Query Language. This tree is the
 legacy client (`dql`). The recommended client is the Rust binary `dqlrs` in
 [`rust-impl/`](../rust-impl/).
 
-User and API docs: [`py-docs/`](../py-docs/) (Sphinx). Design notes:
-[`py-plans/`](../py-plans/).
+User and API docs: [`py-docs/`](../py-docs/) (Sphinx).
 
 ## Setup
 
