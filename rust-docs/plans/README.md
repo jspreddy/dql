@@ -5,8 +5,6 @@ docs are one level up in [`rust-docs/`](../README.md). Code in
 [`rust-impl/`](../../rust-impl/) is the source of truth; these files track
 intent.
 
-Python-only plans live in [`py-plans/`](../../py-plans/).
-
 ## Layout
 
 ```text
