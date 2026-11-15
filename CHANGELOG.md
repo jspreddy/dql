@@ -10,6 +10,7 @@ next bump, or to Unreleased when no later bump exists.
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5
 
+- [ad1b8ae](https://github.com/jspreddy/dql/commit/ad1b8ae7a564716da459428cf804c48a097c54a4) Add a Release dqlrs workflow and release install commands ([#215](https://github.com/jspreddy/dql/pull/215))
 - [1796de2](https://github.com/jspreddy/dql/commit/1796de2a4f1c51f954118e43d26fb320a40c82fb) Remove the empty py-plans folder ([#213](https://github.com/jspreddy/dql/pull/213))
 - [2171577](https://github.com/jspreddy/dql/commit/21715779ba7343a94b97f10e02d2e50158069a26) Add pointers for new agents to AGENTS.md ([#209](https://github.com/jspreddy/dql/pull/209))
 
