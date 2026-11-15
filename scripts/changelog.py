@@ -24,6 +24,8 @@ Usage:
   changelog.py                 rewrite CHANGELOG.md at the repository root
   changelog.py --check         exit 1 if CHANGELOG.md is out of date
   changelog.py --ref REF       use REF instead of origin/v-rust (falls back to v-rust)
+  changelog.py --name NAME     call the history NAME in the header instead of REF, so a
+                               release branch writes the same file v-rust will
   changelog.py --stdout        print instead of writing
   changelog.py --commit-title  print the workflow's commit subject and write nothing
 """
@@ -435,6 +437,7 @@ def commit_title(root: Path, ref: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--ref", help="branch or commit to read (default: origin/v-rust, else v-rust)")
+    parser.add_argument("--name", help="what the header calls the history (default: the ref)")
     parser.add_argument("--check", action="store_true", help="exit 1 if CHANGELOG.md is out of date")
     parser.add_argument("--stdout", action="store_true", help="print the changelog instead of writing it")
     parser.add_argument(
@@ -450,7 +453,7 @@ def main(argv: list[str] | None = None) -> int:
         print(commit_title(root, ref))
         return 0
     sections = collect(root, ref)
-    text = render(ref, sections)
+    text = render(args.name or ref, sections)
     target = root / "CHANGELOG.md"
     if args.stdout:
         sys.stdout.write(text)

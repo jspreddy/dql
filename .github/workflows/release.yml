@@ -114,7 +114,8 @@ jobs:
           if [[ "$NEW" != *-* ]]; then
             python3 scripts/release_pins.py "$NEW"
           fi
-          python3 scripts/changelog.py --ref HEAD
+          # Read the release commit, but name the history as the Changelog workflow does.
+          python3 scripts/changelog.py --ref HEAD --name origin/v-rust
           git commit -q --amend --no-edit -- README.md rust-docs/README.md CHANGELOG.md
           git show --stat HEAD
 
@@ -147,8 +148,14 @@ jobs:
         env:
           NEW: ${{ steps.bump.outputs.version }}
         run: |
-          pattern="^version = \"${NEW//./\\.}\"$"
-          sha=$(git log --first-parent -1 --format=%H -G "$pattern" origin/v-rust -- rust-impl/Cargo.toml)
+          # Walk back the commits that changed Cargo.toml while it still says NEW: the oldest
+          # of them is where NEW landed.
+          sha=""
+          for rev in $(git rev-list --first-parent origin/v-rust -- rust-impl/Cargo.toml); do
+            at=$(git show "$rev:rust-impl/Cargo.toml" | sed -n 's/^version = "\(.*\)"$/\1/p' | head -1)
+            [[ "$at" == "$NEW" ]] || break
+            sha="$rev"
+          done
           if [[ -z "$sha" ]]; then
             echo "error: no v-rust commit sets version $NEW" >&2
             exit 1
