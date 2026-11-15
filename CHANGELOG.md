@@ -5,11 +5,12 @@ Do not edit by hand: changes are rewritten the next time it runs. Newest first.
 A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists.
 
-## Unreleased (2026-11-14)
+## Unreleased (2026-11-14 to 2026-11-15)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5
 
+- [1796de2](https://github.com/jspreddy/dql/commit/1796de2a4f1c51f954118e43d26fb320a40c82fb) Remove the empty py-plans folder ([#213](https://github.com/jspreddy/dql/pull/213))
 - [2171577](https://github.com/jspreddy/dql/commit/21715779ba7343a94b97f10e02d2e50158069a26) Add pointers for new agents to AGENTS.md ([#209](https://github.com/jspreddy/dql/pull/209))
 
 ## dqlrs 0.7.10 (2026-11-14)
