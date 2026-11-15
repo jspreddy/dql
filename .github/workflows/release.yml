@@ -4,9 +4,10 @@ name: Release dqlrs
 # tags the result dqlrs-<version>:
 #
 # 1. scripts/bump-version.sh commits "Bump version: OLD → NEW" (the same script as
-#    `just version rust <level|version>`).
-# 2. A stable release also points the README install commands at the new tag. CHANGELOG.md is
-#    regenerated in the same commit.
+#    `just version rust <level|version>`). For a stable release, cargo-release's
+#    pre-release-replacements (rust-impl/crates/dql-cli/release.toml) also point the README
+#    install commands at the new tag.
+# 2. CHANGELOG.md is regenerated in the same commit.
 # 3. v-rust requires a pull request, so the job opens "Release dqlrs NEW", merges it itself, and
 #    tags the merge commit.
 #
@@ -105,18 +106,12 @@ jobs:
             exit 1
           fi
 
-      # A pre-release keeps the README on the last stable release.
-      - name: Update the install commands and the changelog
+      - name: Update the changelog
         if: steps.bump.outputs.mode == 'bump'
-        env:
-          NEW: ${{ steps.bump.outputs.version }}
         run: |
-          if [[ "$NEW" != *-* ]]; then
-            python3 scripts/release_pins.py "$NEW"
-          fi
           # Read the release commit, but name the history as the Changelog workflow does.
           python3 scripts/changelog.py --ref HEAD --name origin/v-rust
-          git commit -q --amend --no-edit -- README.md rust-docs/README.md CHANGELOG.md
+          git commit -q --amend --no-edit -- CHANGELOG.md
           git show --stat HEAD
 
       - name: Open and merge the release

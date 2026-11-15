@@ -68,7 +68,8 @@ it up to date:
 
 README: add `curl -LsSf https://raw.githubusercontent.com/jspreddy/dql/v-rust/bin/install-rust.sh | sh`
 above the `cargo install` commands, and keep both cargo commands for people who build
-from source. `scripts/release_pins.py` keeps pinning the cargo `--tag`.
+from source. `pre-release-replacements` in `rust-impl/crates/dql-cli/release.toml` keeps
+pinning the cargo `--tag`; add the script's `DQL_VERSION` example there if it shows one.
 
 ### Checks
 

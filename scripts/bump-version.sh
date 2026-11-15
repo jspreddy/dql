@@ -139,6 +139,10 @@ bump_rust() {
   # cargo-release cannot fill {{prev_version}} in a one-commit workspace bump, so commit
   # here. scripts/changelog.py starts a section at this subject.
   git commit -m "Bump version: $old → $new" -- Cargo.toml Cargo.lock
+  # Point the README install commands at the new tag (crates/dql-cli/release.toml). Runs after
+  # the commit so cargo-release sees a clean tree; pre-releases change nothing.
+  cargo release replace -p dql-cli --execute --no-confirm
+  git commit -q --amend --no-edit -- "$REPO_ROOT/README.md" "$REPO_ROOT/rust-docs/README.md"
   if [[ "$tag" == true ]]; then
     git tag -a "dqlrs-$new" -m "dqlrs $new"
   fi

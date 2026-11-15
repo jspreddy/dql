@@ -111,8 +111,11 @@ drops the suffix. Versions use semver pre-release identifiers (`-alpha.1`), not
 the old `-devN` builds.
 
 Each bump is one commit, `Bump version: OLD → NEW`, holding `Cargo.toml` and
-`Cargo.lock`; [`scripts/changelog.py`](../scripts/changelog.py) starts a
-changelog section at it. Nothing is published or pushed. Release tags are
+`Cargo.lock`. A stable bump also points the README install commands at the new
+`dqlrs-<version>` tag, through cargo-release's `pre-release-replacements` in
+[`crates/dql-cli/release.toml`](crates/dql-cli/release.toml); pre-releases leave
+them alone. [`scripts/changelog.py`](../scripts/changelog.py) starts a
+changelog section at each bump. Nothing is published or pushed. Release tags are
 `dqlrs-<version>` so they do not collide with Python `python-<version>` tags.
 
 ### Releasing from GitHub
@@ -127,8 +130,7 @@ changelog section at it. Nothing is published or pushed. Release tags are
 | `dry_run` | Shows the change in the job log without opening a pull request or tagging |
 
 The job runs `scripts/bump-version.sh`, regenerates `CHANGELOG.md`, and for a
-stable release points the README install commands at the new tag
-(`scripts/release_pins.py`). `v-rust` takes changes only through pull
+stable release points the README install commands at the new tag. `v-rust` takes changes only through pull
 requests, so the job opens **Release dqlrs NEW**, merges it itself, and tags
 the merge commit `dqlrs-NEW`. A pre-release is tagged too, but the README keeps
 pointing at the last stable release.
