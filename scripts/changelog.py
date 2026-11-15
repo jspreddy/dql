@@ -13,7 +13,8 @@ file from git. Entries are the first-parent history, newest first:
 - "Bump version:" commits and lockfile sync commits are left out, since the section
   heading names the version;
 - changelog updates ("Update the changelog ...") are left out, so the workflow that
-  merges the update does not make the file stale again.
+  merges the update does not make the file stale again;
+- release pull requests ("Release dqlrs ...") are left out, since they hold only the bump.
 
 Sections follow "Bump version: OLD → NEW" commits. Changes after a bump belong to the
 next bump's version. Changes after the latest bump are "Unreleased". A bump that lands
@@ -52,7 +53,11 @@ SKIP_SUBJECTS = (
     re.compile(r"^Sync (Cargo\.lock|lockfile) with "),
 )
 # Merged pull requests whose title matches are not entries.
-SKIP_TITLES = (re.compile(r"^Update the changelog\b"),)
+SKIP_TITLES = (
+    re.compile(r"^Update the changelog\b"),
+    # The Release dqlrs workflow's pull request holds only the bump; the section heading names it.
+    re.compile(r"^Release dqlrs\b"),
+)
 # Pull requests merged before this date were on a different repository, so a link to
 # /pull/N here would open the wrong pull request. They show a plain "#N" instead.
 PULL_LINKS_SINCE = "2024-10-01"

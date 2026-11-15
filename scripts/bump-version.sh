@@ -140,7 +140,7 @@ bump_rust() {
   # here. scripts/changelog.py starts a section at this subject.
   git commit -m "Bump version: $old → $new" -- Cargo.toml Cargo.lock
   if [[ "$tag" == true ]]; then
-    git tag -a "rust-$new" -m "dqlrs $new"
+    git tag -a "dqlrs-$new" -m "dqlrs $new"
   fi
 }
 

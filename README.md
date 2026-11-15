@@ -9,12 +9,13 @@ ways to work: a terminal UI, a browser editor, and a JupyterLab notebook. Your
 AI agent can use the same workspace over MCP.
 
 ```bash
-cargo install --git https://github.com/jspreddy/dql.git --branch v-rust \
+cargo install --git https://github.com/jspreddy/dql.git --tag dqlrs-0.7.10 \
   --locked --root ~/.local dql-cli
 ```
 
 Needs [Rust/Cargo](https://rustup.rs/). The binary lands in `~/.local/bin`.
-More options: [Install](#install).
+That installs the latest release. For the newest changes on `v-rust`, see
+[Install](#install).
 
 Pick a surface:
 
@@ -182,19 +183,30 @@ It works everywhere DQL runs: the REPL, the web editor, a notebook cell, and
 
 ## Install
 
-Both clients install straight from the **`v-rust`** branch on GitHub. There
-are no prebuilt binaries or releases yet.
+Both clients install from GitHub. There are no prebuilt binaries yet.
 
 ### Rust `dqlrs` (recommended)
 
-Requires [Rust/Cargo](https://rustup.rs/). This builds `dqlrs` from source:
+Requires [Rust/Cargo](https://rustup.rs/). Both commands build `dqlrs` from
+source. Pick one.
+
+**Latest release.** Releases are tagged `dqlrs-<version>`:
+
+```bash
+cargo install --git https://github.com/jspreddy/dql.git --tag dqlrs-0.7.10 \
+  --locked --root ~/.local dql-cli
+```
+
+**Latest on `v-rust`.** The newest changes, released or not:
 
 ```bash
 cargo install --git https://github.com/jspreddy/dql.git --branch v-rust \
   --locked --root ~/.local dql-cli
 ```
 
-Add `~/.local/bin` to your `PATH` if needed. The binary is `dqlrs`.
+Run either command again to update. Add `~/.local/bin` to your `PATH` if
+needed. The binary is `dqlrs`. Every release is listed in
+[CHANGELOG.md](CHANGELOG.md).
 
 More: [`rust-docs/README.md`](rust-docs/README.md).
 

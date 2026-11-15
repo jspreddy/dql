@@ -103,7 +103,7 @@ just version rust alpha                # pre-release: 0.7.10 -> 0.7.11-alpha.1, 
 just version rust beta                 # also rc
 just version rust release              # drop the pre-release: 0.7.11-alpha.2 -> 0.7.11
 just version rust 0.8.0-rc.1           # or set an exact version
-just version -- rust release --tag     # also tag rust-<version>
+just version -- rust release --tag     # also tag dqlrs-<version>
 ```
 
 Pre-release levels only move forward (alpha, then beta, then rc); `release`
@@ -113,4 +113,25 @@ the old `-devN` builds.
 Each bump is one commit, `Bump version: OLD → NEW`, holding `Cargo.toml` and
 `Cargo.lock`; [`scripts/changelog.py`](../scripts/changelog.py) starts a
 changelog section at it. Nothing is published or pushed. Release tags are
-`rust-<version>` so they do not collide with Python `python-<version>` tags.
+`dqlrs-<version>` so they do not collide with Python `python-<version>` tags.
+
+### Releasing from GitHub
+
+**Actions → Release dqlrs → Run workflow**
+([`release.yml`](../.github/workflows/release.yml)) releases without a checkout:
+
+| Input | What it does |
+| --- | --- |
+| `level` | `patch`, `minor`, `major`, `alpha`, `beta`, `rc` or `release`, as above |
+| `version` | An exact version such as `0.8.0` or `0.8.0-rc.1`; overrides `level` |
+| `dry_run` | Shows the change in the job log without opening a pull request or tagging |
+
+The job runs `scripts/bump-version.sh`, regenerates `CHANGELOG.md`, and for a
+stable release points the README install commands at the new tag
+(`scripts/release_pins.py`). `v-rust` takes changes only through pull
+requests, so the job opens **Release dqlrs NEW**, merges it itself, and tags
+the merge commit `dqlrs-NEW`. A pre-release is tagged too, but the README keeps
+pointing at the last stable release.
+
+When `version` is the current version and has no tag yet, nothing is bumped:
+the job tags the `v-rust` commit where that version landed.
