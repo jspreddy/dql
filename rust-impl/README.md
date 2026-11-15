@@ -118,6 +118,9 @@ them alone. [`scripts/changelog.py`](../scripts/changelog.py) starts a
 changelog section at each bump. Nothing is published or pushed. Release tags are
 `dqlrs-<version>` so they do not collide with Python `python-<version>` tags.
 
+[What uses what](../screenshots/release-flow/release-flow.png) for every versioning
+entry point ([interactive](../screenshots/release-flow/release-flow.html)).
+
 ### Releasing from GitHub
 
 **Actions → Release dqlrs → Run workflow**
