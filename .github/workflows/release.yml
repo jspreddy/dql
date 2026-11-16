@@ -148,11 +148,14 @@ jobs:
 
       - name: Update the changelog
         if: steps.bump.outputs.mode == 'bump'
+        env:
+          NEW: ${{ steps.bump.outputs.version }}
         run: |
           # Read the release commit, but name the history as the Changelog workflow does.
           python3 scripts/changelog.py --ref HEAD --name origin/v-rust
           git commit -q --amend --no-edit -- CHANGELOG.md
           git show --stat HEAD
+          echo "Tag message link: $(python3 scripts/changelog.py --link "$NEW" --at HEAD --blob "dqlrs-$NEW")"
 
       - name: Open and merge the release
         if: steps.bump.outputs.mode == 'bump' && inputs.dry_run == false
@@ -205,7 +208,19 @@ jobs:
           SHA: ${{ steps.merge.outputs.sha || steps.landed.outputs.sha }}
         run: |
           git fetch -q origin v-rust
-          git tag -a "dqlrs-$NEW" "$SHA" -m "dqlrs $NEW"
+          # Link the tag to its changelog section: in CHANGELOG.md at the tag when the release
+          # commit wrote it there, else on v-rust (a tag-only release of an older commit).
+          link=$(python3 scripts/changelog.py --link "$NEW" --at "$SHA" --blob "dqlrs-$NEW" \
+            || python3 scripts/changelog.py --link "$NEW" --at origin/v-rust --blob v-rust \
+            || true)
+          message="dqlrs $NEW"
+          if [[ -n "$link" ]]; then
+            message+=$'\n\n'"Changelog: $link"
+          else
+            echo "::warning::no dqlrs $NEW heading in CHANGELOG.md; tagging without a changelog link"
+          fi
+          git tag -a "dqlrs-$NEW" "$SHA" -m "$message"
+          git tag -n3 -l "dqlrs-$NEW"
           git push -q origin "refs/tags/dqlrs-$NEW"
           echo "Tagged $SHA as dqlrs-$NEW"
 

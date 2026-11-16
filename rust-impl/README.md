@@ -135,7 +135,8 @@ entry point ([interactive](../screenshots/release-flow/release-flow.html)).
 The job runs `scripts/bump-version.sh`, regenerates `CHANGELOG.md`, and for a
 stable release points the README install commands at the new tag. `v-rust` takes changes only through pull
 requests, so the job opens **Release dqlrs NEW**, merges it itself, and tags
-the merge commit `dqlrs-NEW`. A pre-release is tagged too, but the README keeps
+the merge commit `dqlrs-NEW`. The tag message links to that version's heading
+in `CHANGELOG.md` (`scripts/changelog.py --link NEW`). A pre-release is tagged too, but the README keeps
 pointing at the last stable release.
 
 When `version` is the current version and has no tag yet, nothing is bumped:
