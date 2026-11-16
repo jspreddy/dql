@@ -1163,12 +1163,16 @@ fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Resul
         return Err(format!("unsupported table name {name:?}"));
     }
     let limit = PAGE_SIZE.saturating_mul(page.saturating_add(1));
-    let (statement, page_with_limit) = browser_read_dql(name, dql, limit)?;
-    let envelope = state.session.execute_for_serve(&statement);
-    if !envelope.ok {
-        return Err(ExecText::from_envelope(&envelope).failure());
+    let (statements, page_with_limit) = browser_read_dql(name, dql, limit)?;
+    let mut items = Vec::new();
+    for statement in &statements {
+        let envelope = state.session.execute_for_serve(statement);
+        if !envelope.ok {
+            return Err(ExecText::from_envelope(&envelope).failure());
+        }
+        items.extend(envelope.items.unwrap_or_default());
     }
-    let items = envelope.items.unwrap_or_default();
+    let statement = statements.join("; ");
     let start = PAGE_SIZE.saturating_mul(page);
     let end = (start + PAGE_SIZE).min(items.len());
     let window = items.get(start..end).unwrap_or(&[]);
@@ -1197,31 +1201,46 @@ fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Resul
     }))
 }
 
-/// SCAN/SELECT of `name` only. Paged reads append LIMIT; KEYS IN cannot.
-fn browser_read_dql(name: &str, dql: &str, limit: usize) -> Result<(String, bool), String> {
+/// SCAN/SELECT of `name` only. Paged reads append LIMIT; KEYS IN and multi-query keys cannot.
+fn browser_read_dql(name: &str, dql: &str, limit: usize) -> Result<(Vec<String>, bool), String> {
     let text = dql.trim().trim_end_matches(';').trim();
     if text.is_empty() {
-        return Ok((format!("SCAN * FROM {name} LIMIT {limit}"), true));
+        return Ok((vec![format!("SCAN * FROM {name} LIMIT {limit}")], true));
     }
-    let statement = parse_statement(text).map_err(|err| err.to_string())?;
-    match &statement {
-        Statement::Select { table, options, .. } | Statement::Scan { table, options, .. } => {
-            if table != name {
-                return Err(format!("read must use table {name}"));
+    let parts = split_statements(text);
+    if parts.is_empty() {
+        return Err("only SELECT or SCAN in the table browser".to_string());
+    }
+    let multi = parts.len() > 1;
+    let mut statements = Vec::new();
+    let mut keys_in = false;
+    for part in parts {
+        let part = part.trim().trim_end_matches(';').trim().to_string();
+        let statement = parse_statement(&part).map_err(|err| err.to_string())?;
+        match &statement {
+            Statement::Select { table, options, .. } | Statement::Scan { table, options, .. } => {
+                if table != name {
+                    return Err(format!("read must use table {name}"));
+                }
+                if options.save_file.is_some() {
+                    return Err("SAVE is not allowed in the table browser".to_string());
+                }
+                if options.limit.is_some() || options.scan_limit.is_some() {
+                    return Err("LIMIT is set by the table browser".to_string());
+                }
+                if options.keys_in.is_some() {
+                    keys_in = true;
+                    statements.push(part);
+                } else if multi {
+                    statements.push(part);
+                } else {
+                    statements.push(format!("{part} LIMIT {limit}"));
+                }
             }
-            if options.save_file.is_some() {
-                return Err("SAVE is not allowed in the table browser".to_string());
-            }
-            if options.limit.is_some() || options.scan_limit.is_some() {
-                return Err("LIMIT is set by the table browser".to_string());
-            }
-            if options.keys_in.is_some() {
-                return Ok((text.to_string(), false));
-            }
+            _ => return Err("only SELECT or SCAN in the table browser".to_string()),
         }
-        _ => return Err("only SELECT or SCAN in the table browser".to_string()),
     }
-    Ok((format!("{text} LIMIT {limit}"), true))
+    Ok((statements, !(keys_in || multi)))
 }
 
 fn structure_reply(app: &App, query: &str) -> Reply {
@@ -2732,6 +2751,21 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             "SELECT * FROM posts KEYS IN ('a', 1), ('b', 3)"
         );
         assert_eq!(by_keys_json["has_more"], false);
+
+        let by_index_keys = http_body(
+            addr,
+            "GET",
+            &format!(
+                "/api/rows?table=posts&page=0&dql={}",
+                query_encode(
+                    "SELECT * FROM posts WHERE sk = 1 USING by-sk; SELECT * FROM posts WHERE sk = 3 USING by-sk"
+                )
+            ),
+            "",
+        );
+        let by_index_keys_json: Value = serde_json::from_str(&by_index_keys).expect(&by_index_keys);
+        assert_eq!(by_index_keys_json["items"].as_array().unwrap().len(), 2);
+        assert_eq!(by_index_keys_json["has_more"], false);
 
         let write = http_body(
             addr,

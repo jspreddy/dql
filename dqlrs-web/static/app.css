@@ -2935,6 +2935,16 @@ body.results-resizing * {
   min-height: 18px;
 }
 
+#table-query-batch-source {
+  height: 18px;
+  min-width: 108px;
+  max-width: min(240px, 100%);
+  border: 1px solid var(--line-control);
+  border-radius: 6px;
+  padding: 0 6px;
+  font-size: 11px;
+}
+
 #table-query-add-key,
 #table-query-add-filter {
   height: 18px;

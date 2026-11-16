@@ -178,19 +178,30 @@ export function parseBatchKeys(text) {
   return { keys, errors };
 }
 
-export function formatKeysInClause(keys, table, extra) {
-  const source = tableSource(table);
+export function formatKeysInClause(keys, table, extra, source) {
+  const src = source || tableSource(table);
   return (keys || []).map((fields) => {
     const quoted = fields.map((value, index) => {
-      const name = index === 0 ? source.hashKey : source.rangeKey;
+      const name = index === 0 ? src.hashKey : src.rangeKey;
       return quoteValue(value, attributeType(table, extra, name));
     });
     return quoted.length === 1 ? quoted[0] : `(${quoted.join(", ")})`;
   }).join(", ");
 }
 
-export function batchKeyHint(table) {
-  const source = tableSource(table);
+export function formatIndexKeySelect(tableName, source, fields, table, extra) {
+  const hash = source && source.hashKey ? source.hashKey : "id";
+  const hashVal = quoteValue(fields[0], attributeType(table, extra, hash));
+  let sql = `SELECT * FROM ${quoteIdent(tableName)} WHERE ${quoteIdent(hash)} = ${hashVal}`;
+  if (fields.length > 1 && source && source.rangeKey) {
+    sql += ` AND ${quoteIdent(source.rangeKey)} = ${quoteValue(fields[1], attributeType(table, extra, source.rangeKey))}`;
+  }
+  if (source && source.name) sql += " USING " + quoteIdent(source.name);
+  return sql;
+}
+
+export function batchKeyHint(table, sourceName) {
+  const source = sourceOf(table, sourceName, "query");
   const hash = source.hashKey || "hash";
   if (source.rangeKey) {
     return `${hash} keys, or (${hash}, ${source.rangeKey}) pairs`;
@@ -198,16 +209,18 @@ export function batchKeyHint(table) {
   return `${hash} keys: a, b, c`;
 }
 
-export function keysModeError(table, parsed) {
+export function keysModeError(table, parsed, sourceName) {
   const result = parsed || parseBatchKeys("");
   if (result.errors.length) return result.errors[0];
   if (!result.keys.length) return "Keys needs at least one key.";
-  const hasRange = Boolean(tableSource(table).rangeKey);
-  if (hasRange && result.keys.some((key) => key.length < 2)) {
+  const source = sourceOf(table, sourceName, "query");
+  const tablePk = !source.name;
+  const hasRange = Boolean(source.rangeKey);
+  if (tablePk && hasRange && result.keys.some((key) => key.length < 2)) {
     return "Range keys go in parentheses: (hash, range).";
   }
   if (!hasRange && result.keys.some((key) => key.length > 1)) {
-    return "This table only has a hash key.";
+    return tablePk ? "This table only has a hash key." : "This index only has a hash key.";
   }
   return "";
 }
@@ -399,8 +412,14 @@ export function buildReadStatement(tableName, table, state, extra) {
   const current = ensureQueryKeys(table, state || defaultReadState());
   if (current.mode === "keys") {
     const parsed = parseBatchKeys(current.batchKeys);
-    if (keysModeError(table, parsed)) return "";
-    return `SELECT * FROM ${quoteIdent(name)} KEYS IN ${formatKeysInClause(parsed.keys, table, extra)}`;
+    if (keysModeError(table, parsed, current.source)) return "";
+    const source = sourceOf(table, current.source, "query");
+    if (!source.name) {
+      return `SELECT * FROM ${quoteIdent(name)} KEYS IN ${formatKeysInClause(parsed.keys, table, extra, source)}`;
+    }
+    return parsed.keys
+      .map((fields) => formatIndexKeySelect(name, source, fields, table, extra))
+      .join("; ");
   }
   const source = sourceOf(table, current.source, current.mode);
   const verb = current.mode === "query" ? "SELECT" : "SCAN";
@@ -432,7 +451,7 @@ export function buildReadStatement(tableName, table, state, extra) {
 export function readError(table, state) {
   const current = ensureQueryKeys(table, state || defaultReadState());
   if (current.mode === "keys") {
-    return keysModeError(table, parseBatchKeys(current.batchKeys));
+    return keysModeError(table, parseBatchKeys(current.batchKeys), current.source);
   }
   if (current.mode !== "query") return "";
   const hash = sourceKeys(table, current.source, current.mode).find((key) => key.role === "hash");
@@ -536,6 +555,7 @@ export function attachTableQuery(host, handlers = {}) {
   const keyHost = host.querySelector("#table-query-keys");
   const filterHost = host.querySelector("#table-query-filters");
   const batchSection = host.querySelector("#table-query-batch");
+  const batchSource = host.querySelector("#table-query-batch-source");
   const batchInput = host.querySelector("#table-query-batch-keys");
   const batchHint = host.querySelector("#table-query-batch-hint");
   const preview = host.querySelector("#table-query-dql");
@@ -570,26 +590,31 @@ export function attachTableQuery(host, handlers = {}) {
     keySection.classList.toggle("hidden", isKeys);
     filterSection.classList.toggle("hidden", isKeys);
     batchSection.classList.toggle("hidden", !isKeys);
-    const source = tableSource(table);
+    const source = sourceOf(table, state.source, "query");
     const hash = source.hashKey || "hash";
     const range = source.rangeKey;
-    batchHint.textContent = batchKeyHint(table);
+    batchHint.textContent = batchKeyHint(table, state.source);
     batchInput.placeholder = range ? `(${hash}, ${range})` : "a, b, c";
     if (document.activeElement !== batchInput) batchInput.value = state.batchKeys || "";
   }
 
-  function paintSources() {
-    const selected = state.source || "";
-    const items = availableSources(table, state.mode).map((source) => {
-      if (!source.name) return { value: "", label: "Table" };
+  function sourceItems(mode, tableLabel) {
+    return availableSources(table, mode).map((source) => {
+      if (!source.name) return { value: "", label: tableLabel };
       const keys = [source.hashKey, source.rangeKey].filter(Boolean).join(", ");
       const kind = source.kind === "local" ? "local" : "global";
       return { value: source.name, label: keys ? `${source.name} (${kind}: ${keys})` : `${source.name} (${kind})` };
     });
-    fillSelect(sourceSelect, items, selected);
-    if (![...sourceSelect.options].some((node) => node.value === selected)) {
+  }
+
+  function paintSources() {
+    const selected = state.source || "";
+    fillSelect(sourceSelect, sourceItems(state.mode, "Table"), selected);
+    fillSelect(batchSource, sourceItems("query", "TABLE"), selected);
+    if (![...batchSource.options].some((node) => node.value === selected)) {
       state.source = "";
       sourceSelect.value = "";
+      batchSource.value = "";
     }
   }
 
@@ -815,6 +840,10 @@ export function attachTableQuery(host, handlers = {}) {
   sourceSelect.addEventListener("change", () => {
     state.source = sourceSelect.value;
     state.keys = [];
+    paint();
+  });
+  batchSource.addEventListener("change", () => {
+    state.source = batchSource.value;
     paint();
   });
   scanBtn.addEventListener("click", () => {

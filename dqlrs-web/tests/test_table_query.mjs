@@ -174,6 +174,24 @@ test("keys mode builds KEYS IN from the typed list", () => {
     readError(table, { ...defaultReadState(), mode: "keys", batchKeys: "ada, 1" }),
     "Range keys go in parentheses: (hash, range).",
   );
+  assert.equal(
+    buildReadStatement("posts", table, {
+      ...defaultReadState(),
+      mode: "keys",
+      source: "by-status",
+      batchKeys: "open, shut",
+    }),
+    "SELECT * FROM posts WHERE status = 'open' USING by-status; SELECT * FROM posts WHERE status = 'shut' USING by-status",
+  );
+  assert.equal(
+    buildReadStatement("posts", table, {
+      ...defaultReadState(),
+      mode: "keys",
+      source: "by-status",
+      batchKeys: "(open, 1)",
+    }),
+    "SELECT * FROM posts WHERE status = 'open' AND sk = 1 USING by-status",
+  );
 });
 
 test("query without hash metadata accepts a typed hash name", () => {
