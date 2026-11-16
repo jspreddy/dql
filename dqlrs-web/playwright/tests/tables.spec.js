@@ -1138,6 +1138,130 @@ test("table browser suggests structure attributes and accepts a typed name", asy
   await page.screenshot({ path: playwrightArtifact(`table-query-custom-attr-${testInfo.project.name}.png`) });
 });
 
+test("table browser runs every DynamoDB condition function", async ({ page, app }, testInfo) => {
+  test.setTimeout(90_000);
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, sk STRING RANGE KEY);`,
+      `INSERT INTO ${name} (id='store-1', sk='ITEM#mug', name='hello world', title='Blue mug', tags=('lighting', 'ceramic'), items=['handle', 'glaze'], qty=3);`,
+      `INSERT INTO ${name} (id='store-1', sk='ITEM#lamp', name='goodbye', title='Arc lamp', tags=('lighting', 'metal', 'floor'), items=['shade', 'cord'], qty=1);`,
+      `INSERT INTO ${name} (id='store-1', sk='NOTE#1', name='memo', title='Field notes');`,
+      `INSERT INTO ${name} (id='store-2', sk='ITEM#cable', name='usb world', title='USB-C cable', tags=('cable'), items=[], qty=12);`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await openResultPane(page, "history");
+  await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "one row inserted" })).toHaveCount(4);
+
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await expect(page.locator(`#table-${name}`)).toBeVisible();
+
+  await page.locator("#table-query-add-filter").click();
+  const filter = page.locator('[data-testid="table-query-filter-row"]');
+
+  const runFilter = async ({ attr, op, value, sizeOp, type, dql, count, has, missing }) => {
+    await filter.locator('[data-testid="table-query-op"]').selectOption(op);
+    await filter.locator('[data-testid="table-query-attr"]').fill(attr);
+    if (type) await filter.locator('[data-testid="table-query-type"]').selectOption(type);
+    if (sizeOp) await filter.locator('[data-testid="table-query-size-op"]').selectOption(sizeOp);
+    const valueBox = filter.locator('[data-testid="table-query-value"]');
+    if (value !== undefined && (await valueBox.isVisible())) await valueBox.fill(String(value));
+    await expect(page.locator("#table-query-dql")).toHaveText(dql);
+    await page.locator("#table-query-run").click();
+    await expect(page.locator("#rows-table tbody tr")).toHaveCount(count);
+    for (const text of has || []) await expect(page.locator("#rows-table tbody")).toContainText(text);
+    for (const text of missing || []) await expect(page.locator("#rows-table tbody")).not.toContainText(text);
+  };
+
+  await runFilter({
+    attr: "title",
+    op: "begins_with",
+    value: "Blue",
+    dql: `SCAN * FROM ${name} WHERE begins_with(title, 'Blue')`,
+    count: 1,
+    has: ["Blue mug"],
+    missing: ["Arc lamp"],
+  });
+  await runFilter({
+    attr: "name",
+    op: "contains",
+    value: "hello",
+    dql: `SCAN * FROM ${name} WHERE contains(name, 'hello')`,
+    count: 1,
+    has: ["hello world"],
+  });
+  await runFilter({
+    attr: "tags",
+    op: "contains",
+    value: "metal",
+    dql: `SCAN * FROM ${name} WHERE contains(tags, 'metal')`,
+    count: 1,
+    has: ["Arc lamp"],
+  });
+  await runFilter({
+    attr: "tags",
+    op: "exists",
+    dql: `SCAN * FROM ${name} WHERE attribute_exists(tags)`,
+    count: 3,
+    has: ["Blue mug", "Arc lamp", "USB-C cable"],
+    missing: ["Field notes"],
+  });
+  await runFilter({
+    attr: "tags",
+    op: "not_exists",
+    dql: `SCAN * FROM ${name} WHERE attribute_not_exists(tags)`,
+    count: 1,
+    has: ["Field notes"],
+  });
+  await runFilter({
+    attr: "qty",
+    op: "attribute_type",
+    type: "N",
+    dql: `SCAN * FROM ${name} WHERE attribute_type(qty, 'N')`,
+    count: 3,
+    has: ["Blue mug", "USB-C cable"],
+    missing: ["Field notes"],
+  });
+  await runFilter({
+    attr: "tags",
+    op: "size",
+    sizeOp: "gt",
+    value: "2",
+    dql: `SCAN * FROM ${name} WHERE size(tags) > 2`,
+    count: 1,
+    has: ["Arc lamp"],
+  });
+  await page.screenshot({ path: playwrightArtifact(`table-query-functions-${testInfo.project.name}.png`) });
+
+  await filter.locator('[data-testid="table-query-remove"]').click();
+  await page.locator("#table-query-query").click();
+  await page.locator('[data-testid="table-query-key-row"] [data-testid="table-query-value"]').fill("store-1");
+  await page.locator("#table-query-add-key").click();
+  const range = page.locator('[data-testid="table-query-key-row"]').nth(1);
+  await range.locator('[data-testid="table-query-op"]').selectOption("begins_with");
+  await range.locator('[data-testid="table-query-value"]').fill("ITEM#");
+  await expect(page.locator("#table-query-dql")).toHaveText(
+    `SELECT * FROM ${name} WHERE id = 'store-1' AND begins_with(sk, 'ITEM#')`,
+  );
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
+  await expect(page.locator("#rows-table tbody")).toContainText("Blue mug");
+  await expect(page.locator("#rows-table tbody")).toContainText("Arc lamp");
+  await expect(page.locator("#rows-table tbody")).not.toContainText("Field notes");
+});
+
 test("table browser keys mode batch-gets typed hash and hash-range keys", async ({ page, app }, testInfo) => {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
