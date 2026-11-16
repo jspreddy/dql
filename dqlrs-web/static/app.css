@@ -931,7 +931,7 @@ body.side-resizing * {
   to { transform: rotate(360deg); }
 }
 
-.side-head button, .pager button, #page-prev, #page-next {
+.side-head button, .pager button {
   border: 1px solid var(--line-control);
   background: var(--paper);
   border-radius: 4px;
@@ -2850,12 +2850,28 @@ body.results-resizing * {
   font-weight: 650;
 }
 
+.table-query-seg button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.table-query-pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.table-query-pager #page-label {
+  white-space: nowrap;
+}
+
 #table-query-run {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   height: 24px;
-  margin-left: auto;
 }
 
 #table-query-run.is-pending {

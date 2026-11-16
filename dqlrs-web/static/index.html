@@ -249,6 +249,13 @@
               <button type="button" id="table-query-forward" aria-pressed="true">Forward</button>
               <button type="button" id="table-query-reverse" aria-pressed="false">Reverse</button>
             </div>
+            <div class="table-query-pager" id="table-query-pager">
+              <span id="page-label" class="meta"></span>
+              <div class="table-query-seg" role="group" aria-label="Page">
+                <button type="button" id="page-prev">Previous</button>
+                <button type="button" id="page-next">Next</button>
+              </div>
+            </div>
             <button type="submit" id="table-query-run" class="primary">
               <svg class="icon run-play" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/play_arrow.svg#icon"></use></svg>
               Run
@@ -280,13 +287,6 @@
           <p id="table-query-error" class="table-query-error" hidden></p>
         </form>
         <div id="rows-body" class="result-body browser-rows"></div>
-        <div class="pager">
-          <span id="page-label" class="meta"></span>
-          <span>
-            <button type="button" id="page-prev">Previous</button>
-            <button type="button" id="page-next">Next</button>
-          </span>
-        </div>
       </section>
     </main>
   </div>
