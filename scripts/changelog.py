@@ -28,6 +28,11 @@ Usage:
                                release branch writes the same file v-rust will
   changelog.py --stdout        print instead of writing
   changelog.py --commit-title  print the workflow's commit subject and write nothing
+  changelog.py --link VERSION [--at REF] [--blob NAME]
+                               print the GitHub URL of the "dqlrs VERSION" heading in
+                               CHANGELOG.md at REF (default: the working tree), linking
+                               to blob NAME (default: REF); exit 1 when the heading is
+                               missing
 """
 
 from __future__ import annotations
@@ -410,8 +415,8 @@ def render(ref: str, sections: list[Section]) -> str:
     out = [HEADER.format(ref=ref)]
     for section in sections:
         dates = [entry.date for entry in section.entries]
-        span = dates[-1] if dates[-1] == dates[0] else f"{dates[-1]} to {dates[0]}"
-        out.append(f"\n## {section.heading} ({span})\n\n")
+        # The date of the newest change: when the version was released, or today for Unreleased.
+        out.append(f"\n## {section.heading} ({dates[0]})\n\n")
         credits = credit_lines(section)
         if credits:
             # A trailing backslash is a Markdown line break, so each line renders on its own.
@@ -434,10 +439,33 @@ def commit_title(root: Path, ref: str) -> str:
     return "Update the changelog"
 
 
+def heading_anchor(heading: str) -> str:
+    """The id GitHub gives a Markdown heading: lowercase, punctuation dropped, spaces to dashes."""
+    kept = "".join(ch for ch in heading.strip().lower() if ch.isalnum() or ch in " -_")
+    return kept.replace(" ", "-")
+
+
+def heading_link(root: Path, version: str, at: str | None, blob: str | None) -> str | None:
+    """URL of the "dqlrs VERSION (...)" heading in CHANGELOG.md at AT, or None when it is missing."""
+    try:
+        text = git(root, "show", f"{at}:CHANGELOG.md") if at else (root / "CHANGELOG.md").read_text(encoding="utf-8")
+    except (RuntimeError, OSError):
+        return None
+    prefix = f"## dqlrs {version} ("
+    heading = next((line[3:] for line in text.splitlines() if line.startswith(prefix)), None)
+    base = github_base(root)
+    if heading is None or not base:
+        return None
+    return f"{base}/blob/{quote(blob or at or 'v-rust', safe='')}/CHANGELOG.md#{heading_anchor(heading)}"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--ref", help="branch or commit to read (default: origin/v-rust, else v-rust)")
     parser.add_argument("--name", help="what the header calls the history (default: the ref)")
+    parser.add_argument("--link", metavar="VERSION", help="print the URL of that version's heading")
+    parser.add_argument("--at", help="with --link: the commit whose CHANGELOG.md to read")
+    parser.add_argument("--blob", help="with --link: the branch or tag the URL opens (default: --at)")
     parser.add_argument("--check", action="store_true", help="exit 1 if CHANGELOG.md is out of date")
     parser.add_argument("--stdout", action="store_true", help="print the changelog instead of writing it")
     parser.add_argument(
@@ -448,6 +476,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     root = repo_root()
+    if args.link:
+        url = heading_link(root, args.link, args.at, args.blob)
+        if url is None:
+            print(f"changelog: no 'dqlrs {args.link}' heading in CHANGELOG.md", file=sys.stderr)
+            return 1
+        print(url)
+        return 0
     ref = resolve_ref(root, args.ref)
     if args.commit_title:
         print(commit_title(root, ref))

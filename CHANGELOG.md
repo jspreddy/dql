@@ -12,7 +12,7 @@ Agents: Claude Opus 5.5
 
 - [4168e63](https://github.com/jspreddy/dql/commit/4168e63026d7ad3d847fe4bc17b870489bec4c5a) Cache cargo in CI and install cargo-release from its release binary ([#218](https://github.com/jspreddy/dql/pull/218))
 
-## dqlrs 0.7.11 (2026-11-14 to 2026-11-15)
+## dqlrs 0.7.11 (2026-11-15)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5
@@ -39,7 +39,7 @@ Agents: Claude Opus 5.5, Cursor Agent
 - [cd68307](https://github.com/jspreddy/dql/commit/cd683077684ac3a5e2fdfafc2ac4386597929990) Group the changelog by Bump version commits ([#198](https://github.com/jspreddy/dql/pull/198))
 - [33eeec6](https://github.com/jspreddy/dql/commit/33eeec6137127637e20b802c464301e1ec53da07) Add dqlrs web --init-examples to the README banner ([#199](https://github.com/jspreddy/dql/pull/199))
 
-## dqlrs 0.7.9-dev0 (2026-11-12 to 2026-11-13)
+## dqlrs 0.7.9-dev0 (2026-11-13)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, <a href="https://github.com/dependabot%5Bbot%5D">dependabot[bot]</a>
@@ -60,7 +60,7 @@ Agents: Claude Opus 5.5
 - [cffaff7](https://github.com/jspreddy/dql/commit/cffaff750dc25a5225a2d9881c8d6a516d6266e4) Bump dqlrs to 0.7.8-dev0 and update the changelog ([#173](https://github.com/jspreddy/dql/pull/173))
 - [91ef155](https://github.com/jspreddy/dql/commit/91ef155b1170a06d8f15e671bdba8931fa9b9f8f) Organize Rust docs, add a README banner, refresh screenshots ([#170](https://github.com/jspreddy/dql/pull/170))
 
-## dqlrs 0.7.7-dev0 (2026-11-11 to 2026-11-12)
+## dqlrs 0.7.7-dev0 (2026-11-12)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor
@@ -68,7 +68,7 @@ Agents: Claude Opus 5.5, Cursor
 - [f0a8870](https://github.com/jspreddy/dql/commit/f0a887063c750e4f0f1867202ec0b5a68167097b) Make the listed-table search test create its own table ([#172](https://github.com/jspreddy/dql/pull/172))
 - [5c033fa](https://github.com/jspreddy/dql/commit/5c033fa6defcb04917b897c984f262a2a7d2fd9f) Use local and temp table definitions in the linter and structure view ([#155](https://github.com/jspreddy/dql/pull/155))
 
-## dqlrs 0.7.6-dev0 (2026-11-10 to 2026-11-11)
+## dqlrs 0.7.6-dev0 (2026-11-11)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
@@ -92,7 +92,7 @@ Agents: Cursor Agent
 - [c611335](https://github.com/jspreddy/dql/commit/c611335736bfc1ef12d38ce3860c8a35e1b4eb39) Replace browser confirm and prompt with in-app dialogs ([#141](https://github.com/jspreddy/dql/pull/141))
 - [9ec5563](https://github.com/jspreddy/dql/commit/9ec55636daa423a83df6602c88dd4ae447bbd7aa) Add Sai Phaninder Reddy Jonnala's copyright to the MIT notice ([#138](https://github.com/jspreddy/dql/pull/138))
 
-## dqlrs 0.7.4-dev0 (2026-11-07 to 2026-11-08)
+## dqlrs 0.7.4-dev0 (2026-11-08)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
@@ -108,7 +108,7 @@ Agents: Cursor Agent
 - [ad7cce5](https://github.com/jspreddy/dql/commit/ad7cce58d9518ed498a5500ad6d0ce8a7f798302) Wait for the tree event in the events stream test ([#134](https://github.com/jspreddy/dql/pull/134))
 - [da931d7](https://github.com/jspreddy/dql/commit/da931d7596fb6b4caf1ea915e186831736cd5d71) Lint the open file on save, fetch, and open ([#133](https://github.com/jspreddy/dql/pull/133))
 
-## dqlrs 0.7.2-dev0 (2026-11-01 to 2026-11-07)
+## dqlrs 0.7.2-dev0 (2026-11-07)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
@@ -119,7 +119,7 @@ Agents: Cursor Agent
 - [c34616b](https://github.com/jspreddy/dql/commit/c34616bfb5a1f3803a99afca40a1e830026ff1eb) Keep the API and MCP token across restarts ([#120](https://github.com/jspreddy/dql/pull/120))
 - [8427878](https://github.com/jspreddy/dql/commit/84278783eddcf6bed9ad804239c4294e5ae18f7e) Add DynamoDB Local just aliases and dd-clean ([#119](https://github.com/jspreddy/dql/pull/119))
 
-## dqlrs 0.7.1-dev0 (2026-10-22 to 2026-10-30)
+## dqlrs 0.7.1-dev0 (2026-10-30)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
@@ -147,7 +147,7 @@ Agents: Cursor Agent
 - [06906e8](https://github.com/jspreddy/dql/commit/06906e8d2ea435cc68cead57844549b29cdd11d6) Add rewrite metrics to the Rust docs ([#84](https://github.com/jspreddy/dql/pull/84))
 - [e8755d2](https://github.com/jspreddy/dql/commit/e8755d2d8e121ac83c31e114a8cad2e9dcc2141c) Drop the extra columns table ported from Python ([#80](https://github.com/jspreddy/dql/pull/80))
 
-## dqlrs 0.7.0-dev0 (2026-10-12 to 2026-10-22)
+## dqlrs 0.7.0-dev0 (2026-10-22)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
@@ -159,7 +159,7 @@ Agents: Cursor Agent
 - [73be2bf](https://github.com/jspreddy/dql/commit/73be2bfcfaee3ef3bb5359bb59e7a41c0f0021da) just check
 - [8b13a78](https://github.com/jspreddy/dql/commit/8b13a78d73eb1118d240ef121b409fa6782bedca) Reapply "Add a Stop control for a running web query."
 
-## dqlrs 0.6.5-dev1 (2026-10-10 to 2026-10-12)
+## dqlrs 0.6.5-dev1 (2026-10-12)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
@@ -170,7 +170,7 @@ Agents: Cursor Agent
 - [df2f68c](https://github.com/jspreddy/dql/commit/df2f68cf8cb56d82ff49fcbe5dd3ca2c095758d3) Fix duplicated editor imports that break the web UI ([#40](https://github.com/jspreddy/dql/pull/40))
 - [a213428](https://github.com/jspreddy/dql/commit/a213428803464cae3df5875fc0bc0f63c93ad710) Merge branch 'sai/test' into v-rust
 
-## dqlrs 0.6.5-dev0 (2026-08-20 to 2026-10-10)
+## dqlrs 0.6.5-dev0 (2026-10-10)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
@@ -197,14 +197,14 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)
 
 - [377b54b](https://github.com/jspreddy/dql/commit/377b54b7b62ea9ff0dbd3c90c1c27a7880620ea2) Bug: Index auto-select when not specified. ([#5](https://github.com/jspreddy/dql/pull/5))
 
-## dql (Python) 0.6.4-dev9 (2024-12-19 to 2025-08-01)
+## dql (Python) 0.6.4-dev9 (2025-08-01)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)
 
 - [affbc43](https://github.com/jspreddy/dql/commit/affbc43ab3e4bde4bf429183d0f342e583f73ddd) 0.6.4-dev9: Rich format update + Bugfixes + CI ([#3](https://github.com/jspreddy/dql/pull/3))
 - [7790973](https://github.com/jspreddy/dql/commit/779097379c0faa94d4578c16ae57f33246b343b7) formatting of changes.rst file
 
-## dql (Python) 0.6.4-dev8 (2024-10-17 to 2024-12-19)
+## dql (Python) 0.6.4-dev8 (2024-12-19)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)
 
@@ -238,7 +238,7 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)
 
 - [131ecb2](https://github.com/jspreddy/dql/commit/131ecb28e27e1bb6e1ea9f3ac7ba7dcba2dbb5f8) Most tests cases are passing with local dynamodb
 
-## dql (Python) 0.6.4-dev2 (2024-09-21 to 2024-09-28)
+## dql (Python) 0.6.4-dev2 (2024-09-28)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)
 
@@ -246,7 +246,7 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)
 - [77f5014](https://github.com/jspreddy/dql/commit/77f5014a82a736ec5ccd2b310356bef0f8215de0) minor code formatting
 - [6a70572](https://github.com/jspreddy/dql/commit/6a705720a5014887d0aad2542b9ee34f17b67dc9) adding command whoami to print the session identity.
 
-## dql (Python) 0.6.4-dev1 (2024-07-30 to 2024-09-21)
+## dql (Python) 0.6.4-dev1 (2024-09-21)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)
 
@@ -256,7 +256,7 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)
 - [8a90990](https://github.com/jspreddy/dql/commit/8a90990b72c8a1eea60de3641a18d2bdaff1cc16) maintainer install notes
 - [9418b4a](https://github.com/jspreddy/dql/commit/9418b4a7bd422ea29d4d4ea53faa09b6bc754b73) lint fix
 
-## dql (Python) 0.6.4-dev0 (2024-05-24 to 2024-07-30)
+## dql (Python) 0.6.4-dev0 (2024-07-30)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)
 
@@ -264,7 +264,7 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)
 - [7d4e5d5](https://github.com/jspreddy/dql/commit/7d4e5d5026b07eb6bef58c133e1e0d62c832c10c) attempt to fix not selecting index
 - [3c8a508](https://github.com/jspreddy/dql/commit/3c8a508db882d703648d2bb416473b3c3c794566) re-using progress bars
 
-## dql (Python) 0.6.3-dev1 (2022-11-01 to 2024-05-24)
+## dql (Python) 0.6.3-dev1 (2024-05-24)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)
 
@@ -284,7 +284,7 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 - [7e28f19](https://github.com/jspreddy/dql/commit/7e28f190d8d2c21a9a2ea500625d82a9d92ac9a6) wip: colorizing JsonFormat
 - [9666cfb](https://github.com/jspreddy/dql/commit/9666cfba19773c20c7b4be29adc7d6179cf00d44) doc: forgot to remove 'unreleased' from 0.6.2
 
-## dql (Python) 0.6.2 (2021-12-07 to 2021-12-23)
+## dql (Python) 0.6.2 (2021-12-23)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 
@@ -308,14 +308,14 @@ Contributors: Steven Arcangeli
 - [0656b25](https://github.com/jspreddy/dql/commit/0656b255a396cb1a2e3ebdfe8074e7903217ecf4) Clean up history test
 - [6e3fb27](https://github.com/jspreddy/dql/commit/6e3fb2721c987cae6b1ddd5d2ff52bb47eaab64d) Add .envrc for direnv
 
-## dql (Python) 0.6.1-dev1 (2020-11-29 to 2021-01-24)
+## dql (Python) 0.6.1-dev1 (2021-01-24)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 
 - [3750d37](https://github.com/jspreddy/dql/commit/3750d375ca3dc0cead8235fcd4590d432ab2cd90) Feature: Retain query history across sessions. (#41)
 - [d37f07f](https://github.com/jspreddy/dql/commit/d37f07f04a588d55d889e4da0aa7cf5827c29e2f) Add a note about PartiQL in the README
 
-## dql (Python) 0.6.1-dev0 (2020-10-18 to 2020-11-23)
+## dql (Python) 0.6.1-dev0 (2020-11-23)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 
@@ -326,7 +326,7 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 - [03cfea1](https://github.com/jspreddy/dql/commit/03cfea1f361b87dd44cea14674265f8ce3785aae) Fix save and load file logic
 - [4c6fb35](https://github.com/jspreddy/dql/commit/4c6fb35795a56d70beae3d0c1b7400987e4f4121) Fix #37: Cannot count(*) on an index
 
-## dql (Python) 0.6.0 (2020-09-09 to 2020-10-03)
+## dql (Python) 0.6.0 (2020-10-03)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 
@@ -353,7 +353,7 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 - [f997bff](https://github.com/jspreddy/dql/commit/f997bffcf6d1cd9f239a04ae06f0e3c9c200c17a) Use requirements files to manage test/dev dependencies
 - [731b500](https://github.com/jspreddy/dql/commit/731b50074f62be5bcccb74012c9608c16b9b7444) Better errors (#28)
 
-## dql (Python) 0.5.29-dev0 (2020-08-20 to 2020-09-07)
+## dql (Python) 0.5.29-dev0 (2020-09-07)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 
@@ -373,7 +373,7 @@ Contributors: Steven Arcangeli
 
 - [c8aaa84](https://github.com/jspreddy/dql/commit/c8aaa8470d8fa0d68aabb6343e3c9b392b69c67f) Merge tag '0.5.28'
 
-## dql (Python) 0.5.27 (2019-03-04 to 2019-10-26)
+## dql (Python) 0.5.27 (2019-10-26)
 
 Contributors: Steven Arcangeli
 
@@ -437,7 +437,7 @@ Contributors: Steven Arcangeli
 
 - [0c7ffbe](https://github.com/jspreddy/dql/commit/0c7ffbed669a5f764b276f55b788b1a4d558017a) Merge tag '0.5.18'
 
-## dql (Python) 0.5.17 (2016-05-03 to 2016-05-06)
+## dql (Python) 0.5.17 (2016-05-06)
 
 Contributors: Garrett Heel, Steven Arcangeli
 
@@ -576,7 +576,7 @@ Contributors: Steven Arcangeli
 
 - [6f906b2](https://github.com/jspreddy/dql/commit/6f906b20e899999f073b9fdac86fb3ad1c3ed106) Merge tag '0.3.0'
 
-## dql (Python) 0.2.1 (2013-12-05 to 2014-05-12)
+## dql (Python) 0.2.1 (2014-05-12)
 
 Contributors: Steven Arcangeli
 
