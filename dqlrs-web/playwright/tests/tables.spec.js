@@ -192,15 +192,18 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   await page.locator("#table-search").fill(name);
   await expect(page.locator(`#table-${name}`)).toBeVisible();
   await expect(page.locator("#page-label")).toHaveText("Showing 1–50");
+  const rowPages = trackRowPages(page);
   await page.locator("#page-next").click();
   await expect(page.locator("#page-label")).toHaveText("Showing 51–51");
   await expect(page.locator("#page-next")).toBeDisabled();
   await expect(page.locator("#page-prev")).toBeEnabled();
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(1);
+  expect(rowPages.splice(0)).toEqual([1]);
 
   await page.locator("#page-prev").click();
   await expect(page.locator("#page-label")).toHaveText("Showing 1–50");
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(50);
+  expect(rowPages).toEqual([]);
   await page.screenshot({ path: playwrightArtifact(`table-pager-toolbar-${testInfo.project.name}.png`) });
 });
 
@@ -234,6 +237,7 @@ test("pages a thousand numeric ids forward and back", async ({ page, app }, test
   await page.locator("#table-query-query").click();
   await page.locator('[data-testid="table-query-key-row"] [data-testid="table-query-value"]').fill("g");
   await expect(page.locator("#table-query-dql")).toHaveText(`SELECT * FROM ${name} WHERE gid = 'g'`);
+  const selectPages = trackRowPages(page, { dql: "SELECT" });
   const queried = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return response.ok() && url.pathname === "/api/rows" && (url.searchParams.get("dql") || "").includes("SELECT");
@@ -269,6 +273,21 @@ test("pages a thousand numeric ids forward and back", async ({ page, app }, test
   await expectNumericPage(page, 18);
   await gotoPage(18, 0);
   await expectNumericPage(page, 0);
+  expect(selectPages).toEqual(Array.from({ length: 20 }, (_, index) => index));
+
+  const rerun = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.ok() && url.pathname === "/api/rows" && url.searchParams.get("page") === "0"
+      && (url.searchParams.get("dql") || "").includes("SELECT");
+  });
+  await page.locator("#table-query-run").click();
+  await rerun;
+  await expectNumericPage(page, 0);
+  expect(selectPages).toEqual([...Array.from({ length: 20 }, (_, index) => index), 0]);
+  fs.writeFileSync(
+    playwrightArtifact(`table-rows-cache-pages-${testInfo.project.name}.json`),
+    JSON.stringify(selectPages),
+  );
 });
 
 test("table column headers stay put while rows scroll", async ({ page, app }) => {
@@ -1283,6 +1302,19 @@ test("names insert, update, delete, count, and drop results", async ({ page, app
   await expect(notes.filter({ hasText: "one table dropped" })).toHaveCount(1);
   await expect(notes.filter({ hasText: "did not exist" })).toHaveCount(1);
 });
+
+function trackRowPages(page, options = {}) {
+  const pages = [];
+  const needle = options.dql || "";
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname !== "/api/rows") return;
+    const dql = url.searchParams.get("dql") || "";
+    if (needle && !dql.includes(needle)) return;
+    pages.push(Number(url.searchParams.get("page") || "0"));
+  });
+  return pages;
+}
 
 async function columnValues(page, name) {
   return page.locator("#rows-table").evaluate((table, name) => {

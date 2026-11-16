@@ -27,6 +27,7 @@ import {
 } from "./statement-text.js";
 import { unifiedDiff } from "./file-patch.js";
 import { attachTableQuery } from "./table-query.js";
+import { createRowsCache } from "./table-rows-cache.js";
 
 const apiToken = document.querySelector('meta[name="dqlrs-token"]')?.content || "";
 const nativeFetch = window.fetch.bind(window);
@@ -123,6 +124,8 @@ const state = {
   eventsLive: false,
   clientId: loadClientId(),
 };
+
+const rowsCache = createRowsCache();
 
 const completeList = document.querySelector("#complete-list");
 let completeItems = [];
@@ -1105,6 +1108,7 @@ const tableQuery = attachTableQuery(document.querySelector("#table-query"), {
   onRun({ dql }) {
     state.tableDql = dql || "";
     state.page = 0;
+    rowsCache.beginRun(state.table, state.tableDql);
     loadRows();
   },
 });
@@ -5395,8 +5399,10 @@ function mergeListedTable(name, table) {
   }
   paintTableList();
   if (selectedGone) {
-    if (state.table) loadRows();
-    else clearRows();
+    if (state.table) {
+      rowsCache.beginRun(state.table, state.tableDql);
+      loadRows();
+    } else clearRows();
   }
 }
 
@@ -5454,6 +5460,7 @@ async function loadTables(options = {}) {
     if (!pattern) state.catalog = state.listedTables;
     else if (refresh) state.catalog = null;
     const previous = state.table;
+    const previousDql = state.tableDql;
     if (!state.listedTables.some((table) => table.name === state.table)) {
       state.table = state.listedTables[0] ? state.listedTables[0].name : "";
       state.page = 0;
@@ -5467,6 +5474,9 @@ async function loadTables(options = {}) {
     }
     if (state.table !== previous) tableQuery.reset(listedTable(state.table));
     else tableQuery.updateTable(listedTable(state.table));
+    if (state.table !== previous || state.tableDql !== previousDql) {
+      rowsCache.beginRun(state.table, state.tableDql);
+    }
     await loadRows();
   } catch (error) {
     if (request !== state.tablesRequest || generation !== state.listGeneration) return;
@@ -5601,6 +5611,7 @@ function selectTable(name) {
   if (switched) {
     state.tableDql = "";
     tableQuery.reset(listedTable(name));
+    rowsCache.beginRun(state.table, state.tableDql);
   }
   for (const button of document.querySelectorAll("#table-list .table-row")) {
     button.classList.toggle("selected", button.id === "table-" + name.replaceAll(/[^A-Za-z0-9_-]/g, "_"));
@@ -5753,6 +5764,7 @@ function jsonParts(text) {
 }
 
 function clearRows() {
+  rowsCache.clear();
   document.querySelector("#rows-title").textContent = "";
   document.querySelector("#rows-meta").textContent = "";
   document.querySelector("#page-label").textContent = "";
@@ -5774,37 +5786,58 @@ function rowAttributeNames(payload) {
   return names;
 }
 
+function paintRowPage(payload) {
+  const body = document.querySelector("#rows-body");
+  state.hasMore = Boolean(payload.has_more);
+  const start = payload.page * payload.page_size + (payload.items.length ? 1 : 0);
+  const end = payload.page * payload.page_size + payload.items.length;
+  document.querySelector("#page-label").textContent = payload.items.length
+    ? "Showing " + start + "–" + end
+    : "No rows";
+  document.querySelector("#page-prev").disabled = payload.page <= 0;
+  document.querySelector("#page-next").disabled = !state.hasMore;
+  const rows = payload.items || [];
+  tableQuery.addAttributes(rowAttributeNames(payload));
+  body.replaceChildren(dataTable(rows, "rows-table", payload.columns));
+  body.scrollTop = 0;
+  setBrowserSchema(rows.length || (payload.columns || []).length ? {
+    table: payload.name || state.table,
+    title: payload.name || state.table,
+  } : null);
+}
+
 async function loadRows() {
   closeRowPop();
   if (!state.table) return;
   const body = document.querySelector("#rows-body");
   document.querySelector("#rows-title").textContent = state.table;
   document.querySelector("#rows-meta").textContent = "50 rows at a time";
+  const table = state.table;
+  const dql = state.tableDql;
+  const page = state.page;
+  const cached = rowsCache.get(table, dql, page);
+  if (cached) {
+    paintRowPage(cached);
+    return;
+  }
+  const generation = rowsCache.generation;
   body.replaceChildren(note("Loading…", false));
   setBrowserSchema(null);
   try {
-    const query = new URLSearchParams({ table: state.table, page: String(state.page) });
-    if (state.tableDql) query.set("dql", state.tableDql);
+    const query = new URLSearchParams({ table, page: String(page) });
+    if (dql) query.set("dql", dql);
     const payload = await api("/api/rows?" + query.toString());
-    state.hasMore = Boolean(payload.has_more);
-    const start = payload.page * payload.page_size + (payload.items.length ? 1 : 0);
-    const end = payload.page * payload.page_size + payload.items.length;
-    document.querySelector("#page-label").textContent = payload.items.length
-      ? "Showing " + start + "–" + end
-      : "No rows";
-    document.querySelector("#page-prev").disabled = payload.page <= 0;
-    document.querySelector("#page-next").disabled = !state.hasMore;
-    const rows = payload.items || [];
-    tableQuery.addAttributes(rowAttributeNames(payload));
-    body.replaceChildren(dataTable(rows, "rows-table", payload.columns));
-    body.scrollTop = 0;
-    setBrowserSchema(rows.length || (payload.columns || []).length ? {
-      table: payload.name || state.table,
-      title: payload.name || state.table,
-    } : null);
+    if (rowsCache.generation !== generation) return;
+    rowsCache.set(table, dql, page, payload);
+    if (state.table === table && state.tableDql === dql && state.page === page) {
+      paintRowPage(payload);
+    }
   } catch (error) {
-    body.replaceChildren(note(error.message, true));
-    setBrowserSchema(null);
+    if (rowsCache.generation !== generation) return;
+    if (state.table === table && state.tableDql === dql && state.page === page) {
+      body.replaceChildren(note(error.message, true));
+      setBrowserSchema(null);
+    }
   }
 }
 
