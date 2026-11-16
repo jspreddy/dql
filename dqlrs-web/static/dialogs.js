@@ -18,15 +18,15 @@ function element(tag, props = {}, children = []) {
  * otherwise. Asking again while a confirm is open answers the open one false.
  */
 export function createConfirmDialog(parent = document.body) {
-  const title = element("h2", { id: "confirm-pop-title" }, ["Confirm"]);
+  const title = element("h2", { id: "confirm-pop-title", class: "dialog-title" }, ["Confirm"]);
   const path = element("p", { id: "confirm-pop-path", class: "confirm-pop-path", hidden: true });
   const message = element("p", { id: "confirm-pop-message" });
-  const cancel = element("button", { type: "button", id: "confirm-cancel" }, ["Cancel"]);
-  const ok = element("button", { type: "button", id: "confirm-ok" }, ["OK"]);
+  const cancel = element("button", { type: "button", id: "confirm-cancel", class: "btn" }, ["Cancel"]);
+  const ok = element("button", { type: "button", id: "confirm-ok", class: "btn btn-primary" }, ["OK"]);
   const dialog = element(
     "dialog",
-    { id: "confirm-pop", "aria-labelledby": "confirm-pop-title", "aria-describedby": "confirm-pop-message" },
-    [element("div", { class: "confirm-pop-card" }, [title, path, message, element("div", { class: "confirm-pop-actions" }, [cancel, ok])])],
+    { id: "confirm-pop", class: "dialog", "aria-labelledby": "confirm-pop-title", "aria-describedby": "confirm-pop-message" },
+    [element("div", { class: "dialog-card" }, [title, path, message, element("div", { class: "dialog-actions" }, [cancel, ok])])],
   );
   parent.append(dialog);
   let pending = null;
@@ -55,7 +55,7 @@ export function createConfirmDialog(parent = document.body) {
     path.hidden = !shown;
     message.textContent = text;
     ok.textContent = okLabel;
-    ok.classList.toggle("danger", danger);
+    ok.classList.toggle("btn-danger", danger);
     return new Promise((resolve) => {
       pending = resolve;
       dialog.showModal();
@@ -69,16 +69,16 @@ export function createConfirmDialog(parent = document.body) {
  * cancelled. The default value starts selected.
  */
 export function createPromptDialog(parent = document.body) {
-  const title = element("h2", { id: "prompt-pop-title" }, ["Name"]);
+  const title = element("h2", { id: "prompt-pop-title", class: "dialog-title" }, ["Name"]);
   const input = element("input", { id: "prompt-pop-input", type: "text", autocomplete: "off", spellcheck: "false" });
-  const cancel = element("button", { type: "button", id: "prompt-cancel" }, ["Cancel"]);
-  const ok = element("button", { type: "submit", id: "prompt-ok" }, ["OK"]);
-  const form = element("form", { class: "prompt-pop-card", id: "prompt-pop-form" }, [
+  const cancel = element("button", { type: "button", id: "prompt-cancel", class: "btn" }, ["Cancel"]);
+  const ok = element("button", { type: "submit", id: "prompt-ok", class: "btn btn-primary" }, ["OK"]);
+  const form = element("form", { class: "dialog-card", id: "prompt-pop-form" }, [
     title,
     input,
-    element("div", { class: "prompt-pop-actions" }, [cancel, ok]),
+    element("div", { class: "dialog-actions" }, [cancel, ok]),
   ]);
-  const dialog = element("dialog", { id: "prompt-pop", "aria-labelledby": "prompt-pop-title" }, [form]);
+  const dialog = element("dialog", { id: "prompt-pop", class: "dialog", "aria-labelledby": "prompt-pop-title" }, [form]);
   parent.append(dialog);
   let pending = null;
 

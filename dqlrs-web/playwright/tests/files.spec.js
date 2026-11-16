@@ -1024,7 +1024,7 @@ test("deletes a file and an empty folder, and refuses a folder that has contents
   await expect(page.locator("#confirm-pop-title")).toHaveText("Delete");
   await expect(page.locator("#confirm-pop-path")).toHaveText("queries/read.dql");
   await expect(page.locator("#confirm-pop-message")).toHaveText("Delete read.dql?");
-  await expect(page.locator(".confirm-pop-card")).toHaveCSS("background-color", await themeColor(page, "--paper"));
+  await expect(page.locator("#confirm-pop .dialog-card")).toHaveCSS("background-color", await themeColor(page, "--paper"));
   await expect(page.locator("#confirm-ok")).toHaveCSS("background-color", await themeColor(page, "--danger-fill"));
   await page.screenshot({ path: playwrightArtifact(`confirm-dialog-${testInfo.project.name}.png`) });
   await page.locator("#confirm-cancel").click();

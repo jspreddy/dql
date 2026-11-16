@@ -15,6 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap" />
   <link rel="stylesheet" href="/theme.css" />
+  <link rel="stylesheet" href="/components.css" />
   <link rel="stylesheet" href="/app.css" />
   <script type="importmap">
   {
@@ -246,7 +247,7 @@
       </section>
     </main>
   </div>
-  <dialog id="schema-pop" aria-labelledby="schema-pop-title">
+  <dialog id="schema-pop" class="dialog dialog-sheet" aria-labelledby="schema-pop-title">
     <div class="schema-pop-card">
       <header class="schema-pop-head">
         <div class="schema-pop-heading">
@@ -263,7 +264,7 @@
           <div id="schema-pop-query" class="schema-pop-query" hidden></div>
           <p id="schema-pop-summary" class="schema-pop-summary"></p>
         </div>
-        <button type="button" id="schema-pop-close" data-tip="Close" aria-label="Close structure">
+        <button type="button" id="schema-pop-close" class="icon-btn" data-tip="Close" aria-label="Close structure">
           <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
@@ -271,7 +272,7 @@
       <p id="schema-pop-foot" class="schema-pop-foot"></p>
     </div>
   </dialog>
-  <dialog id="run-pop" aria-labelledby="run-pop-title">
+  <dialog id="run-pop" class="dialog dialog-sheet" aria-labelledby="run-pop-title">
     <div class="schema-pop-card">
       <header class="schema-pop-head">
         <div class="schema-pop-heading">
@@ -283,7 +284,7 @@
           </div>
           <p id="run-pop-summary" class="schema-pop-summary"></p>
         </div>
-        <button type="button" id="run-pop-close" class="schema-pop-close" data-tip="Close" aria-label="Close run">
+        <button type="button" id="run-pop-close" class="icon-btn" data-tip="Close" aria-label="Close run">
           <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
@@ -291,13 +292,13 @@
       <div id="run-pop-body" class="run-pop-body"></div>
       <footer class="run-pop-foot">
         <span id="run-pop-status" class="run-pop-status"></span>
-        <button type="button" id="run-pop-cancel">Cancel</button>
-        <button type="button" id="run-pop-stop" class="danger" hidden>Stop</button>
-        <button type="button" id="run-pop-start" class="primary">Run</button>
+        <button type="button" id="run-pop-cancel" class="btn">Cancel</button>
+        <button type="button" id="run-pop-stop" class="btn btn-danger" hidden>Stop</button>
+        <button type="button" id="run-pop-start" class="btn btn-primary">Run</button>
       </footer>
     </div>
   </dialog>
-  <dialog id="row-pop" aria-labelledby="row-pop-title">
+  <dialog id="row-pop" class="dialog dialog-sheet" aria-labelledby="row-pop-title">
     <div class="row-pop-card">
       <header class="row-pop-head">
         <div class="row-pop-heading">
@@ -305,7 +306,7 @@
           <h2 id="row-pop-title">Row</h2>
           <div id="row-pop-keys" class="row-pop-keys"></div>
         </div>
-        <button type="button" id="row-pop-close" data-tip="Close" aria-label="Close row">
+        <button type="button" id="row-pop-close" class="icon-btn" data-tip="Close" aria-label="Close row">
           <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
@@ -313,31 +314,31 @@
     </div>
   </dialog>
   <div id="complete-list" class="complete-list" role="listbox" aria-label="Suggestions" hidden></div>
-  <dialog id="patch-pop" aria-labelledby="patch-pop-title">
-    <div class="patch-pop-card">
+  <dialog id="patch-pop" class="dialog" aria-labelledby="patch-pop-title">
+    <div class="dialog-card patch-pop-card">
       <header class="patch-pop-head">
-        <h2 id="patch-pop-title">File changed on disk</h2>
-        <button type="button" id="patch-pop-close" data-tip="Close" aria-label="Close unsaved patch">
+        <h2 id="patch-pop-title" class="dialog-title">File changed on disk</h2>
+        <button type="button" id="patch-pop-close" class="icon-btn" data-tip="Close" aria-label="Close unsaved patch">
           <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
       <p id="patch-pop-note"></p>
       <pre id="patch-pop-body"></pre>
       <div class="patch-pop-nav">
-        <button type="button" id="patch-prev">Previous</button>
+        <button type="button" id="patch-prev" class="btn">Previous</button>
         <span id="patch-count"></span>
-        <button type="button" id="patch-next">Next</button>
+        <button type="button" id="patch-next" class="btn">Next</button>
       </div>
       <div class="patch-pop-actions">
-        <button type="button" id="patch-copy">Copy patch</button>
+        <button type="button" id="patch-copy" class="btn btn-primary">Copy patch</button>
       </div>
     </div>
   </dialog>
-  <dialog id="server-pop" aria-labelledby="server-pop-title">
-    <div class="server-pop-card">
-      <h2 id="server-pop-title">The server went away</h2>
+  <dialog id="server-pop" class="dialog" aria-labelledby="server-pop-title">
+    <div class="dialog-card">
+      <h2 id="server-pop-title" class="dialog-title">The server went away</h2>
       <p id="server-pop-status" class="server-pop-status"></p>
-      <button type="button" id="server-retry">Retry</button>
+      <button type="button" id="server-retry" class="btn btn-primary">Retry</button>
     </div>
   </dialog>
   <dialog id="mermaid-screen" aria-label="Diagram full screen">

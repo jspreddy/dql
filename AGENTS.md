@@ -26,7 +26,7 @@ Each line says where to look, not what is there.
 ### Layout
 
 - `rust-impl/`: the `dqlrs` workspace and the target state. `dql-cli` holds the CLI, REPL, `web`, MCP and notebook. The parser, engine, expressions, models and output each have their own crate.
-- `dqlrs-web/`: browser assets bundled into the binary (`static/`), the bundled examples (`examples/`), and Playwright tests (`playwright/`).
+- `dqlrs-web/`: browser assets bundled into the binary (`static/`), the bundled examples (`examples/`), and Playwright tests (`playwright/`). Design guidelines and components: `dqlrs-web/DESIGN.md`.
 - `py-impl/`: the original Python `dql`. Don't add `dqlrs` behavior there.
 - `notebook/`: the JupyterLab integration. `black-box-tests/`: end-to-end CLI tests.
 - `rust-docs/`, `py-docs/`, `README.md`: user docs. `MAINTAINER.md` and `VERIFICATION.md`: maintainer notes.

@@ -1,0 +1,113 @@
+/* Shared components. Loaded after theme.css and before app.css. See dqlrs-web/DESIGN.md.
+   A screen composes these classes; it does not restyle a button or a dialog by id. */
+
+/* Focus: one ring for every component here. Hover changes the fill; focus adds the ring. */
+.btn:focus-visible,
+.icon-btn:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+/* Button: the action in a dialog or a form. Default is the quiet (secondary) fill. */
+.btn {
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--chip);
+  color: var(--text);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.btn:hover { background: var(--chip-hover); }
+.btn:disabled { opacity: 0.6; cursor: default; }
+.btn[hidden] { display: none; }
+
+/* The one action the dialog exists for. At most one per dialog. */
+.btn-primary {
+  background: var(--teal);
+  color: var(--on-fill);
+}
+
+.btn-primary:hover {
+  background: var(--teal);
+  filter: brightness(1.05);
+}
+
+/* An action that deletes, overwrites, or stops work. */
+.btn-danger {
+  background: var(--danger-fill);
+  color: var(--on-fill);
+}
+
+.btn-danger:hover { background: var(--danger-hover); }
+.btn-danger:focus-visible { outline-color: var(--danger-outline); }
+
+/* Icon button: a 28px square with one 12 to 14px icon, such as a dialog's close. It needs an
+   aria-label, and a data-tip when the icon alone does not say what it does. */
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--hover-quiet);
+  color: var(--text);
+}
+
+/* Dialog: a native <dialog> opened with showModal(). The element is only the backdrop; the
+   card inside it is the surface. */
+.dialog {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.dialog::backdrop { background: var(--shadow-modal); }
+
+/* A sheet fills the window, for content that needs the room (a table's structure, a run). */
+.dialog-sheet {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+}
+
+/* Card: a centered surface for a question or a short task. Set --dialog-width to widen it. */
+.dialog-card {
+  width: min(var(--dialog-width, 420px), calc(100vw - 32px));
+  padding: 22px 22px 18px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px var(--shadow-lg);
+  color: var(--text);
+}
+
+.dialog-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+/* Actions sit at the bottom right: quiet actions first, the primary action last. */
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
