@@ -174,6 +174,9 @@ pub const SELECT: &str = r"
     --------
     CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars WHERE id = 'a';
     CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars KEYS IN 'id1', 'id2';
+    CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars KEYS IN (id1, id2, id3);
+    CREATE TABLE foobars (id STRING HASH KEY, n NUMBER RANGE KEY); SELECT * FROM foobars KEYS IN ((id1, 1), (id2, 2));
+    CREATE TABLE foobars (id STRING HASH KEY, n NUMBER RANGE KEY); SELECT * FROM foobars KEYS IN (id1, 1), (id2, 2),;
     CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE out.msgpack;
     CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE out.json.gz;
     CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE 'exports/out.json' CREATE PARENTS;

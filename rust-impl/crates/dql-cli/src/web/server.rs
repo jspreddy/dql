@@ -2752,6 +2752,18 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         );
         assert_eq!(by_keys_json["has_more"], false);
 
+        let grouped_keys = http_body(
+            addr,
+            "GET",
+            &format!(
+                "/api/rows?table=posts&page=0&dql={}",
+                query_encode("SELECT * FROM posts KEYS IN ((a, 1), (b, 3)),")
+            ),
+            "",
+        );
+        let grouped_keys_json: Value = serde_json::from_str(&grouped_keys).expect(&grouped_keys);
+        assert_eq!(grouped_keys_json["items"].as_array().unwrap().len(), 2);
+
         let by_index_keys = http_body(
             addr,
             "GET",

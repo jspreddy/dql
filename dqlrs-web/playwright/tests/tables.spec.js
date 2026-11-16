@@ -1087,6 +1087,10 @@ test("table browser keys mode batch-gets typed hash and hash-range keys", async 
   await expect(page.locator("#table-query-dql")).toHaveText(
     `SELECT * FROM ${name} KEYS IN ('ada', 1), ('tom', 3)`,
   );
+  await page.locator('[data-testid="table-query-batch-keys"]').fill("((ada, 1), (tom, 3),)");
+  await expect(page.locator("#table-query-dql")).toHaveText(
+    `SELECT * FROM ${name} KEYS IN ('ada', 1), ('tom', 3)`,
+  );
   await page.locator("#table-query-run").click();
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
   await expect(page.locator("#rows-table tbody")).toContainText("ada");
@@ -1135,7 +1139,7 @@ test("table browser keys mode queries a chosen index", async ({ page, app }, tes
   await page.screenshot({ path: playwrightArtifact(`table-query-keys-index-${testInfo.project.name}.png`) });
 });
 
-test("table browser keys mode batch-gets a list of hash keys", async ({ page, app }) => {
+test("table browser keys mode batch-gets a list of hash keys", async ({ page, app }, testInfo) => {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
 
@@ -1163,11 +1167,14 @@ test("table browser keys mode batch-gets a list of hash keys", async ({ page, ap
   await page.locator("#table-query-keys-mode").click();
   await page.locator('[data-testid="table-query-batch-keys"]').fill("ada, tom");
   await expect(page.locator("#table-query-dql")).toHaveText(`SELECT * FROM ${name} KEYS IN 'ada', 'tom'`);
+  await page.locator('[data-testid="table-query-batch-keys"]').fill("(ada, tom, sue)");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SELECT * FROM ${name} KEYS IN 'ada', 'tom', 'sue'`);
   await page.locator("#table-query-run").click();
-  await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);
   await expect(page.locator("#rows-table tbody")).toContainText("ada");
   await expect(page.locator("#rows-table tbody")).toContainText("tom");
-  await expect(page.locator("#rows-table tbody")).not.toContainText("sue");
+  await expect(page.locator("#rows-table tbody")).toContainText("sue");
+  await page.screenshot({ path: playwrightArtifact(`table-query-keys-hash-list-${testInfo.project.name}.png`) });
 });
 
 test("names insert, update, delete, count, and drop results", async ({ page, app }) => {

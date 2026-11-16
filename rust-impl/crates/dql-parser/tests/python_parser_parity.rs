@@ -487,6 +487,51 @@ mod test_query_options {
         }
     }
 
+    fn select_keys_in(sql: &str) -> Vec<Vec<Value>> {
+        match parse_statement(sql).unwrap() {
+            Statement::Select { options, .. } => options.keys_in.expect("keys_in"),
+            other => panic!("unexpected statement: {other:?}"),
+        }
+    }
+
+    fn v_str(value: &str) -> Value {
+        Value::String(value.to_string())
+    }
+
+    fn v_num(value: &str) -> Value {
+        Value::Number(value.to_string())
+    }
+
+    #[test]
+    fn parses_keys_in_grouped_hashes_pairs_and_trailing_commas() {
+        assert_eq!(
+            select_keys_in("SELECT * FROM foobars KEYS IN (a, b, c)"),
+            vec![vec![v_str("a")], vec![v_str("b")], vec![v_str("c")]]
+        );
+        assert_eq!(
+            select_keys_in("SELECT * FROM foobars KEYS IN ((a, 1), (d, 4))"),
+            vec![vec![v_str("a"), v_num("1")], vec![v_str("d"), v_num("4")],]
+        );
+        assert_eq!(
+            select_keys_in("SELECT * FROM foobars KEYS IN (a, 1), (b, 2),"),
+            vec![vec![v_str("a"), v_num("1")], vec![v_str("b"), v_num("2")],]
+        );
+        assert_eq!(
+            select_keys_in("SELECT * FROM foobars KEYS IN ('a', 1), ('b', 2)"),
+            vec![vec![v_str("a"), v_num("1")], vec![v_str("b"), v_num("2")],]
+        );
+        let statement =
+            parse_statement("SELECT * FROM foobars KEYS IN (a, b, c), USING -").unwrap();
+        match statement {
+            Statement::Select { options, .. } => {
+                assert_eq!(options.keys_in.as_ref().map(|keys| keys.len()), Some(3));
+                assert_eq!(options.using_index.as_deref(), Some("-"));
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+        assert_parse_ok("DELETE FROM foobars KEYS IN (a, 1), (b, 2), WHERE foo = 1");
+    }
+
     #[test]
     fn parses_scan_limits_and_order_by() {
         let statement =

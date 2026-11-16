@@ -127,6 +127,48 @@ export function parseBatchKeys(text) {
     return { ok: true, value: parseBare() };
   }
 
+  function collapseGroup(elems) {
+    if (elems.every((elem) => elem.type === "value")) {
+      if (elems.length === 2) return [[elems[0].value, elems[1].value]];
+      return elems.map((elem) => [elem.value]);
+    }
+    const nested = [];
+    for (const elem of elems) {
+      if (elem.type === "value") nested.push([elem.value]);
+      else nested.push(...elem.keys);
+    }
+    return nested;
+  }
+
+  function parseGroup(openAt) {
+    const elems = [];
+    while (i < src.length) {
+      skipIdle();
+      if (i >= src.length) {
+        errors.push(`Line ${lineAt(openAt)} has an unclosed (.`);
+        return collapseGroup(elems);
+      }
+      if (src[i] === ")") {
+        i += 1;
+        return collapseGroup(elems);
+      }
+      if (src[i] === "(") {
+        const nestedAt = i;
+        i += 1;
+        elems.push({ type: "keys", keys: parseGroup(nestedAt) });
+        continue;
+      }
+      const value = parseValue();
+      if (!value.ok) {
+        errors.push(value.error);
+        return collapseGroup(elems);
+      }
+      if (value.value) elems.push({ type: "value", value: value.value });
+    }
+    errors.push(`Line ${lineAt(openAt)} has an unclosed (.`);
+    return collapseGroup(elems);
+  }
+
   skipIdle();
   while (i < src.length) {
     skipIdle();
@@ -139,33 +181,7 @@ export function parseBatchKeys(text) {
     }
     if (src[i] === "(") {
       i += 1;
-      const hash = parseValue();
-      if (!hash.ok) {
-        errors.push(hash.error);
-        break;
-      }
-      skipSpace();
-      if (src[i] !== ",") {
-        errors.push(`Line ${lineAt(start)} needs (hash, range).`);
-        continue;
-      }
-      i += 1;
-      const range = parseValue();
-      if (!range.ok) {
-        errors.push(range.error);
-        break;
-      }
-      skipSpace();
-      if (src[i] !== ")") {
-        errors.push(`Line ${lineAt(start)} has an unclosed (hash, range) pair.`);
-        continue;
-      }
-      i += 1;
-      if (!hash.value || !range.value) {
-        errors.push(`Line ${lineAt(start)} needs (hash, range).`);
-        continue;
-      }
-      keys.push([hash.value, range.value]);
+      keys.push(...parseGroup(start));
       continue;
     }
     const value = parseValue();
