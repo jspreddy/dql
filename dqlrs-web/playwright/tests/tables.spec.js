@@ -147,7 +147,7 @@ test("searching tables filters the cached list without refresh", async ({ page, 
   await expect(page.locator("#table-list")).toContainText("No tables match zzz_no_such_table_*");
 });
 
-test("pages a table fifty rows at a time from a searched name", async ({ page, app }) => {
+test("pages a table fifty rows at a time from a searched name", async ({ page, app }, testInfo) => {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
 
@@ -179,6 +179,8 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   await expect(row).not.toContainText("RANGE");
   await expect(page.locator("#rows-title")).toHaveText(name);
   await expect(page.locator("#rows-meta")).toHaveText("50 rows at a time");
+  await expect(page.locator("#table-query .table-query-toolbar #table-query-pager")).toBeVisible();
+  await expect(page.locator("#tables-view > .pager")).toHaveCount(0);
   await expect(page.locator("#page-label")).toHaveText("Showing 1–50");
   await expect(page.locator("#page-prev")).toBeDisabled();
   await expect(page.locator("#page-next")).toBeEnabled();
@@ -199,6 +201,7 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   await page.locator("#page-prev").click();
   await expect(page.locator("#page-label")).toHaveText("Showing 1–50");
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(50);
+  await page.screenshot({ path: playwrightArtifact(`table-pager-toolbar-${testInfo.project.name}.png`) });
 });
 
 test("table column headers stay put while rows scroll", async ({ page, app }) => {
