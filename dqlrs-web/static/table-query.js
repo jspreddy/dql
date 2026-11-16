@@ -58,6 +58,87 @@ export function quoteValue(raw, type) {
   return "'" + text.replaceAll("'", "''") + "'";
 }
 
+export function splitKeyFields(line) {
+  const text = String(line || "").trim();
+  if (!text) return [];
+  const fields = [];
+  let current = "";
+  let quote = "";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote) {
+      if (ch === quote) {
+        quote = "";
+      } else if (ch === "'" && quote === "'" && text[i + 1] === "'") {
+        current += "'";
+        i += 1;
+      } else {
+        current += ch;
+      }
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      continue;
+    }
+    if (ch === "," || ch === "\t") {
+      if (current.trim()) fields.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  if (quote) return null;
+  if (current.trim()) fields.push(current.trim());
+  return fields;
+}
+
+export function parseBatchKeys(text, hasRange) {
+  const keys = [];
+  const errors = [];
+  String(text || "").split(/\r?\n/).forEach((raw, index) => {
+    const line = raw.trim();
+    if (!line) return;
+    const tuple = line.startsWith("(") && line.endsWith(")");
+    const fields = splitKeyFields(tuple ? line.slice(1, -1) : line);
+    if (!fields) {
+      errors.push(`Line ${index + 1} has an unclosed quote.`);
+      return;
+    }
+    if (!fields.length) return;
+    if (tuple || hasRange) {
+      if (fields.length < 2 && hasRange) {
+        errors.push(`Line ${index + 1} needs a hash and range key.`);
+        return;
+      }
+      keys.push(fields.slice(0, hasRange || fields.length > 1 ? 2 : 1));
+      return;
+    }
+    for (const field of fields) keys.push([field]);
+  });
+  return { keys, errors };
+}
+
+export function formatKeysInClause(keys, table, extra) {
+  const source = tableSource(table);
+  return (keys || []).map((fields) => {
+    const quoted = fields.map((value, index) => {
+      const name = index === 0 ? source.hashKey : source.rangeKey;
+      return quoteValue(value, attributeType(table, extra, name));
+    });
+    return quoted.length === 1 ? quoted[0] : `(${quoted.join(", ")})`;
+  }).join(", ");
+}
+
+export function batchKeyHint(table) {
+  const source = tableSource(table);
+  if (source.rangeKey) {
+    const hash = source.hashKey || "hash";
+    return `One ${hash}, ${source.rangeKey} pair per line`;
+  }
+  return `One ${source.hashKey || "hash key"} per line`;
+}
+
 export function opById(id, ops) {
   return (ops || FILTER_OPS).find((op) => op.id === id) || COMPARE_OPS[0];
 }
@@ -205,6 +286,7 @@ export function defaultReadState() {
     order: "forward",
     keys: [],
     filters: [],
+    batchKeys: "",
   };
 }
 
@@ -242,6 +324,12 @@ export function buildReadStatement(tableName, table, state, extra) {
   const name = tableName || (table && table.name) || "";
   if (!name) return "";
   const current = ensureQueryKeys(table, state || defaultReadState());
+  if (current.mode === "keys") {
+    const hasRange = Boolean(tableSource(table).rangeKey);
+    const parsed = parseBatchKeys(current.batchKeys, hasRange);
+    if (!parsed.keys.length) return "";
+    return `SELECT * FROM ${quoteIdent(name)} KEYS IN ${formatKeysInClause(parsed.keys, table, extra)}`;
+  }
   const source = sourceOf(table, current.source, current.mode);
   const verb = current.mode === "query" ? "SELECT" : "SCAN";
   const keys = (current.keys || []).map((row) => formatCondition({
@@ -271,6 +359,12 @@ export function buildReadStatement(tableName, table, state, extra) {
 
 export function readError(table, state) {
   const current = ensureQueryKeys(table, state || defaultReadState());
+  if (current.mode === "keys") {
+    const parsed = parseBatchKeys(current.batchKeys, Boolean(tableSource(table).rangeKey));
+    if (parsed.errors.length) return parsed.errors[0];
+    if (!parsed.keys.length) return "Keys needs at least one key.";
+    return "";
+  }
   if (current.mode !== "query") return "";
   const hash = sourceKeys(table, current.source, current.mode).find((key) => key.role === "hash");
   const row = hash
@@ -358,15 +452,23 @@ export function attachTableQuery(host, handlers = {}) {
   let focusAttr = "";
 
   const sourceSelect = host.querySelector("#table-query-source");
+  const sourceWrap = host.querySelector("#table-query-source-wrap");
   const scanBtn = host.querySelector("#table-query-scan");
   const queryBtn = host.querySelector("#table-query-query");
+  const keysModeBtn = host.querySelector("#table-query-keys-mode");
+  const orderGroup = host.querySelector("#table-query-order");
   const forwardBtn = host.querySelector("#table-query-forward");
   const reverseBtn = host.querySelector("#table-query-reverse");
   const runBtn = host.querySelector("#table-query-run");
   const addKey = host.querySelector("#table-query-add-key");
   const addFilter = host.querySelector("#table-query-add-filter");
+  const keySection = host.querySelector("#table-query-key-section");
+  const filterSection = host.querySelector("#table-query-filter-section");
   const keyHost = host.querySelector("#table-query-keys");
   const filterHost = host.querySelector("#table-query-filters");
+  const batchSection = host.querySelector("#table-query-batch");
+  const batchInput = host.querySelector("#table-query-batch-keys");
+  const batchHint = host.querySelector("#table-query-batch-hint");
   const preview = host.querySelector("#table-query-dql");
   const errorNode = host.querySelector("#table-query-error");
 
@@ -388,10 +490,23 @@ export function attachTableQuery(host, handlers = {}) {
   }
 
   function syncModeButtons() {
+    const isKeys = state.mode === "keys";
     scanBtn.setAttribute("aria-pressed", state.mode === "scan" ? "true" : "false");
     queryBtn.setAttribute("aria-pressed", state.mode === "query" ? "true" : "false");
+    keysModeBtn.setAttribute("aria-pressed", isKeys ? "true" : "false");
     forwardBtn.setAttribute("aria-pressed", state.order === "forward" ? "true" : "false");
     reverseBtn.setAttribute("aria-pressed", state.order === "reverse" ? "true" : "false");
+    sourceWrap.classList.toggle("hidden", isKeys);
+    orderGroup.classList.toggle("hidden", isKeys);
+    keySection.classList.toggle("hidden", isKeys);
+    filterSection.classList.toggle("hidden", isKeys);
+    batchSection.classList.toggle("hidden", !isKeys);
+    const source = tableSource(table);
+    const hash = source.hashKey || "hash";
+    const range = source.rangeKey;
+    batchHint.textContent = batchKeyHint(table);
+    batchInput.placeholder = range ? `${hash}, ${range}` : hash;
+    if (document.activeElement !== batchInput) batchInput.value = state.batchKeys || "";
   }
 
   function paintSources() {
@@ -641,6 +756,15 @@ export function attachTableQuery(host, handlers = {}) {
     state.mode = "query";
     paint();
   });
+  keysModeBtn.addEventListener("click", () => {
+    state.mode = "keys";
+    paint();
+    batchInput.focus();
+  });
+  batchInput.addEventListener("input", () => {
+    state.batchKeys = batchInput.value;
+    livePreview();
+  });
   forwardBtn.addEventListener("click", () => {
     state.order = "forward";
     paint();
@@ -710,7 +834,11 @@ export function attachTableQuery(host, handlers = {}) {
     statement,
     error,
     state() {
-      return { ...state, keys: state.keys.map((row) => ({ ...row })), filters: state.filters.map((row) => ({ ...row })) };
+      return {
+        ...state,
+        keys: state.keys.map((row) => ({ ...row })),
+        filters: state.filters.map((row) => ({ ...row })),
+      };
     },
   };
 }

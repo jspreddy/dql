@@ -4,11 +4,13 @@ import test from "node:test";
 import {
   availableSources,
   attributeLabel,
+  batchKeyHint,
   buildReadStatement,
   defaultReadState,
   ensureQueryKeys,
   filterAttributes,
   formatCondition,
+  parseBatchKeys,
   quoteIdent,
   quoteValue,
   readError,
@@ -135,6 +137,28 @@ test("typed attributes that are missing from metadata still format", () => {
     filters: [{ attribute: "note", op: "eq", value: "hello" }],
   });
   assert.equal(sql, "SCAN * FROM posts WHERE note = 'hello'");
+});
+
+test("parseBatchKeys reads hash lines or hash, range pairs", () => {
+  assert.deepEqual(parseBatchKeys("ada\ntom", false).keys, [["ada"], ["tom"]]);
+  assert.deepEqual(parseBatchKeys("ada, tom", false).keys, [["ada"], ["tom"]]);
+  assert.deepEqual(parseBatchKeys("ada, 1\ntom, 3", true).keys, [["ada", "1"], ["tom", "3"]]);
+  assert.deepEqual(parseBatchKeys("('ada', 1)", true).keys, [["ada", "1"]]);
+  assert.equal(parseBatchKeys("ada", true).errors[0], "Line 1 needs a hash and range key.");
+  assert.equal(batchKeyHint(table), "One id, sk pair per line");
+});
+
+test("keys mode builds KEYS IN from the typed list", () => {
+  const hashOnly = { name: "posts", keys: [{ name: "id", role: "hash" }], indexes: [], attributes: [{ name: "id", type: "STRING" }] };
+  assert.equal(readError(hashOnly, { ...defaultReadState(), mode: "keys" }), "Keys needs at least one key.");
+  assert.equal(
+    buildReadStatement("posts", hashOnly, { ...defaultReadState(), mode: "keys", batchKeys: "ada\ntom" }),
+    "SELECT * FROM posts KEYS IN 'ada', 'tom'",
+  );
+  assert.equal(
+    buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys: "ada, 1\ntom, 3" }),
+    "SELECT * FROM posts KEYS IN ('ada', 1), ('tom', 3)",
+  );
 });
 
 test("query without hash metadata accepts a typed hash name", () => {

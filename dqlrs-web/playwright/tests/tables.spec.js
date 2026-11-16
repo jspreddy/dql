@@ -1046,6 +1046,88 @@ test("table browser suggests structure attributes and accepts a typed name", asy
   await page.screenshot({ path: playwrightArtifact(`table-query-custom-attr-${testInfo.project.name}.png`) });
 });
 
+test("table browser keys mode batch-gets typed hash and hash-range keys", async ({ page, app }, testInfo) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, sk NUMBER RANGE KEY);`,
+      `INSERT INTO ${name} (id, sk, status) VALUES ('ada', 1, 'open'), ('ada', 2, 'shut'), ('tom', 3, 'open');`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "3 rows inserted" })).toBeVisible();
+
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await expect(page.locator(`#table-${name}`)).toBeVisible();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);
+
+  await page.locator("#table-query-keys-mode").click();
+  await expect(page.locator("#table-query-keys-mode")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#table-query-source-wrap")).toBeHidden();
+  await expect(page.locator("#table-query-order")).toBeHidden();
+  await expect(page.locator("#table-query-key-section")).toBeHidden();
+  await expect(page.locator("#table-query-filter-section")).toBeHidden();
+  await expect(page.locator("#table-query-batch")).toBeVisible();
+  await expect(page.locator("#table-query-run")).toBeDisabled();
+  await expect(page.locator("#table-query-error")).toHaveText("Keys needs at least one key.");
+
+  await page.locator('[data-testid="table-query-batch-keys"]').fill("ada, 1\ntom, 3");
+  await expect(page.locator("#table-query-dql")).toHaveText(
+    `SELECT * FROM ${name} KEYS IN ('ada', 1), ('tom', 3)`,
+  );
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
+  await expect(page.locator("#rows-table tbody")).toContainText("ada");
+  await expect(page.locator("#rows-table tbody")).toContainText("tom");
+  await expect(page.locator("#rows-table tbody")).not.toContainText("shut");
+  await page.screenshot({ path: playwrightArtifact(`table-query-keys-mode-${testInfo.project.name}.png`) });
+});
+
+test("table browser keys mode batch-gets a list of hash keys", async ({ page, app }) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY);`,
+      `INSERT INTO ${name} (id, status) VALUES ('ada', 'open'), ('tom', 'open'), ('sue', 'shut');`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "3 rows inserted" })).toBeVisible();
+
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await expect(page.locator(`#table-${name}`)).toBeVisible();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);
+
+  await page.locator("#table-query-keys-mode").click();
+  await page.locator('[data-testid="table-query-batch-keys"]').fill("ada\ntom");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SELECT * FROM ${name} KEYS IN 'ada', 'tom'`);
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
+  await expect(page.locator("#rows-table tbody")).toContainText("ada");
+  await expect(page.locator("#rows-table tbody")).toContainText("tom");
+  await expect(page.locator("#rows-table tbody")).not.toContainText("sue");
+});
+
 test("names insert, update, delete, count, and drop results", async ({ page, app }) => {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");

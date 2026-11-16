@@ -1163,7 +1163,7 @@ fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Resul
         return Err(format!("unsupported table name {name:?}"));
     }
     let limit = PAGE_SIZE.saturating_mul(page.saturating_add(1));
-    let statement = browser_read_dql(name, dql, limit)?;
+    let (statement, page_with_limit) = browser_read_dql(name, dql, limit)?;
     let envelope = state.session.execute_for_serve(&statement);
     if !envelope.ok {
         return Err(ExecText::from_envelope(&envelope).failure());
@@ -1188,16 +1188,20 @@ fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Resul
         "page_size": PAGE_SIZE,
         "items": window,
         "columns": columns,
-        "has_more": items.len() >= limit,
+        "has_more": if page_with_limit {
+            items.len() >= limit
+        } else {
+            items.len() > end
+        },
         "dql": statement,
     }))
 }
 
-/// SCAN/SELECT of `name` only. The table browser always pages with LIMIT.
-fn browser_read_dql(name: &str, dql: &str, limit: usize) -> Result<String, String> {
+/// SCAN/SELECT of `name` only. Paged reads append LIMIT; KEYS IN cannot.
+fn browser_read_dql(name: &str, dql: &str, limit: usize) -> Result<(String, bool), String> {
     let text = dql.trim().trim_end_matches(';').trim();
     if text.is_empty() {
-        return Ok(format!("SCAN * FROM {name} LIMIT {limit}"));
+        return Ok((format!("SCAN * FROM {name} LIMIT {limit}"), true));
     }
     let statement = parse_statement(text).map_err(|err| err.to_string())?;
     match &statement {
@@ -1208,16 +1212,16 @@ fn browser_read_dql(name: &str, dql: &str, limit: usize) -> Result<String, Strin
             if options.save_file.is_some() {
                 return Err("SAVE is not allowed in the table browser".to_string());
             }
-            if options.keys_in.is_some() {
-                return Err("KEYS IN is not allowed in the table browser".to_string());
-            }
             if options.limit.is_some() || options.scan_limit.is_some() {
                 return Err("LIMIT is set by the table browser".to_string());
+            }
+            if options.keys_in.is_some() {
+                return Ok((text.to_string(), false));
             }
         }
         _ => return Err("only SELECT or SCAN in the table browser".to_string()),
     }
-    Ok(format!("{text} LIMIT {limit}"))
+    Ok((format!("{text} LIMIT {limit}"), true))
 }
 
 fn structure_reply(app: &App, query: &str) -> Reply {
@@ -2711,6 +2715,23 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         let indexed_json: Value = serde_json::from_str(&indexed).expect(&indexed);
         assert_eq!(indexed_json["items"].as_array().unwrap().len(), 1);
         assert_eq!(indexed_json["items"][0]["id"], "a");
+
+        let by_keys = http_body(
+            addr,
+            "GET",
+            &format!(
+                "/api/rows?table=posts&page=0&dql={}",
+                query_encode("SELECT * FROM posts KEYS IN ('a', 1), ('b', 3)")
+            ),
+            "",
+        );
+        let by_keys_json: Value = serde_json::from_str(&by_keys).expect(&by_keys);
+        assert_eq!(by_keys_json["items"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            by_keys_json["dql"],
+            "SELECT * FROM posts KEYS IN ('a', 1), ('b', 3)"
+        );
+        assert_eq!(by_keys_json["has_more"], false);
 
         let write = http_body(
             addr,

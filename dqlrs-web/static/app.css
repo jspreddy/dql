@@ -3010,6 +3010,24 @@ body.results-resizing * {
   color: var(--danger);
 }
 
+#table-query-batch-keys {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  border: 1px solid var(--line-control);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.table-query-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .table-query-dql {
   margin: 0;
   padding: 6px 8px;
