@@ -1231,22 +1231,70 @@ impl<'a> Parser<'a> {
     fn parse_keys_in_list(&mut self) -> Result<Vec<Vec<Value>>, ParseError> {
         let mut keys = Vec::new();
         loop {
-            let key_values = if self.accept_symbol('(') {
-                let mut values = vec![self.parse_value()?];
-                if self.accept_symbol(',') {
-                    values.push(self.parse_value()?);
-                }
-                self.expect_symbol(')')?;
-                values
+            if !keys.is_empty() && self.keys_in_list_ends() {
+                break;
+            }
+            if self.accept_symbol('(') {
+                keys.extend(self.parse_keys_in_group()?);
             } else {
-                vec![self.parse_value()?]
-            };
-            keys.push(key_values);
+                keys.push(vec![self.parse_keys_in_value()?]);
+            }
             if !self.accept_symbol(',') {
                 break;
             }
         }
-        Ok(keys)
+        if keys.is_empty() {
+            Err(self.error("expected keys after KEYS IN"))
+        } else {
+            Ok(keys)
+        }
+    }
+
+    fn parse_keys_in_group(&mut self) -> Result<Vec<Vec<Value>>, ParseError> {
+        let mut elems = Vec::new();
+        loop {
+            if self.peek_symbol(')') {
+                break;
+            }
+            if self.accept_symbol('(') {
+                elems.push(KeysInElem::Keys(self.parse_keys_in_group()?));
+            } else {
+                elems.push(KeysInElem::Value(self.parse_keys_in_value()?));
+            }
+            if self.accept_symbol(',') {
+                continue;
+            }
+            break;
+        }
+        self.expect_symbol(')')?;
+        Ok(collapse_keys_in_group(elems))
+    }
+
+    fn parse_keys_in_value(&mut self) -> Result<Value, ParseError> {
+        match self.peek() {
+            Some(Token::Ident(value))
+                if !is_value_keyword(value)
+                    && !is_timestamp_keyword(value)
+                    && !value.eq_ignore_ascii_case("MS")
+                    && !value.eq_ignore_ascii_case("INTERVAL") =>
+            {
+                let value = value.clone();
+                self.pos += 1;
+                Ok(Value::String(value))
+            }
+            Some(Token::Symbol('(')) => Err(self.error("expected key value")),
+            _ => self.parse_value(),
+        }
+    }
+
+    fn keys_in_list_ends(&self) -> bool {
+        self.is_eof()
+            || self.peek_symbol(';')
+            || self.peek_symbol(')')
+            || matches!(
+                self.peek(),
+                Some(Token::Ident(value)) if is_keys_in_list_end_keyword(value)
+            )
     }
 
     fn parse_index_name(&mut self) -> Result<String, ParseError> {
@@ -2168,6 +2216,56 @@ impl<'a> Parser<'a> {
             .copied()
             .unwrap_or(self.input.len())
     }
+}
+
+enum KeysInElem {
+    Value(Value),
+    Keys(Vec<Vec<Value>>),
+}
+
+fn collapse_keys_in_group(elems: Vec<KeysInElem>) -> Vec<Vec<Value>> {
+    if elems
+        .iter()
+        .all(|elem| matches!(elem, KeysInElem::Value(_)))
+    {
+        let values: Vec<Value> = elems
+            .into_iter()
+            .map(|elem| match elem {
+                KeysInElem::Value(value) => value,
+                KeysInElem::Keys(_) => unreachable!(),
+            })
+            .collect();
+        match values.len() {
+            2 => vec![values],
+            _ => values.into_iter().map(|value| vec![value]).collect(),
+        }
+    } else {
+        let mut keys = Vec::new();
+        for elem in elems {
+            match elem {
+                KeysInElem::Value(value) => keys.push(vec![value]),
+                KeysInElem::Keys(nested) => keys.extend(nested),
+            }
+        }
+        keys
+    }
+}
+
+fn is_keys_in_list_end_keyword(value: &str) -> bool {
+    matches!(
+        value.to_ascii_uppercase().as_str(),
+        "WHERE"
+            | "USING"
+            | "LIMIT"
+            | "SCAN"
+            | "ORDER"
+            | "DESC"
+            | "ASC"
+            | "THROTTLE"
+            | "SAVE"
+            | "CREATE"
+            | "RETURNS"
+    )
 }
 
 fn is_value_keyword(value: &str) -> bool {

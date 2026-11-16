@@ -770,6 +770,29 @@ mod test_select {
             .execute("SELECT * FROM foobar KEYS IN ('a', 1), ('b', 2)")
             .unwrap();
         assert_items_len(result, 2);
+        let wrapped = engine
+            .execute("SELECT * FROM foobar KEYS IN ((a, 1), (b, 2))")
+            .unwrap();
+        assert_items_len(wrapped, 2);
+        let trailing = engine
+            .execute("SELECT * FROM foobar KEYS IN (a, 1), (b, 2),")
+            .unwrap();
+        assert_items_len(trailing, 2);
+    }
+
+    #[test]
+    fn test_get_parenthesized_hash_list() {
+        let mut engine = InMemoryEngine::default();
+        engine
+            .execute(
+                "CREATE TABLE foobar (id STRING HASH KEY);
+                 INSERT INTO foobar (id) VALUES ('a'), ('b'), ('c'), ('d')",
+            )
+            .unwrap();
+        let result = engine
+            .execute("SELECT * FROM foobar KEYS IN (a, b, c)")
+            .unwrap();
+        assert_items_len(result, 3);
     }
 
     #[test]
