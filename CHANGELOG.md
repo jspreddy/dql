@@ -5,11 +5,12 @@ Do not edit by hand: changes are rewritten the next time it runs. Newest first.
 A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists.
 
-## Unreleased (2026-11-15)
+## Unreleased (2026-11-16)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5
 
+- [48eb60b](https://github.com/jspreddy/dql/commit/48eb60be7053d19496f9da185d3a7d0b261061b0) docs: add a Conventional Commits rule ([#221](https://github.com/jspreddy/dql/pull/221))
 - [4168e63](https://github.com/jspreddy/dql/commit/4168e63026d7ad3d847fe4bc17b870489bec4c5a) Cache cargo in CI and install cargo-release from its release binary ([#218](https://github.com/jspreddy/dql/pull/218))
 
 ## dqlrs 0.7.11 (2026-11-15)
