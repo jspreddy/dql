@@ -159,6 +159,7 @@ Reviewed from the `design-review.spec.js` screenshots, in light and dark, at 144
 | The run dialog fills the window even for one file. | Run file | Use a card for a single file; keep the sheet for folders. |
 | The Run button shows only a play icon and "Ctrl + Enter". | Editor header | Add the word "Run" for first-time users. |
 | Markdown lines run the full window width (over 150 characters at 1440px). | Document view | Cap the text measure near 90 characters; let tables and diagrams stay wide. |
+| `app.js` is about 5,850 lines and holds every screen. | `static/app.js` | Split it into modules: [plan](../rust-docs/plans/todo/split_web_app_js.md). |
 | Toolbar controls are still styled by id and by location. | `app.css` | Move them to a `.btn-sm` component. |
 | About 37 `:focus-visible` rules each set their own focus style. | `app.css` | Move them to the shared ring as each screen is touched. |
 | Font sizes include half steps (12.5, 13.5, 11.5px) and eight radii are in use. | `app.css` | Fold them into the scales above. |

@@ -43,6 +43,7 @@ are done yet.
 | [`invert_output_dependencies.md`](todo/invert_output_dependencies.md) | High | `dql-output` must not depend on `dql-engine`; shared rich renderer |
 | [`dedupe_cross_cutting.md`](todo/dedupe_cross_cutting.md) | Medium | Shared base64, AWS config, bool parse, display backends |
 | [`config_opt_registry.md`](todo/config_opt_registry.md) | Medium | Single `opt` / config registry; typed width/pagesize |
+| [`split_web_app_js.md`](todo/split_web_app_js.md) | Medium | Split the web app's 5,850-line `app.js` into modules, leaves first |
 
 ## Archive
 
