@@ -10,6 +10,7 @@ next bump, or to Unreleased when no later bump exists.
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5
 
+- [0cea79f](https://github.com/jspreddy/dql/commit/0cea79f01ecf5a18c389d06aae3e7470a3aa2c4f) test(notebook): say what the page showed when a cell does not finish ([#228](https://github.com/jspreddy/dql/pull/228))
 - [48eb60b](https://github.com/jspreddy/dql/commit/48eb60be7053d19496f9da185d3a7d0b261061b0) docs: add a Conventional Commits rule ([#221](https://github.com/jspreddy/dql/pull/221))
 - [4168e63](https://github.com/jspreddy/dql/commit/4168e63026d7ad3d847fe4bc17b870489bec4c5a) Cache cargo in CI and install cargo-release from its release binary ([#218](https://github.com/jspreddy/dql/pull/218))
 
