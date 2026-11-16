@@ -21,15 +21,15 @@ def test_launcher_lists_dql_kernels(lab_page, lab) -> None:
 def test_rust_kernel_runs_select(lab_page, lab) -> None:
     open_smoke_notebook(lab_page, lab)
 
-    created = run_code_cell(lab_page, 0)
+    created = run_code_cell(lab_page, 0, lab)
     assert "Created table 'pw_nb_smoke'" in created, created
 
-    inserted = run_code_cell(lab_page, 1)
+    inserted = run_code_cell(lab_page, 1, lab)
     assert "1 affected" in inserted, inserted
     progress = lab_page.locator(".jp-CodeCell").nth(1).locator("progress")
     if progress.count():
         assert progress.first.get_attribute("value") is not None, inserted
 
-    selected = run_code_cell(lab_page, 2)
+    selected = run_code_cell(lab_page, 2, lab)
     assert "pw-ok" in selected, selected
     assert lab_page.locator(".jp-CodeCell").nth(2).locator("progress").count() == 0

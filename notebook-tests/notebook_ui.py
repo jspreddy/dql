@@ -6,7 +6,9 @@ import re
 
 from playwright.sync_api import Page, expect
 
-from lab_server import LabServer
+from lab_server import REPO_ROOT, LabServer
+
+ARTIFACTS = REPO_ROOT / ".playwright-artifacts"
 
 
 def open_lab(page: Page, lab: LabServer) -> None:
@@ -54,14 +56,55 @@ def _accept_kernel_dialog(page: Page, kernel_name: str) -> None:
     expect(dialog).to_be_hidden()
 
 
-def run_code_cell(page: Page, index: int) -> str:
+def _describe_stuck_cell(page: Page, lab: LabServer | None, index: int) -> str:
+    """What the page and the server showed when a cell did not finish."""
+    cell = page.locator(".jp-Notebook .jp-CodeCell").nth(index)
+    lines = [f"cell {index} did not finish"]
+
+    def text(label: str, locator) -> None:
+        try:
+            found = [value.strip() for value in locator.all_inner_texts() if value.strip()]
+        except Exception as exc:  # noqa: BLE001 - diagnostics must not hide the failure
+            found = [f"<{exc}>"]
+        lines.append(f"{label}: {found}")
+
+    text("prompt", cell.locator(".jp-InputPrompt"))
+    text("output", cell.locator(".jp-OutputArea"))
+    text("status bar", page.locator("#jp-main-statusbar"))
+    text("kernel", page.locator(".jp-Toolbar-kernelName, .jp-KernelStatus"))
+    text("dialog", page.locator(".jp-Dialog"))
+    try:
+        focused = page.evaluate("() => document.activeElement && document.activeElement.className")
+    except Exception as exc:  # noqa: BLE001
+        focused = f"<{exc}>"
+    lines.append(f"focused element: {focused}")
+    try:
+        shot = ARTIFACTS / f"notebook-stuck-cell-{index}.png"
+        ARTIFACTS.mkdir(parents=True, exist_ok=True)
+        page.screenshot(path=str(shot))
+        lines.append(f"screenshot: {shot}")
+    except Exception as exc:  # noqa: BLE001
+        lines.append(f"screenshot failed: {exc}")
+    if lab is not None:
+        try:
+            log = lab.log_path.read_text(encoding="utf-8", errors="replace")
+            lines.append("jupyter log tail:\n" + log[-3000:])
+        except OSError as exc:
+            lines.append(f"jupyter log: {exc}")
+    return "\n".join(lines)
+
+
+def run_code_cell(page: Page, index: int, lab: LabServer | None = None) -> str:
     """Run a code cell and return its output text."""
     cell = page.locator(".jp-Notebook .jp-CodeCell").nth(index)
     expect(cell).to_be_visible()
     cell.locator(".cm-content").click()
     page.keyboard.press("Shift+Enter")
     prompt = cell.locator(".jp-InputPrompt")
-    expect(prompt).to_have_text(re.compile(r"\[\d+\]"), timeout=90_000)
+    try:
+        expect(prompt).to_have_text(re.compile(r"\[\d+\]"), timeout=90_000)
+    except AssertionError as exc:
+        raise AssertionError(_describe_stuck_cell(page, lab, index)) from exc
     area = cell.locator(".jp-OutputArea")
     if area.count() == 0:
         return ""
