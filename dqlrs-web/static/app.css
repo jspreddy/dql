@@ -2974,6 +2974,17 @@ body.results-resizing * {
 
 .table-query-cond select { min-width: 108px; }
 
+.table-query-cond input[data-field="attribute"] {
+  width: 140px;
+  flex: 0 1 180px;
+  min-width: 96px;
+}
+
+.table-query-cond input[data-field="attribute"]:read-only {
+  color: var(--muted);
+  background: var(--chip);
+}
+
 .table-query-cond input[data-field="value"],
 .table-query-cond input[data-field="value2"] {
   width: 180px;

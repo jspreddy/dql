@@ -122,6 +122,20 @@ export function attributeType(table, extra, name) {
   return extras && extras.get(name) || "";
 }
 
+export function roleLabel(role) {
+  if (role === "hash") return "hash";
+  if (role === "range") return "range";
+  if (role === "index-hash") return "index hash";
+  if (role === "index-range") return "index range";
+  return "";
+}
+
+export function attributeLabel(item) {
+  const role = roleLabel(item && item.role);
+  const name = item && item.name ? item.name : "";
+  return role ? `${name} (${role})` : name;
+}
+
 export function filterAttributes(table, extraNames) {
   const names = [];
   const seen = new Set();
@@ -130,7 +144,7 @@ export function filterAttributes(table, extraNames) {
     seen.add(name);
     names.push({ name, type: type || "", role: role || "" });
   };
-  for (const key of tableSource(table).hashKey ? sourceKeys(table, "", "query") : []) {
+  for (const key of sourceKeys(table, "", "query")) {
     add(key.name, attributeType(table, extraNames, key.name), key.role);
   }
   for (const index of listedIndexes(table)) {
@@ -141,6 +155,25 @@ export function filterAttributes(table, extraNames) {
   for (const attr of listed) add(attr.name, attr.type);
   const extras = extraNames instanceof Map ? extraNames.keys() : extraNames || [];
   for (const name of extras) add(name, extraNames instanceof Map ? extraNames.get(name) : "");
+  return names;
+}
+
+export function keyAttributeSuggestions(table, sourceName, mode, extraNames) {
+  const names = [];
+  const seen = new Set();
+  const add = (name, role) => {
+    if (!name || seen.has(name)) return;
+    seen.add(name);
+    names.push({
+      name,
+      type: attributeType(table, extraNames, name),
+      role: role || "",
+    });
+  };
+  for (const key of sourceKeys(table, sourceName, mode)) add(key.name, key.role);
+  for (const attr of filterAttributes(table, extraNames)) {
+    add(attr.name, attr.role);
+  }
   return names;
 }
 
@@ -183,7 +216,14 @@ export function ensureQueryKeys(table, state) {
   }
   const keys = sourceKeys(table, next.source, next.mode);
   const hash = keys.find((key) => key.role === "hash");
-  if (!hash) return next;
+  if (!hash) {
+    if (!next.keys.length) {
+      next.keys = [
+        { id: "hash", attribute: "", op: "eq", value: "", value2: "", role: "hash", locked: false },
+      ];
+    }
+    return next;
+  }
   const existing = next.keys.find((row) => row.attribute === hash.name);
   if (existing) {
     existing.role = "hash";
@@ -233,9 +273,11 @@ export function readError(table, state) {
   const current = ensureQueryKeys(table, state || defaultReadState());
   if (current.mode !== "query") return "";
   const hash = sourceKeys(table, current.source, current.mode).find((key) => key.role === "hash");
-  if (!hash) return "Query needs a hash key in the table definition.";
-  const row = (current.keys || []).find((item) => item.attribute === hash.name);
-  if (!row || !String(row.value ?? "").length) return "Query needs a hash key value.";
+  const row = hash
+    ? (current.keys || []).find((item) => item.attribute === hash.name)
+    : (current.keys || []).find((item) => String(item.attribute || "").trim());
+  if (!row || !String(row.attribute || "").trim()) return "Query needs a hash key.";
+  if (!String(row.value ?? "").length) return "Query needs a hash key value.";
   return "";
 }
 
@@ -257,6 +299,25 @@ function fillSelect(select, items, selected) {
     option(select, wanted, wanted, true);
   }
   select.value = wanted;
+}
+
+function fillDatalist(list, items, current) {
+  list.replaceChildren();
+  const seen = new Set();
+  for (const item of items || []) {
+    if (!item || !item.name || seen.has(item.name)) continue;
+    seen.add(item.name);
+    const node = document.createElement("option");
+    node.value = item.name;
+    const label = attributeLabel(item);
+    if (label && label !== item.name) node.label = label;
+    list.append(node);
+  }
+  if (current && !seen.has(current)) {
+    const node = document.createElement("option");
+    node.value = current;
+    list.append(node);
+  }
 }
 
 function paintPreview(node, text) {
@@ -294,6 +355,7 @@ export function attachTableQuery(host, handlers = {}) {
   let extra = new Map();
   let state = defaultReadState();
   let ran = "";
+  let focusAttr = "";
 
   const sourceSelect = host.querySelector("#table-query-source");
   const scanBtn = host.querySelector("#table-query-scan");
@@ -347,6 +409,11 @@ export function attachTableQuery(host, handlers = {}) {
     }
   }
 
+  function suggestionsFor(kind) {
+    if (kind === "key") return keyAttributeSuggestions(table, state.source, state.mode, extra);
+    return filterAttributes(table, extra);
+  }
+
   function paintConditionRow(kind, row) {
     const wrap = document.createElement("div");
     wrap.className = "table-query-cond";
@@ -354,21 +421,23 @@ export function attachTableQuery(host, handlers = {}) {
     wrap.dataset.id = row.id;
     wrap.dataset.testid = kind === "key" ? "table-query-key-row" : "table-query-filter-row";
 
-    const keys = kind === "key"
-      ? sourceKeys(table, state.source, state.mode)
-      : filterAttributes(table, extra);
-    const role = row.role || (keys.find((key) => key.name === row.attribute) || {}).role || "";
+    const suggestions = suggestionsFor(kind);
+    const role = row.role || (suggestions.find((item) => item.name === row.attribute) || {}).role || "";
     const ops = opsFor(kind, role, state.mode);
-    const attr = document.createElement("select");
+    const list = document.createElement("datalist");
+    list.id = `table-query-attr-list-${kind}-${row.id}`;
+    fillDatalist(list, suggestions, row.attribute);
+    const attr = document.createElement("input");
+    attr.type = "text";
     attr.dataset.field = "attribute";
     attr.setAttribute("aria-label", kind === "key" ? "Key attribute" : "Filter attribute");
     attr.dataset.testid = "table-query-attr";
-    const attrItems = (keys.length ? keys : [{ name: row.attribute || "" }]).map((item) => ({
-      value: item.name,
-      label: item.role === "hash" ? `${item.name} (hash)` : item.role === "range" ? `${item.name} (range)` : item.name,
-    }));
-    fillSelect(attr, attrItems.filter((item) => item.value), row.attribute);
-    if (row.locked) attr.disabled = true;
+    attr.setAttribute("list", list.id);
+    attr.spellcheck = false;
+    attr.autocomplete = "off";
+    attr.placeholder = "attribute";
+    attr.value = row.attribute || "";
+    if (row.locked) attr.readOnly = true;
 
     const op = document.createElement("select");
     op.dataset.field = "op";
@@ -411,9 +480,18 @@ export function attachTableQuery(host, handlers = {}) {
     remove.textContent = "×";
     if (row.locked) remove.hidden = true;
 
-    wrap.append(attr, op, value, value2, type, remove);
+    wrap.append(attr, list, op, value, value2, type, remove);
     syncValueFields(wrap, opById(row.op, ops));
     return wrap;
+  }
+
+  function refreshAttributeLists() {
+    for (const node of host.querySelectorAll(".table-query-cond")) {
+      const list = node.querySelector("datalist");
+      const input = node.querySelector("[data-field=attribute]");
+      if (!list || !input) continue;
+      fillDatalist(list, suggestionsFor(node.dataset.kind), input.value);
+    }
   }
 
   function syncValueFields(wrap, op) {
@@ -436,7 +514,12 @@ export function attachTableQuery(host, handlers = {}) {
       bindRowEvents("filter", node);
       filterHost.append(node);
     }
-    addKey.disabled = unusedKeys().length === 0;
+    addKey.disabled = false;
+    if (focusAttr) {
+      const node = host.querySelector(`[data-id="${focusAttr}"] [data-field=attribute]`);
+      node?.focus();
+      focusAttr = "";
+    }
   }
 
   function paint() {
@@ -470,6 +553,37 @@ export function attachTableQuery(host, handlers = {}) {
     return kind === "key" ? state.keys : state.filters;
   }
 
+  function livePreview() {
+    const sql = statement();
+    paintPreview(preview, sql);
+    const message = error();
+    errorNode.textContent = message;
+    errorNode.hidden = !message;
+    runBtn.classList.toggle("is-pending", Boolean(sql) && sql !== ran);
+    runBtn.disabled = Boolean(message);
+    onChange({ table, state, dql: sql, error: message });
+  }
+
+  function applyAttribute(kind, id, name, node) {
+    const list = rowList(kind);
+    const row = list.find((item) => item.id === id);
+    if (!row || row.locked) return;
+    row.attribute = name;
+    if (kind === "key") {
+      const key = sourceKeys(table, state.source, state.mode).find((item) => item.name === row.attribute);
+      row.role = key ? key.role : "";
+      const ops = opsFor("key", row.role, state.mode);
+      if (!ops.some((op) => op.id === row.op)) row.op = ops[0].id;
+      if (node) {
+        const opSelect = node.querySelector("[data-field=op]");
+        fillSelect(opSelect, ops.map((item) => ({ value: item.id, label: item.label })), row.op);
+        opSelect.disabled = Boolean(row.locked && state.mode === "query" && row.role === "hash");
+        syncValueFields(node, opById(row.op, ops));
+      }
+    }
+    livePreview();
+  }
+
   function updateRow(kind, id, patch) {
     const list = rowList(kind);
     const row = list.find((item) => item.id === id);
@@ -488,26 +602,20 @@ export function attachTableQuery(host, handlers = {}) {
     node.addEventListener("change", (event) => {
       const field = event.target.dataset.field;
       const id = node.dataset.id;
-      if (field === "attribute") updateRow(kind, id, { attribute: event.target.value });
+      if (field === "attribute") applyAttribute(kind, id, event.target.value, node);
       else if (field === "op") updateRow(kind, id, { op: event.target.value });
       else if (field === "type") updateRow(kind, id, { value: event.target.value });
     });
     node.addEventListener("input", (event) => {
       const field = event.target.dataset.field;
       const id = node.dataset.id;
-      if (field === "value" || field === "value2") {
+      if (field === "attribute") applyAttribute(kind, id, event.target.value, node);
+      else if (field === "value" || field === "value2") {
         const list = rowList(kind);
         const row = list.find((item) => item.id === id);
         if (!row) return;
         row[field] = event.target.value;
-        const sql = statement();
-        paintPreview(preview, sql);
-        const message = error();
-        errorNode.textContent = message;
-        errorNode.hidden = !message;
-        runBtn.classList.toggle("is-pending", Boolean(sql) && sql !== ran);
-        runBtn.disabled = Boolean(message);
-        onChange({ table, state, dql: sql, error: message });
+        livePreview();
       }
     });
     node.addEventListener("click", (event) => {
@@ -543,16 +651,18 @@ export function attachTableQuery(host, handlers = {}) {
   });
   addKey.addEventListener("click", () => {
     const next = unusedKeys()[0];
-    if (!next) return;
-    state.keys.push(newRow(next.name, state.mode === "query" && next.role === "hash" ? "eq" : "eq", {
-      role: next.role,
-      locked: state.mode === "query" && next.role === "hash",
-    }));
+    const row = newRow(next ? next.name : "", "eq", {
+      role: next ? next.role : "",
+      locked: Boolean(next && state.mode === "query" && next.role === "hash"),
+    });
+    state.keys.push(row);
+    focusAttr = row.id;
     paint();
   });
   addFilter.addEventListener("click", () => {
-    const attrs = filterAttributes(table, extra);
-    state.filters.push(newRow(attrs[0] ? attrs[0].name : "", "eq"));
+    const row = newRow("", "eq");
+    state.filters.push(row);
+    focusAttr = row.id;
     paint();
   });
   host.addEventListener("submit", (event) => {
@@ -585,10 +695,13 @@ export function attachTableQuery(host, handlers = {}) {
       paint();
     },
     addAttributes(names) {
+      let added = false;
       for (const name of names || []) {
-        if (name) extra.set(name, extra.get(name) || "");
+        if (!name) continue;
+        if (!extra.has(name)) added = true;
+        extra.set(name, extra.get(name) || "");
       }
-      paint();
+      if (added) refreshAttributeLists();
     },
     markRan(dql) {
       ran = dql || statement();

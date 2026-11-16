@@ -946,7 +946,12 @@ test("table browser scan and query pickers filter without typing DQL", async ({ 
   await page.locator("#table-query-add-filter").click();
   const filter = page.locator('[data-testid="table-query-filter-row"]');
   await expect(filter).toBeVisible();
-  await filter.locator('[data-testid="table-query-attr"]').selectOption("status");
+  const attr = filter.locator('[data-testid="table-query-attr"]');
+  await expect(attr).toHaveValue("");
+  await expect(filter.locator("datalist option[value=id]")).toHaveCount(1);
+  await expect(filter.locator("datalist option[value=sk]")).toHaveCount(1);
+  await expect(filter.locator("datalist option[value=status]")).toHaveCount(1);
+  await attr.fill("status");
   await filter.locator('[data-testid="table-query-value"]').fill("open");
   await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name} WHERE status = 'open'`);
   await expect(page.locator("#table-query-run")).toHaveClass(/is-pending/);
@@ -993,6 +998,52 @@ test("table browser scan and query pickers filter without typing DQL", async ({ 
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
   await expect(page.locator("#rows-table tbody td:not(.row-peek)").nth(1)).toHaveText("3");
   await page.screenshot({ path: playwrightArtifact(`table-query-picker-${testInfo.project.name}.png`) });
+});
+
+test("table browser suggests structure attributes and accepts a typed name", async ({ page, app }, testInfo) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY);`,
+      `INSERT INTO ${name} (id, extra) VALUES ('ada', 'hello'), ('tom', 'world');`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "2 rows inserted" })).toBeVisible();
+
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await expect(page.locator(`#table-${name}`)).toBeVisible();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
+
+  await page.locator("#table-query-add-filter").click();
+  const filter = page.locator('[data-testid="table-query-filter-row"]');
+  const attr = filter.locator('[data-testid="table-query-attr"]');
+  await expect(attr).toHaveValue("");
+  await expect(filter.locator("datalist option[value=id]")).toHaveCount(1);
+  await attr.fill("ghost");
+  await filter.locator('[data-testid="table-query-value"]').fill("nope");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name} WHERE ghost = 'nope'`);
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#page-label")).toHaveText("No rows");
+
+  await attr.fill("extra");
+  await filter.locator('[data-testid="table-query-value"]').fill("hello");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name} WHERE extra = 'hello'`);
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(1);
+  await expect(page.locator("#rows-table tbody")).toContainText("ada");
+  await expect(page.locator("#rows-table tbody")).not.toContainText("tom");
+  await page.screenshot({ path: playwrightArtifact(`table-query-custom-attr-${testInfo.project.name}.png`) });
 });
 
 test("names insert, update, delete, count, and drop results", async ({ page, app }) => {

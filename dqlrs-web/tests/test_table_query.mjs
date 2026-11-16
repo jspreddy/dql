@@ -3,9 +3,11 @@ import test from "node:test";
 
 import {
   availableSources,
+  attributeLabel,
   buildReadStatement,
   defaultReadState,
   ensureQueryKeys,
+  filterAttributes,
   formatCondition,
   quoteIdent,
   quoteValue,
@@ -115,4 +117,38 @@ test("exists and type conditions omit or quote values", () => {
     "attribute_type(status, 'S')",
   );
   assert.equal(formatCondition({ attribute: "status", op: "eq", value: "" }, table), "");
+});
+
+test("filterAttributes lists keys, indexes, schema, then extras", () => {
+  const extra = new Map([["note", "STRING"], ["id", "STRING"]]);
+  assert.deepEqual(
+    filterAttributes(table, extra).map((item) => item.name),
+    ["id", "sk", "status", "kind", "note"],
+  );
+  assert.equal(attributeLabel({ name: "id", role: "hash" }), "id (hash)");
+  assert.equal(attributeLabel({ name: "note" }), "note");
+});
+
+test("typed attributes that are missing from metadata still format", () => {
+  const sql = buildReadStatement("posts", table, {
+    ...defaultReadState(),
+    filters: [{ attribute: "note", op: "eq", value: "hello" }],
+  });
+  assert.equal(sql, "SCAN * FROM posts WHERE note = 'hello'");
+});
+
+test("query without hash metadata accepts a typed hash name", () => {
+  const empty = { name: "posts", keys: [], indexes: [], attributes: [] };
+  const state = ensureQueryKeys(empty, { ...defaultReadState(), mode: "query" });
+  assert.equal(state.keys[0].attribute, "");
+  assert.equal(state.keys[0].locked, false);
+  assert.equal(readError(empty, state), "Query needs a hash key.");
+  state.keys[0].attribute = "pk";
+  assert.equal(readError(empty, state), "Query needs a hash key value.");
+  state.keys[0].value = "ada";
+  assert.equal(readError(empty, state), "");
+  assert.equal(
+    buildReadStatement("posts", empty, state),
+    "SELECT * FROM posts WHERE pk = 'ada'",
+  );
 });
