@@ -20,7 +20,10 @@ export const FUNCTION_OPS = [
   { id: "exists", label: "exists", dql: "attribute_exists", fn: true, values: 0 },
   { id: "not_exists", label: "not exists", dql: "attribute_not_exists", fn: true, values: 0 },
   { id: "attribute_type", label: "type is", dql: "attribute_type", fn: true, type: true },
+  { id: "size", label: "size", dql: "size", fn: true, size: true },
 ];
+
+export const SIZE_COMPARE_OPS = COMPARE_OPS.filter((op) => op.id !== "between");
 
 export const KEY_HASH_OPS = COMPARE_OPS.filter((op) => op.id === "eq");
 export const KEY_RANGE_OPS = [
@@ -367,8 +370,13 @@ export function formatCondition(row, table, extra) {
   const field = quoteIdent(row.attribute);
   const type = attributeType(table, extra, row.attribute);
   const values = op.values === 0 ? 0 : op.values === 2 ? 2 : 1;
-  if (values === 1 && !String(row.value ?? "").length && !op.type) return "";
+  if (values === 1 && !String(row.value ?? "").length && !op.type && !op.size) return "";
+  if (op.size && !String(row.value ?? "").length) return "";
   if (values === 2 && (!String(row.value ?? "").length || !String(row.value2 ?? "").length)) return "";
+  if (op.size) {
+    const cmp = SIZE_COMPARE_OPS.find((item) => item.id === (row.sizeOp || "gt")) || SIZE_COMPARE_OPS.find((item) => item.id === "gt");
+    return `size(${field}) ${cmp.dql} ${quoteValue(row.value, "NUMBER")}`;
+  }
   if (op.fn && values === 0) return `${op.dql}(${field})`;
   if (op.fn && op.type) {
     const ty = String(row.value || "S").trim() || "S";
@@ -691,6 +699,12 @@ export function attachTableQuery(host, handlers = {}) {
     value2.placeholder = "and";
     value2.value = row.value2 || "";
 
+    const sizeOp = document.createElement("select");
+    sizeOp.dataset.field = "sizeOp";
+    sizeOp.setAttribute("aria-label", "Size comparison");
+    sizeOp.dataset.testid = "table-query-size-op";
+    fillSelect(sizeOp, SIZE_COMPARE_OPS.map((item) => ({ value: item.id, label: item.label })), row.sizeOp || "gt");
+
     const type = document.createElement("select");
     type.dataset.field = "type";
     type.setAttribute("aria-label", "Attribute type");
@@ -705,7 +719,7 @@ export function attachTableQuery(host, handlers = {}) {
     remove.textContent = "×";
     if (row.locked) remove.hidden = true;
 
-    wrap.append(attr, list, op, value, value2, type, remove);
+    wrap.append(attr, list, op, sizeOp, value, value2, type, remove);
     syncValueFields(wrap, opById(row.op, ops));
     return wrap;
   }
@@ -721,6 +735,7 @@ export function attachTableQuery(host, handlers = {}) {
 
   function syncValueFields(wrap, op) {
     const values = op.values === 0 ? 0 : op.values === 2 ? 2 : 1;
+    wrap.querySelector("[data-field=sizeOp]").hidden = !op.size;
     wrap.querySelector("[data-field=value]").hidden = op.type || values === 0;
     wrap.querySelector("[data-field=value2]").hidden = values !== 2;
     wrap.querySelector("[data-field=type]").hidden = !op.type;
@@ -829,6 +844,7 @@ export function attachTableQuery(host, handlers = {}) {
       const id = node.dataset.id;
       if (field === "attribute") applyAttribute(kind, id, event.target.value, node);
       else if (field === "op") updateRow(kind, id, { op: event.target.value });
+      else if (field === "sizeOp") updateRow(kind, id, { sizeOp: event.target.value });
       else if (field === "type") updateRow(kind, id, { value: event.target.value });
     });
     node.addEventListener("input", (event) => {

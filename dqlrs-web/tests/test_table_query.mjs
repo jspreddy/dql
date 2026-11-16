@@ -115,8 +115,24 @@ test("exists and type conditions omit or quote values", () => {
     "attribute_exists(status)",
   );
   assert.equal(
+    formatCondition({ attribute: "status", op: "not_exists" }, table),
+    "attribute_not_exists(status)",
+  );
+  assert.equal(
     formatCondition({ attribute: "status", op: "attribute_type", value: "S" }, table),
     "attribute_type(status, 'S')",
+  );
+  assert.equal(
+    formatCondition({ attribute: "kind", op: "contains", value: "ITEM" }, table),
+    "contains(kind, 'ITEM')",
+  );
+  assert.equal(
+    formatCondition({ attribute: "kind", op: "size", value: "2", sizeOp: "gt" }, table),
+    "size(kind) > 2",
+  );
+  assert.equal(
+    formatCondition({ attribute: "kind", op: "size", value: "2", sizeOp: "le" }, table),
+    "size(kind) <= 2",
   );
   assert.equal(formatCondition({ attribute: "status", op: "eq", value: "" }, table), "");
 });

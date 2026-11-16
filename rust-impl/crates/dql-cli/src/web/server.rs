@@ -1162,8 +1162,9 @@ fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Resul
     if !safe_table_name(name) {
         return Err(format!("unsupported table name {name:?}"));
     }
-    let limit = PAGE_SIZE.saturating_mul(page.saturating_add(1));
-    let (statements, page_with_limit) = browser_read_dql(name, dql, limit)?;
+    let start = PAGE_SIZE.saturating_mul(page);
+    let fetch_limit = start.saturating_add(PAGE_SIZE).saturating_add(1);
+    let (statements, _) = browser_read_dql(name, dql, fetch_limit)?;
     let mut items = Vec::new();
     for statement in &statements {
         let envelope = state.session.execute_for_serve(statement);
@@ -1173,7 +1174,6 @@ fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Resul
         items.extend(envelope.items.unwrap_or_default());
     }
     let statement = statements.join("; ");
-    let start = PAGE_SIZE.saturating_mul(page);
     let end = (start + PAGE_SIZE).min(items.len());
     let window = items.get(start..end).unwrap_or(&[]);
     let shape = load_shape(state, name);
@@ -1192,11 +1192,7 @@ fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Resul
         "page_size": PAGE_SIZE,
         "items": window,
         "columns": columns,
-        "has_more": if page_with_limit {
-            items.len() >= limit
-        } else {
-            items.len() > end
-        },
+        "has_more": items.len() > end,
         "dql": statement,
     }))
 }
@@ -2676,7 +2672,7 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         let page = http_body(addr, "GET", "/api/rows?table=posts&page=0", "");
         let page_json: Value = serde_json::from_str(&page).expect(&page);
         assert_eq!(page_json["items"].as_array().unwrap().len(), 3);
-        assert_eq!(page_json["dql"], "SCAN * FROM posts LIMIT 50");
+        assert_eq!(page_json["dql"], "SCAN * FROM posts LIMIT 51");
 
         let queried = http_body(
             addr,
@@ -2801,6 +2797,72 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             "",
         );
         assert!(other.contains("read must use table posts"), "{other}");
+        drop(guard);
+    }
+
+    #[test]
+    fn table_browser_pages_a_thousand_numeric_ids() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let mut script =
+            String::from("CREATE TABLE nums (gid STRING HASH KEY, id NUMBER RANGE KEY);");
+        for chunk in (1..=1000).collect::<Vec<_>>().chunks(100) {
+            let values = chunk
+                .iter()
+                .map(|id| format!("('g', {id})"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            script.push_str(&format!(" INSERT INTO nums (gid, id) VALUES {values};"));
+        }
+        let body = format!("{{\"dql\":{}}}", serde_json::to_string(&script).unwrap());
+        let created = http_body(addr, "POST", "/api/run", &body);
+        assert!(created.contains("\"ok\":true"), "{created}");
+
+        let dql = query_encode("SELECT * FROM nums WHERE gid = 'g'");
+        let page_ids = |page: usize| {
+            let body = http_body(
+                addr,
+                "GET",
+                &format!("/api/rows?table=nums&page={page}&dql={dql}"),
+                "",
+            );
+            let json: Value = serde_json::from_str(&body).unwrap_or_else(|_| panic!("{body}"));
+            let ids: Vec<i64> = json["items"]
+                .as_array()
+                .unwrap_or_else(|| panic!("{body}"))
+                .iter()
+                .map(|item| {
+                    item["id"]
+                        .as_i64()
+                        .or_else(|| item["id"].as_u64().map(|value| value as i64))
+                        .or_else(|| item["id"].as_f64().map(|value| value as i64))
+                        .unwrap_or_else(|| panic!("id {}", item["id"]))
+                })
+                .collect();
+            (
+                ids,
+                json["has_more"].as_bool().unwrap(),
+                json["dql"].as_str().unwrap().to_string(),
+            )
+        };
+
+        let expect_page = |page: usize, has_more: bool| {
+            let start = page * 50 + 1;
+            let end = (start + 49).min(1000);
+            let (ids, more, _) = page_ids(page);
+            assert_eq!(ids, (start as i64..=end as i64).collect::<Vec<_>>());
+            assert_eq!(more, has_more, "page {page}");
+        };
+
+        expect_page(0, true);
+        expect_page(1, true);
+        expect_page(10, true);
+        expect_page(9, true);
+        expect_page(19, false);
+        expect_page(18, true);
+        expect_page(0, true);
+        let (_, _, dql_text) = page_ids(0);
+        assert_eq!(dql_text, "SELECT * FROM nums WHERE gid = 'g' LIMIT 51");
         drop(guard);
     }
 

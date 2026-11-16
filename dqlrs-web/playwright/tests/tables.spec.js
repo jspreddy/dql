@@ -192,16 +192,102 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   await page.locator("#table-search").fill(name);
   await expect(page.locator(`#table-${name}`)).toBeVisible();
   await expect(page.locator("#page-label")).toHaveText("Showing 1–50");
+  const rowPages = trackRowPages(page);
   await page.locator("#page-next").click();
   await expect(page.locator("#page-label")).toHaveText("Showing 51–51");
   await expect(page.locator("#page-next")).toBeDisabled();
   await expect(page.locator("#page-prev")).toBeEnabled();
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(1);
+  expect(rowPages.splice(0)).toEqual([1]);
 
   await page.locator("#page-prev").click();
   await expect(page.locator("#page-label")).toHaveText("Showing 1–50");
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(50);
+  expect(rowPages).toEqual([]);
   await page.screenshot({ path: playwrightArtifact(`table-pager-toolbar-${testInfo.project.name}.png`) });
+});
+
+test("pages a thousand numeric ids forward and back", async ({ page, app }, testInfo) => {
+  test.setTimeout(120_000);
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  const tuples = Array.from({ length: 1000 }, (_, index) => `('g', ${index + 1})`).join(", ");
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (gid STRING HASH KEY, id NUMBER RANGE KEY);`,
+      `INSERT INTO ${name} (gid, id) VALUES ${tuples};`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "1000 rows inserted" })).toBeVisible({
+    timeout: 60_000,
+  });
+
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await expect(page.locator(`#table-${name}`)).toBeVisible();
+  await page.locator("#table-query-query").click();
+  await page.locator('[data-testid="table-query-key-row"] [data-testid="table-query-value"]').fill("g");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SELECT * FROM ${name} WHERE gid = 'g'`);
+  const selectPages = trackRowPages(page, { dql: "SELECT" });
+  const queried = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.ok() && url.pathname === "/api/rows" && (url.searchParams.get("dql") || "").includes("SELECT");
+  });
+  await page.locator("#table-query-run").click();
+  await queried;
+
+  const gotoPage = async (from, to) => {
+    const step = to > from ? 1 : -1;
+    const button = step > 0 ? "#page-next" : "#page-prev";
+    for (let current = from; current !== to; current += step) {
+      const next = current + step;
+      const start = next * 50 + 1;
+      const end = Math.min(start + 49, 1000);
+      await page.locator(button).click();
+      await expect(page.locator("#page-label")).toHaveText(`Showing ${start}–${end}`);
+    }
+  };
+
+  await expectNumericPage(page, 0);
+  await page.screenshot({ path: playwrightArtifact(`table-pager-thousand-start-${testInfo.project.name}.png`) });
+  await gotoPage(0, 1);
+  await expectNumericPage(page, 1);
+  await gotoPage(1, 10);
+  await expectNumericPage(page, 10);
+  await page.screenshot({ path: playwrightArtifact(`table-pager-thousand-middle-${testInfo.project.name}.png`) });
+  await gotoPage(10, 9);
+  await expectNumericPage(page, 9);
+  await gotoPage(9, 19);
+  await expectNumericPage(page, 19);
+  await page.screenshot({ path: playwrightArtifact(`table-pager-thousand-end-${testInfo.project.name}.png`) });
+  await gotoPage(19, 18);
+  await expectNumericPage(page, 18);
+  await gotoPage(18, 0);
+  await expectNumericPage(page, 0);
+  expect(selectPages).toEqual(Array.from({ length: 20 }, (_, index) => index));
+
+  const rerun = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.ok() && url.pathname === "/api/rows" && url.searchParams.get("page") === "0"
+      && (url.searchParams.get("dql") || "").includes("SELECT");
+  });
+  await page.locator("#table-query-run").click();
+  await rerun;
+  await expectNumericPage(page, 0);
+  expect(selectPages).toEqual([...Array.from({ length: 20 }, (_, index) => index), 0]);
+  fs.writeFileSync(
+    playwrightArtifact(`table-rows-cache-pages-${testInfo.project.name}.json`),
+    JSON.stringify(selectPages),
+  );
 });
 
 test("table column headers stay put while rows scroll", async ({ page, app }) => {
@@ -1052,6 +1138,130 @@ test("table browser suggests structure attributes and accepts a typed name", asy
   await page.screenshot({ path: playwrightArtifact(`table-query-custom-attr-${testInfo.project.name}.png`) });
 });
 
+test("table browser runs every DynamoDB condition function", async ({ page, app }, testInfo) => {
+  test.setTimeout(90_000);
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, sk STRING RANGE KEY);`,
+      `INSERT INTO ${name} (id='store-1', sk='ITEM#mug', name='hello world', title='Blue mug', tags=('lighting', 'ceramic'), items=['handle', 'glaze'], qty=3);`,
+      `INSERT INTO ${name} (id='store-1', sk='ITEM#lamp', name='goodbye', title='Arc lamp', tags=('lighting', 'metal', 'floor'), items=['shade', 'cord'], qty=1);`,
+      `INSERT INTO ${name} (id='store-1', sk='NOTE#1', name='memo', title='Field notes');`,
+      `INSERT INTO ${name} (id='store-2', sk='ITEM#cable', name='usb world', title='USB-C cable', tags=('cable'), items=[], qty=12);`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await openResultPane(page, "history");
+  await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "one row inserted" })).toHaveCount(4);
+
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await expect(page.locator(`#table-${name}`)).toBeVisible();
+
+  await page.locator("#table-query-add-filter").click();
+  const filter = page.locator('[data-testid="table-query-filter-row"]');
+
+  const runFilter = async ({ attr, op, value, sizeOp, type, dql, count, has, missing }) => {
+    await filter.locator('[data-testid="table-query-op"]').selectOption(op);
+    await filter.locator('[data-testid="table-query-attr"]').fill(attr);
+    if (type) await filter.locator('[data-testid="table-query-type"]').selectOption(type);
+    if (sizeOp) await filter.locator('[data-testid="table-query-size-op"]').selectOption(sizeOp);
+    const valueBox = filter.locator('[data-testid="table-query-value"]');
+    if (value !== undefined && (await valueBox.isVisible())) await valueBox.fill(String(value));
+    await expect(page.locator("#table-query-dql")).toHaveText(dql);
+    await page.locator("#table-query-run").click();
+    await expect(page.locator("#rows-table tbody tr")).toHaveCount(count);
+    for (const text of has || []) await expect(page.locator("#rows-table tbody")).toContainText(text);
+    for (const text of missing || []) await expect(page.locator("#rows-table tbody")).not.toContainText(text);
+  };
+
+  await runFilter({
+    attr: "title",
+    op: "begins_with",
+    value: "Blue",
+    dql: `SCAN * FROM ${name} WHERE begins_with(title, 'Blue')`,
+    count: 1,
+    has: ["Blue mug"],
+    missing: ["Arc lamp"],
+  });
+  await runFilter({
+    attr: "name",
+    op: "contains",
+    value: "hello",
+    dql: `SCAN * FROM ${name} WHERE contains(name, 'hello')`,
+    count: 1,
+    has: ["hello world"],
+  });
+  await runFilter({
+    attr: "tags",
+    op: "contains",
+    value: "metal",
+    dql: `SCAN * FROM ${name} WHERE contains(tags, 'metal')`,
+    count: 1,
+    has: ["Arc lamp"],
+  });
+  await runFilter({
+    attr: "tags",
+    op: "exists",
+    dql: `SCAN * FROM ${name} WHERE attribute_exists(tags)`,
+    count: 3,
+    has: ["Blue mug", "Arc lamp", "USB-C cable"],
+    missing: ["Field notes"],
+  });
+  await runFilter({
+    attr: "tags",
+    op: "not_exists",
+    dql: `SCAN * FROM ${name} WHERE attribute_not_exists(tags)`,
+    count: 1,
+    has: ["Field notes"],
+  });
+  await runFilter({
+    attr: "qty",
+    op: "attribute_type",
+    type: "N",
+    dql: `SCAN * FROM ${name} WHERE attribute_type(qty, 'N')`,
+    count: 3,
+    has: ["Blue mug", "USB-C cable"],
+    missing: ["Field notes"],
+  });
+  await runFilter({
+    attr: "tags",
+    op: "size",
+    sizeOp: "gt",
+    value: "2",
+    dql: `SCAN * FROM ${name} WHERE size(tags) > 2`,
+    count: 1,
+    has: ["Arc lamp"],
+  });
+  await page.screenshot({ path: playwrightArtifact(`table-query-functions-${testInfo.project.name}.png`) });
+
+  await filter.locator('[data-testid="table-query-remove"]').click();
+  await page.locator("#table-query-query").click();
+  await page.locator('[data-testid="table-query-key-row"] [data-testid="table-query-value"]').fill("store-1");
+  await page.locator("#table-query-add-key").click();
+  const range = page.locator('[data-testid="table-query-key-row"]').nth(1);
+  await range.locator('[data-testid="table-query-op"]').selectOption("begins_with");
+  await range.locator('[data-testid="table-query-value"]').fill("ITEM#");
+  await expect(page.locator("#table-query-dql")).toHaveText(
+    `SELECT * FROM ${name} WHERE id = 'store-1' AND begins_with(sk, 'ITEM#')`,
+  );
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
+  await expect(page.locator("#rows-table tbody")).toContainText("Blue mug");
+  await expect(page.locator("#rows-table tbody")).toContainText("Arc lamp");
+  await expect(page.locator("#rows-table tbody")).not.toContainText("Field notes");
+});
+
 test("table browser keys mode batch-gets typed hash and hash-range keys", async ({ page, app }, testInfo) => {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
@@ -1216,6 +1426,46 @@ test("names insert, update, delete, count, and drop results", async ({ page, app
   await expect(notes.filter({ hasText: "one table dropped" })).toHaveCount(1);
   await expect(notes.filter({ hasText: "did not exist" })).toHaveCount(1);
 });
+
+function trackRowPages(page, options = {}) {
+  const pages = [];
+  const needle = options.dql || "";
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname !== "/api/rows") return;
+    const dql = url.searchParams.get("dql") || "";
+    if (needle && !dql.includes(needle)) return;
+    pages.push(Number(url.searchParams.get("page") || "0"));
+  });
+  return pages;
+}
+
+async function columnValues(page, name) {
+  return page.locator("#rows-table").evaluate((table, name) => {
+    const headers = [...table.querySelectorAll("thead th")].map((cell) => {
+      const label = cell.querySelector(".col-label span");
+      return (label ? label.textContent : cell.textContent).trim();
+    });
+    const index = headers.indexOf(name);
+    if (index < 0) return [];
+    return [...table.querySelectorAll("tbody tr")].map((row) => row.children[index]?.textContent ?? "");
+  }, name);
+}
+
+async function expectNumericPage(page, pageIndex, total = 1000) {
+  const size = 50;
+  const start = pageIndex * size + 1;
+  const end = Math.min(start + size - 1, total);
+  await expect(page.locator("#page-label")).toHaveText(`Showing ${start}–${end}`);
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(end - start + 1);
+  await expect
+    .poll(async () => (await columnValues(page, "id")).map(Number))
+    .toEqual(Array.from({ length: end - start + 1 }, (_, index) => start + index));
+  if (pageIndex === 0) await expect(page.locator("#page-prev")).toBeDisabled();
+  else await expect(page.locator("#page-prev")).toBeEnabled();
+  if (end >= total) await expect(page.locator("#page-next")).toBeDisabled();
+  else await expect(page.locator("#page-next")).toBeEnabled();
+}
 
 function uniqueTable() {
   return `pw${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
