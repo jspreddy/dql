@@ -3,7 +3,7 @@ use crate::table_cache::age_phrase;
 use dql_engine::{StatementResult, TableCacheStore};
 use dql_models::TableMeta;
 use dql_output::{format_table_summary_table, TableStats};
-use dql_parser::Value;
+use dql_parser::{AttributeType, Value};
 
 /// Saved table-list age for the settings menu. Does not list or describe tables.
 pub fn web_table_cache_status(session: &Session) -> crate::web::shape::TableCacheHint {
@@ -153,24 +153,64 @@ pub fn web_table_by_name(
 }
 
 fn listed_table(meta: TableMeta, kind: &str) -> crate::web::shape::ListedTable {
+    let keys = if meta.has_definition() {
+        let mut keys = vec![crate::web::shape::KeyRole {
+            name: meta.hash_key.clone(),
+            role: "hash".to_string(),
+        }];
+        if let Some(range_key) = meta.range_key.clone() {
+            keys.push(crate::web::shape::KeyRole {
+                name: range_key,
+                role: "range".to_string(),
+            });
+        }
+        keys
+    } else {
+        Vec::new()
+    };
+    let mut indexes = Vec::new();
+    for index in meta.local_indexes.values() {
+        indexes.push(crate::web::shape::ListedIndex {
+            name: index.name.clone(),
+            kind: "local".to_string(),
+            hash_key: index.hash_key.clone(),
+            range_key: index.range_key.clone(),
+        });
+    }
+    for index in meta.global_indexes.values() {
+        indexes.push(crate::web::shape::ListedIndex {
+            name: index.name.clone(),
+            kind: "global".to_string(),
+            hash_key: index.hash_key.name.clone(),
+            range_key: index.range_key.as_ref().map(|field| field.name.clone()),
+        });
+    }
+    indexes.sort_by(|left, right| left.name.cmp(&right.name));
+    let mut attributes: Vec<crate::web::shape::ListedAttribute> = meta
+        .attrs
+        .values()
+        .map(|field| crate::web::shape::ListedAttribute {
+            name: field.name.clone(),
+            data_type: attribute_type_name(&field.data_type),
+        })
+        .collect();
+    attributes.sort_by(|left, right| left.name.cmp(&right.name));
     crate::web::shape::ListedTable {
         kind: kind.to_string(),
-        keys: if meta.has_definition() {
-            let mut keys = vec![crate::web::shape::KeyRole {
-                name: meta.hash_key.clone(),
-                role: "hash".to_string(),
-            }];
-            if let Some(range_key) = meta.range_key.clone() {
-                keys.push(crate::web::shape::KeyRole {
-                    name: range_key,
-                    role: "range".to_string(),
-                });
-            }
-            keys
-        } else {
-            Vec::new()
-        },
+        keys,
+        indexes,
+        attributes,
         name: meta.name,
+    }
+}
+
+fn attribute_type_name(data_type: &AttributeType) -> String {
+    match data_type {
+        AttributeType::String => "STRING".to_string(),
+        AttributeType::Number => "NUMBER".to_string(),
+        AttributeType::Binary => "BINARY".to_string(),
+        AttributeType::Bool => "BOOL".to_string(),
+        AttributeType::Other(value) => value.clone(),
     }
 }
 

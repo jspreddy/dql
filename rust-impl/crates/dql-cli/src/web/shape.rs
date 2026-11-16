@@ -64,11 +64,32 @@ pub struct KeyRole {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct ListedIndex {
+    pub name: String,
+    pub kind: String,
+    #[serde(rename = "hashKey")]
+    pub hash_key: String,
+    #[serde(rename = "rangeKey", skip_serializing_if = "Option::is_none")]
+    pub range_key: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub struct ListedAttribute {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub data_type: String,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct ListedTable {
     pub name: String,
     pub keys: Vec<KeyRole>,
     /// `dynamodb`, `local`, or `temp`.
     pub kind: String,
+    #[serde(default)]
+    pub indexes: Vec<ListedIndex>,
+    #[serde(default)]
+    pub attributes: Vec<ListedAttribute>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, Eq)]
@@ -413,6 +434,8 @@ fn load_table_catalog(
             name,
             keys,
             kind: "dynamodb".to_string(),
+            indexes: Vec::new(),
+            attributes: Vec::new(),
         });
     }
     Ok(tables)

@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+use dql_parser::{parse_statement, Statement};
 use include_dir::{include_dir, Dir};
 use serde_json::{json, Value};
 
@@ -743,8 +744,9 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
                 .parse::<i64>()
                 .unwrap_or(0)
                 .max(0) as usize;
+            let dql = query_value(query, "dql");
             let mut state = lock_state(app);
-            match table_rows(&mut state, &name, page) {
+            match table_rows(&mut state, &name, page, &dql) {
                 Ok(payload) => Reply::Json(200, payload),
                 Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
             }
@@ -1156,14 +1158,13 @@ fn load_shape(state: &mut WebState, name: &str) -> Option<TableShape> {
     Some(shape)
 }
 
-fn table_rows(state: &mut WebState, name: &str, page: usize) -> Result<Value, String> {
+fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Result<Value, String> {
     if !safe_table_name(name) {
         return Err(format!("unsupported table name {name:?}"));
     }
     let limit = PAGE_SIZE.saturating_mul(page.saturating_add(1));
-    let envelope = state
-        .session
-        .execute_for_serve(&format!("SCAN * FROM {name} LIMIT {limit}"));
+    let statement = browser_read_dql(name, dql, limit)?;
+    let envelope = state.session.execute_for_serve(&statement);
     if !envelope.ok {
         return Err(ExecText::from_envelope(&envelope).failure());
     }
@@ -1188,7 +1189,35 @@ fn table_rows(state: &mut WebState, name: &str, page: usize) -> Result<Value, St
         "items": window,
         "columns": columns,
         "has_more": items.len() >= limit,
+        "dql": statement,
     }))
+}
+
+/// SCAN/SELECT of `name` only. The table browser always pages with LIMIT.
+fn browser_read_dql(name: &str, dql: &str, limit: usize) -> Result<String, String> {
+    let text = dql.trim().trim_end_matches(';').trim();
+    if text.is_empty() {
+        return Ok(format!("SCAN * FROM {name} LIMIT {limit}"));
+    }
+    let statement = parse_statement(text).map_err(|err| err.to_string())?;
+    match &statement {
+        Statement::Select { table, options, .. } | Statement::Scan { table, options, .. } => {
+            if table != name {
+                return Err(format!("read must use table {name}"));
+            }
+            if options.save_file.is_some() {
+                return Err("SAVE is not allowed in the table browser".to_string());
+            }
+            if options.keys_in.is_some() {
+                return Err("KEYS IN is not allowed in the table browser".to_string());
+            }
+            if options.limit.is_some() || options.scan_limit.is_some() {
+                return Err("LIMIT is set by the table browser".to_string());
+            }
+        }
+        _ => return Err("only SELECT or SCAN in the table browser".to_string()),
+    }
+    Ok(format!("{text} LIMIT {limit}"))
 }
 
 fn structure_reply(app: &App, query: &str) -> Reply {
@@ -2563,6 +2592,9 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         assert_eq!(posts["kind"], "dynamodb");
         assert_eq!(posts["keys"][0]["name"], "id");
         assert_eq!(posts["keys"][0]["role"], "hash");
+        assert_eq!(posts["attributes"][0]["name"], "id");
+        assert_eq!(posts["attributes"][0]["type"], "STRING");
+        assert!(posts["indexes"].as_array().unwrap().is_empty(), "{posts}");
 
         let filtered = http_body(addr, "GET", "/api/tables?pattern=zzzz", "");
         let filtered_json: Value = serde_json::from_str(&filtered).expect(&filtered);
@@ -2589,6 +2621,118 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         assert_eq!(cache_json["text"], "No table list cached.");
         assert_eq!(cache_json["fromCache"], false);
         assert_eq!(cache_json["refreshing"], false);
+        drop(guard);
+    }
+
+    #[test]
+    fn table_browser_runs_select_scan_and_rejects_writes() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let script = "CREATE TABLE posts (id STRING HASH KEY, sk NUMBER RANGE KEY) GLOBAL INDEX ('by-sk', sk NUMBER, id STRING); INSERT INTO posts (id, sk, status) VALUES ('a', 1, 'open'), ('a', 2, 'shut'), ('b', 3, 'open');";
+        let body = format!("{{\"dql\":{}}}", serde_json::to_string(script).unwrap());
+        let created = http_body(addr, "POST", "/api/run", &body);
+        assert!(created.contains("\"ok\":true"), "{created}");
+
+        let listed = http_body(addr, "GET", "/api/tables?name=posts", "");
+        let listed_json: Value = serde_json::from_str(&listed).expect(&listed);
+        let posts = &listed_json["tables"][0];
+        assert_eq!(posts["keys"][1]["name"], "sk");
+        assert_eq!(posts["indexes"][0]["name"], "by-sk");
+        assert_eq!(posts["indexes"][0]["kind"], "global");
+        assert_eq!(posts["indexes"][0]["hashKey"], "sk");
+        let attr_names: Vec<&str> = posts["attributes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|attr| attr["name"].as_str().unwrap())
+            .collect();
+        assert!(attr_names.contains(&"id"), "{posts}");
+        assert!(attr_names.contains(&"sk"), "{posts}");
+
+        let page = http_body(addr, "GET", "/api/rows?table=posts&page=0", "");
+        let page_json: Value = serde_json::from_str(&page).expect(&page);
+        assert_eq!(page_json["items"].as_array().unwrap().len(), 3);
+        assert_eq!(page_json["dql"], "SCAN * FROM posts LIMIT 50");
+
+        let queried = http_body(
+            addr,
+            "GET",
+            &format!(
+                "/api/rows?table=posts&page=0&dql={}",
+                query_encode("SELECT * FROM posts WHERE id = 'a'")
+            ),
+            "",
+        );
+        let queried_json: Value = serde_json::from_str(&queried).expect(&queried);
+        assert_eq!(queried_json["items"].as_array().unwrap().len(), 2);
+        assert!(
+            queried_json["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|item| item["id"] == "a"),
+            "{queried}"
+        );
+
+        let newest = http_body(
+            addr,
+            "GET",
+            &format!(
+                "/api/rows?table=posts&page=0&dql={}",
+                query_encode("SELECT * FROM posts WHERE id = 'a' DESC")
+            ),
+            "",
+        );
+        let newest_json: Value = serde_json::from_str(&newest).expect(&newest);
+        assert_eq!(newest_json["items"][0]["sk"], 2);
+        assert_eq!(newest_json["items"][1]["sk"], 1);
+
+        let filtered = http_body(
+            addr,
+            "GET",
+            &format!(
+                "/api/rows?table=posts&page=0&dql={}",
+                query_encode("SCAN * FROM posts WHERE status = 'open'")
+            ),
+            "",
+        );
+        let filtered_json: Value = serde_json::from_str(&filtered).expect(&filtered);
+        assert_eq!(filtered_json["items"].as_array().unwrap().len(), 2);
+
+        let indexed = http_body(
+            addr,
+            "GET",
+            &format!(
+                "/api/rows?table=posts&page=0&dql={}",
+                query_encode("SELECT * FROM posts WHERE sk = 1 USING by-sk")
+            ),
+            "",
+        );
+        let indexed_json: Value = serde_json::from_str(&indexed).expect(&indexed);
+        assert_eq!(indexed_json["items"].as_array().unwrap().len(), 1);
+        assert_eq!(indexed_json["items"][0]["id"], "a");
+
+        let write = http_body(
+            addr,
+            "GET",
+            &format!(
+                "/api/rows?table=posts&page=0&dql={}",
+                query_encode("INSERT INTO posts (id) VALUES ('z')")
+            ),
+            "",
+        );
+        assert!(write.contains("only SELECT or SCAN"), "{write}");
+
+        let other = http_body(
+            addr,
+            "GET",
+            &format!(
+                "/api/rows?table=posts&page=0&dql={}",
+                query_encode("SCAN * FROM comments")
+            ),
+            "",
+        );
+        assert!(other.contains("read must use table posts"), "{other}");
         drop(guard);
     }
 
@@ -2892,6 +3036,19 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
 
     /// Response body with chunk framing removed. `/api/run` flushes each NDJSON
     /// event as its own chunk, so a raw read can split a JSON string.
+    fn query_encode(text: &str) -> String {
+        let mut out = String::new();
+        for byte in text.bytes() {
+            match byte {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    out.push(byte as char);
+                }
+                _ => out.push_str(&format!("%{byte:02X}")),
+            }
+        }
+        out
+    }
+
     fn http_body(addr: SocketAddr, method: &str, path: &str, body: &str) -> String {
         let raw = http(addr, method, path, body);
         let Some((headers, rest)) = raw.split_once("\r\n\r\n") else {

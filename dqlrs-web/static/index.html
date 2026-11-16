@@ -235,6 +235,42 @@
           </span>
           <span id="rows-meta" class="meta"></span>
         </div>
+        <form id="table-query" class="table-query hidden" aria-label="Scan or query this table">
+          <div class="table-query-toolbar">
+            <label class="table-query-field">
+              <span>Source</span>
+              <select id="table-query-source" aria-label="Table or index"></select>
+            </label>
+            <div class="table-query-seg" role="group" aria-label="Read type">
+              <button type="button" id="table-query-scan" aria-pressed="true">Scan</button>
+              <button type="button" id="table-query-query" aria-pressed="false">Query</button>
+            </div>
+            <div class="table-query-seg" role="group" aria-label="Order">
+              <button type="button" id="table-query-forward" aria-pressed="true">Forward</button>
+              <button type="button" id="table-query-reverse" aria-pressed="false">Reverse</button>
+            </div>
+            <button type="submit" id="table-query-run" class="primary">
+              <svg class="icon run-play" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/play_arrow.svg#icon"></use></svg>
+              Run
+            </button>
+          </div>
+          <div class="table-query-section">
+            <div class="table-query-section-head">
+              <span>Key conditions</span>
+              <button type="button" id="table-query-add-key">Add</button>
+            </div>
+            <div id="table-query-keys" class="table-query-rows"></div>
+          </div>
+          <div class="table-query-section">
+            <div class="table-query-section-head">
+              <span>Filters</span>
+              <button type="button" id="table-query-add-filter">Add</button>
+            </div>
+            <div id="table-query-filters" class="table-query-rows"></div>
+          </div>
+          <pre id="table-query-dql" class="table-query-dql" data-testid="table-query-dql"></pre>
+          <p id="table-query-error" class="table-query-error" hidden></p>
+        </form>
         <div id="rows-body" class="result-body browser-rows"></div>
         <div class="pager">
           <span id="page-label" class="meta"></span>

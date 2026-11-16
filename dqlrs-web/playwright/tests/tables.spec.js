@@ -909,6 +909,92 @@ test("scrolls a wide result table sideways inside the card", async ({ page, app 
   });
 });
 
+test("table browser scan and query pickers filter without typing DQL", async ({ page, app }, testInfo) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, sk NUMBER RANGE KEY) GLOBAL INDEX ('by-status', status STRING, sk NUMBER);`,
+      `INSERT INTO ${name} (id, sk, status) VALUES ('ada', 1, 'open'), ('ada', 2, 'shut'), ('tom', 3, 'open');`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "3 rows inserted" })).toBeVisible();
+
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await expect(page.locator(`#table-${name}`)).toBeVisible();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);
+
+  const picker = page.locator("#table-query");
+  await expect(picker).toBeVisible();
+  await expect(page.locator("#table-query-scan")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#table-query-query")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("#table-query-forward")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#table-query-source")).toHaveValue("");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name}`);
+  await expect(page.locator("#table-query-source")).toContainText("by-status");
+
+  await page.locator("#table-query-add-filter").click();
+  const filter = page.locator('[data-testid="table-query-filter-row"]');
+  await expect(filter).toBeVisible();
+  await filter.locator('[data-testid="table-query-attr"]').selectOption("status");
+  await filter.locator('[data-testid="table-query-value"]').fill("open");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name} WHERE status = 'open'`);
+  await expect(page.locator("#table-query-run")).toHaveClass(/is-pending/);
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
+  await expect(page.locator("#rows-table tbody")).toContainText("ada");
+  await expect(page.locator("#rows-table tbody")).toContainText("tom");
+  await expect(page.locator("#rows-table tbody")).not.toContainText("shut");
+
+  await page.locator("#table-query-query").click();
+  await expect(page.locator("#table-query-query")).toHaveAttribute("aria-pressed", "true");
+  const key = page.locator('[data-testid="table-query-key-row"]');
+  await expect(key).toHaveCount(1);
+  await expect(key.locator('[data-testid="table-query-attr"]')).toHaveValue("id");
+  await expect(page.locator("#table-query-run")).toBeDisabled();
+  await expect(page.locator("#table-query-error")).toHaveText("Query needs a hash key value.");
+  await key.locator('[data-testid="table-query-value"]').fill("ada");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SELECT * FROM ${name} WHERE id = 'ada' AND status = 'open'`);
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(1);
+  await expect(page.locator("#rows-table tbody td:not(.row-peek)").nth(0)).toHaveText("ada");
+  await expect(page.locator("#rows-table tbody")).toContainText("open");
+
+  await page.locator("#table-query-add-key").click();
+  const range = page.locator('[data-testid="table-query-key-row"]').nth(1);
+  await range.locator('[data-testid="table-query-op"]').selectOption("eq");
+  await range.locator('[data-testid="table-query-value"]').fill("1");
+  await page.locator("#table-query-reverse").click();
+  await expect(page.locator("#table-query-dql")).toHaveText(
+    `SELECT * FROM ${name} WHERE id = 'ada' AND sk = 1 AND status = 'open' DESC`,
+  );
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(1);
+  await expect(page.locator("#rows-table tbody td:not(.row-peek)").nth(1)).toHaveText("1");
+
+  await page.locator("#table-query-source").selectOption("by-status");
+  await expect(page.locator('[data-testid="table-query-key-row"] [data-testid="table-query-attr"]')).toHaveValue("status");
+  await page.locator('[data-testid="table-query-key-row"] [data-testid="table-query-value"]').fill("open");
+  await page.locator('[data-testid="table-query-filter-row"] [data-testid="table-query-remove"]').click();
+  await expect(page.locator("#table-query-dql")).toHaveText(
+    `SELECT * FROM ${name} WHERE status = 'open' USING by-status DESC`,
+  );
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
+  await expect(page.locator("#rows-table tbody td:not(.row-peek)").nth(1)).toHaveText("3");
+  await page.screenshot({ path: playwrightArtifact(`table-query-picker-${testInfo.project.name}.png`) });
+});
+
 test("names insert, update, delete, count, and drop results", async ({ page, app }) => {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
