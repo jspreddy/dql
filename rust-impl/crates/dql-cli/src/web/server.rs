@@ -1162,8 +1162,9 @@ fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Resul
     if !safe_table_name(name) {
         return Err(format!("unsupported table name {name:?}"));
     }
-    let limit = PAGE_SIZE.saturating_mul(page.saturating_add(1));
-    let (statements, page_with_limit) = browser_read_dql(name, dql, limit)?;
+    let start = PAGE_SIZE.saturating_mul(page);
+    let fetch_limit = start.saturating_add(PAGE_SIZE).saturating_add(1);
+    let (statements, _) = browser_read_dql(name, dql, fetch_limit)?;
     let mut items = Vec::new();
     for statement in &statements {
         let envelope = state.session.execute_for_serve(statement);
@@ -1173,7 +1174,6 @@ fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Resul
         items.extend(envelope.items.unwrap_or_default());
     }
     let statement = statements.join("; ");
-    let start = PAGE_SIZE.saturating_mul(page);
     let end = (start + PAGE_SIZE).min(items.len());
     let window = items.get(start..end).unwrap_or(&[]);
     let shape = load_shape(state, name);
@@ -1192,11 +1192,7 @@ fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Resul
         "page_size": PAGE_SIZE,
         "items": window,
         "columns": columns,
-        "has_more": if page_with_limit {
-            items.len() >= limit
-        } else {
-            items.len() > end
-        },
+        "has_more": items.len() > end,
         "dql": statement,
     }))
 }
@@ -2676,7 +2672,7 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         let page = http_body(addr, "GET", "/api/rows?table=posts&page=0", "");
         let page_json: Value = serde_json::from_str(&page).expect(&page);
         assert_eq!(page_json["items"].as_array().unwrap().len(), 3);
-        assert_eq!(page_json["dql"], "SCAN * FROM posts LIMIT 50");
+        assert_eq!(page_json["dql"], "SCAN * FROM posts LIMIT 51");
 
         let queried = http_body(
             addr,
