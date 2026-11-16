@@ -13,6 +13,8 @@ Before committing, run `just fix`, then `just check`.
 
 # Commit message
 
+Follow the Conventional Commits rule (`conventional-commits.rule.mdc`).
+
 Do not add cursor account user name or email to the commit message.
 
 Use "Sai Jonnala <jspreddy@users.noreply.github.com>"

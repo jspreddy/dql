@@ -1,0 +1,1 @@
+../../.cursor/rules/conventional-commits.rule.mdc
