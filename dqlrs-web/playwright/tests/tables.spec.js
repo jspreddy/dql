@@ -1081,7 +1081,7 @@ test("table browser keys mode batch-gets typed hash and hash-range keys", async 
   await expect(page.locator("#table-query-run")).toBeDisabled();
   await expect(page.locator("#table-query-error")).toHaveText("Keys needs at least one key.");
 
-  await page.locator('[data-testid="table-query-batch-keys"]').fill("ada, 1\ntom, 3");
+  await page.locator('[data-testid="table-query-batch-keys"]').fill("(ada, 1)\n(tom, 3)");
   await expect(page.locator("#table-query-dql")).toHaveText(
     `SELECT * FROM ${name} KEYS IN ('ada', 1), ('tom', 3)`,
   );
@@ -1119,7 +1119,7 @@ test("table browser keys mode batch-gets a list of hash keys", async ({ page, ap
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);
 
   await page.locator("#table-query-keys-mode").click();
-  await page.locator('[data-testid="table-query-batch-keys"]').fill("ada\ntom");
+  await page.locator('[data-testid="table-query-batch-keys"]').fill("ada, tom");
   await expect(page.locator("#table-query-dql")).toHaveText(`SELECT * FROM ${name} KEYS IN 'ada', 'tom'`);
   await page.locator("#table-query-run").click();
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);

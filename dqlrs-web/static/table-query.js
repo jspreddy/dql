@@ -58,64 +58,123 @@ export function quoteValue(raw, type) {
   return "'" + text.replaceAll("'", "''") + "'";
 }
 
-export function splitKeyFields(line) {
-  const text = String(line || "").trim();
-  if (!text) return [];
-  const fields = [];
-  let current = "";
-  let quote = "";
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (quote) {
-      if (ch === quote) {
-        quote = "";
-      } else if (ch === "'" && quote === "'" && text[i + 1] === "'") {
-        current += "'";
-        i += 1;
-      } else {
-        current += ch;
-      }
-      continue;
-    }
-    if (ch === "'" || ch === '"') {
-      quote = ch;
-      continue;
-    }
-    if (ch === "," || ch === "\t") {
-      if (current.trim()) fields.push(current.trim());
-      current = "";
-      continue;
-    }
-    current += ch;
-  }
-  if (quote) return null;
-  if (current.trim()) fields.push(current.trim());
-  return fields;
-}
-
-export function parseBatchKeys(text, hasRange) {
+export function parseBatchKeys(text) {
+  const src = String(text || "");
+  let i = 0;
   const keys = [];
   const errors = [];
-  String(text || "").split(/\r?\n/).forEach((raw, index) => {
-    const line = raw.trim();
-    if (!line) return;
-    const tuple = line.startsWith("(") && line.endsWith(")");
-    const fields = splitKeyFields(tuple ? line.slice(1, -1) : line);
-    if (!fields) {
-      errors.push(`Line ${index + 1} has an unclosed quote.`);
-      return;
+
+  const isSep = (ch) => ch === "," || ch === "\n" || ch === "\r";
+  const isSpace = (ch) => ch === " " || ch === "\t";
+
+  function lineAt(index) {
+    let line = 1;
+    for (let pos = 0; pos < index && pos < src.length; pos += 1) {
+      if (src[pos] === "\n") line += 1;
     }
-    if (!fields.length) return;
-    if (tuple || hasRange) {
-      if (fields.length < 2 && hasRange) {
-        errors.push(`Line ${index + 1} needs a hash and range key.`);
-        return;
+    return line;
+  }
+
+  function skipIdle() {
+    while (i < src.length && (isSpace(src[i]) || isSep(src[i]))) i += 1;
+  }
+
+  function skipSpace() {
+    while (i < src.length && isSpace(src[i])) i += 1;
+  }
+
+  function parseQuoted(quote) {
+    i += 1;
+    let out = "";
+    while (i < src.length) {
+      const ch = src[i];
+      if (ch === quote && src[i + 1] === quote) {
+        out += quote;
+        i += 2;
+        continue;
       }
-      keys.push(fields.slice(0, hasRange || fields.length > 1 ? 2 : 1));
-      return;
+      if (ch === quote) {
+        i += 1;
+        return out;
+      }
+      out += ch;
+      i += 1;
     }
-    for (const field of fields) keys.push([field]);
-  });
+    return null;
+  }
+
+  function parseBare() {
+    const start = i;
+    while (i < src.length) {
+      const ch = src[i];
+      if (isSep(ch) || ch === "(" || ch === ")") break;
+      i += 1;
+    }
+    return src.slice(start, i).trim();
+  }
+
+  function parseValue() {
+    skipSpace();
+    if (i >= src.length) return { ok: true, value: "" };
+    const ch = src[i];
+    if (ch === "'" || ch === '"') {
+      const start = i;
+      const value = parseQuoted(ch);
+      if (value === null) return { ok: false, error: `Line ${lineAt(start)} has an unclosed quote.` };
+      return { ok: true, value };
+    }
+    if (isSep(ch) || ch === "(" || ch === ")") return { ok: true, value: "" };
+    return { ok: true, value: parseBare() };
+  }
+
+  skipIdle();
+  while (i < src.length) {
+    skipIdle();
+    if (i >= src.length) break;
+    const start = i;
+    if (src[i] === ")") {
+      errors.push(`Line ${lineAt(start)} has an extra ).`);
+      i += 1;
+      continue;
+    }
+    if (src[i] === "(") {
+      i += 1;
+      const hash = parseValue();
+      if (!hash.ok) {
+        errors.push(hash.error);
+        break;
+      }
+      skipSpace();
+      if (src[i] !== ",") {
+        errors.push(`Line ${lineAt(start)} needs (hash, range).`);
+        continue;
+      }
+      i += 1;
+      const range = parseValue();
+      if (!range.ok) {
+        errors.push(range.error);
+        break;
+      }
+      skipSpace();
+      if (src[i] !== ")") {
+        errors.push(`Line ${lineAt(start)} has an unclosed (hash, range) pair.`);
+        continue;
+      }
+      i += 1;
+      if (!hash.value || !range.value) {
+        errors.push(`Line ${lineAt(start)} needs (hash, range).`);
+        continue;
+      }
+      keys.push([hash.value, range.value]);
+      continue;
+    }
+    const value = parseValue();
+    if (!value.ok) {
+      errors.push(value.error);
+      break;
+    }
+    if (value.value) keys.push([value.value]);
+  }
   return { keys, errors };
 }
 
@@ -132,11 +191,25 @@ export function formatKeysInClause(keys, table, extra) {
 
 export function batchKeyHint(table) {
   const source = tableSource(table);
+  const hash = source.hashKey || "hash";
   if (source.rangeKey) {
-    const hash = source.hashKey || "hash";
-    return `One ${hash}, ${source.rangeKey} pair per line`;
+    return `${hash} keys, or (${hash}, ${source.rangeKey}) pairs`;
   }
-  return `One ${source.hashKey || "hash key"} per line`;
+  return `${hash} keys: a, b, c`;
+}
+
+export function keysModeError(table, parsed) {
+  const result = parsed || parseBatchKeys("");
+  if (result.errors.length) return result.errors[0];
+  if (!result.keys.length) return "Keys needs at least one key.";
+  const hasRange = Boolean(tableSource(table).rangeKey);
+  if (hasRange && result.keys.some((key) => key.length < 2)) {
+    return "Range keys go in parentheses: (hash, range).";
+  }
+  if (!hasRange && result.keys.some((key) => key.length > 1)) {
+    return "This table only has a hash key.";
+  }
+  return "";
 }
 
 export function opById(id, ops) {
@@ -325,9 +398,8 @@ export function buildReadStatement(tableName, table, state, extra) {
   if (!name) return "";
   const current = ensureQueryKeys(table, state || defaultReadState());
   if (current.mode === "keys") {
-    const hasRange = Boolean(tableSource(table).rangeKey);
-    const parsed = parseBatchKeys(current.batchKeys, hasRange);
-    if (!parsed.keys.length) return "";
+    const parsed = parseBatchKeys(current.batchKeys);
+    if (keysModeError(table, parsed)) return "";
     return `SELECT * FROM ${quoteIdent(name)} KEYS IN ${formatKeysInClause(parsed.keys, table, extra)}`;
   }
   const source = sourceOf(table, current.source, current.mode);
@@ -360,10 +432,7 @@ export function buildReadStatement(tableName, table, state, extra) {
 export function readError(table, state) {
   const current = ensureQueryKeys(table, state || defaultReadState());
   if (current.mode === "keys") {
-    const parsed = parseBatchKeys(current.batchKeys, Boolean(tableSource(table).rangeKey));
-    if (parsed.errors.length) return parsed.errors[0];
-    if (!parsed.keys.length) return "Keys needs at least one key.";
-    return "";
+    return keysModeError(table, parseBatchKeys(current.batchKeys));
   }
   if (current.mode !== "query") return "";
   const hash = sourceKeys(table, current.source, current.mode).find((key) => key.role === "hash");
@@ -505,7 +574,7 @@ export function attachTableQuery(host, handlers = {}) {
     const hash = source.hashKey || "hash";
     const range = source.rangeKey;
     batchHint.textContent = batchKeyHint(table);
-    batchInput.placeholder = range ? `${hash}, ${range}` : hash;
+    batchInput.placeholder = range ? `(${hash}, ${range})` : "a, b, c";
     if (document.activeElement !== batchInput) batchInput.value = state.batchKeys || "";
   }
 

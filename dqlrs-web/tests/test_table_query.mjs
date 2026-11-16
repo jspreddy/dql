@@ -139,13 +139,20 @@ test("typed attributes that are missing from metadata still format", () => {
   assert.equal(sql, "SCAN * FROM posts WHERE note = 'hello'");
 });
 
-test("parseBatchKeys reads hash lines or hash, range pairs", () => {
-  assert.deepEqual(parseBatchKeys("ada\ntom", false).keys, [["ada"], ["tom"]]);
-  assert.deepEqual(parseBatchKeys("ada, tom", false).keys, [["ada"], ["tom"]]);
-  assert.deepEqual(parseBatchKeys("ada, 1\ntom, 3", true).keys, [["ada", "1"], ["tom", "3"]]);
-  assert.deepEqual(parseBatchKeys("('ada', 1)", true).keys, [["ada", "1"]]);
-  assert.equal(parseBatchKeys("ada", true).errors[0], "Line 1 needs a hash and range key.");
-  assert.equal(batchKeyHint(table), "One id, sk pair per line");
+test("parseBatchKeys reads hash lists and parenthesized pairs", () => {
+  assert.deepEqual(parseBatchKeys("a, b, c").keys, [["a"], ["b"], ["c"]]);
+  assert.deepEqual(parseBatchKeys("a\nb\nc").keys, [["a"], ["b"], ["c"]]);
+  assert.deepEqual(parseBatchKeys("(a,1), (a,2)").keys, [["a", "1"], ["a", "2"]]);
+  assert.deepEqual(parseBatchKeys("(a,1)\n(b,2)\n(hash,range)").keys, [
+    ["a", "1"],
+    ["b", "2"],
+    ["hash", "range"],
+  ]);
+  assert.deepEqual(parseBatchKeys(`'a', "b"`).keys, [["a"], ["b"]]);
+  assert.deepEqual(parseBatchKeys(`("a", 1), ('b', 2)`).keys, [["a", "1"], ["b", "2"]]);
+  assert.deepEqual(parseBatchKeys("ada, 1").keys, [["ada"], ["1"]]);
+  assert.equal(parseBatchKeys("(a)").errors[0], "Line 1 needs (hash, range).");
+  assert.equal(batchKeyHint(table), "id keys, or (id, sk) pairs");
 });
 
 test("keys mode builds KEYS IN from the typed list", () => {
@@ -156,8 +163,16 @@ test("keys mode builds KEYS IN from the typed list", () => {
     "SELECT * FROM posts KEYS IN 'ada', 'tom'",
   );
   assert.equal(
-    buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys: "ada, 1\ntom, 3" }),
+    buildReadStatement("posts", hashOnly, { ...defaultReadState(), mode: "keys", batchKeys: "ada, tom" }),
+    "SELECT * FROM posts KEYS IN 'ada', 'tom'",
+  );
+  assert.equal(
+    buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, 1)\n(tom, 3)" }),
     "SELECT * FROM posts KEYS IN ('ada', 1), ('tom', 3)",
+  );
+  assert.equal(
+    readError(table, { ...defaultReadState(), mode: "keys", batchKeys: "ada, 1" }),
+    "Range keys go in parentheses: (hash, range).",
   );
 });
 
