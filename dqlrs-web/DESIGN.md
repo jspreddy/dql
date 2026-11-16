@@ -42,6 +42,7 @@ How the web app in `static/` should look and behave, and how to add to it. Read 
 
 ## Type
 
+- Noto Sans is bundled in `static/vendor/fonts/` (Latin and Latin Extended, variable weight). The app loads nothing from outside, so it works offline. Don't link a font or any other asset from a CDN.
 - Two families: `var(--font)` (Noto Sans) for the interface, `var(--mono)` for queries, keys, values, and file paths.
 - Use this scale. Half sizes (`12.5px`, `13.5px`) exist in older rules; don't add more.
 
@@ -148,6 +149,7 @@ Reviewed from the `design-review.spec.js` screenshots, in light and dark, at 144
 - **Dialog resets, backdrops, cards, and titles were repeated per dialog.** They now share `.dialog`, `.dialog-card`, and `.dialog-title`. `app.css` is about 300 lines shorter.
 - **Focus looked the same as hover** on dialog close buttons (`outline: none` plus the hover fill). Buttons and icon buttons now get the shared focus ring.
 - **The run dialog's Stop was outlined** while the editor's Stop is filled red. Both are filled now.
+- **The font came from Google Fonts**, so the app made an outside request and fell back to a system font offline. Noto Sans is now bundled.
 - **Disabled pager buttons looked enabled.** Previous and Next on a single page had no disabled style. They are now dimmed.
 
 ### Open findings
@@ -161,4 +163,3 @@ Reviewed from the `design-review.spec.js` screenshots, in light and dark, at 144
 | About 37 `:focus-visible` rules each set their own focus style. | `app.css` | Move them to the shared ring as each screen is touched. |
 | Font sizes include half steps (12.5, 13.5, 11.5px) and eight radii are in use. | `app.css` | Fold them into the scales above. |
 | The sheet dialogs (`.schema-pop-card`, `.row-pop-card`) repeat the same card and header. | `app.css` | Share a `.dialog-sheet-card` and header. |
-| The app loads Noto Sans from Google Fonts. | `index.html` | Bundle the font, so the app works offline and makes no outside request. |

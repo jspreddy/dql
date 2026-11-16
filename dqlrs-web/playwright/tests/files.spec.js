@@ -86,6 +86,9 @@ test("uses Noto Sans for interface text and keeps code in the monospace font", a
     path.join(app.workspace, "font.md"),
     ["# Harbor", "", "A paragraph of interface text with `code`.", "", "```mermaid", "flowchart LR", "  a[read]", "```", ""].join("\n"),
   );
+  // The font is bundled: the page must load it from the app and request nothing from outside.
+  const requested = [];
+  page.on("request", (request) => requested.push(request.url()));
   await page.reload();
   await showTypes(page, ["md"]);
   await reveal(page, "font.md");
@@ -103,8 +106,13 @@ test("uses Noto Sans for interface text and keeps code in the monospace font", a
       markdown: family(".doc-markdown > p"),
       code: family(".doc-markdown code"),
       loaded: document.fonts.check('13px "Noto Sans"'),
+      // check() is also true for a family with no @font-face, so look at the faces themselves.
+      faces: [...document.fonts].filter((face) => face.family.replaceAll('"', "") === "Noto Sans" && face.status === "loaded").length,
     };
   });
+  expect(fonts.faces).toBeGreaterThan(0);
+  expect(requested.some((url) => url.startsWith(`${app.baseURL}/vendor/fonts/`) && url.endsWith(".woff2"))).toBe(true);
+  expect(requested.filter((url) => /^https?:/.test(url) && !url.startsWith(app.baseURL))).toEqual([]);
   expect(fonts.token).toBe('"Noto Sans", "Segoe UI", system-ui, sans-serif');
   expect(fonts.mono).toBe('ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace');
   expect(fonts.loaded).toBe(true);
