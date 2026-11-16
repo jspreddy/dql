@@ -1542,6 +1542,7 @@ fn content_type(path: &str) -> &'static str {
         Some("css") => "text/css; charset=utf-8",
         Some("js") => "text/javascript; charset=utf-8",
         Some("svg") => "image/svg+xml",
+        Some("woff2") => "font/woff2",
         _ => "application/octet-stream",
     }
 }
@@ -2847,6 +2848,29 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
     fn http(addr: SocketAddr, method: &str, path: &str, body: &str) -> String {
         let token = server_token(addr);
         http_bearer(addr, method, path, body, "", Some(&token))
+    }
+
+    #[test]
+    fn the_page_bundles_its_font_and_links_nothing_from_outside() {
+        assert_eq!(
+            content_type("vendor/fonts/noto-sans-latin-wght-normal.woff2"),
+            "font/woff2"
+        );
+        let index = ASSETS.get_file("index.html").unwrap();
+        let page = index.contents_utf8().unwrap();
+        assert!(page.contains(r#"href="/vendor/fonts/noto-sans.css""#));
+        assert!(!page.contains("http://"), "index.html links an outside URL");
+        assert!(
+            !page.contains("https://"),
+            "index.html links an outside URL"
+        );
+        let css = ASSETS.get_file("vendor/fonts/noto-sans.css").unwrap();
+        for line in css.contents_utf8().unwrap().lines() {
+            if let Some(rest) = line.trim().strip_prefix("src: url(\"/") {
+                let path = rest.split('"').next().unwrap();
+                assert!(ASSETS.get_file(path).is_some(), "missing font file {path}");
+            }
+        }
     }
 
     fn http_anon(addr: SocketAddr, method: &str, path: &str, body: &str) -> String {

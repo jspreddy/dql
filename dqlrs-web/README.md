@@ -17,4 +17,6 @@ In the editor, **Run selection** runs the highlighted text. With no highlight, i
 
 In the editor, `DESCRIBE posts;` prints that table's description, the same text as `ls posts`. `ls post*` prints the description when one table matches, and a list when several do. `SHOW TABLES LIKE 'alpha%';` returns matching table names (`%` is any sequence, `_` is one character). `ls alpha* refresh=True` lists or describes the glob and reloads cached descriptions. **Tables** lists `ls` output in the left nav. The refresh button beside the Tables title runs `ls refresh=true`, which drops the cached table descriptions and loads the list again. The search box uses the same glob patterns as `ls` (`nb_*`, `*foo*`, `foo-*`). Opening a table shows 50 rows at a time in the main pane.
 
+Design guidelines, the shared components (`static/components.css`), and the latest design review are in [DESIGN.md](DESIGN.md).
+
 Playwright coverage lives in `playwright/`. `just web-test` runs the suite in system Chrome against a temporary copy of `playwright/fixtures` and DynamoDB Local. Pass Playwright arguments after `--`, for example `just web-test -- tests/editor.spec.js`. From `playwright/`, `npm test` is the same suite.
