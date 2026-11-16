@@ -424,10 +424,13 @@ test("ST lists tables the same way as SHOW TABLES", async ({ page, app }) => {
   const listed = async (statement) => {
     await replaceEditor(page, statement);
     await pressMod(page, "A");
+    // The previous statement's card and its ok mark are still on the page right after the
+    // click. Mark the old cards, so only this run's card can be read.
+    await page.locator(".result-card").evaluateAll((cards) => cards.forEach((card) => card.setAttribute("data-stale", "")));
     await page.locator("#run").click();
-    await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(1);
-    const card = page.locator(".result-card").last();
+    const card = page.locator(".result-card:not([data-stale])").last();
     await expect(card).toContainText(name);
+    await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(1);
     return card.locator("table tbody tr").allInnerTexts();
   };
   const fromShow = await listed(`SHOW TABLES LIKE '${name}';`);
