@@ -170,13 +170,24 @@ pub const SELECT: &str = r"
     WHERE can compare a.b.c and a[0].b on SELECT and SCAN.
     A relative SAVE path resolves the same way as a LOAD path.
 
+    Keys use one format in KEYS IN and in WHERE ... IN. A list (a, b, c) is hash
+    keys. A tuple (a, 1) is a (hash, range) pair, so it has at most two parts.
+    A list of tuples (a, 1), (b, 2) is pairs. Words without quotes are strings.
+    Whole keys are read with one batch get. On a table with a range key, a lone
+    hash value reads every item under that hash key.
+    SELECT ... WHERE hash IN (...) or WHERE (hash, range) IN ((...), ...) reads
+    keys the same way. Combined with other conditions, or on SCAN, it filters.
+
     Examples
     --------
     CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars WHERE id = 'a';
     CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars KEYS IN 'id1', 'id2';
-    CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars KEYS IN (id1, id2, id3);
+    CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars KEYS IN id1, id2, id3;
+    CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars WHERE id IN (id1, id2);
     CREATE TABLE foobars (id STRING HASH KEY, n NUMBER RANGE KEY); SELECT * FROM foobars KEYS IN ((id1, 1), (id2, 2));
     CREATE TABLE foobars (id STRING HASH KEY, n NUMBER RANGE KEY); SELECT * FROM foobars KEYS IN (id1, 1), (id2, 2),;
+    CREATE TABLE foobars (id STRING HASH KEY, n NUMBER RANGE KEY); SELECT * FROM foobars KEYS IN id1, id2;
+    CREATE TABLE foobars (id STRING HASH KEY, n NUMBER RANGE KEY); SELECT * FROM foobars WHERE (id, n) IN ((id1, 1), (id2, 2));
     CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE out.msgpack;
     CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE out.json.gz;
     CREATE TABLE foobars (id STRING HASH KEY); SCAN * FROM foobars SAVE 'exports/out.json' CREATE PARENTS;

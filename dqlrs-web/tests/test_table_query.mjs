@@ -169,7 +169,7 @@ test("parseBatchKeys reads hash lists and parenthesized pairs", () => {
   assert.deepEqual(parseBatchKeys(`("a", 1), ('b', 2)`).keys, [["a", "1"], ["b", "2"]]);
   assert.deepEqual(parseBatchKeys("ada, 1").keys, [["ada"], ["1"]]);
   assert.deepEqual(parseBatchKeys("(a)").keys, [["a"]]);
-  assert.deepEqual(parseBatchKeys("(a, b, c)").keys, [["a"], ["b"], ["c"]]);
+  assert.deepEqual(parseBatchKeys("(a, b, c)").errors, ["Line 1: a key has at most two parts: (hash, range)."]);
   assert.deepEqual(parseBatchKeys("((a,1), (d,4))").keys, [["a", "1"], ["d", "4"]]);
   assert.deepEqual(parseBatchKeys("(a,1), (b,2),").keys, [["a", "1"], ["b", "2"]]);
   assert.equal(parseBatchKeys("(a,1").errors[0], "Line 1 has an unclosed (.");
@@ -188,8 +188,8 @@ test("keys mode builds KEYS IN from the typed list", () => {
     "SELECT * FROM posts KEYS IN 'ada', 'tom'",
   );
   assert.equal(
-    buildReadStatement("posts", hashOnly, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, tom, sue)" }),
-    "SELECT * FROM posts KEYS IN 'ada', 'tom', 'sue'",
+    readError(hashOnly, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, tom, sue)" }),
+    "Line 1: a key has at most two parts: (hash, range).",
   );
   assert.equal(
     buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, 1)\n(tom, 3)" }),
@@ -207,11 +207,11 @@ test("keys mode builds KEYS IN from the typed list", () => {
   assert.equal(readError(table, { ...defaultReadState(), mode: "keys", batchKeys: "a,b,c" }), "");
   assert.equal(
     buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys: "a,b,c" }),
-    "SELECT * FROM posts WHERE id = 'a'; SELECT * FROM posts WHERE id = 'b'; SELECT * FROM posts WHERE id = 'c'",
+    "SELECT * FROM posts KEYS IN 'a', 'b', 'c'",
   );
   assert.equal(
     buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, 1), tom" }),
-    "SELECT * FROM posts KEYS IN ('ada', 1); SELECT * FROM posts WHERE id = 'tom'",
+    "SELECT * FROM posts KEYS IN ('ada', 1), 'tom'",
   );
   assert.equal(
     buildReadStatement("posts", table, {

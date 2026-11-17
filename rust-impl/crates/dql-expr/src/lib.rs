@@ -170,6 +170,27 @@ pub fn render_condition_with_visitor(
                 .join(", ");
             Ok(format!("{} IN ({})", visitor.get_field(field), rendered))
         }
+        // DynamoDB has no tuple IN, so each tuple is an AND of equalities, OR'd together.
+        Condition::InTuples { fields, tuples } => {
+            let rendered = tuples
+                .iter()
+                .map(|tuple| {
+                    let parts = fields
+                        .iter()
+                        .zip(tuple.iter())
+                        .map(|(field, value)| {
+                            Ok(format!(
+                                "{} = {}",
+                                visitor.get_field(field),
+                                visitor.get_value(value)?
+                            ))
+                        })
+                        .collect::<Result<Vec<_>, ExprError>>()?;
+                    Ok(format!("({})", parts.join(" AND ")))
+                })
+                .collect::<Result<Vec<_>, ExprError>>()?;
+            Ok(format!("({})", rendered.join(" OR ")))
+        }
         Condition::Function { name, args } => {
             let rendered = args
                 .iter()

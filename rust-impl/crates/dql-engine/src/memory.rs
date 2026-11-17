@@ -445,6 +445,11 @@ pub fn matches_condition(item: &Item, condition: &Condition) -> bool {
         Condition::In { field, values } => {
             resolve_field_value(item, field).is_some_and(|item_value| values.contains(&item_value))
         }
+        Condition::InTuples { fields, tuples } => tuples.iter().any(|tuple| {
+            fields.iter().zip(tuple.iter()).all(|(field, value)| {
+                resolve_field_value(item, field).is_some_and(|item_value| &item_value == value)
+            })
+        }),
         Condition::Function { name, args } => evaluate_function_condition(item, name, args),
         Condition::Size { field, op, value } => resolve_field_value(item, field)
             .and_then(|item_value| value_size(&item_value))

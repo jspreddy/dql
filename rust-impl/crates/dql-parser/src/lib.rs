@@ -150,6 +150,11 @@ pub enum Condition {
         field: String,
         values: Vec<Value>,
     },
+    /// `(hash, range) IN ((a, 1), (b, 2))`: each tuple gives one value per field, in order.
+    InTuples {
+        fields: Vec<String>,
+        tuples: Vec<Vec<Value>>,
+    },
     Function {
         name: String,
         args: Vec<ConditionOperand>,
@@ -1125,6 +1130,8 @@ impl<'a> Parser<'a> {
             self.pos += 1;
             match self.parse_condition() {
                 Ok(condition) => Ok(Some(condition)),
+                // A key list in the wrong shape says exactly what is wrong; keep that message.
+                Err(err) if err.message.starts_with(KEY_FORMAT) => Err(err),
                 Err(_) => {
                     self.pos = saved;
                     Ok(None)
@@ -1267,6 +1274,13 @@ impl<'a> Parser<'a> {
             break;
         }
         self.expect_symbol(')')?;
+        let values = elems
+            .iter()
+            .filter(|elem| matches!(elem, KeysInElem::Value(_)))
+            .count();
+        if values == elems.len() && values > 2 {
+            return Err(self.error(KEY_PARTS_ERROR));
+        }
         Ok(collapse_keys_in_group(elems))
     }
 
@@ -1639,12 +1653,81 @@ impl<'a> Parser<'a> {
         if self.accept_keyword("NOT") {
             return Ok(Condition::Not(Box::new(self.parse_primary_condition()?)));
         }
+        if self.peek_tuple_in() {
+            return self.parse_tuple_in();
+        }
         if self.accept_symbol('(') {
             let condition = self.parse_condition()?;
             self.expect_symbol(')')?;
             return Ok(condition);
         }
         self.parse_comparison()
+    }
+
+    /// `(a, b) IN`: a parenthesized list of plain field names followed by IN.
+    fn peek_tuple_in(&self) -> bool {
+        if !matches!(self.tokens.get(self.pos), Some(Token::Symbol('('))) {
+            return false;
+        }
+        let mut at = self.pos + 1;
+        let mut fields = 0;
+        loop {
+            match self.tokens.get(at) {
+                Some(Token::Ident(_)) => fields += 1,
+                _ => return false,
+            }
+            at += 1;
+            match self.tokens.get(at) {
+                Some(Token::Symbol(',')) => at += 1,
+                Some(Token::Symbol(')')) => break,
+                _ => return false,
+            }
+        }
+        fields >= 2
+            && matches!(self.tokens.get(at + 1), Some(Token::Ident(word)) if word.eq_ignore_ascii_case("IN"))
+    }
+
+    fn parse_tuple_in(&mut self) -> Result<Condition, ParseError> {
+        self.expect_symbol('(')?;
+        let mut fields = vec![self.parse_field_path()?];
+        while self.accept_symbol(',') {
+            fields.push(self.parse_field_path()?);
+        }
+        self.expect_symbol(')')?;
+        if fields.len() > 2 {
+            return Err(self.error(KEY_PARTS_ERROR));
+        }
+        self.expect_keyword("IN")?;
+        self.expect_symbol('(')?;
+        let mut tuples = Vec::new();
+        loop {
+            if !self.accept_symbol('(') {
+                return Err(self.error(format!(
+                    "key list: ({}) IN takes tuples: (({}))",
+                    fields.join(", "),
+                    vec!["…"; fields.len()].join(", ")
+                )));
+            }
+            let mut tuple = vec![self.parse_keys_in_value()?];
+            while self.accept_symbol(',') {
+                tuple.push(self.parse_keys_in_value()?);
+            }
+            self.expect_symbol(')')?;
+            if tuple.len() != fields.len() {
+                return Err(self.error(format!(
+                    "key list: each tuple needs {} values, one per field in ({})",
+                    fields.len(),
+                    fields.join(", ")
+                )));
+            }
+            tuples.push(tuple);
+            if self.accept_symbol(',') {
+                continue;
+            }
+            break;
+        }
+        self.expect_symbol(')')?;
+        Ok(Condition::InTuples { fields, tuples })
     }
 
     fn parse_comparison(&mut self) -> Result<Condition, ParseError> {
@@ -1671,7 +1754,12 @@ impl<'a> Parser<'a> {
             let mut values = Vec::new();
             if !self.accept_symbol(')') {
                 loop {
-                    values.push(self.parse_value()?);
+                    if self.peek_symbol('(') {
+                        return Err(self.error(format!(
+                            "key list: {field} IN takes single values. Pairs go in (hash, range) IN ((…), (…))"
+                        )));
+                    }
+                    values.push(self.parse_keys_in_value()?);
                     if self.accept_symbol(',') {
                         continue;
                     }
@@ -2217,6 +2305,10 @@ impl<'a> Parser<'a> {
             .unwrap_or(self.input.len())
     }
 }
+
+/// Prefix of every key-list shape error, so WHERE parsing reports them instead of backtracking.
+const KEY_FORMAT: &str = "key list: ";
+const KEY_PARTS_ERROR: &str = "key list: a key has at most two parts: (hash, range)";
 
 enum KeysInElem {
     Value(Value),

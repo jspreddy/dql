@@ -505,9 +505,11 @@ mod test_query_options {
     #[test]
     fn parses_keys_in_grouped_hashes_pairs_and_trailing_commas() {
         assert_eq!(
-            select_keys_in("SELECT * FROM foobars KEYS IN (a, b, c)"),
+            select_keys_in("SELECT * FROM foobars KEYS IN a, b, c"),
             vec![vec![v_str("a")], vec![v_str("b")], vec![v_str("c")]]
         );
+        let error = parse_statement("SELECT * FROM foobars KEYS IN (a, b, c)").unwrap_err();
+        assert!(error.to_string().contains("at most two parts"), "{error:?}");
         assert_eq!(
             select_keys_in("SELECT * FROM foobars KEYS IN ((a, 1), (d, 4))"),
             vec![vec![v_str("a"), v_num("1")], vec![v_str("d"), v_num("4")],]
@@ -520,8 +522,7 @@ mod test_query_options {
             select_keys_in("SELECT * FROM foobars KEYS IN ('a', 1), ('b', 2)"),
             vec![vec![v_str("a"), v_num("1")], vec![v_str("b"), v_num("2")],]
         );
-        let statement =
-            parse_statement("SELECT * FROM foobars KEYS IN (a, b, c), USING -").unwrap();
+        let statement = parse_statement("SELECT * FROM foobars KEYS IN a, b, c, USING -").unwrap();
         match statement {
             Statement::Select { options, .. } => {
                 assert_eq!(options.keys_in.as_ref().map(|keys| keys.len()), Some(3));

@@ -1405,7 +1405,10 @@ test("table browser keys mode batch-gets a list of hash keys", async ({ page, ap
   await page.locator("#table-query-keys-mode").click();
   await page.locator('[data-testid="table-query-batch-keys"]').fill("ada, tom");
   await expect(page.locator("#table-query-dql")).toHaveText(`SELECT * FROM ${name} KEYS IN 'ada', 'tom'`);
+  // A tuple is a (hash, range) pair, so three values in parentheses is not a key.
   await page.locator('[data-testid="table-query-batch-keys"]').fill("(ada, tom, sue)");
+  await expect(page.locator("#table-query-error")).toHaveText("Line 1: a key has at most two parts: (hash, range).");
+  await page.locator('[data-testid="table-query-batch-keys"]').fill("ada, tom, sue");
   await expect(page.locator("#table-query-dql")).toHaveText(`SELECT * FROM ${name} KEYS IN 'ada', 'tom', 'sue'`);
   await page.locator("#table-query-run").click();
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);

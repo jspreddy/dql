@@ -74,6 +74,7 @@ test("a,b,c reads every item under each hash key on a table with a range key", a
   await page.locator("#table-query-keys-mode").click();
   await keys.fill("a,b,c");
   await expect(error).toHaveText("");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SELECT * FROM ${name} KEYS IN 'a', 'b', 'c'`);
   await page.locator("#table-query-run").click();
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(4);
   await expect(page.locator("#rows-table tbody")).not.toContainText("d");

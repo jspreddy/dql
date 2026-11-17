@@ -146,8 +146,13 @@ export function parseBatchKeys(text) {
     return { ok: true, value: parseBare() };
   }
 
-  function collapseGroup(elems) {
+  function collapseGroup(elems, openAt) {
     if (elems.every((elem) => elem.type === "value")) {
+      // A tuple is a (hash, range) pair. Three or more plain values in one group is not a key.
+      if (elems.length > 2) {
+        errors.push(`Line ${lineAt(openAt)}: a key has at most two parts: (hash, range).`);
+        return [];
+      }
       if (elems.length === 2) return [[elems[0].value, elems[1].value]];
       return elems.map((elem) => [elem.value]);
     }
@@ -165,11 +170,11 @@ export function parseBatchKeys(text) {
       skipIdle();
       if (i >= src.length) {
         errors.push(`Line ${lineAt(openAt)} has an unclosed (.`);
-        return collapseGroup(elems);
+        return collapseGroup(elems, openAt);
       }
       if (src[i] === ")") {
         i += 1;
-        return collapseGroup(elems);
+        return collapseGroup(elems, openAt);
       }
       if (src[i] === "(") {
         const nestedAt = i;
@@ -180,12 +185,12 @@ export function parseBatchKeys(text) {
       const value = parseValue();
       if (!value.ok) {
         errors.push(value.error);
-        return collapseGroup(elems);
+        return collapseGroup(elems, openAt);
       }
       if (value.value) elems.push({ type: "value", value: value.value });
     }
     errors.push(`Line ${lineAt(openAt)} has an unclosed (.`);
-    return collapseGroup(elems);
+    return collapseGroup(elems, openAt);
   }
 
   skipIdle();
@@ -464,16 +469,9 @@ export function buildReadStatement(tableName, table, state, extra) {
         .map((fields) => formatIndexKeySelect(name, source, fields, table, extra))
         .join("; ");
     }
-    // KEYS IN gets items by their whole primary key. On a table with a range key, a lone hash
-    // value is not a whole key, so it reads every item under that hash key with a query.
-    const whole = source.rangeKey ? parsed.keys.filter((fields) => fields.length > 1) : parsed.keys;
-    const hashOnly = source.rangeKey ? parsed.keys.filter((fields) => fields.length === 1) : [];
-    const statements = [];
-    if (whole.length) {
-      statements.push(`SELECT * FROM ${quoteIdent(name)} KEYS IN ${formatKeysInClause(whole, table, extra, source)}`);
-    }
-    for (const fields of hashOnly) statements.push(formatIndexKeySelect(name, source, fields, table, extra));
-    return statements.join("; ");
+    // One KEYS IN for the table. dqlrs reads whole keys with a batch get and, on a table with a
+    // range key, every item under a lone hash value.
+    return `SELECT * FROM ${quoteIdent(name)} KEYS IN ${formatKeysInClause(parsed.keys, table, extra, source)}`;
   }
   const source = sourceOf(table, current.source, current.mode);
   const verb = current.mode === "query" ? "SELECT" : "SCAN";
