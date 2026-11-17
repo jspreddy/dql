@@ -8,7 +8,7 @@ file from git. Entries are the first-parent history, newest first:
   pull requests merged before PULL_LINKS_SINCE keep a plain "#N", since those numbers belong
   to a different repository;
 - a commit made on the branch starts with a link to that commit, then its subject;
-- under a merged pull request, every commit it brought in is listed, oldest first. Commits
+- under a merged pull request, every commit it brought in is listed, newest first. Commits
   that belonged to a pull request stacked into it are grouped under that pull request's
   number. Stacked pull requests are found from GitHub's pull refs, fetched as
   refs/remotes/origin/pull/N (`just changelog` and the Changelog workflow fetch them);
@@ -437,7 +437,8 @@ def merged_commits(root: Path, record: Record) -> list[Record]:
 
 
 def nested_lines(root: Path, record: Record, base: str, heads: dict[str, list[str]]) -> list[str]:
-    """Every commit a merged pull request brought in, grouped by the pull requests stacked into it.
+    """Every commit a merged pull request brought in, newest first, grouped by the pull requests
+    stacked into it.
 
     A stacked pull request's commits run from the previous stacked head (exclusive) to its own head
     (inclusive). Commits after the last stacked head belong to the merged pull request itself."""
@@ -466,13 +467,15 @@ def nested_lines(root: Path, record: Record, base: str, heads: dict[str, list[st
     if len(groups) == 1 and groups[0][0] is None and len(groups[0][1]) == 1:
         if groups[0][1][0].split(" ", 1)[-1] == title:
             return []
+    # Newest first, as the rest of the changelog: the pull request's own commits, then the
+    # stacked pull requests from the last one stacked down to the first.
     lines: list[str] = []
-    for number, commits in groups:
+    for number, commits in reversed(groups):
         if number is None:
-            lines.extend(commits)
+            lines.extend(reversed(commits))
         else:
             lines.append(f"Stacked {pull_link(base, number, record.date)}")
-            lines.extend(f"  {line}" for line in commits)
+            lines.extend(f"  {line}" for line in reversed(commits))
     return lines
 
 
