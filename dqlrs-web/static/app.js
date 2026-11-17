@@ -325,6 +325,48 @@ const lintTip = document.querySelector("#lint-tip");
 
 const RICH_TIP = ".presence-icon, #run, .table-cache, .describe-cache";
 
+// Tooltip delays, by how much the tip matters to what it labels (dqlrs-web/DESIGN.md, Tooltips).
+// - fast: the tip is the only way to read it: lint messages, run errors, truncated values, info
+//   icons, who else is connected.
+// - medium: an icon-only control, where the tip names the action. The default.
+// - slow: the control already says what it does (a visible label, a grip, a stat pill); the tip
+//   only adds detail.
+// An element can set data-tip-delay="fast|medium|slow" to pick its tier.
+const TIP_DELAYS = { fast: 100, medium: 200, slow: 400 };
+const TIP_TIERS = {
+  fast: [
+    ".lint-gutter",
+    ".cm-line",
+    "#lint-status",
+    ".run-status",
+    ".run-tree-summary",
+    ".schema-sample",
+    ".schema-pop-info",
+    ".key-icon",
+    ".table-match-note",
+    ".presence-icon",
+  ].join(", "),
+  slow: [
+    ".side-resize",
+    ".results-resize",
+    ".result-card-stat",
+    ".node-running",
+    "#table-query-run",
+    "#run",
+    "#table-search",
+    "#endpoint",
+  ].join(", "),
+};
+
+/** The delay before `target`'s tooltip shows: 100, 200, or 400 ms. */
+function tipDelay(target) {
+  const tier = target?.dataset?.tipDelay;
+  if (tier && TIP_DELAYS[tier]) return TIP_DELAYS[tier];
+  if (target?.matches?.(TIP_TIERS.fast)) return TIP_DELAYS.fast;
+  if (target?.matches?.(TIP_TIERS.slow)) return TIP_DELAYS.slow;
+  return TIP_DELAYS.medium;
+}
+
 function setTip(el, text) {
   if (!el) return;
   const value = String(text || "");
@@ -409,7 +451,39 @@ function tipAnchor(node) {
   return lintHoverTarget(node);
 }
 
+// The tooltip waits tipDelay() before it shows. Moving straight from one tip to the next shows
+// the next one at once, as menus and toolbars do.
+let pendingTip = null;
+let pendingTipTimer = 0;
+
+function cancelPendingTip() {
+  clearTimeout(pendingTipTimer);
+  pendingTipTimer = 0;
+  pendingTip = null;
+}
+
+function scheduleTip(target) {
+  if (target === lintTipAnchor) {
+    placeLintTip(target);
+    return;
+  }
+  if (target === pendingTip) return;
+  cancelPendingTip();
+  if (lintTipAnchor && lintTip && !lintTip.hidden) {
+    placeLintTip(target);
+    return;
+  }
+  pendingTip = target;
+  pendingTipTimer = setTimeout(() => {
+    const next = pendingTip;
+    pendingTip = null;
+    pendingTipTimer = 0;
+    if (next && next.isConnected) placeLintTip(next);
+  }, tipDelay(target));
+}
+
 function hideLintTip() {
+  cancelPendingTip();
   lintTipAnchor = null;
   if (!lintTip) return;
   lintTip.hidden = true;
@@ -443,12 +517,16 @@ document.addEventListener("pointerover", (event) => {
   absorbTitle(event.target);
   const target = tipAnchor(event.target);
   if (!target) {
+    if (pendingTip && !pendingTip.contains(event.target)) cancelPendingTip();
     if (lintTipAnchor && !lintTipAnchor.contains(event.target)) hideLintTip();
     return;
   }
-  placeLintTip(target);
+  scheduleTip(target);
 }, true);
 document.addEventListener("pointerout", (event) => {
+  if (pendingTip && pendingTip.contains(event.target) && !pendingTip.contains(event.relatedTarget)) {
+    cancelPendingTip();
+  }
   if (!lintTipAnchor || !lintTipAnchor.contains(event.target)) return;
   if (lintTipAnchor.contains(event.relatedTarget)) return;
   hideLintTip();
@@ -457,7 +535,7 @@ document.addEventListener("focusin", (event) => {
   absorbTitle(event.target);
   const target = tipAnchor(event.target);
   if (!target || target.classList.contains("cm-line")) return;
-  placeLintTip(target);
+  scheduleTip(target);
 });
 document.addEventListener("focusout", (event) => {
   if (!lintTipAnchor || lintTipAnchor.contains(event.relatedTarget)) return;
@@ -694,7 +772,7 @@ function showRunTip() {
 }
 runButton.addEventListener("pointerenter", () => {
   hideRunTip();
-  runTipTimer = setTimeout(showRunTip, 1000);
+  runTipTimer = setTimeout(showRunTip, tipDelay(runButton));
 });
 runButton.addEventListener("pointerleave", hideRunTip);
 runButton.addEventListener("pointerdown", hideRunTip);
@@ -3755,15 +3833,20 @@ function placePresenceTip(icon) {
   tip.style.left = left + "px";
 }
 
+let presenceTipTimer = 0;
 document.addEventListener("mouseover", (event) => {
   const icon = event.target.closest && event.target.closest(".presence-icon");
-  if (!icon) return;
-  placePresenceTip(icon);
+  if (!icon || icon === presenceTipAnchor) return;
+  clearTimeout(presenceTipTimer);
+  presenceTipTimer = setTimeout(() => {
+    if (icon.isConnected) placePresenceTip(icon);
+  }, tipDelay(icon));
 });
 
 document.addEventListener("mouseout", (event) => {
   const icon = event.target.closest && event.target.closest(".presence-icon");
   if (!icon || icon.contains(event.relatedTarget)) return;
+  clearTimeout(presenceTipTimer);
   if (presenceTipAnchor === icon) hidePresenceTip();
 });
 

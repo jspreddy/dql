@@ -902,6 +902,7 @@ body.side-resizing * {
 
 .table-cache.is-refreshing { color: var(--label); }
 
+/* Shown after the medium tooltip delay (200ms; see @keyframes tip-delay), like the other tips. */
 .table-cache-tip {
   display: none;
   position: absolute;
@@ -925,6 +926,7 @@ body.side-resizing * {
 .table-cache:hover .table-cache-tip,
 .table-cache:focus-visible .table-cache-tip {
   display: block;
+  animation: tip-delay 200ms step-end;
 }
 
 @keyframes refresh-spin {
@@ -1969,6 +1971,13 @@ body.results-resizing * {
 #result-body .describe-cache:hover .describe-cache-tip,
 #result-body .describe-cache:focus-visible .describe-cache-tip {
   display: block;
+  animation: tip-delay 200ms step-end;
+}
+
+/* Hidden for the medium tooltip delay, then shown (a display: none tip cannot transition). */
+@keyframes tip-delay {
+  from { visibility: hidden; }
+  to { visibility: hidden; }
 }
 
 #result-body .describe:has(.describe-cache:hover),
