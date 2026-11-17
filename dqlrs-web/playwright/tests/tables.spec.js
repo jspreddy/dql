@@ -180,13 +180,17 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   await expect(page.locator("#rows-title")).toHaveText(name);
   await expect(page.locator("#rows-meta")).toHaveText("50 rows at a time");
   await expect(page.locator("#table-query .table-query-actions #table-query-pager")).toBeVisible();
-  // Run and the pager share one bar in the controls pane: Run at the left, the pager at the right.
-  // The query as built sits in the right-hand pane.
+  // Run and the pager share one full-width bar under both panes: Run at the left, the pager at
+  // the right. The query as built sits in the right-hand pane above it.
   const dqlBox = await page.locator("#table-query-dql").boundingBox();
   const barBox = await page.locator("#table-query-actions").boundingBox();
   const runBox = await page.locator("#table-query-run").boundingBox();
   const pagerBox = await page.locator("#table-query-pager").boundingBox();
-  expect(dqlBox.x).toBeGreaterThanOrEqual(barBox.x + barBox.width);
+  const controlsBox = await page.locator("#table-query-controls").boundingBox();
+  const formBox = await page.locator("#table-query").boundingBox();
+  expect(barBox.y).toBeGreaterThanOrEqual(dqlBox.y + dqlBox.height);
+  expect(barBox.y).toBeGreaterThanOrEqual(controlsBox.y + controlsBox.height - 1);
+  expect(Math.abs(barBox.width - formBox.width)).toBeLessThan(2);
   expect(runBox.x - barBox.x).toBeLessThan(4);
   expect(Math.abs(barBox.x + barBox.width - (pagerBox.x + pagerBox.width))).toBeLessThan(4);
   expect(Math.abs(runBox.y + runBox.height / 2 - (pagerBox.y + pagerBox.height / 2))).toBeLessThan(4);
@@ -1761,13 +1765,14 @@ test("table browser splits controls from the query as built and its plan", async
   expect(taller.height).toBeGreaterThan(natural.height + 100);
   expect(Number(await page.evaluate(() => localStorage.getItem("dqlrs-web.table-query-height")))).toBe(Math.round(taller.height));
   await page.screenshot({ path: playwrightArtifact(`table-query-taller-${testInfo.project.name}.png`) });
-  // Shorter than its controls, the panel scrolls them; Run stays reachable.
+  // Shorter than its controls, the panel scrolls them; the Run bar stays in view under both panes.
   await page.locator("#table-query-height").focus();
   for (let i = 0; i < 12; i += 1) await page.keyboard.press("ArrowUp");
   const short = await panel.boundingBox();
   expect(short.height).toBeLessThan(natural.height);
-  await page.locator("#table-query-run").scrollIntoViewIfNeeded();
   await expect(page.locator("#table-query-run")).toBeInViewport();
+  const runBar = await page.locator("#table-query-actions").boundingBox();
+  expect(Math.abs(runBar.y + runBar.height - (short.y + short.height))).toBeLessThan(3);
   await page.locator("#table-query-height").dblclick();
   expect(Math.abs((await panel.boundingBox()).height - natural.height)).toBeLessThan(2);
   expect(await page.evaluate(() => localStorage.getItem("dqlrs-web.table-query-height"))).toBeNull();
