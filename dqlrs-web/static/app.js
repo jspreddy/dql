@@ -1117,6 +1117,8 @@ const TABLE_QUERY_SIDE_HIDDEN_KEY = "dqlrs-web.table-query-side-hidden";
 const TABLE_QUERY_SPLIT_DEFAULT = 0.6;
 // Dragging the right pane below this share of the panel hides it.
 const TABLE_QUERY_SIDE_MIN = 0.1;
+// The right pane is never wider than this share of the panel.
+const TABLE_QUERY_SIDE_MAX = 0.55;
 let tableQueryPane = "dql";
 let tableQueryDraft = { table: "", dql: "", error: "" };
 let tableExplainTimer = 0;
@@ -1124,7 +1126,7 @@ let tableExplainSeq = 0;
 
 function tableQuerySplitLimits() {
   const width = tableQueryForm.getBoundingClientRect().width;
-  const min = Math.min(360, Math.floor(width / 2));
+  const min = Math.max(Math.ceil(width * (1 - TABLE_QUERY_SIDE_MAX)), Math.min(360, Math.floor(width / 2)));
   const max = Math.max(min, Math.floor(width * (1 - TABLE_QUERY_SIDE_MIN)));
   return { width, min, max };
 }

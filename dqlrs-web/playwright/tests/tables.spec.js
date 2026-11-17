@@ -1713,6 +1713,15 @@ test("table browser splits controls from the query as built and its plan", async
   expect(narrower.width).toBeLessThan(controls.width - 100);
   const saved = await page.evaluate(() => Number(localStorage.getItem("dqlrs-web.table-query-split")));
   expect(Math.abs(saved - narrower.width / form.width)).toBeLessThan(0.01);
+  // The right pane stops at 55% of the panel, however far the divider is dragged.
+  const left = await page.locator("#table-query-resize").boundingBox();
+  await page.mouse.move(left.x + left.width / 2, left.y + left.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(form.x + 20, left.y + left.height / 2, { steps: 8 });
+  await page.mouse.up();
+  const widest = await page.locator(".table-query-side").boundingBox();
+  expect(widest.width / form.width).toBeLessThanOrEqual(0.551);
+  expect(widest.width / form.width).toBeGreaterThan(0.53);
   await page.locator("#table-query-resize").dblclick();
   const reset = await page.locator("#table-query-controls").boundingBox();
   expect(Math.abs(reset.width / form.width - 0.6)).toBeLessThan(0.01);
