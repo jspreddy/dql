@@ -117,7 +117,7 @@ One tooltip (`#lint-tip`) serves every `data-tip` and `title` in the page; `setT
 | slow | 400 ms | The item already says what it is; the tip only repeats or adds a little. | Both Run buttons, Run file, Stop, the endpoint, the table search hint, stat pills, resize grips, Close buttons, zoom in and out, theme, settings, new file, clear results, the inline run button, the Running mark |
 
 - `TIP_TIERS` in `app.js` lists the fast and slow selectors; anything else is medium. Put a new tip in a tier by the questions above, or set `data-tip-delay="fast|medium|slow"` on the element.
-- Moving straight from one shown tip to another shows the next at once. Leaving before the delay shows nothing.
+- Moving straight from one tip to another (within 300 ms of the last one hiding) shows the next at once. Leaving before the delay shows nothing.
 - Tips with their own code use `tipDelay()` too (the editor Run tip, the presence tip). The CSS-only cache tips wait 200 ms with the `tip-delay` animation.
 
 ### Script components

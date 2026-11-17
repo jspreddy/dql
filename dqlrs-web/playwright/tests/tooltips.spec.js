@@ -32,6 +32,8 @@ async function armTipClock(page) {
 async function tipDelay(page, locator) {
   await page.mouse.move(2, 790);
   await expect(page.locator("#lint-tip")).toBeHidden();
+  // Let the warm hand-off window from the last tip pass.
+  await page.waitForTimeout(350);
   await armTipClock(page);
   await locator.hover();
   await expect(page.locator("#lint-tip")).toBeVisible();
@@ -41,9 +43,8 @@ async function tipDelay(page, locator) {
 test("waits 100, 200, or 400 ms by how much the tip matters", async ({ page }, testInfo) => {
   // fast: a lint message is only readable in the tip.
   await replaceEditor(page, "SELEKT * FROM shelf;");
-  const gutter = page.locator("[data-testid='lint-gutter-error']");
-  await expect(gutter).toHaveCount(1);
-  const fast = await tipDelay(page, gutter);
+  await expect(page.locator("[data-testid='lint-gutter-error']")).toHaveCount(1);
+  const fast = await tipDelay(page, page.locator(".cm-line", { hasText: "SELEKT" }));
   await expect(page.locator("#lint-tip")).toHaveText(/expected a DQL statement/);
   // medium: an icon whose meaning is not obvious.
   const medium = await tipDelay(page, page.locator("#collapse-tree"));
@@ -68,7 +69,6 @@ test("data-tip-delay picks a tier, and an obvious item can opt back in", async (
 
 test("moving from a shown tip to the next shows it at once", async ({ page }) => {
   await tipDelay(page, page.locator("#collapse-tree"));
-  await armTipClock(page);
   const before = await page.evaluate(() => performance.now());
   await page.locator("#expand-tree").hover();
   await expect(page.locator("#lint-tip")).toHaveText("Expand all folders");

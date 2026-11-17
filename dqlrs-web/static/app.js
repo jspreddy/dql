@@ -464,10 +464,12 @@ function tipAnchor(node) {
   return lintHoverTarget(node);
 }
 
-// The tooltip waits tipDelay() before it shows. Moving straight from one tip to the next shows
-// the next one at once, as menus and toolbars do.
+// The tooltip waits tipDelay() before it shows. Moving straight from one tip to the next (within
+// TIP_WARM_MS of the last one hiding) shows the next one at once, as menus and toolbars do.
+const TIP_WARM_MS = 300;
 let pendingTip = null;
 let pendingTipTimer = 0;
+let tipHiddenAt = -Infinity;
 
 function cancelPendingTip() {
   clearTimeout(pendingTipTimer);
@@ -482,7 +484,8 @@ function scheduleTip(target) {
   }
   if (target === pendingTip) return;
   cancelPendingTip();
-  if (lintTipAnchor && lintTip && !lintTip.hidden) {
+  const shown = lintTipAnchor && lintTip && !lintTip.hidden;
+  if (shown || performance.now() - tipHiddenAt < TIP_WARM_MS) {
     placeLintTip(target);
     return;
   }
@@ -497,6 +500,7 @@ function scheduleTip(target) {
 
 function hideLintTip() {
   cancelPendingTip();
+  if (lintTipAnchor && lintTip && !lintTip.hidden) tipHiddenAt = performance.now();
   lintTipAnchor = null;
   if (!lintTip) return;
   lintTip.hidden = true;
