@@ -11,6 +11,9 @@ latest commit of each pull request, stacked ones included, names that pull reque
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [9325a89](https://github.com/jspreddy/dql/commit/9325a890d5efc158721a7255a2ab7b9b901f1eca) feat(changelog): one flat list of commits, PR numbers on each PR's latest commit ([#256](https://github.com/jspreddy/dql/pull/256))
+- [703e83f](https://github.com/jspreddy/dql/commit/703e83f36fc5db4727be24773fe5e7a4fd208d87) fix(changelog): list a pull request's commits newest first, like the rest
+- [d86c004](https://github.com/jspreddy/dql/commit/d86c004acc2325788f2303f82adebd3bf805483a) feat(changelog): list every commit a pull request brought in, grouped by stacked PR
 - [805e079](https://github.com/jspreddy/dql/commit/805e0797a5cb2c825064074984dbeb38b03f5a77) fix(web): hand tooltips off at once within 300 ms of the last one hiding ([#254](https://github.com/jspreddy/dql/pull/254))
 - [493174e](https://github.com/jspreddy/dql/commit/493174e55e49d0897a2b5084c4ce75a3a23f5337) feat(web): rank tooltips by obviousness too; tests and DESIGN.md notes
 - [1314b58](https://github.com/jspreddy/dql/commit/1314b5859dc31e92be0d2c2d525b3edd2405b06a) feat(web): delay tooltips 100, 200, or 400 ms by how much they matter (WIP)
