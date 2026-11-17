@@ -10,6 +10,7 @@ next bump, or to Unreleased when no later bump exists.
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [dceff0c](https://github.com/jspreddy/dql/commit/dceff0c23036a67c1fd2d97e6afa24b25a2d4f9a) docs: drop the post-PR just verify workflow step ([#237](https://github.com/jspreddy/dql/pull/237))
 - [f0998f5](https://github.com/jspreddy/dql/commit/f0998f564fc47220add1a32e1c6cf2b56eb19758) feat(web): run DynamoDB condition functions from the table picker ([#238](https://github.com/jspreddy/dql/pull/238))
 - [7c6717c](https://github.com/jspreddy/dql/commit/7c6717c9d61117f4fc01c15ec11c0a1e89af0cac) fix(web): put table pagination in the query toolbar ([#232](https://github.com/jspreddy/dql/pull/232))
 - [2d12875](https://github.com/jspreddy/dql/commit/2d128755822f3e0ae0f481e74cb0cdc3d5cb51eb) Table browser Keys mode for KEYS IN lookups ([#225](https://github.com/jspreddy/dql/pull/225))
