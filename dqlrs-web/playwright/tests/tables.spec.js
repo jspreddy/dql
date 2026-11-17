@@ -1746,4 +1746,29 @@ test("table browser splits controls from the query as built and its plan", async
   await expect(page.locator(".table-query-side")).toBeHidden();
   await page.locator("#table-query-side-toggle").click();
   await expect(page.locator(".table-query-side")).toBeVisible();
+
+  // The bottom edge resizes the panel's height (the results pane's divider), kept across reloads.
+  await page.evaluate(() => localStorage.removeItem("dqlrs-web.table-query-height"));
+  const panel = page.locator("#table-query");
+  const natural = await panel.boundingBox();
+  await expect(page.locator("#table-query-height .results-grip")).toHaveCount(1);
+  const edge = await page.locator("#table-query-height").boundingBox();
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2 + 120, { steps: 6 });
+  await page.mouse.up();
+  const taller = await panel.boundingBox();
+  expect(taller.height).toBeGreaterThan(natural.height + 100);
+  expect(Number(await page.evaluate(() => localStorage.getItem("dqlrs-web.table-query-height")))).toBe(Math.round(taller.height));
+  await page.screenshot({ path: playwrightArtifact(`table-query-taller-${testInfo.project.name}.png`) });
+  // Shorter than its controls, the panel scrolls them; Run stays reachable.
+  await page.locator("#table-query-height").focus();
+  for (let i = 0; i < 12; i += 1) await page.keyboard.press("ArrowUp");
+  const short = await panel.boundingBox();
+  expect(short.height).toBeLessThan(natural.height);
+  await page.locator("#table-query-run").scrollIntoViewIfNeeded();
+  await expect(page.locator("#table-query-run")).toBeInViewport();
+  await page.locator("#table-query-height").dblclick();
+  expect(Math.abs((await panel.boundingBox()).height - natural.height)).toBeLessThan(2);
+  expect(await page.evaluate(() => localStorage.getItem("dqlrs-web.table-query-height"))).toBeNull();
 });

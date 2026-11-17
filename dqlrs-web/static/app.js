@@ -1252,6 +1252,80 @@ tableQueryResize.addEventListener("keydown", (event) => {
   moveTableQuerySplit((current + (event.key === "ArrowRight" ? step : -step)) / total, true);
 });
 setTableQuerySideHidden(savedTableQuerySideHidden(), false);
+
+// The panel's height: its natural height until the bottom edge is dragged, then a fixed height
+// (the controls scroll inside it). Double-click goes back to the natural height.
+const tableQueryHeight = document.querySelector("#table-query-height");
+const TABLE_QUERY_HEIGHT_KEY = "dqlrs-web.table-query-height";
+
+function tableQueryHeightLimits() {
+  const view = document.querySelector("#tables-view").getBoundingClientRect().height;
+  const head = document.querySelector("#tables-view > .rows-head")?.getBoundingClientRect().height || 0;
+  const min = 120;
+  const max = Math.max(min, Math.floor(view - head - 120));
+  return { min, max };
+}
+
+function applyTableQueryHeight(height, persist) {
+  const { min, max } = tableQueryHeightLimits();
+  const next = Math.round(Math.min(max, Math.max(min, height)));
+  tableQueryForm.style.height = next + "px";
+  tableQueryHeight.setAttribute("aria-valuemin", String(min));
+  tableQueryHeight.setAttribute("aria-valuemax", String(max));
+  tableQueryHeight.setAttribute("aria-valuenow", String(next));
+  if (persist) storeTableQuery(TABLE_QUERY_HEIGHT_KEY, String(next));
+}
+
+function savedTableQueryHeight() {
+  try {
+    const saved = Number(localStorage.getItem(TABLE_QUERY_HEIGHT_KEY));
+    return Number.isFinite(saved) && saved > 0 ? saved : 0;
+  } catch {
+    return 0;
+  }
+}
+
+let tableQueryHeightDrag = null;
+tableQueryHeight.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  tableQueryHeight.setPointerCapture(event.pointerId);
+  tableQueryHeightDrag = { y: event.clientY, height: tableQueryForm.getBoundingClientRect().height };
+  document.body.classList.add("table-query-height-resizing");
+});
+tableQueryHeight.addEventListener("pointermove", (event) => {
+  if (!tableQueryHeightDrag) return;
+  applyTableQueryHeight(tableQueryHeightDrag.height + event.clientY - tableQueryHeightDrag.y, false);
+});
+function endTableQueryHeightDrag(event) {
+  if (!tableQueryHeightDrag) return;
+  if (event && tableQueryHeight.hasPointerCapture(event.pointerId)) {
+    tableQueryHeight.releasePointerCapture(event.pointerId);
+  }
+  tableQueryHeightDrag = null;
+  document.body.classList.remove("table-query-height-resizing");
+  applyTableQueryHeight(tableQueryForm.getBoundingClientRect().height, true);
+}
+tableQueryHeight.addEventListener("pointerup", endTableQueryHeightDrag);
+tableQueryHeight.addEventListener("pointercancel", endTableQueryHeightDrag);
+tableQueryHeight.addEventListener("dblclick", () => {
+  tableQueryForm.style.height = "";
+  storeTableQuery(TABLE_QUERY_HEIGHT_KEY, null);
+});
+tableQueryHeight.addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+  event.preventDefault();
+  const step = event.shiftKey ? 80 : 28;
+  const current = tableQueryForm.getBoundingClientRect().height;
+  applyTableQueryHeight(current + (event.key === "ArrowDown" ? step : -step), true);
+});
+// Restore a saved height once the panel is on screen (it is hidden until a table opens).
+let tableQueryHeightRestored = false;
+new ResizeObserver(() => {
+  if (tableQueryHeightRestored || !tableQueryForm.getBoundingClientRect().height) return;
+  tableQueryHeightRestored = true;
+  const saved = savedTableQueryHeight();
+  if (saved) applyTableQueryHeight(saved, false);
+}).observe(tableQueryForm);
 // The form is hidden until a table opens, so size it whenever it becomes visible or resizes.
 new ResizeObserver(() => {
   if (!tableQueryDrag && tableQueryForm.getBoundingClientRect().width) {

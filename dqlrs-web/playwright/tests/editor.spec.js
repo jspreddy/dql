@@ -117,7 +117,7 @@ test("switches the editor caret between black and white", async ({ page }) => {
 test("resizes the results pane from the top handle", async ({ page }) => {
   const results = page.locator("#results");
   const handle = page.locator("#results-resize");
-  const resultsGrip = page.locator(".results-grip");
+  const resultsGrip = page.locator("#results-resize .results-grip");
   const sideGrip = page.locator("#side-resize .side-grip");
   await expect(handle).toBeVisible();
   const gripColor = await themeColor(page, "--grip");

@@ -237,62 +237,65 @@
         <form id="table-query" class="table-query hidden" aria-label="Scan or query this table">
           <!-- Left: the controls. Right: the query as built and its plan. The divider resizes them. -->
           <div class="table-query-controls" id="table-query-controls">
-            <div class="table-query-toolbar">
-              <div class="table-query-lead">
-                <div class="table-query-seg" role="group" aria-label="Read type">
-                  <button type="button" id="table-query-scan" aria-pressed="true">Scan</button>
-                  <button type="button" id="table-query-query" aria-pressed="false">Query</button>
-                  <button type="button" id="table-query-keys-mode" aria-pressed="false">Keys</button>
+            <!-- Scrolls when the panel is shorter than its controls; the divider stays put. -->
+            <div class="table-query-controls-body">
+              <div class="table-query-toolbar">
+                <div class="table-query-lead">
+                  <div class="table-query-seg" role="group" aria-label="Read type">
+                    <button type="button" id="table-query-scan" aria-pressed="true">Scan</button>
+                    <button type="button" id="table-query-query" aria-pressed="false">Query</button>
+                    <button type="button" id="table-query-keys-mode" aria-pressed="false">Keys</button>
+                  </div>
+                  <label class="table-query-field" id="table-query-source-wrap">
+                    <span>Source</span>
+                    <select id="table-query-source" aria-label="Table or index"></select>
+                  </label>
                 </div>
-                <label class="table-query-field" id="table-query-source-wrap">
-                  <span>Source</span>
-                  <select id="table-query-source" aria-label="Table or index"></select>
-                </label>
-              </div>
-              <div class="table-query-seg" id="table-query-order" role="group" aria-label="Order">
-                <button type="button" id="table-query-forward" aria-pressed="true">Forward</button>
-                <button type="button" id="table-query-reverse" aria-pressed="false">Reverse</button>
-              </div>
-            </div>
-            <div class="table-query-section" id="table-query-key-section">
-              <div class="table-query-section-head">
-                <span>Key conditions</span>
-                <button type="button" id="table-query-add-key">Add</button>
-              </div>
-              <div id="table-query-keys" class="table-query-rows"></div>
-            </div>
-            <div class="table-query-section" id="table-query-filter-section">
-              <div class="table-query-section-head">
-                <span>Filters</span>
-                <button type="button" id="table-query-add-filter">Add</button>
-              </div>
-              <div id="table-query-filters" class="table-query-rows"></div>
-            </div>
-            <div class="table-query-section hidden" id="table-query-batch">
-              <div class="table-query-section-head">
-                <span id="table-query-batch-label">Keys</span>
-              </div>
-              <textarea id="table-query-batch-keys" data-testid="table-query-batch-keys" spellcheck="false" autocomplete="off" aria-label="Primary keys"></textarea>
-              <p class="table-query-hint" id="table-query-batch-hint"></p>
-            </div>
-            <!-- Run at the left, the pager at the right. -->
-            <div class="table-query-actions" id="table-query-actions">
-              <button type="submit" id="table-query-run" class="primary run-btn" aria-label="Run query">
-                <svg class="icon run-play" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/play_arrow.svg#icon"></use></svg>
-                <span class="run-shortcut"><span class="key-mod">Ctrl</span> + Enter</span>
-              </button>
-              <!-- While a page loads: Cancel. After it loads: rows, capacity, and time pills. -->
-              <button type="button" id="table-query-cancel" class="table-query-cancel" aria-keyshortcuts="Escape" hidden>Cancel</button>
-              <span id="table-query-stats" class="table-query-stats" aria-label="Last read"></span>
-              <div class="table-query-pager" id="table-query-pager">
-                <span id="page-label" class="meta"></span>
-                <div class="table-query-seg" role="group" aria-label="Page">
-                  <button type="button" id="page-prev">Previous</button>
-                  <button type="button" id="page-next">Next</button>
+                <div class="table-query-seg" id="table-query-order" role="group" aria-label="Order">
+                  <button type="button" id="table-query-forward" aria-pressed="true">Forward</button>
+                  <button type="button" id="table-query-reverse" aria-pressed="false">Reverse</button>
                 </div>
               </div>
+              <div class="table-query-section" id="table-query-key-section">
+                <div class="table-query-section-head">
+                  <span>Key conditions</span>
+                  <button type="button" id="table-query-add-key">Add</button>
+                </div>
+                <div id="table-query-keys" class="table-query-rows"></div>
+              </div>
+              <div class="table-query-section" id="table-query-filter-section">
+                <div class="table-query-section-head">
+                  <span>Filters</span>
+                  <button type="button" id="table-query-add-filter">Add</button>
+                </div>
+                <div id="table-query-filters" class="table-query-rows"></div>
+              </div>
+              <div class="table-query-section hidden" id="table-query-batch">
+                <div class="table-query-section-head">
+                  <span id="table-query-batch-label">Keys</span>
+                </div>
+                <textarea id="table-query-batch-keys" data-testid="table-query-batch-keys" spellcheck="false" autocomplete="off" aria-label="Primary keys"></textarea>
+                <p class="table-query-hint" id="table-query-batch-hint"></p>
+              </div>
+              <!-- Run at the left, the pager at the right. -->
+              <div class="table-query-actions" id="table-query-actions">
+                <button type="submit" id="table-query-run" class="primary run-btn" aria-label="Run query">
+                  <svg class="icon run-play" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/play_arrow.svg#icon"></use></svg>
+                  <span class="run-shortcut"><span class="key-mod">Ctrl</span> + Enter</span>
+                </button>
+                <!-- While a page loads: Cancel. After it loads: rows, capacity, and time pills. -->
+                <button type="button" id="table-query-cancel" class="table-query-cancel" aria-keyshortcuts="Escape" hidden>Cancel</button>
+                <span id="table-query-stats" class="table-query-stats" aria-label="Last read"></span>
+                <div class="table-query-pager" id="table-query-pager">
+                  <span id="page-label" class="meta"></span>
+                  <div class="table-query-seg" role="group" aria-label="Page">
+                    <button type="button" id="page-prev">Previous</button>
+                    <button type="button" id="page-next">Next</button>
+                  </div>
+                </div>
+              </div>
+              <p id="table-query-error" class="table-query-error" hidden></p>
             </div>
-            <p id="table-query-error" class="table-query-error" hidden></p>
             <div id="table-query-resize" class="side-resize table-query-resize" role="separator" aria-orientation="vertical" aria-label="Resize query panes" data-tip="Drag to resize" tabindex="0">
               <span class="side-grip" aria-hidden="true"></span>
             </div>
@@ -313,6 +316,10 @@
               <div id="table-query-explain" class="table-query-explain" data-testid="table-query-explain" role="tabpanel" aria-labelledby="table-query-tab-explain" hidden></div>
             </div>
           </section>
+          <!-- The bottom edge sets the panel's height, like the results pane's top edge. -->
+          <div id="table-query-height" class="results-resize table-query-height" role="separator" aria-orientation="horizontal" aria-label="Resize query panel" data-tip="Drag to resize the query panel" tabindex="0">
+            <span class="results-grip" aria-hidden="true"></span>
+          </div>
           <!-- At the panel's right end, so it stays put whether the right pane shows or not. -->
           <button type="button" id="table-query-side-toggle" class="icon-btn table-query-side-toggle" aria-pressed="true" aria-controls="table-query-side" aria-label="Hide the query as built and Explain">
             <svg class="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/view_sidebar.svg#icon"></use></svg>
