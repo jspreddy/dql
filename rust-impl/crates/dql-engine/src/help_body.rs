@@ -170,13 +170,15 @@ pub const SELECT: &str = r"
     WHERE can compare a.b.c and a[0].b on SELECT and SCAN.
     A relative SAVE path resolves the same way as a LOAD path.
 
-    Keys use one format in KEYS IN and in WHERE ... IN. A list (a, b, c) is hash
-    keys. A tuple (a, 1) is a (hash, range) pair, so it has at most two parts.
-    A list of tuples (a, 1), (b, 2) is pairs. Words without quotes are strings.
-    Whole keys are read with one batch get. On a table with a range key, a lone
-    hash value reads every item under that hash key.
-    SELECT ... WHERE hash IN (...) or WHERE (hash, range) IN ((...), ...) reads
-    keys the same way. Combined with other conditions, or on SCAN, it filters.
+    Keys use one format in KEYS IN and in WHERE ... IN.
+    A list such as a, b, c is hash keys.
+    A tuple such as (a, 1) is a (hash, range) pair, with at most two parts.
+    A list of tuples such as (a, 1), (b, 2) is pairs.
+    Words without quotes are strings.
+    Whole keys are read with one batch get.
+    On a table with a range key, a lone hash value reads every item under it.
+    A WHERE that is only hash IN (...) or (hash, range) IN (...) reads keys too.
+    With other conditions, or on SCAN, it is a filter.
 
     Examples
     --------
