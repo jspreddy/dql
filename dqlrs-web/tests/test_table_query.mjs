@@ -6,10 +6,13 @@ import {
   attributeLabel,
   batchKeyHint,
   buildReadStatement,
+  dedupeKeys,
   defaultReadState,
   ensureQueryKeys,
   filterAttributes,
   formatCondition,
+  keyHighlightSpans,
+  keyValueError,
   parseBatchKeys,
   quoteIdent,
   quoteValue,
@@ -168,7 +171,7 @@ test("parseBatchKeys reads hash lists and parenthesized pairs", () => {
   assert.deepEqual(parseBatchKeys(`("a", 1), ('b', 2)`).keys, [["a", "1"], ["b", "2"]]);
   assert.deepEqual(parseBatchKeys("ada, 1").keys, [["ada"], ["1"]]);
   assert.deepEqual(parseBatchKeys("(a)").keys, [["a"]]);
-  assert.deepEqual(parseBatchKeys("(a, b, c)").keys, [["a"], ["b"], ["c"]]);
+  assert.deepEqual(parseBatchKeys("(a, b, c)").errors, ["Line 1: a key has at most two parts: (hash, range)."]);
   assert.deepEqual(parseBatchKeys("((a,1), (d,4))").keys, [["a", "1"], ["d", "4"]]);
   assert.deepEqual(parseBatchKeys("(a,1), (b,2),").keys, [["a", "1"], ["b", "2"]]);
   assert.equal(parseBatchKeys("(a,1").errors[0], "Line 1 has an unclosed (.");
@@ -187,8 +190,8 @@ test("keys mode builds KEYS IN from the typed list", () => {
     "SELECT * FROM posts KEYS IN 'ada', 'tom'",
   );
   assert.equal(
-    buildReadStatement("posts", hashOnly, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, tom, sue)" }),
-    "SELECT * FROM posts KEYS IN 'ada', 'tom', 'sue'",
+    readError(hashOnly, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, tom, sue)" }),
+    "Line 1: a key has at most two parts: (hash, range).",
   );
   assert.equal(
     buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, 1)\n(tom, 3)" }),
@@ -202,9 +205,15 @@ test("keys mode builds KEYS IN from the typed list", () => {
     buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, 1), (tom, 3)," }),
     "SELECT * FROM posts KEYS IN ('ada', 1), ('tom', 3)",
   );
+  // A lone hash value on a range-key table reads every item under that hash key.
+  assert.equal(readError(table, { ...defaultReadState(), mode: "keys", batchKeys: "a,b,c" }), "");
   assert.equal(
-    readError(table, { ...defaultReadState(), mode: "keys", batchKeys: "ada, 1" }),
-    "Range keys go in parentheses: (hash, range).",
+    buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys: "a,b,c" }),
+    "SELECT * FROM posts KEYS IN 'a', 'b', 'c'",
+  );
+  assert.equal(
+    buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, 1), tom" }),
+    "SELECT * FROM posts KEYS IN ('ada', 1), 'tom'",
   );
   assert.equal(
     buildReadStatement("posts", table, {
@@ -240,4 +249,95 @@ test("query without hash metadata accepts a typed hash name", () => {
     buildReadStatement("posts", empty, state),
     "SELECT * FROM posts WHERE pk = 'ada'",
   );
+});
+
+test("keyValueError rejects text only for number keys", () => {
+  assert.equal(keyValueError("sk", "NUMBER", "abc"), 'sk is a number. "abc" is not.');
+  assert.equal(keyValueError("sk", "N", " x "), 'sk is a number. "x" is not.');
+  for (const ok of ["1", "-2", "+3", "4.5", ".5", "6.", "1e3", "2.5E-4", ""]) {
+    assert.equal(keyValueError("sk", "NUMBER", ok), "", ok);
+  }
+  assert.equal(keyValueError("id", "STRING", "anything at all"), "");
+  assert.equal(keyValueError("id", "", "abc"), "");
+});
+
+test("number keys are checked the same way in Keys, Query, and Scan", () => {
+  const numeric = {
+    name: "nums",
+    keys: [
+      { name: "n", role: "hash" },
+      { name: "sk", role: "range" },
+    ],
+    indexes: [{ name: "by-t", kind: "global", hashKey: "t", rangeKey: "" }],
+    attributes: [
+      { name: "n", type: "NUMBER" },
+      { name: "sk", type: "NUMBER" },
+      { name: "t", type: "NUMBER" },
+    ],
+  };
+  const keys = (batchKeys, source = "") => readError(numeric, { ...defaultReadState(), mode: "keys", batchKeys, source });
+  assert.equal(keys("(ada, 1)"), 'n is a number. "ada" is not.');
+  assert.equal(keys("(1, x)"), 'sk is a number. "x" is not.');
+  assert.equal(keys("('1', 2)"), "");
+  assert.equal(keys("open", "by-t"), 't is a number. "open" is not.');
+  assert.equal(keys("7", "by-t"), "");
+
+  const query = ensureQueryKeys(numeric, { ...defaultReadState(), mode: "query" });
+  query.keys[0].value = "abc";
+  assert.equal(readError(numeric, query), 'n is a number. "abc" is not.');
+  query.keys[0].value = "1";
+  query.keys.push({ id: "r", attribute: "sk", role: "range", op: "between", value: "1", value2: "z" });
+  assert.equal(readError(numeric, query), 'sk is a number. "z" is not.');
+  query.keys[1].value2 = "9";
+  assert.equal(readError(numeric, query), "");
+  query.keys[1].op = "begins_with";
+  query.keys[1].value = "z";
+  assert.equal(readError(numeric, query), "");
+
+  const scan = { ...defaultReadState(), mode: "scan", keys: [{ id: "s", attribute: "n", role: "hash", op: "gt", value: "x" }] };
+  assert.equal(readError(numeric, scan), 'n is a number. "x" is not.');
+
+  const strings = { ...numeric, attributes: numeric.attributes.map((attr) => ({ ...attr, type: "STRING" })) };
+  assert.equal(readError(strings, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, x)" }), "");
+});
+
+test("keys mode leaves out repeated keys and pairs a lone hash key covers", () => {
+  const keys = (batchKeys, source = "") =>
+    buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys, source });
+  assert.equal(keys("a, a, b"), "SELECT * FROM posts KEYS IN 'a', 'b'");
+  assert.equal(keys(`"a", a`), "SELECT * FROM posts KEYS IN 'a'");
+  // A repeated (hash, range) tuple, however it is written, is one key.
+  assert.equal(keys("(a, 1), (a, 1)"), "SELECT * FROM posts KEYS IN ('a', 1)");
+  assert.equal(keys(`(a, 1), ('a', 1), ("a", '1')`), "SELECT * FROM posts KEYS IN ('a', 1)");
+  assert.equal(keys("((a, 1), (a, 1), (b, 2))"), "SELECT * FROM posts KEYS IN ('a', 1), ('b', 2)");
+  assert.equal(keys("(a, 1)\n(b, 2)\n(a, 1)"), "SELECT * FROM posts KEYS IN ('a', 1), ('b', 2)");
+  assert.equal(keys("(a, 1), (b, 1), (a, 2)"), "SELECT * FROM posts KEYS IN ('a', 1), ('b', 1), ('a', 2)");
+  assert.equal(keys("(a, 1), (a, 1.0), (a, 2)"), "SELECT * FROM posts KEYS IN ('a', 1), ('a', 2)");
+  assert.equal(keys("(a, 1), a, (b, 1)"), "SELECT * FROM posts KEYS IN 'a', ('b', 1)");
+  assert.equal(
+    keys("open, open, shut", "by-status"),
+    "SELECT * FROM posts WHERE status = 'open' USING by-status; SELECT * FROM posts WHERE status = 'shut' USING by-status",
+  );
+  // A string range key keeps 1 and 1.0 apart: they are different strings.
+  const strings = { ...table, attributes: table.attributes.map((attr) => ({ ...attr, type: "STRING" })) };
+  assert.equal(dedupeKeys([["a", "1"], ["a", "1.0"]], strings).dropped, 0);
+  assert.deepEqual(dedupeKeys([["a", "1"], ["a", "1"]], strings), { keys: [["a", "1"]], dropped: 1 });
+  assert.deepEqual(dedupeKeys([["a"], ["a", "1"], ["a"]], table), { keys: [["a"]], dropped: 2 });
+});
+
+test("keyHighlightSpans marks keys, tuple parts, punctuation, and errors", () => {
+  const marks = (text) => {
+    const spans = keyHighlightSpans(text);
+    assert.equal(spans.map((span) => span.text).join(""), text, "covers every character");
+    return spans.filter((span) => span.kind).map((span) => `${span.text}:${span.kind}${span.key === null ? "" : "#" + span.key}`);
+  };
+  assert.deepEqual(marks("a, b"), ["a:hash#0", ",:punct", "b:hash#1"]);
+  assert.deepEqual(marks("(a, 1), c"), ["(:tuple#0", "a:hash#0", ",:punct#0", "1:range#0", "):tuple#0", ",:punct", "c:hash#1"]);
+  assert.deepEqual(marks("((a, 1))"), ["(:punct", "(:tuple#0", "a:hash#0", ",:punct#0", "1:range#0", "):tuple#0", "):punct"]);
+  assert.deepEqual(marks("new york\n(b, 2)"), ["new york:hash#0", "(:tuple#1", "b:hash#1", ",:punct#1", "2:range#1", "):tuple#1"]);
+  assert.deepEqual(marks("'x, y', z"), ["'x, y':hash#0", ",:punct", "z:hash#1"]);
+  assert.ok(marks("(a, b, c)").every((mark) => mark.includes(":error") || mark.includes(":punct")));
+  assert.deepEqual(marks("'open"), ["'open:error#0"]);
+  assert.deepEqual(marks("a)"), ["a:hash#0", "):error"]);
+  assert.deepEqual(marks(""), []);
 });

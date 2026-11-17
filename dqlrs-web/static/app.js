@@ -27,6 +27,7 @@ import {
 } from "./statement-text.js";
 import { unifiedDiff } from "./file-patch.js";
 import { attachTableQuery } from "./table-query.js";
+import { createKeysEditor } from "./keys-editor.js";
 import { createRowsCache } from "./table-rows-cache.js";
 
 const apiToken = document.querySelector('meta[name="dqlrs-token"]')?.content || "";
@@ -324,6 +325,61 @@ const lintTip = document.querySelector("#lint-tip");
 
 const RICH_TIP = ".presence-icon, #run, .table-cache, .describe-cache";
 
+// Tooltip delays (dqlrs-web/DESIGN.md, Tooltips). Two questions set the tier:
+// 1. How much does the tip matter? Is it the only way to read something (a lint message, a run
+//    error, a truncated value), or does it just name a control?
+// 2. How obvious is the item without it? An obvious item (a visible label, a universal icon such
+//    as close, zoom, trash, play, gear, sun/moon, a resize grip) moves one tier slower.
+// - fast (100 ms): the tip carries information the item does not show.
+// - medium (200 ms, the default): an icon whose meaning is not obvious, or a status whose detail
+//   is only in the tip.
+// - slow (400 ms): the item already says what it is; the tip only repeats or adds a little.
+// An element can set data-tip-delay="fast|medium|slow" to pick its tier.
+const TIP_DELAYS = { fast: 100, medium: 200, slow: 400 };
+const TIP_TIERS = {
+  fast: [
+    ".lint-gutter",
+    ".cm-line",
+    ".run-tree-summary",
+    ".schema-sample",
+    ".schema-pop-info",
+    ".key-icon",
+    ".table-match-note",
+    ".presence-icon",
+  ].join(", "),
+  slow: [
+    // Visible labels: the text already names the action or the value.
+    "#run",
+    "#table-query-run",
+    "#run-file",
+    "#stop",
+    "#endpoint",
+    "#table-search",
+    ".result-card-stat",
+    // Universal icons and grips.
+    ".side-resize",
+    ".results-resize",
+    "[id$='-close']",
+    "#mermaid-zoom-in",
+    "#mermaid-zoom-out",
+    "#theme-toggle",
+    "#settings-toggle",
+    "#new-file",
+    "#clear-results",
+    ".run-float",
+    ".node-running",
+  ].join(", "),
+};
+
+/** The delay before `target`'s tooltip shows: 100, 200, or 400 ms. */
+function tipDelay(target) {
+  const tier = target?.dataset?.tipDelay;
+  if (tier && TIP_DELAYS[tier]) return TIP_DELAYS[tier];
+  if (target?.matches?.(TIP_TIERS.fast)) return TIP_DELAYS.fast;
+  if (target?.matches?.(TIP_TIERS.slow)) return TIP_DELAYS.slow;
+  return TIP_DELAYS.medium;
+}
+
 function setTip(el, text) {
   if (!el) return;
   const value = String(text || "");
@@ -408,7 +464,43 @@ function tipAnchor(node) {
   return lintHoverTarget(node);
 }
 
+// The tooltip waits tipDelay() before it shows. Moving straight from one tip to the next (within
+// TIP_WARM_MS of the last one hiding) shows the next one at once, as menus and toolbars do.
+const TIP_WARM_MS = 300;
+let pendingTip = null;
+let pendingTipTimer = 0;
+let tipHiddenAt = -Infinity;
+
+function cancelPendingTip() {
+  clearTimeout(pendingTipTimer);
+  pendingTipTimer = 0;
+  pendingTip = null;
+}
+
+function scheduleTip(target) {
+  if (target === lintTipAnchor) {
+    placeLintTip(target);
+    return;
+  }
+  if (target === pendingTip) return;
+  cancelPendingTip();
+  const shown = lintTipAnchor && lintTip && !lintTip.hidden;
+  if (shown || performance.now() - tipHiddenAt < TIP_WARM_MS) {
+    placeLintTip(target);
+    return;
+  }
+  pendingTip = target;
+  pendingTipTimer = setTimeout(() => {
+    const next = pendingTip;
+    pendingTip = null;
+    pendingTipTimer = 0;
+    if (next && next.isConnected) placeLintTip(next);
+  }, tipDelay(target));
+}
+
 function hideLintTip() {
+  cancelPendingTip();
+  if (lintTipAnchor && lintTip && !lintTip.hidden) tipHiddenAt = performance.now();
   lintTipAnchor = null;
   if (!lintTip) return;
   lintTip.hidden = true;
@@ -442,12 +534,16 @@ document.addEventListener("pointerover", (event) => {
   absorbTitle(event.target);
   const target = tipAnchor(event.target);
   if (!target) {
+    if (pendingTip && !pendingTip.contains(event.target)) cancelPendingTip();
     if (lintTipAnchor && !lintTipAnchor.contains(event.target)) hideLintTip();
     return;
   }
-  placeLintTip(target);
+  scheduleTip(target);
 }, true);
 document.addEventListener("pointerout", (event) => {
+  if (pendingTip && pendingTip.contains(event.target) && !pendingTip.contains(event.relatedTarget)) {
+    cancelPendingTip();
+  }
   if (!lintTipAnchor || !lintTipAnchor.contains(event.target)) return;
   if (lintTipAnchor.contains(event.relatedTarget)) return;
   hideLintTip();
@@ -456,7 +552,7 @@ document.addEventListener("focusin", (event) => {
   absorbTitle(event.target);
   const target = tipAnchor(event.target);
   if (!target || target.classList.contains("cm-line")) return;
-  placeLintTip(target);
+  scheduleTip(target);
 });
 document.addEventListener("focusout", (event) => {
   if (!lintTipAnchor || lintTipAnchor.contains(event.relatedTarget)) return;
@@ -693,7 +789,7 @@ function showRunTip() {
 }
 runButton.addEventListener("pointerenter", () => {
   hideRunTip();
-  runTipTimer = setTimeout(showRunTip, 1000);
+  runTipTimer = setTimeout(showRunTip, tipDelay(runButton));
 });
 runButton.addEventListener("pointerleave", hideRunTip);
 runButton.addEventListener("pointerdown", hideRunTip);
@@ -1104,7 +1200,340 @@ document.querySelector("#refresh-tables").addEventListener("click", () => {
 });
 document.querySelector("#page-prev").addEventListener("click", () => changePage(-1));
 document.querySelector("#page-next").addEventListener("click", () => changePage(1));
+// The table query panel: controls at the left, and at the right the query as built and its
+// plan (Explain). The divider between them works like the main side divider.
+const tableQueryForm = document.querySelector("#table-query");
+const tableQueryControls = document.querySelector("#table-query-controls");
+const tableQueryResize = document.querySelector("#table-query-resize");
+const tableQueryExplain = document.querySelector("#table-query-explain");
+const tableQuerySideToggle = document.querySelector("#table-query-side-toggle");
+const TABLE_QUERY_SPLIT_KEY = "dqlrs-web.table-query-split";
+const TABLE_QUERY_SIDE_HIDDEN_KEY = "dqlrs-web.table-query-side-hidden";
+const TABLE_QUERY_SPLIT_DEFAULT = 0.6;
+// Dragging the right pane below this share of the panel hides it.
+const TABLE_QUERY_SIDE_MIN = 0.1;
+// The right pane is never wider than this share of the panel.
+const TABLE_QUERY_SIDE_MAX = 0.55;
+let tableQueryPane = "dql";
+let tableQueryDraft = { table: "", dql: "", error: "" };
+let tableExplainTimer = 0;
+let tableExplainSeq = 0;
+
+function tableQuerySplitLimits() {
+  const width = tableQueryForm.getBoundingClientRect().width;
+  const min = Math.max(Math.ceil(width * (1 - TABLE_QUERY_SIDE_MAX)), Math.min(360, Math.floor(width / 2)));
+  const max = Math.max(min, Math.floor(width * (1 - TABLE_QUERY_SIDE_MIN)));
+  return { width, min, max };
+}
+
+function storeTableQuery(key, value) {
+  try {
+    if (value == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    /* the panel still works for this page */
+  }
+}
+
+function tableQuerySideHidden() {
+  return tableQueryForm.classList.contains("side-hidden");
+}
+
+/** Show or hide the right pane. Hidden, the controls take the whole panel. */
+function setTableQuerySideHidden(hidden, persist) {
+  tableQueryForm.classList.toggle("side-hidden", hidden);
+  tableQuerySideToggle.setAttribute("aria-pressed", hidden ? "false" : "true");
+  const label = hidden ? "Show the query as built and Explain" : "Hide the query as built and Explain";
+  tableQuerySideToggle.setAttribute("aria-label", label);
+  setTip(tableQuerySideToggle, label);
+  if (persist) storeTableQuery(TABLE_QUERY_SIDE_HIDDEN_KEY, hidden ? "1" : null);
+  if (hidden) {
+    tableQueryControls.style.width = "";
+    clearTimeout(tableExplainTimer);
+    tableExplainSeq += 1;
+  } else {
+    applyTableQuerySplit(savedTableQuerySplit(), false);
+    if (tableQueryPane === "explain") loadTableExplain();
+  }
+}
+
+/** Set the controls pane to `fraction` of the panel, kept between the limits. */
+function applyTableQuerySplit(fraction, persist) {
+  const { width, min, max } = tableQuerySplitLimits();
+  if (!width || tableQuerySideHidden()) return;
+  const px = Math.min(max, Math.max(min, Math.round(fraction * width)));
+  const next = px / width;
+  tableQueryControls.style.width = (next * 100).toFixed(2) + "%";
+  tableQueryResize.setAttribute("aria-valuemin", String(Math.round((min / width) * 100)));
+  tableQueryResize.setAttribute("aria-valuemax", String(Math.round((max / width) * 100)));
+  tableQueryResize.setAttribute("aria-valuenow", String(Math.round(next * 100)));
+  if (persist) storeTableQuery(TABLE_QUERY_SPLIT_KEY, next.toFixed(4));
+}
+
+function savedTableQuerySplit() {
+  let saved = NaN;
+  try {
+    saved = Number(localStorage.getItem(TABLE_QUERY_SPLIT_KEY));
+  } catch {
+    /* fall back to the default */
+  }
+  return Number.isFinite(saved) && saved > 0 && saved <= 1 - TABLE_QUERY_SIDE_MIN ? saved : TABLE_QUERY_SPLIT_DEFAULT;
+}
+
+function savedTableQuerySideHidden() {
+  try {
+    return localStorage.getItem(TABLE_QUERY_SIDE_HIDDEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+tableQuerySideToggle.addEventListener("click", () => setTableQuerySideHidden(!tableQuerySideHidden(), true));
+
+let tableQueryDrag = null;
+tableQueryResize.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  tableQueryResize.setPointerCapture(event.pointerId);
+  tableQueryDrag = { x: event.clientX, width: tableQueryControls.getBoundingClientRect().width };
+  document.body.classList.add("table-query-resizing");
+});
+/** Drag or key the controls pane to `fraction`; past the last 10% the right pane hides. */
+function moveTableQuerySplit(fraction, persist) {
+  const hide = 1 - fraction < TABLE_QUERY_SIDE_MIN;
+  if (hide !== tableQuerySideHidden()) {
+    if (hide) setTableQuerySideHidden(true, persist);
+    else {
+      tableQueryForm.classList.remove("side-hidden");
+      setTableQuerySideHidden(false, persist);
+    }
+  }
+  if (!hide) applyTableQuerySplit(fraction, persist);
+}
+
+tableQueryResize.addEventListener("pointermove", (event) => {
+  if (!tableQueryDrag) return;
+  const total = tableQueryForm.getBoundingClientRect().width;
+  moveTableQuerySplit((tableQueryDrag.width + event.clientX - tableQueryDrag.x) / total, false);
+});
+function endTableQueryDrag(event) {
+  if (!tableQueryDrag) return;
+  if (event && tableQueryResize.hasPointerCapture(event.pointerId)) {
+    tableQueryResize.releasePointerCapture(event.pointerId);
+  }
+  tableQueryDrag = null;
+  document.body.classList.remove("table-query-resizing");
+  if (tableQuerySideHidden()) {
+    storeTableQuery(TABLE_QUERY_SIDE_HIDDEN_KEY, "1");
+    return;
+  }
+  storeTableQuery(TABLE_QUERY_SIDE_HIDDEN_KEY, null);
+  const total = tableQueryForm.getBoundingClientRect().width;
+  applyTableQuerySplit(tableQueryControls.getBoundingClientRect().width / total, true);
+}
+tableQueryResize.addEventListener("pointerup", endTableQueryDrag);
+tableQueryResize.addEventListener("pointercancel", endTableQueryDrag);
+tableQueryResize.addEventListener("dblclick", () => {
+  storeTableQuery(TABLE_QUERY_SPLIT_KEY, null);
+  storeTableQuery(TABLE_QUERY_SIDE_HIDDEN_KEY, null);
+  if (tableQuerySideHidden()) setTableQuerySideHidden(false, false);
+  applyTableQuerySplit(TABLE_QUERY_SPLIT_DEFAULT, false);
+});
+tableQueryResize.addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  event.preventDefault();
+  const total = tableQueryForm.getBoundingClientRect().width;
+  const step = event.shiftKey ? 80 : 28;
+  const current = tableQueryControls.getBoundingClientRect().width;
+  moveTableQuerySplit((current + (event.key === "ArrowRight" ? step : -step)) / total, true);
+});
+setTableQuerySideHidden(savedTableQuerySideHidden(), false);
+
+// The panel's height: its natural height until the bottom edge is dragged, then a fixed height
+// (the controls scroll inside it). Double-click goes back to the natural height.
+const tableQueryHeight = document.querySelector("#table-query-height");
+const TABLE_QUERY_HEIGHT_KEY = "dqlrs-web.table-query-height";
+
+function tableQueryHeightLimits() {
+  const view = document.querySelector("#tables-view").getBoundingClientRect().height;
+  const head = document.querySelector("#tables-view > .rows-head")?.getBoundingClientRect().height || 0;
+  const min = 120;
+  const max = Math.max(min, Math.floor(view - head - 120));
+  return { min, max };
+}
+
+function applyTableQueryHeight(height, persist) {
+  const { min, max } = tableQueryHeightLimits();
+  const next = Math.round(Math.min(max, Math.max(min, height)));
+  tableQueryForm.style.height = next + "px";
+  tableQueryHeight.setAttribute("aria-valuemin", String(min));
+  tableQueryHeight.setAttribute("aria-valuemax", String(max));
+  tableQueryHeight.setAttribute("aria-valuenow", String(next));
+  if (persist) storeTableQuery(TABLE_QUERY_HEIGHT_KEY, String(next));
+}
+
+function savedTableQueryHeight() {
+  try {
+    const saved = Number(localStorage.getItem(TABLE_QUERY_HEIGHT_KEY));
+    return Number.isFinite(saved) && saved > 0 ? saved : 0;
+  } catch {
+    return 0;
+  }
+}
+
+let tableQueryHeightDrag = null;
+tableQueryHeight.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  tableQueryHeight.setPointerCapture(event.pointerId);
+  tableQueryHeightDrag = { y: event.clientY, height: tableQueryForm.getBoundingClientRect().height };
+  document.body.classList.add("table-query-height-resizing");
+});
+tableQueryHeight.addEventListener("pointermove", (event) => {
+  if (!tableQueryHeightDrag) return;
+  applyTableQueryHeight(tableQueryHeightDrag.height + event.clientY - tableQueryHeightDrag.y, false);
+});
+function endTableQueryHeightDrag(event) {
+  if (!tableQueryHeightDrag) return;
+  if (event && tableQueryHeight.hasPointerCapture(event.pointerId)) {
+    tableQueryHeight.releasePointerCapture(event.pointerId);
+  }
+  tableQueryHeightDrag = null;
+  document.body.classList.remove("table-query-height-resizing");
+  applyTableQueryHeight(tableQueryForm.getBoundingClientRect().height, true);
+}
+tableQueryHeight.addEventListener("pointerup", endTableQueryHeightDrag);
+tableQueryHeight.addEventListener("pointercancel", endTableQueryHeightDrag);
+tableQueryHeight.addEventListener("dblclick", () => {
+  tableQueryForm.style.height = "";
+  storeTableQuery(TABLE_QUERY_HEIGHT_KEY, null);
+});
+tableQueryHeight.addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+  event.preventDefault();
+  const step = event.shiftKey ? 80 : 28;
+  const current = tableQueryForm.getBoundingClientRect().height;
+  applyTableQueryHeight(current + (event.key === "ArrowDown" ? step : -step), true);
+});
+// Restore a saved height once the panel is on screen (it is hidden until a table opens).
+let tableQueryHeightRestored = false;
+new ResizeObserver(() => {
+  if (tableQueryHeightRestored || !tableQueryForm.getBoundingClientRect().height) return;
+  tableQueryHeightRestored = true;
+  const saved = savedTableQueryHeight();
+  if (saved) applyTableQueryHeight(saved, false);
+}).observe(tableQueryForm);
+// The form is hidden until a table opens, so size it whenever it becomes visible or resizes.
+new ResizeObserver(() => {
+  if (!tableQueryDrag && tableQueryForm.getBoundingClientRect().width) {
+    applyTableQuerySplit(savedTableQuerySplit(), false);
+  }
+}).observe(tableQueryForm);
+
+// Tabs: "Query as built" shows the DQL; "Explain" shows the plan of what Run would read. The
+// JSON box beside the tabs (Explain only) swaps the plan for its raw JSON, like the editor's.
+const tableQueryTabs = [...document.querySelectorAll(".table-query-side .result-tab")];
+const tableQueryJson = document.querySelector("#table-query-json");
+const tableQueryJsonInput = tableQueryJson.querySelector("input");
+tableQueryJsonInput.checked = localStorage.getItem(EXPLAIN_JSON_KEY) === "1";
+tableQueryJsonInput.addEventListener("change", () => {
+  localStorage.setItem(EXPLAIN_JSON_KEY, tableQueryJsonInput.checked ? "1" : "0");
+  for (const card of tableQueryExplain.querySelectorAll(".explain")) {
+    card.classList.toggle("raw", tableQueryJsonInput.checked);
+  }
+});
+function selectTableQueryPane(pane) {
+  tableQueryPane = pane;
+  for (const tab of tableQueryTabs) {
+    const active = tab.dataset.pane === pane;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+    tab.tabIndex = active ? 0 : -1;
+  }
+  document.querySelector("#table-query-dql").hidden = pane !== "dql";
+  tableQueryExplain.hidden = pane !== "explain";
+  tableQueryJson.hidden = pane !== "explain";
+  if (pane === "explain" && !tableQuerySideHidden()) loadTableExplain();
+}
+for (const tab of tableQueryTabs) {
+  tab.addEventListener("click", () => selectTableQueryPane(tab.dataset.pane));
+  tab.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const index = tableQueryTabs.indexOf(tab);
+    const next = tableQueryTabs[(index + (event.key === "ArrowRight" ? 1 : tableQueryTabs.length - 1)) % tableQueryTabs.length];
+    selectTableQueryPane(next.dataset.pane);
+    next.focus();
+  });
+}
+
+function scheduleTableExplain() {
+  clearTimeout(tableExplainTimer);
+  tableExplainTimer = setTimeout(loadTableExplain, 300);
+}
+
+async function loadTableExplain() {
+  clearTimeout(tableExplainTimer);
+  if (tableQueryPane !== "explain" || tableQuerySideHidden()) return;
+  const { table, dql, error } = tableQueryDraft;
+  const seq = ++tableExplainSeq;
+  if (!table) {
+    tableQueryExplain.replaceChildren(note("Open a table to see its plan.", false));
+    return;
+  }
+  if (error) {
+    tableQueryExplain.replaceChildren(note(error, true));
+    return;
+  }
+  tableQueryExplain.replaceChildren(note("Explaining…", false));
+  try {
+    const query = new URLSearchParams({ table });
+    if (dql) query.set("dql", dql);
+    const payload = await api("/api/explain?" + query.toString());
+    if (seq !== tableExplainSeq) return;
+    const parts = [];
+    for (const item of payload.plans || []) {
+      const steps = parseExplainPlan(item.plan || "");
+      if (payload.plans.length > 1) {
+        const label = document.createElement("p");
+        label.className = "table-query-explain-statement";
+        label.textContent = item.statement;
+        parts.push(label);
+      }
+      if (steps) {
+        parts.push(explainPlan(steps, { head: false }));
+      } else {
+        const raw = document.createElement("pre");
+        raw.className = "table-query-dql";
+        raw.textContent = item.plan || "";
+        parts.push(raw);
+      }
+    }
+    for (const part of parts) {
+      if (part.classList.contains("explain")) part.classList.toggle("raw", tableQueryJsonInput.checked);
+    }
+    tableQueryExplain.replaceChildren(...(parts.length ? parts : [note("No plan.", false)]));
+  } catch (error2) {
+    if (seq !== tableExplainSeq) return;
+    tableQueryExplain.replaceChildren(note(error2.message, true));
+  }
+}
+
+// The table browser's Run matches the editor's: same button, and Ctrl+Enter (⌘+Enter on a Mac)
+// from anywhere in the form. The Keys editor handles the key itself and marks it handled.
+const tableQueryRun = document.querySelector("#table-query-run");
+tableQueryRun.setAttribute("aria-keyshortcuts", macShortcut ? "Meta+Enter" : "Control+Enter");
+setTip(tableQueryRun, `Run query (${modLabel} + Enter)`);
+document.querySelector("#table-query").addEventListener("keydown", (event) => {
+  if (event.defaultPrevented || event.key !== "Enter" || !(macShortcut ? event.metaKey : event.ctrlKey)) return;
+  event.preventDefault();
+  if (!tableQueryRun.disabled) tableQueryRun.click();
+});
 const tableQuery = attachTableQuery(document.querySelector("#table-query"), {
+  createKeysEditor,
+  onChange({ table, dql, error }) {
+    tableQueryDraft = { table: table?.name || state.table || "", dql: dql || "", error: error || "" };
+    // Explain runs only while its tab is showing.
+    if (tableQueryPane === "explain" && !tableQuerySideHidden()) scheduleTableExplain();
+  },
   onRun({ dql }) {
     state.tableDql = dql || "";
     state.page = 0;
@@ -2739,7 +3168,7 @@ lintStatus?.addEventListener("click", () => {
 });
 
 function syncResultTabs() {
-  for (const tab of document.querySelectorAll(".result-tab")) {
+  for (const tab of document.querySelectorAll("#results .result-tab")) {
     const on = tab.dataset.pane === resultPane;
     tab.classList.toggle("is-active", on);
     tab.setAttribute("aria-selected", on ? "true" : "false");
@@ -2754,7 +3183,7 @@ function selectResultPane(pane) {
   renderActivePane();
 }
 
-document.querySelector(".result-tabs")?.addEventListener("click", (event) => {
+document.querySelector("#results .result-tabs")?.addEventListener("click", (event) => {
   const tab = event.target.closest(".result-tab");
   if (!tab) return;
   selectResultPane(tab.dataset.pane);
@@ -3421,15 +3850,20 @@ function placePresenceTip(icon) {
   tip.style.left = left + "px";
 }
 
+let presenceTipTimer = 0;
 document.addEventListener("mouseover", (event) => {
   const icon = event.target.closest && event.target.closest(".presence-icon");
-  if (!icon) return;
-  placePresenceTip(icon);
+  if (!icon || icon === presenceTipAnchor) return;
+  clearTimeout(presenceTipTimer);
+  presenceTipTimer = setTimeout(() => {
+    if (icon.isConnected) placePresenceTip(icon);
+  }, tipDelay(icon));
 });
 
 document.addEventListener("mouseout", (event) => {
   const icon = event.target.closest && event.target.closest(".presence-icon");
   if (!icon || icon.contains(event.relatedTarget)) return;
+  clearTimeout(presenceTipTimer);
   if (presenceTipAnchor === icon) hidePresenceTip();
 });
 
@@ -3776,7 +4210,14 @@ const runPopStatus = document.querySelector("#run-pop-status");
 const runPopStart = document.querySelector("#run-pop-start");
 const runPopCancel = document.querySelector("#run-pop-cancel");
 const runPopStop = document.querySelector("#run-pop-stop");
+const runPopScroll = document.querySelector("#run-pop-scroll");
 let runDialog = null;
+// Run is Ctrl+Enter (⌘+Enter on a Mac), as in the editor. Esc cancels, stops a run, or closes.
+runPopStart.setAttribute("aria-keyshortcuts", macShortcut ? "Meta+Enter" : "Control+Enter");
+
+function setRunPopLabel(button, text) {
+  button.querySelector(".btn-label").textContent = text;
+}
 
 async function runTargetDocuments(path, kind) {
   if (kind === "dir") return folderDocuments(path);
@@ -3820,11 +4261,12 @@ async function openRunDialog(path, kind) {
   runPopStatus.textContent = "";
   runPopStart.hidden = false;
   runPopStart.disabled = !runnable.length;
-  runPopStart.textContent = runnable.length === 1 ? "Run 1 file" : `Run ${runnable.length} files`;
-  runPopCancel.textContent = "Cancel";
+  setRunPopLabel(runPopStart, runnable.length === 1 ? "Run 1 file" : `Run ${runnable.length} files`);
+  setRunPopLabel(runPopCancel, "Cancel");
   runPopCancel.hidden = false;
   runPopStop.hidden = true;
   runPop.showModal();
+  runPopScroll.scrollTop = 0;
   (runnable.length ? runPopStart : runPopCancel).focus();
 }
 
@@ -3895,7 +4337,7 @@ async function startRunDialog() {
   runPopStatus.textContent = status.charAt(0).toUpperCase() + status.slice(1);
   runPopStop.hidden = true;
   runPopCancel.hidden = false;
-  runPopCancel.textContent = "Close";
+  setRunPopLabel(runPopCancel, "Close");
   runPopCancel.focus();
 }
 
@@ -3908,6 +4350,11 @@ document.querySelector("#run-pop-close").addEventListener("click", () => {
   runPop.close();
 });
 runPopStop.addEventListener("click", stopRun);
+runPop.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || !(macShortcut ? event.metaKey : event.ctrlKey)) return;
+  event.preventDefault();
+  if (!runPopStart.hidden && !runPopStart.disabled) void startRunDialog();
+});
 runPop.addEventListener("cancel", (event) => {
   // Escape during a run stops it (the window handler); the dialog stays to show the result.
   if (runDialog?.running) event.preventDefault();
@@ -4384,7 +4831,9 @@ function explainRows(step) {
   return rows;
 }
 
-function explainPlan(steps) {
+/** The plan card. `head: false` leaves out the "Explain" title and JSON box, for a host that has
+ * its own (the table query pane puts the JSON box on its tab bar). */
+function explainPlan(steps, { head: withHead = true } = {}) {
   const card = document.createElement("section");
   card.className = "explain";
   card.dataset.testid = "explain-plan";
@@ -4417,7 +4866,7 @@ function explainPlan(steps) {
     for (const field of explainRows(step)) row[field.label] = field.value;
     return row;
   }), null, 2);
-  card.append(head, json);
+  card.append(...(withHead ? [head] : []), json);
   for (const step of steps) {
     const row = document.createElement("div");
     row.className = "explain-step";
@@ -5772,6 +6221,7 @@ function clearRows() {
   document.querySelector("#page-next").disabled = true;
   document.querySelector("#rows-body").replaceChildren();
   setBrowserSchema(null);
+  document.querySelector("#table-query-stats").replaceChildren();
 }
 
 function rowAttributeNames(payload) {
@@ -5800,14 +6250,60 @@ function paintRowPage(payload) {
   tableQuery.addAttributes(rowAttributeNames(payload));
   body.replaceChildren(dataTable(rows, "rows-table", payload.columns));
   body.scrollTop = 0;
+  paintRowStats(payload);
   setBrowserSchema(rows.length || (payload.columns || []).length ? {
     table: payload.name || state.table,
     title: payload.name || state.table,
   } : null);
 }
 
+// Next to Run: Cancel while a page loads, then the page's rows, capacity, and time as pills.
+const tableQueryCancel = document.querySelector("#table-query-cancel");
+const tableQueryStats = document.querySelector("#table-query-stats");
+let rowsAbort = null;
+
+function paintRowStats(payload) {
+  const chips = [];
+  if (payload) {
+    const count = (payload.items || []).length;
+    chips.push(statChip(count + (count === 1 ? " row" : " rows"), "table-query-count", "Rows on this page"));
+    const capacity = formatCapacity(payload.read_units, payload.write_units);
+    if (capacity) chips.push(statChip(capacity, "table-query-capacity", "Consumed capacity"));
+    const elapsed = formatElapsed(payload.elapsed_ms);
+    if (elapsed) chips.push(statChip(elapsed, "table-query-time", "Elapsed time"));
+  }
+  tableQueryStats.replaceChildren(...chips);
+}
+
+function setRowsLoading(controller) {
+  rowsAbort = controller;
+  tableQueryCancel.hidden = !controller;
+  if (controller) tableQueryStats.replaceChildren();
+}
+
+function cancelRows() {
+  if (!rowsAbort) return;
+  const controller = rowsAbort;
+  setRowsLoading(null);
+  controller.byUser = true;
+  controller.abort();
+  // The server stops the read like an editor run's Stop.
+  api("/api/stop", { method: "POST" }).catch(() => {});
+}
+
+tableQueryCancel.addEventListener("click", cancelRows);
+document.querySelector("#tables-view").addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !rowsAbort) return;
+  event.preventDefault();
+  cancelRows();
+});
+
 async function loadRows() {
   closeRowPop();
+  if (rowsAbort) {
+    rowsAbort.abort();
+    setRowsLoading(null);
+  }
   if (!state.table) return;
   const body = document.querySelector("#rows-body");
   document.querySelector("#rows-title").textContent = state.table;
@@ -5823,16 +6319,25 @@ async function loadRows() {
   const generation = rowsCache.generation;
   body.replaceChildren(note("Loading…", false));
   setBrowserSchema(null);
+  const controller = new AbortController();
+  setRowsLoading(controller);
   try {
     const query = new URLSearchParams({ table, page: String(page) });
     if (dql) query.set("dql", dql);
-    const payload = await api("/api/rows?" + query.toString());
+    const payload = await api("/api/rows?" + query.toString(), { signal: controller.signal });
+    if (rowsAbort === controller) setRowsLoading(null);
     if (rowsCache.generation !== generation) return;
     rowsCache.set(table, dql, page, payload);
     if (state.table === table && state.tableDql === dql && state.page === page) {
       paintRowPage(payload);
     }
   } catch (error) {
+    if (rowsAbort === controller) setRowsLoading(null);
+    if (controller.signal.aborted) {
+      // Cancel leaves a note; a newer read that replaced this one paints its own rows.
+      if (controller.byUser) body.replaceChildren(note("Read cancelled.", false));
+      return;
+    }
     if (rowsCache.generation !== generation) return;
     if (state.table === table && state.tableDql === dql && state.page === page) {
       body.replaceChildren(note(error.message, true));
@@ -5921,6 +6426,7 @@ async function api(url, options = {}) {
     method: options.method || "GET",
     headers: options.body ? { "Content-Type": "application/json" } : undefined,
     body: options.body ? JSON.stringify(options.body) : undefined,
+    signal: options.signal,
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw tokenError(response, payload);

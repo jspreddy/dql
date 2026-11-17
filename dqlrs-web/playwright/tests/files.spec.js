@@ -132,7 +132,7 @@ test("uses Noto Sans for interface text and keeps code in the monospace font", a
 
   await reveal(page, "queries/read.dql");
   await node(page, "queries/read.dql").click();
-  const editor = await page.locator(".cm-scroller").evaluate((el) => getComputedStyle(el).fontFamily);
+  const editor = await page.locator("#editor .cm-scroller").evaluate((el) => getComputedStyle(el).fontFamily);
   expect(editor).not.toContain("Noto Sans");
   expect(editor).toContain("ui-monospace");
 });

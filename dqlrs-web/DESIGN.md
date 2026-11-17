@@ -78,7 +78,8 @@ The action in a dialog or a form. 32px tall.
 | `.btn.btn-danger` | Deletes, overwrites, or stops work: Delete, Stop |
 
 - Label with a verb that says what happens: "Delete", "Run 1 file". Not "OK" or "Yes".
-- Order: quiet actions first, the primary action last (bottom right).
+- Order: quiet actions first, the primary action last (bottom right). An action bar at the top of a sheet (the run dialog) keeps that order but aligns left.
+- A button with a keyboard shortcut shows it after the label: `<span class="btn-label">Run</span><kbd class="btn-kbd">Esc</kbd>`, plus `aria-keyshortcuts`. Use a `.key-mod` span for Ctrl, so a Mac shows ⌘.
 - A destructive confirm focuses Cancel, not the destructive button.
 
 ### Icon button (`.icon-btn`)
@@ -102,9 +103,26 @@ Ask with `createConfirmDialog` and `createPromptDialog` from `dialogs.js`. Never
 
 The 22px controls in the top bar, the side header, the pane headers, and the pager are styled in `app.css` (`.side-head button`, `.pager button`, `.primary`, `.file-filter`). They are outlined, 4px radius, and regular weight, so they read as chrome, not as dialog actions.
 
+### Tooltips
+
+One tooltip (`#lint-tip`) serves every `data-tip` and `title` in the page; `setTip(el, text)` sets one. It waits before it shows, by two questions:
+
+1. **How much does the tip matter?** Is it the only way to read something, or does it just name a control?
+2. **How obvious is the item without it?** An obvious item, such as a visible label, a universal icon (close, zoom, trash, play, gear, sun or moon), or a resize grip, moves one tier slower.
+
+| Tier | Delay | For | Examples |
+| --- | --- | --- | --- |
+| fast | 100 ms | The tip carries information the item does not show. | Lint messages in the gutter and on a line, run-dialog file errors, truncated sample values, the structure info icon, key icons, the table-match note, who else is connected |
+| medium | 200 ms | The default: an icon whose meaning is not obvious, or a status whose detail is only in the tip. | Collapse and expand folders, refresh tables, group tables, structure buttons, show query, row JSON, the right-pane toggle, diagram fit and full screen, run status marks, the lint status, the table-cache and describe-cache tips |
+| slow | 400 ms | The item already says what it is; the tip only repeats or adds a little. | Both Run buttons, Run file, Stop, the endpoint, the table search hint, stat pills, resize grips, Close buttons, zoom in and out, theme, settings, new file, clear results, the inline run button, the Running mark |
+
+- `TIP_TIERS` in `app.js` lists the fast and slow selectors; anything else is medium. Put a new tip in a tier by the questions above, or set `data-tip-delay="fast|medium|slow"` on the element.
+- Moving straight from one tip to another (within 300 ms of the last one hiding) shows the next at once. Leaving before the delay shows nothing.
+- Tips with their own code use `tipDelay()` too (the editor Run tip, the presence tip). The CSS-only cache tips wait 200 ms with the `tip-delay` animation.
+
 ### Script components
 
-`context-menu.js` (right-click menus), `run-tree.js` (the run dialog's file tree), `describe-card.js`, `note-card.js`, and `statement-text.js` each export functions that build or describe one piece of UI. A new piece of UI with its own state goes in its own module, with a spec under `playwright/tests/components/`.
+`context-menu.js` (right-click menus), `run-tree.js` (the run dialog's file tree), `keys-editor.js` (the table browser's Keys box: a CodeMirror editor that colors keys, not DQL), `describe-card.js`, `note-card.js`, and `statement-text.js` each export functions that build or describe one piece of UI. A new piece of UI with its own state goes in its own module, with a spec under `playwright/tests/components/`.
 
 ### Icons
 

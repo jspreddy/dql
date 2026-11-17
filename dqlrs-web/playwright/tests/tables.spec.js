@@ -179,7 +179,22 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   await expect(row).not.toContainText("RANGE");
   await expect(page.locator("#rows-title")).toHaveText(name);
   await expect(page.locator("#rows-meta")).toHaveText("50 rows at a time");
-  await expect(page.locator("#table-query .table-query-toolbar #table-query-pager")).toBeVisible();
+  await expect(page.locator("#table-query .table-query-actions #table-query-pager")).toBeVisible();
+  // Run and the pager share one full-width bar under both panes: Run at the left, the pager at
+  // the right. The query as built sits in the right-hand pane above it.
+  const dqlBox = await page.locator("#table-query-dql").boundingBox();
+  const barBox = await page.locator("#table-query-actions").boundingBox();
+  const runBox = await page.locator("#table-query-run").boundingBox();
+  const pagerBox = await page.locator("#table-query-pager").boundingBox();
+  const controlsBox = await page.locator("#table-query-controls").boundingBox();
+  const formBox = await page.locator("#table-query").boundingBox();
+  expect(barBox.y).toBeGreaterThanOrEqual(dqlBox.y + dqlBox.height);
+  expect(barBox.y).toBeGreaterThanOrEqual(controlsBox.y + controlsBox.height - 1);
+  expect(Math.abs(barBox.width - formBox.width)).toBeLessThan(2);
+  // The bar has 10px of padding on each side.
+  expect(runBox.x - barBox.x).toBeLessThan(14);
+  expect(Math.abs(barBox.x + barBox.width - (pagerBox.x + pagerBox.width))).toBeLessThan(14);
+  expect(Math.abs(runBox.y + runBox.height / 2 - (pagerBox.y + pagerBox.height / 2))).toBeLessThan(4);
   await expect(page.locator("#tables-view > .pager")).toHaveCount(0);
   await expect(page.locator("#page-label")).toHaveText("Showing 1–50");
   await expect(page.locator("#page-prev")).toBeDisabled();
@@ -204,7 +219,38 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   await expect(page.locator("#page-label")).toHaveText("Showing 1–50");
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(50);
   expect(rowPages).toEqual([]);
+  // Next to Run: the page's rows and the read's time (and capacity when it used any) as pills.
+  await expect(page.locator('[data-testid="table-query-count"]')).toHaveText("50 rows");
+  await expect(page.locator('[data-testid="table-query-time"]')).toHaveText(/^\d+(\.\d+)? m?s$/);
+  await expect(page.locator("#table-query-cancel")).toBeHidden();
+  const runRight = await page.locator("#table-query-run").boundingBox();
+  const countBox = await page.locator('[data-testid="table-query-count"]').boundingBox();
+  expect(countBox.x).toBeGreaterThan(runRight.x + runRight.width);
   await page.screenshot({ path: playwrightArtifact(`table-pager-toolbar-${testInfo.project.name}.png`) });
+
+  // While a page loads, Cancel takes the pills' place; it drops the read and stops it on the server.
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route("**/api/rows?*", async (route) => {
+    await held;
+    await route.continue().catch(() => {});
+  });
+  const stop = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/stop");
+  // A new read (a filter) is not cached, so it goes to the server.
+  await page.locator("#table-query-add-filter").click();
+  const filterRow = page.locator('[data-testid="table-query-filter-row"]');
+  await filterRow.locator('[data-testid="table-query-attr"]').fill("id");
+  await filterRow.locator('[data-testid="table-query-value"]').fill("r00");
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#table-query-cancel")).toBeVisible();
+  await expect(page.locator("#table-query-stats")).toBeHidden();
+  await page.screenshot({ path: playwrightArtifact(`table-run-cancel-${testInfo.project.name}.png`) });
+  await page.locator("#table-query-cancel").click();
+  await stop;
+  await expect(page.locator("#rows-body")).toHaveText("Read cancelled.");
+  await expect(page.locator("#table-query-cancel")).toBeHidden();
+  release();
+  await page.unroute("**/api/rows?*");
 });
 
 test("pages a thousand numeric ids forward and back", async ({ page, app }, testInfo) => {
@@ -1050,8 +1096,14 @@ test("table browser scan and query pickers filter without typing DQL", async ({ 
   await filter.locator('[data-testid="table-query-value"]').fill("open");
   await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name} WHERE status = 'open'`);
   await expect(page.locator("#table-query-run")).toHaveClass(/is-pending/);
-  await page.locator("#table-query-run").click();
+  // Run looks and reads like the editor's Run, and Ctrl+Enter (⌘+Enter on a Mac) runs from a filter.
+  const runLabel = (selector) => page.locator(selector).evaluate((el) => el.textContent.replace(/\s+/g, " ").trim());
+  expect(await runLabel("#table-query-run")).toBe(await runLabel("#run"));
+  expect(await runLabel("#table-query-run")).toMatch(/^(Ctrl|⌘) \+ Enter$/);
+  await expect(page.locator("#table-query-run")).toHaveAttribute("aria-keyshortcuts", /^(Control|Meta)\+Enter$/);
+  await filter.locator('[data-testid="table-query-value"]').press("ControlOrMeta+Enter");
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
+  await expect(page.locator("#table-query-run")).not.toHaveClass(/is-pending/);
   await expect(page.locator("#rows-table tbody")).toContainText("ada");
   await expect(page.locator("#rows-table tbody")).toContainText("tom");
   await expect(page.locator("#rows-table tbody")).not.toContainText("shut");
@@ -1405,7 +1457,10 @@ test("table browser keys mode batch-gets a list of hash keys", async ({ page, ap
   await page.locator("#table-query-keys-mode").click();
   await page.locator('[data-testid="table-query-batch-keys"]').fill("ada, tom");
   await expect(page.locator("#table-query-dql")).toHaveText(`SELECT * FROM ${name} KEYS IN 'ada', 'tom'`);
+  // A tuple is a (hash, range) pair, so three values in parentheses is not a key.
   await page.locator('[data-testid="table-query-batch-keys"]').fill("(ada, tom, sue)");
+  await expect(page.locator("#table-query-error")).toHaveText("Line 1: a key has at most two parts: (hash, range).");
+  await page.locator('[data-testid="table-query-batch-keys"]').fill("ada, tom, sue");
   await expect(page.locator("#table-query-dql")).toHaveText(`SELECT * FROM ${name} KEYS IN 'ada', 'tom', 'sue'`);
   await page.locator("#table-query-run").click();
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);
@@ -1550,3 +1605,179 @@ async function expectSampleColumnTakesTheRest(page) {
   const content = widths.slice(0, 4).reduce((sum, width) => sum + width, 0);
   expect(widths[4]).toBeGreaterThan(content);
 }
+
+test("table browser splits controls from the query as built and its plan", async ({ page, app }, testInfo) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, sk NUMBER RANGE KEY);`,
+      `INSERT INTO ${name} (id, sk) VALUES ('ada', 1), ('ada', 2), ('tom', 3);`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "3 rows inserted" })).toBeVisible();
+  await page.evaluate(() => {
+    localStorage.removeItem("dqlrs-web.table-query-split");
+    localStorage.removeItem("dqlrs-web.table-query-side-hidden");
+  });
+  const explains = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/explain") explains.push(request.url());
+  });
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);
+
+  // Controls at the left, 60% by default; tabs for the query as built and its plan at the right.
+  const form = await page.locator("#table-query").boundingBox();
+  const controls = await page.locator("#table-query-controls").boundingBox();
+  const side = await page.locator(".table-query-side").boundingBox();
+  expect(Math.abs(controls.width / form.width - 0.6)).toBeLessThan(0.01);
+  expect(side.x).toBeGreaterThanOrEqual(controls.x + controls.width - 1);
+  await expect(page.locator(".table-query-side .result-tab")).toHaveText(["Query as built", "Explain"]);
+  await expect(page.locator("#table-query-tab-dql")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name}`);
+  // The divider is the main side divider's component.
+  await expect(page.locator("#table-query-resize")).toHaveClass(/side-resize/);
+  await expect(page.locator("#table-query-resize .side-grip")).toHaveCount(1);
+  await page.screenshot({ path: playwrightArtifact(`table-query-split-${testInfo.project.name}.png`) });
+
+  // No plan is fetched while the Explain tab is not showing.
+  await page.locator("#table-query-query").click();
+  await page.locator("#table-query-scan").click();
+  await page.waitForTimeout(500);
+  expect(explains).toEqual([]);
+
+  // Explain shows the plan of what Run would read, and follows the controls.
+  await page.locator("#table-query-tab-explain").click();
+  await expect(page.locator("#table-query-tab-explain")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#table-query-dql")).toBeHidden();
+  const explain = page.locator("#table-query-explain");
+  await expect(explain.locator('[data-testid="explain-op"]').first()).toHaveText(/scan/i);
+  await page.locator("#table-query-query").click();
+  // A query without a hash key value has no plan; Explain says what is missing.
+  await expect(explain).toContainText("Query needs a hash key value.");
+  await page.locator('[data-testid="table-query-key-row"]').first().locator('[data-testid="table-query-value"]').fill("ada");
+  await expect(explain.locator('[data-testid="explain-op"]').first()).toHaveText(/query/i);
+  // The pane's plan is plain steps: no "Explain" title or JSON box inside it. The JSON box sits
+  // on the tab bar and only shows with Explain selected.
+  await expect(explain.locator(".explain-head")).toHaveCount(0);
+  const json = page.locator('[data-testid="table-query-json"]');
+  await expect(json).toBeVisible();
+  await expect(explain.locator('[data-testid="explain-json"]')).toBeHidden();
+  await page.screenshot({ path: playwrightArtifact(`table-query-explain-${testInfo.project.name}.png`) });
+  await json.check();
+  await expect(explain.locator('[data-testid="explain-json"]')).toBeVisible();
+  await expect(explain.locator('[data-testid="explain-step"]').first()).toBeHidden();
+  await json.uncheck();
+  await expect(explain.locator('[data-testid="explain-step"]').first()).toBeVisible();
+
+  // The toggle at the right end hides the pane; with it hidden, no plan is fetched.
+  const toggle = page.locator("#table-query-side-toggle");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  const toggleBox = await toggle.boundingBox();
+  expect(Math.abs(form.x + form.width - (toggleBox.x + toggleBox.width))).toBeLessThan(16);
+  await toggle.click();
+  await expect(page.locator(".table-query-side")).toBeHidden();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(toggle).toBeVisible();
+  expect((await page.locator("#table-query-controls").boundingBox()).width).toBeGreaterThan(form.width - 2);
+  await page.screenshot({ path: playwrightArtifact(`table-query-side-hidden-${testInfo.project.name}.png`) });
+  const before = explains.length;
+  await page.locator("#table-query-scan").click();
+  await page.waitForTimeout(500);
+  expect(explains.length).toBe(before);
+  await toggle.click();
+  await expect(page.locator(".table-query-side")).toBeVisible();
+  // Showing the pane again with Explain open fetches a fresh plan.
+  await expect.poll(() => explains.length).toBeGreaterThan(before);
+  await expect(explain.locator('[data-testid="explain-op"]').first()).toBeVisible();
+
+  await page.locator("#table-query-tab-dql").click();
+  await expect(page.locator("#table-query-dql")).toHaveText(/^SCAN \* FROM /);
+  await expect(page.locator('[data-testid="table-query-json"]')).toBeHidden();
+  await page.locator("#table-query-query").click();
+  await expect(page.locator("#table-query-dql")).toHaveText(/^SELECT \* FROM .* WHERE id = 'ada'/);
+  await page.locator("#table-query-scan").click();
+
+  // Dragging the divider resizes the panes and the width is kept across reloads.
+  const handle = await page.locator("#table-query-resize").boundingBox();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 - 150, handle.y + handle.height / 2, { steps: 5 });
+  await page.mouse.up();
+  const narrower = await page.locator("#table-query-controls").boundingBox();
+  expect(narrower.width).toBeLessThan(controls.width - 100);
+  const saved = await page.evaluate(() => Number(localStorage.getItem("dqlrs-web.table-query-split")));
+  expect(Math.abs(saved - narrower.width / form.width)).toBeLessThan(0.01);
+  // The right pane stops at 55% of the panel, however far the divider is dragged.
+  const left = await page.locator("#table-query-resize").boundingBox();
+  await page.mouse.move(left.x + left.width / 2, left.y + left.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(form.x + 20, left.y + left.height / 2, { steps: 8 });
+  await page.mouse.up();
+  const widest = await page.locator(".table-query-side").boundingBox();
+  expect(widest.width / form.width).toBeLessThanOrEqual(0.551);
+  expect(widest.width / form.width).toBeGreaterThan(0.53);
+  await page.locator("#table-query-resize").dblclick();
+  const reset = await page.locator("#table-query-controls").boundingBox();
+  expect(Math.abs(reset.width / form.width - 0.6)).toBeLessThan(0.01);
+
+  // Dragging the right pane under 10% of the panel hides it; dragging back shows it again.
+  const grip = await page.locator("#table-query-resize").boundingBox();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(form.x + form.width * 0.95, grip.y + grip.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator(".table-query-side")).toBeHidden();
+  await expect(page.locator("#table-query-side-toggle")).toHaveAttribute("aria-pressed", "false");
+  expect(await page.evaluate(() => localStorage.getItem("dqlrs-web.table-query-side-hidden"))).toBe("1");
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await page.locator(`#table-${name}`).click();
+  await expect(page.locator("#table-query")).toBeVisible();
+  await expect(page.locator(".table-query-side")).toBeHidden();
+  await page.locator("#table-query-side-toggle").click();
+  await expect(page.locator(".table-query-side")).toBeVisible();
+
+  // The bottom edge resizes the panel's height (the results pane's divider), kept across reloads.
+  await page.evaluate(() => localStorage.removeItem("dqlrs-web.table-query-height"));
+  const panel = page.locator("#table-query");
+  const natural = await panel.boundingBox();
+  await expect(page.locator("#table-query-height .results-grip")).toHaveCount(1);
+  const edge = await page.locator("#table-query-height").boundingBox();
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2 + 120, { steps: 6 });
+  await page.mouse.up();
+  const taller = await panel.boundingBox();
+  expect(taller.height).toBeGreaterThan(natural.height + 100);
+  expect(Number(await page.evaluate(() => localStorage.getItem("dqlrs-web.table-query-height")))).toBe(Math.round(taller.height));
+  // The Run bar is locked to the panel's bottom edge; the panes take the extra height.
+  const tallBar = await page.locator("#table-query-actions").boundingBox();
+  expect(Math.abs(tallBar.y + tallBar.height - (taller.y + taller.height))).toBeLessThan(3);
+  await page.screenshot({ path: playwrightArtifact(`table-query-taller-${testInfo.project.name}.png`) });
+  // Shorter than its controls, the panel scrolls them; the Run bar stays in view under both panes.
+  await page.locator("#table-query-height").focus();
+  for (let i = 0; i < 12; i += 1) await page.keyboard.press("ArrowUp");
+  const short = await panel.boundingBox();
+  expect(short.height).toBeLessThan(natural.height);
+  await expect(page.locator("#table-query-run")).toBeInViewport();
+  const runBar = await page.locator("#table-query-actions").boundingBox();
+  expect(Math.abs(runBar.y + runBar.height - (short.y + short.height))).toBeLessThan(3);
+  await page.locator("#table-query-height").dblclick();
+  expect(Math.abs((await panel.boundingBox()).height - natural.height)).toBeLessThan(2);
+  expect(await page.evaluate(() => localStorage.getItem("dqlrs-web.table-query-height"))).toBeNull();
+});

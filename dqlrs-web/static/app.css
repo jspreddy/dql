@@ -902,6 +902,7 @@ body.side-resizing * {
 
 .table-cache.is-refreshing { color: var(--label); }
 
+/* Shown after the medium tooltip delay (200ms; see @keyframes tip-delay), like the other tips. */
 .table-cache-tip {
   display: none;
   position: absolute;
@@ -925,6 +926,7 @@ body.side-resizing * {
 .table-cache:hover .table-cache-tip,
 .table-cache:focus-visible .table-cache-tip {
   display: block;
+  animation: tip-delay 200ms step-end;
 }
 
 @keyframes refresh-spin {
@@ -1145,7 +1147,8 @@ main { flex: 1; min-width: 0; min-height: 0; display: flex; }
   cursor: pointer;
 }
 
-#run {
+/* The play-and-shortcut Run button: the editor's #run and the table browser's #table-query-run. */
+.run-btn {
   display: inline-flex;
   flex-flow: row nowrap;
   align-items: center;
@@ -1620,7 +1623,8 @@ body.results-resizing * {
 }
 
 #result-body .result-card-meta,
-#result-body .result-card-stat {
+#result-body .result-card-stat,
+.table-query-stats .result-card-stat {
   display: inline-flex;
   align-items: center;
   flex: none;
@@ -1967,6 +1971,13 @@ body.results-resizing * {
 #result-body .describe-cache:hover .describe-cache-tip,
 #result-body .describe-cache:focus-visible .describe-cache-tip {
   display: block;
+  animation: tip-delay 200ms step-end;
+}
+
+/* Hidden for the medium tooltip delay, then shown (a display: none tip cannot transition). */
+@keyframes tip-delay {
+  from { visibility: hidden; }
+  to { visibility: hidden; }
 }
 
 #result-body .describe:has(.describe-cache:hover),
@@ -2352,7 +2363,7 @@ body.results-resizing * {
   background: var(--col-both-hover);
 }
 
-#result-body .explain {
+:is(#result-body, #table-query-explain) .explain {
   margin: 10px 12px 14px;
   background: var(--paper);
   border: 1px solid var(--explain-line);
@@ -2361,7 +2372,7 @@ body.results-resizing * {
   box-shadow: 0 1px 2px var(--shadow);
 }
 
-#result-body .explain-head {
+:is(#result-body, #table-query-explain) .explain-head {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2373,7 +2384,7 @@ body.results-resizing * {
   letter-spacing: 0.01em;
 }
 
-#result-body .explain-raw {
+:is(#result-body, #table-query-explain) .explain-raw {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -2382,9 +2393,9 @@ body.results-resizing * {
   font-weight: 550;
 }
 
-#result-body .explain.raw .explain-step { display: none; }
+:is(#result-body, #table-query-explain) .explain.raw .explain-step { display: none; }
 
-#result-body .explain-json {
+:is(#result-body, #table-query-explain) .explain-json {
   display: none;
   margin: 0;
   padding: 10px 12px 12px;
@@ -2396,16 +2407,16 @@ body.results-resizing * {
   white-space: pre;
 }
 
-#result-body .explain.raw .explain-json { display: block; }
+:is(#result-body, #table-query-explain) .explain.raw .explain-json { display: block; }
 
-#result-body .explain-step {
+:is(#result-body, #table-query-explain) .explain-step {
   padding: 10px 12px 12px;
   border-bottom: 1px solid var(--line-soft);
 }
 
-#result-body .explain-step:last-child { border-bottom: 0; }
+:is(#result-body, #table-query-explain) .explain-step:last-child { border-bottom: 0; }
 
-#result-body .explain-op {
+:is(#result-body, #table-query-explain) .explain-op {
   display: flex;
   flex-flow: row nowrap;
   align-items: center;
@@ -2413,7 +2424,7 @@ body.results-resizing * {
   min-width: 0;
 }
 
-#result-body .explain-badge {
+:is(#result-body, #table-query-explain) .explain-badge {
   flex: none;
   padding: 2px 8px;
   border-radius: 999px;
@@ -2425,8 +2436,8 @@ body.results-resizing * {
   text-transform: uppercase;
 }
 
-#result-body .explain-target,
-#result-body .explain-index {
+:is(#result-body, #table-query-explain) .explain-target,
+:is(#result-body, #table-query-explain) .explain-index {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2435,25 +2446,25 @@ body.results-resizing * {
   font-weight: 650;
 }
 
-#result-body .explain-index {
+:is(#result-body, #table-query-explain) .explain-index {
   flex: none;
   color: var(--muted);
   font-weight: 550;
 }
 
-#result-body .explain-fields {
+:is(#result-body, #table-query-explain) .explain-fields {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 6px 14px;
   margin: 10px 0 0;
 }
 
-#result-body .explain-fields dt {
+:is(#result-body, #table-query-explain) .explain-fields dt {
   color: var(--muted);
   font-size: 12px;
 }
 
-#result-body .explain-fields dd {
+:is(#result-body, #table-query-explain) .explain-fields dd {
   margin: 0;
   overflow-wrap: anywhere;
   font-family: var(--mono);
@@ -2774,14 +2785,154 @@ body.results-resizing * {
   border-bottom: 1px solid var(--line);
 }
 
+/* Two panes: the controls at the left (60% by default, resizable) and, at the right, tabs for
+   the query as built and its plan. The right pane never makes the panel taller: it scrolls. */
 .table-query {
+  position: relative;
   flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--side);
+  border-bottom: 1px solid var(--line);
+}
+
+.table-query-split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.table-query-controls {
+  position: relative;
+  width: 60%;
+  min-width: 0;
+  min-height: 0;
+  flex: none;
+  display: flex;
+  border-right: 1px solid var(--line);
+}
+
+.table-query-controls-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 8px 10px 10px;
-  background: var(--side);
-  border-bottom: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+/* The bottom edge: the results pane's divider (.results-resize, .results-grip), at the bottom. */
+.table-query-height {
+  top: auto;
+  bottom: -5px;
+}
+
+body.table-query-height-resizing .table-query-height .results-grip {
+  width: 56px;
+  opacity: 1;
+}
+
+body.table-query-height-resizing,
+body.table-query-height-resizing * {
+  cursor: ns-resize !important;
+  user-select: none !important;
+}
+
+.table-query-side {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px 14px;
+}
+
+.table-query-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: 36px;
+}
+
+.table-query-json {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.table-query-json[hidden] { display: none; }
+
+/* The right pane's show/hide toggle, pinned to the panel's top-right corner. */
+.table-query-side-toggle {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 6;
+}
+
+.table-query-side-toggle[aria-pressed="true"] { color: var(--teal-ink); }
+
+.table-query.side-hidden .table-query-side { display: none; }
+
+.table-query.side-hidden .table-query-controls {
+  width: 100% !important;
+  border-right: 0;
+}
+
+.table-query.side-hidden .table-query-controls-body { padding-right: 44px; }
+
+.table-query-side-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.table-query-side-body > [role="tabpanel"] {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+}
+
+.table-query-side-body > [role="tabpanel"][hidden] { display: none; }
+
+/* In the pane the plan is plain steps: no card border, shadow, or title. */
+#table-query-explain .explain {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+#table-query-explain .explain + .explain,
+#table-query-explain .table-query-explain-statement:not(:first-child) { margin-top: 10px; }
+
+#table-query-explain .table-query-explain-statement {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+/* The divider between the panes uses the main side divider's look (.side-resize, .side-grip). */
+body.table-query-resizing .table-query-resize .side-grip {
+  height: 56px;
+  opacity: 1;
+}
+
+body.table-query-resizing,
+body.table-query-resizing * {
+  cursor: ew-resize !important;
+  user-select: none !important;
 }
 
 .table-query-toolbar {
@@ -2872,6 +3023,39 @@ body.results-resizing * {
   cursor: default;
 }
 
+/* Under the DQL preview: Run at the left, the pager pushed to the right. */
+.table-query-actions {
+  flex: none;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.table-query-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.table-query-stats:empty { display: none; }
+
+.table-query-cancel {
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--line-control);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.table-query-cancel:hover { background: var(--hover-quiet); }
+.table-query-cancel[hidden] { display: none; }
+
 .table-query-pager {
   display: flex;
   align-items: center;
@@ -2882,13 +3066,6 @@ body.results-resizing * {
 
 .table-query-pager #page-label {
   white-space: nowrap;
-}
-
-#table-query-run {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
 }
 
 #table-query-run.is-pending {
@@ -2995,6 +3172,54 @@ body.results-resizing * {
   line-height: 1.45;
 }
 
+/* The Keys box as a CodeMirror editor (keys-editor.js). */
+#table-query-batch-keys.keys-editor {
+  height: auto;
+  min-height: 72px;
+  max-height: 240px;
+  padding: 0;
+  overflow: hidden;
+  resize: vertical;
+  background: var(--paper);
+  color: var(--text);
+}
+
+.keys-editor.cm-focused {
+  outline: 2px solid var(--teal);
+  outline-offset: 1px;
+}
+
+.keys-editor .cm-scroller {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.keys-editor .cm-content {
+  min-height: 70px;
+  padding: 6px 8px;
+  caret-color: var(--cursor);
+}
+
+.keys-editor .cm-line { padding: 0; }
+.keys-editor .cm-placeholder { color: var(--placeholder); }
+
+/* Keys alternate two colors, every other one on a faint band. Inside a tuple the range part has
+   its own color; commas and the parentheses around a list of tuples stay quiet. */
+.keys-editor .kh-key { border-radius: 3px; }
+.keys-editor .kh-alt-1 { background: var(--hover-quiet); }
+.keys-editor .kh-hash.kh-c0,
+.keys-editor .kh-tuple.kh-c0 { color: var(--tok-type); }
+.keys-editor .kh-hash.kh-c1,
+.keys-editor .kh-tuple.kh-c1 { color: var(--tok-fn); }
+.keys-editor .kh-range { color: var(--tok-number); }
+.keys-editor .kh-punct { color: var(--muted); }
+.keys-editor .kh-error {
+  color: var(--danger);
+  text-decoration: underline wavy var(--danger);
+  text-underline-offset: 3px;
+}
+
 .table-query-hint {
   margin: 0;
   color: var(--muted);
@@ -3015,7 +3240,11 @@ body.results-resizing * {
   overflow-x: auto;
 }
 
-.table-query-dql:empty { display: none; }
+.table-query-dql:empty::before {
+  content: "Nothing to run yet.";
+  color: var(--muted);
+  font-family: var(--font, inherit);
+}
 
 .table-query-dql .tok-keyword { color: var(--tok-keyword); font-weight: 650; }
 .table-query-dql .tok-variableName-function { color: var(--purple); }
@@ -3923,12 +4152,46 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
 .row-json .tok-operator { color: var(--text-secondary); }
 
 /* Run files dialog: a tree of the files to run, with a dot and a summary per file. */
-.run-pop-totals {
+/* The header is fixed; actions, summary, and tree scroll together below it. */
+.run-pop-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.run-pop-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--line);
+}
+
+.run-pop-status {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.run-pop-summary-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.run-pop-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.run-pop-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .run-pop-totals[hidden] { display: none; }
@@ -3963,9 +4226,6 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
 .run-total[data-total="failure"][data-zero] .run-total-value { color: var(--muted); }
 
 .run-pop-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
   padding: 12px 20px;
 }
 
@@ -4036,18 +4296,4 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
   50% { opacity: 0.35; }
 }
 
-.run-pop-foot {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 20px;
-  border-top: 1px solid var(--line);
-}
-
-.run-pop-status {
-  margin-right: auto;
-  color: var(--muted);
-  font-size: 12.5px;
-}
 

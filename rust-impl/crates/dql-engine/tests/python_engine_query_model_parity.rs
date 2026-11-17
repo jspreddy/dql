@@ -789,8 +789,13 @@ mod test_select {
                  INSERT INTO foobar (id) VALUES ('a'), ('b'), ('c'), ('d')",
             )
             .unwrap();
-        let result = engine
+        // A tuple is a (hash, range) pair, so three values in one set of parentheses is an error.
+        let error = engine
             .execute("SELECT * FROM foobar KEYS IN (a, b, c)")
+            .unwrap_err();
+        assert!(error.to_string().contains("at most two parts"), "{error}");
+        let result = engine
+            .execute("SELECT * FROM foobar KEYS IN a, b, c")
             .unwrap();
         assert_items_len(result, 3);
     }

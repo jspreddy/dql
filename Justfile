@@ -36,8 +36,16 @@ dynamo-clean: (_title "dynamo-clean")
     rm -rf "$root/data"
     find "$root" -maxdepth 1 \( -name '*.db' -o -name '*.db-*' \) -delete
 
-# Alias for dynamo-stop
+# Alias for dynamo-clean
 alias dd-clean := dynamo-clean
+
+# Stop every DynamoDB Local server, remove its on-disk data, and start a fresh one
+[group('dynamo')]
+dynamo-fresh: (_title "dynamo-fresh") && dynamo-clean dynamo
+    "{{justfile_directory()}}/scripts/stop_dynamodb_local.sh" --all
+
+# Alias for dynamo-fresh
+alias dd-fresh := dynamo-fresh
 
 # Install Java 22 with sdkman for DynamoDB Local
 [group('local')]

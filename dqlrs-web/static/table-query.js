@@ -61,6 +61,22 @@ export function quoteValue(raw, type) {
   return "'" + text.replaceAll("'", "''") + "'";
 }
 
+const NUMBER_TEXT = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
+/**
+ * Why `raw` cannot be a value of key `name` with attribute `type`, or "" when it can. Only a
+ * NUMBER key can reject a value: a string key quotes whatever is typed. Without this check a
+ * number key passes the text into the statement unquoted, and the error only shows after Run.
+ */
+export function keyValueError(name, type, raw) {
+  const kind = String(type || "").toUpperCase();
+  const text = String(raw ?? "").trim();
+  if ((kind === "NUMBER" || kind === "N") && text && !NUMBER_TEXT.test(text)) {
+    return `${name} is a number. ${JSON.stringify(text)} is not.`;
+  }
+  return "";
+}
+
 export function parseBatchKeys(text) {
   const src = String(text || "");
   let i = 0;
@@ -130,8 +146,13 @@ export function parseBatchKeys(text) {
     return { ok: true, value: parseBare() };
   }
 
-  function collapseGroup(elems) {
+  function collapseGroup(elems, openAt) {
     if (elems.every((elem) => elem.type === "value")) {
+      // A tuple is a (hash, range) pair. Three or more plain values in one group is not a key.
+      if (elems.length > 2) {
+        errors.push(`Line ${lineAt(openAt)}: a key has at most two parts: (hash, range).`);
+        return [];
+      }
       if (elems.length === 2) return [[elems[0].value, elems[1].value]];
       return elems.map((elem) => [elem.value]);
     }
@@ -149,11 +170,11 @@ export function parseBatchKeys(text) {
       skipIdle();
       if (i >= src.length) {
         errors.push(`Line ${lineAt(openAt)} has an unclosed (.`);
-        return collapseGroup(elems);
+        return collapseGroup(elems, openAt);
       }
       if (src[i] === ")") {
         i += 1;
-        return collapseGroup(elems);
+        return collapseGroup(elems, openAt);
       }
       if (src[i] === "(") {
         const nestedAt = i;
@@ -164,12 +185,12 @@ export function parseBatchKeys(text) {
       const value = parseValue();
       if (!value.ok) {
         errors.push(value.error);
-        return collapseGroup(elems);
+        return collapseGroup(elems, openAt);
       }
       if (value.value) elems.push({ type: "value", value: value.value });
     }
     errors.push(`Line ${lineAt(openAt)} has an unclosed (.`);
-    return collapseGroup(elems);
+    return collapseGroup(elems, openAt);
   }
 
   skipIdle();
@@ -195,6 +216,153 @@ export function parseBatchKeys(text) {
     if (value.value) keys.push([value.value]);
   }
   return { keys, errors };
+}
+
+/**
+ * `keys` without repeats, and how many were dropped. Two keys are the same when they name the
+ * same values (as DynamoDB sees them: 1 and 1.0 are one number). A pair whose hash value is also
+ * listed alone is dropped too: the lone value already reads every item under that hash key.
+ * DynamoDB rejects a batch get whose key list repeats a key, so this is more than tidying up.
+ */
+export function dedupeKeys(keys, table, extra, source) {
+  const src = source || tableSource(table);
+  const canonical = (value, name) => {
+    const type = String(attributeType(table, extra, name) || "").toUpperCase();
+    const text = String(value ?? "").trim();
+    if ((type === "NUMBER" || type === "N") && text && Number.isFinite(Number(text))) return `N:${Number(text)}`;
+    return `S:${String(value ?? "")}`;
+  };
+  const hashes = new Set(
+    (src.rangeKey ? keys || [] : []).filter((fields) => fields.length === 1).map((fields) => canonical(fields[0], src.hashKey)),
+  );
+  const seen = new Set();
+  const unique = [];
+  for (const fields of keys || []) {
+    const hash = canonical(fields[0], src.hashKey);
+    if (fields.length > 1 && hashes.has(hash)) continue;
+    const id = fields.map((value, index) => canonical(value, index === 0 ? src.hashKey : src.rangeKey)).join("\u0000");
+    if (seen.has(id)) continue;
+    seen.add(id);
+    unique.push(fields);
+  }
+  return { keys: unique, dropped: (keys || []).length - unique.length };
+}
+
+/**
+ * Pieces of the Keys box text for highlighting, covering every character in order:
+ * `{ text, kind, key }`. `key` numbers each key (a lone value or a tuple) from 0, so keys can
+ * alternate colors. `kind` is "hash" or "range" for values, "tuple" for a key's parentheses,
+ * "punct" for commas and the parentheses around a list of tuples, "error" for what cannot be
+ * a key (a tuple with three or more parts, an unclosed quote, an extra ")"), or "" for space.
+ */
+export function keyHighlightSpans(text) {
+  const src = String(text || "");
+  const tokens = [];
+  let i = 0;
+  while (i < src.length) {
+    const ch = src[i];
+    if (ch === "(" || ch === ")" || ch === ",") {
+      tokens.push({ t: ch, s: i, e: i + 1 });
+      i += 1;
+    } else if (/\s/.test(ch)) {
+      let j = i;
+      while (j < src.length && /\s/.test(src[j])) j += 1;
+      tokens.push({ t: "ws", s: i, e: j });
+      i = j;
+    } else if (ch === "'" || ch === '"') {
+      let j = i + 1;
+      let closed = false;
+      while (j < src.length) {
+        if (src[j] === ch && src[j + 1] === ch) {
+          j += 2;
+          continue;
+        }
+        j += 1;
+        if (src[j - 1] === ch) {
+          closed = true;
+          break;
+        }
+      }
+      tokens.push({ t: "v", s: i, e: j, bad: !closed });
+      i = j;
+    } else {
+      let j = i;
+      while (j < src.length && !"(),\n\r".includes(src[j])) j += 1;
+      let end = j;
+      while (end > i && /\s/.test(src[end - 1])) end -= 1;
+      tokens.push({ t: "v", s: i, e: end });
+      if (end < j) tokens.push({ t: "ws", s: end, e: j });
+      i = j;
+    }
+  }
+
+  // Group tokens by parentheses: a group holds values, nested groups, and separators.
+  let at = 0;
+  const readGroup = (open) => {
+    const node = { open, close: null, items: [] };
+    while (at < tokens.length) {
+      const token = tokens[at];
+      at += 1;
+      if (token.t === "(") node.items.push(readGroup(token));
+      else if (token.t === ")") {
+        if (open) {
+          node.close = token;
+          return node;
+        }
+        node.items.push({ stray: token });
+      } else node.items.push(token);
+    }
+    return node;
+  };
+  const root = readGroup(null);
+
+  const kinds = new Map();
+  const keyOf = new Map();
+  let keyIndex = 0;
+  const mark = (token, kind, key = null) => {
+    if (!token) return;
+    kinds.set(token, kind);
+    if (key !== null) keyOf.set(token, key);
+  };
+  const isGroup = (item) => item && item.items;
+  const visitList = (node) => {
+    for (const item of node.items) {
+      if (item.stray) mark(item.stray, "error");
+      else if (isGroup(item)) visitGroup(item);
+      else if (item.t === "v") {
+        mark(item, item.bad ? "error" : "hash", keyIndex);
+        keyIndex += 1;
+      } else if (item.t === ",") mark(item, "punct");
+    }
+  };
+  const visitGroup = (group) => {
+    if (group.items.some(isGroup)) {
+      // A list of tuples: its own parentheses are punctuation.
+      mark(group.open, "punct");
+      mark(group.close, group.close ? "punct" : null);
+      visitList(group);
+      return;
+    }
+    const values = group.items.filter((item) => item.t === "v");
+    const key = keyIndex;
+    keyIndex += 1;
+    const tooMany = values.length > 2 || !group.close;
+    mark(group.open, tooMany ? "error" : "tuple", key);
+    mark(group.close, tooMany ? "error" : "tuple", key);
+    values.forEach((value, index) => {
+      mark(value, tooMany || value.bad ? "error" : index === 0 ? "hash" : "range", key);
+    });
+    for (const item of group.items) {
+      if (item.t === "," || item.t === "ws") mark(item, item.t === "," ? "punct" : "", key);
+    }
+  };
+  visitList(root);
+
+  return tokens.map((token) => ({
+    text: src.slice(token.s, token.e),
+    kind: kinds.get(token) || "",
+    key: keyOf.has(token) ? keyOf.get(token) : null,
+  }));
 }
 
 export function formatKeysInClause(keys, table, extra, source) {
@@ -228,18 +396,23 @@ export function batchKeyHint(table, sourceName) {
   return `${hash} keys: a, b, c`;
 }
 
-export function keysModeError(table, parsed, sourceName) {
+export function keysModeError(table, parsed, sourceName, extra) {
   const result = parsed || parseBatchKeys("");
   if (result.errors.length) return result.errors[0];
   if (!result.keys.length) return "Keys needs at least one key.";
   const source = sourceOf(table, sourceName, "query");
   const tablePk = !source.name;
   const hasRange = Boolean(source.rangeKey);
-  if (tablePk && hasRange && result.keys.some((key) => key.length < 2)) {
-    return "Range keys go in parentheses: (hash, range).";
-  }
   if (!hasRange && result.keys.some((key) => key.length > 1)) {
     return tablePk ? "This table only has a hash key." : "This index only has a hash key.";
+  }
+  for (const fields of result.keys) {
+    for (const [index, value] of fields.entries()) {
+      const name = index === 0 ? source.hashKey : source.rangeKey;
+      if (!name) continue;
+      const message = keyValueError(name, attributeType(table, extra, name), value);
+      if (message) return message;
+    }
   }
   return "";
 }
@@ -436,14 +609,17 @@ export function buildReadStatement(tableName, table, state, extra) {
   const current = ensureQueryKeys(table, state || defaultReadState());
   if (current.mode === "keys") {
     const parsed = parseBatchKeys(current.batchKeys);
-    if (keysModeError(table, parsed, current.source)) return "";
+    if (keysModeError(table, parsed, current.source, extra)) return "";
     const source = sourceOf(table, current.source, "query");
-    if (!source.name) {
-      return `SELECT * FROM ${quoteIdent(name)} KEYS IN ${formatKeysInClause(parsed.keys, table, extra, source)}`;
+    const { keys } = dedupeKeys(parsed.keys, table, extra, source);
+    if (source.name) {
+      return keys
+        .map((fields) => formatIndexKeySelect(name, source, fields, table, extra))
+        .join("; ");
     }
-    return parsed.keys
-      .map((fields) => formatIndexKeySelect(name, source, fields, table, extra))
-      .join("; ");
+    // One KEYS IN for the table. dqlrs reads whole keys with a batch get and, on a table with a
+    // range key, every item under a lone hash value.
+    return `SELECT * FROM ${quoteIdent(name)} KEYS IN ${formatKeysInClause(keys, table, extra, source)}`;
   }
   const source = sourceOf(table, current.source, current.mode);
   const verb = current.mode === "query" ? "SELECT" : "SCAN";
@@ -472,18 +648,37 @@ export function buildReadStatement(tableName, table, state, extra) {
   return sql;
 }
 
-export function readError(table, state) {
+export function readError(table, state, extra) {
   const current = ensureQueryKeys(table, state || defaultReadState());
   if (current.mode === "keys") {
-    return keysModeError(table, parseBatchKeys(current.batchKeys), current.source);
+    return keysModeError(table, parseBatchKeys(current.batchKeys), current.source, extra);
   }
-  if (current.mode !== "query") return "";
-  const hash = sourceKeys(table, current.source, current.mode).find((key) => key.role === "hash");
-  const row = hash
-    ? (current.keys || []).find((item) => item.attribute === hash.name)
-    : (current.keys || []).find((item) => String(item.attribute || "").trim());
-  if (!row || !String(row.attribute || "").trim()) return "Query needs a hash key.";
-  if (!String(row.value ?? "").length) return "Query needs a hash key value.";
+  if (current.mode === "query") {
+    const hash = sourceKeys(table, current.source, current.mode).find((key) => key.role === "hash");
+    const row = hash
+      ? (current.keys || []).find((item) => item.attribute === hash.name)
+      : (current.keys || []).find((item) => String(item.attribute || "").trim());
+    if (!row || !String(row.attribute || "").trim()) return "Query needs a hash key.";
+    if (!String(row.value ?? "").length) return "Query needs a hash key value.";
+  }
+  return keyRowsError(table, current, extra);
+}
+
+// The key rows of Query and Scan compare a typed key with what was typed. A NUMBER key must get
+// a number, the same check Keys mode makes.
+function keyRowsError(table, current, extra) {
+  for (const row of current.keys || []) {
+    const name = String(row.attribute || "").trim();
+    if (!name) continue;
+    const op = opById(row.op, opsFor("key", row.role, current.mode));
+    if (op.fn || op.size || op.type || op.values === 0) continue;
+    const type = attributeType(table, extra, name);
+    const values = op.values === 2 ? [row.value, row.value2] : [row.value];
+    for (const value of values) {
+      const message = keyValueError(name, type, value);
+      if (message) return message;
+    }
+  }
   return "";
 }
 
@@ -554,6 +749,24 @@ function newRow(attribute, op, extra) {
   };
 }
 
+// The Keys box interface keys-editor.js also provides, over a plain textarea.
+function textareaKeysEditor(textarea) {
+  return {
+    get value() {
+      return textarea.value;
+    },
+    set value(text) {
+      textarea.value = text;
+    },
+    set placeholder(text) {
+      textarea.placeholder = text;
+    },
+    focus: () => textarea.focus(),
+    hasFocus: () => document.activeElement === textarea,
+    onInput: (listener) => textarea.addEventListener("input", listener),
+  };
+}
+
 export function attachTableQuery(host, handlers = {}) {
   const onRun = handlers.onRun || (() => {});
   const onChange = handlers.onChange || (() => {});
@@ -578,7 +791,12 @@ export function attachTableQuery(host, handlers = {}) {
   const keyHost = host.querySelector("#table-query-keys");
   const filterHost = host.querySelector("#table-query-filters");
   const batchSection = host.querySelector("#table-query-batch");
-  const batchInput = host.querySelector("#table-query-batch-keys");
+  // The Keys box. app.js passes a CodeMirror editor (keys-editor.js) through
+  // handlers.createKeysEditor; without one, the plain textarea stands in.
+  const batchTextarea = host.querySelector("#table-query-batch-keys");
+  const batchInput = handlers.createKeysEditor
+    ? handlers.createKeysEditor(batchTextarea, { submit: () => host.querySelector("#table-query-run")?.click() })
+    : textareaKeysEditor(batchTextarea);
   const batchHint = host.querySelector("#table-query-batch-hint");
   const preview = host.querySelector("#table-query-dql");
   const errorNode = host.querySelector("#table-query-error");
@@ -592,7 +810,7 @@ export function attachTableQuery(host, handlers = {}) {
   }
 
   function error() {
-    return readError(table, state);
+    return readError(table, state, extra);
   }
 
   function unusedKeys() {
@@ -614,9 +832,9 @@ export function attachTableQuery(host, handlers = {}) {
     const source = sourceOf(table, state.source, "query");
     const hash = source.hashKey || "hash";
     const range = source.rangeKey;
-    batchHint.textContent = batchKeyHint(table, state.source);
+    paintBatchHint();
     batchInput.placeholder = range ? `(${hash}, ${range})` : "a, b, c";
-    if (document.activeElement !== batchInput) batchInput.value = state.batchKeys || "";
+    if (!batchInput.hasFocus()) batchInput.value = state.batchKeys || "";
   }
 
   function sourceItems(mode, tableLabel) {
@@ -789,7 +1007,23 @@ export function attachTableQuery(host, handlers = {}) {
     return kind === "key" ? state.keys : state.filters;
   }
 
+  // The hint under the Keys box says how many repeated keys the statement leaves out.
+  function paintBatchHint() {
+    const hint = batchKeyHint(table, state.source);
+    let dropped = 0;
+    if (state.mode === "keys") {
+      const parsed = parseBatchKeys(state.batchKeys);
+      if (!parsed.errors.length) {
+        dropped = dedupeKeys(parsed.keys, table, extra, sourceOf(table, state.source, "query")).dropped;
+      }
+    }
+    batchHint.textContent = dropped
+      ? `${hint} · ${dropped} repeated ${dropped === 1 ? "key" : "keys"} left out`
+      : hint;
+  }
+
   function livePreview() {
+    paintBatchHint();
     const sql = statement();
     paintPreview(preview, sql);
     const message = error();
@@ -883,7 +1117,7 @@ export function attachTableQuery(host, handlers = {}) {
     paint();
     batchInput.focus();
   });
-  batchInput.addEventListener("input", () => {
+  batchInput.onInput(() => {
     state.batchKeys = batchInput.value;
     livePreview();
   });

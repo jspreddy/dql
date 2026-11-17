@@ -1,7 +1,18 @@
 #!/bin/bash
 # List running DynamoDB Local processes and stop the ones the user selects.
+# --all stops every one without asking, and waits for them to exit (used by `just dynamo-fresh`).
 # Compatible with bash 3.2+ (macOS /bin/bash).
 set -euo pipefail
+
+stop_all=0
+case "${1:-}" in
+  "") ;;
+  --all) stop_all=1 ;;
+  *)
+    echo "usage: $0 [--all]" >&2
+    exit 2
+    ;;
+esac
 
 pids=()
 ports=()
@@ -37,8 +48,10 @@ while IFS= read -r line; do
   pid="${line%% *}"
   cmd="${line#"$pid"}"
   cmd=$(trim "$cmd")
+  # Only the server itself (`java ... -jar DynamoDBLocal.jar`), not a shell or editor whose
+  # command line merely mentions the jar.
   case "$cmd" in
-    *DynamoDBLocal.jar*) ;;
+    *"-jar DynamoDBLocal.jar"* | *"-jar "*"/DynamoDBLocal.jar"*) ;;
     *) continue ;;
   esac
   label="${cmd#*DynamoDBLocal.jar}"
@@ -62,14 +75,17 @@ while [[ "$i" -le "$count" ]]; do
   i=$((i + 1))
 done
 
-if [[ ! -t 0 ]]; then
-  echo "Run \`just dynamo-stop\` in a terminal to choose which servers to stop." >&2
-  exit 1
+if [[ "$stop_all" -eq 1 ]]; then
+  answer="a"
+else
+  if [[ ! -t 0 ]]; then
+    echo "Run \`just dynamo-stop\` in a terminal to choose which servers to stop." >&2
+    exit 1
+  fi
+  printf "Stop which servers? Numbers (1,2), 'a' for all, or Enter to cancel: "
+  IFS= read -r answer || answer=""
+  answer=$(trim "$answer")
 fi
-
-printf "Stop which servers? Numbers (1,2), 'a' for all, or Enter to cancel: "
-IFS= read -r answer || answer=""
-answer=$(trim "$answer")
 if [[ -z "$answer" ]]; then
   echo "Nothing selected."
   exit 0
@@ -117,6 +133,21 @@ for idx in "${selected[@]}"; do
     echo "Could not stop pid $pid" >&2
     failed=1
   fi
+done
+
+# Wait up to 10 seconds for each to exit, so its port is free for the next start.
+for idx in "${selected[@]}"; do
+  pid="${pids[$idx]}"
+  tries=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [[ "$tries" -ge 50 ]]; then
+      echo "pid $pid is still running after 10 seconds" >&2
+      failed=1
+      break
+    fi
+    sleep 0.2
+    tries=$((tries + 1))
+  done
 done
 
 exit "$failed"

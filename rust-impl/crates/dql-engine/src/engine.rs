@@ -17,8 +17,8 @@ use dql_expr::{
 };
 use dql_models::{plan_read, Operation, PlanError, PlanInput, QueryPlan, ReadKind, TableMeta};
 use dql_parser::{
-    parse_script, Condition, InsertForm, OrderBy, QueryOptions, Selection, Statement,
-    ThrottleConfig, UpdateExpr, Value,
+    parse_script, CompareOp, Condition, ConditionOperand, InsertForm, OrderBy, QueryOptions,
+    Selection, Statement, ThrottleConfig, UpdateExpr, Value,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -1065,6 +1065,19 @@ impl<B: DynamoBackend> Engine<B> {
         options: &QueryOptions,
     ) -> Result<StatementResult, EngineError> {
         self.ensure_save_path(options)?;
+        // `WHERE hash IN (…)` and `WHERE (hash, range) IN ((…), …)` name keys, so fetch them
+        // the way KEYS IN does instead of filtering a scan.
+        if options.keys_in.is_none() {
+            if let Some(keys) = self.keys_named_by(table, condition, options)? {
+                let options = QueryOptions {
+                    keys_in: Some(keys),
+                    ..options.clone()
+                };
+                self.capture_query_context(table, selection, &options, None)?;
+                let result = self.execute_keys_in_read(table, selection, None, &options)?;
+                return self.maybe_save(&options, result);
+            }
+        }
         let result = if options.keys_in.is_some() {
             self.capture_query_context(table, selection, options, None)?;
             self.execute_keys_in_read(table, selection, condition, options)?
@@ -1148,6 +1161,48 @@ impl<B: DynamoBackend> Engine<B> {
     ) -> Result<StatementResult, EngineError> {
         validate_read_keys_in(options, condition)?;
         let keys_in = options.keys_in.as_ref().expect("keys_in checked above");
+        let meta = self.lookup_meta(table)?;
+        // On a table with a hash and range key, a lone value is a hash key, not a whole key:
+        // read every item under it with a query. Whole keys go to one batch get.
+        let (whole, hash_only): (Vec<Vec<Value>>, Vec<Vec<Value>>) = if meta.range_key.is_some() {
+            keys_in.iter().cloned().partition(|key| key.len() != 1)
+        } else {
+            (keys_in.clone(), Vec::new())
+        };
+        let mut results = Vec::new();
+        for key in hash_only {
+            let hash = key.into_iter().next().expect("one value");
+            let condition = Condition::Compare {
+                field: meta.hash_key.clone(),
+                op: CompareOp::Eq,
+                rhs: ConditionOperand::Value(hash),
+            };
+            let options = QueryOptions {
+                keys_in: None,
+                ..options.clone()
+            };
+            let plan = self.plan_read_operation(
+                table,
+                ReadKind::Select,
+                selection,
+                Some(&condition),
+                &options,
+            )?;
+            results.push(self.execute_read(table, &plan, selection, Some(&condition), &options)?);
+        }
+        if !whole.is_empty() {
+            results.push(self.batch_get_whole_keys(table, selection, &whole, options)?);
+        }
+        merge_read_results(results)
+    }
+
+    fn batch_get_whole_keys(
+        &mut self,
+        table: &str,
+        selection: &Selection,
+        keys_in: &[Vec<Value>],
+        options: &QueryOptions,
+    ) -> Result<StatementResult, EngineError> {
         let keys = self.keys_in_items(table, keys_in)?;
         self.record_with_kwargs(
             "batch_get_item",
@@ -1164,6 +1219,36 @@ impl<B: DynamoBackend> Engine<B> {
         let capacity = response.capacity.clone();
         self.capture_capacity(capacity)?;
         finalize_read_result(response, selection, options.order_by.as_ref())
+    }
+
+    /// The keys a SELECT's WHERE names, when the whole WHERE is `hash IN (…)` or
+    /// `(hash, range) IN ((…), …)` on the table. They read like KEYS IN, so LIMIT, USING and
+    /// ORDER BY are rejected the same way. Any other WHERE stays a filter.
+    fn keys_named_by(
+        &self,
+        table: &str,
+        condition: Option<&Condition>,
+        _options: &QueryOptions,
+    ) -> Result<Option<Vec<Vec<Value>>>, EngineError> {
+        let Some(condition) = condition else {
+            return Ok(None);
+        };
+        let meta = self.lookup_meta(table)?;
+        let keys = match condition {
+            Condition::In { field, values } if field == &meta.hash_key && !values.is_empty() => {
+                values.iter().map(|value| vec![value.clone()]).collect()
+            }
+            Condition::InTuples { fields, tuples }
+                if !tuples.is_empty()
+                    && fields.len() == 2
+                    && fields[0] == meta.hash_key
+                    && meta.range_key.as_ref() == Some(&fields[1]) =>
+            {
+                tuples.clone()
+            }
+            _ => return Ok(None),
+        };
+        Ok(Some(keys))
     }
 
     fn keys_in_items(&self, table: &str, keys_in: &[Vec<Value>]) -> Result<Vec<Item>, EngineError> {
@@ -2076,6 +2161,28 @@ fn finalize_update_result(
     } else {
         Ok(StatementResult::Affected(response.output))
     }
+}
+
+/// One result from several reads of the same table: rows in order, counts added.
+fn merge_read_results(results: Vec<StatementResult>) -> Result<StatementResult, EngineError> {
+    let mut items = Vec::new();
+    let mut count = 0;
+    let mut counted = false;
+    for result in results {
+        match result {
+            StatementResult::Items(rows) => items.extend(rows),
+            StatementResult::Affected(n) => {
+                counted = true;
+                count += n;
+            }
+            other => return Ok(other),
+        }
+    }
+    Ok(if counted {
+        StatementResult::Affected(count)
+    } else {
+        StatementResult::Items(items)
+    })
 }
 
 fn finalize_read_result(
