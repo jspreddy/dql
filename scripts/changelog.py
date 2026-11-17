@@ -4,15 +4,14 @@
 The changelog is generated, never edited by hand: run this again and it rewrites the
 file from git. Entries are the first-parent history, newest first:
 
-- a merged pull request starts with a link to the merge commit, then its title and a link to the pull request;
-  pull requests merged before PULL_LINKS_SINCE keep a plain "#N", since those numbers belong
-  to a different repository;
-- a commit made on the branch starts with a link to that commit, then its subject;
-- under a merged pull request, every commit it brought in is listed, newest first. Commits
-  that belonged to a pull request stacked into it are grouped under that pull request's
-  number. Stacked pull requests are found from GitHub's pull refs, fetched as
-  refs/remotes/origin/pull/N (`just changelog` and the Changelog workflow fetch them);
-  without them the commits are listed ungrouped;
+- every commit is one line: a link to the commit, then its subject. A merged pull request is
+  the commits it brought in, newest first; its merge commit is left out;
+- the latest commit of each pull request ends with a link to it: the merged pull request's
+  own latest commit, and the head of each pull request stacked into it. Stacked pull requests
+  are found from GitHub's pull refs, fetched as refs/remotes/origin/pull/N (`just changelog`
+  and the Changelog workflow fetch them); without them only the merged pull request's number
+  shows. Pull requests merged before PULL_LINKS_SINCE keep a plain "#N", since those numbers
+  belong to a different repository;
 - each version lists the people who authored those changes, linked to their GitHub
   profile when the commit email is a GitHub noreply address;
 - "Bump version:" commits and lockfile sync commits are left out, since the section
@@ -81,8 +80,8 @@ HEADER = """# Changelog
 Generated from the first-parent history of `{ref}` by `scripts/changelog.py`.
 Do not edit by hand: changes are rewritten the next time it runs. Newest first.
 A "Bump version" commit closes a section. Changes after that bump belong to the
-next bump, or to Unreleased when no later bump exists. Under each merged pull
-request are the commits it brought in, grouped by the pull requests stacked into it.
+next bump, or to Unreleased when no later bump exists. Each line is a commit; the
+latest commit of each pull request, stacked ones included, names that pull request.
 """
 
 
@@ -101,8 +100,6 @@ class Record:
 class Entry:
     date: str
     text: str
-    # Nested lines under the entry: stacked pull request headings and their commits.
-    children: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -436,47 +433,38 @@ def merged_commits(root: Path, record: Record) -> list[Record]:
     return commits
 
 
-def nested_lines(root: Path, record: Record, base: str, heads: dict[str, list[str]]) -> list[str]:
-    """Every commit a merged pull request brought in, newest first, grouped by the pull requests
-    stacked into it.
+def merged_entries(root: Path, record: Record, base: str, heads: dict[str, list[str]]) -> list[Entry]:
+    """The commits a merged pull request brought in, newest first, one entry each.
 
-    A stacked pull request's commits run from the previous stacked head (exclusive) to its own head
-    (inclusive). Commits after the last stacked head belong to the merged pull request itself."""
+    The latest commit of each pull request carries its number: the merged pull request's own
+    latest commit, and the head of every pull request stacked into it. A stacked pull request
+    runs from the previous stacked head (exclusive) to its own (inclusive). Merge commits are
+    left out."""
     merge = MERGE_SUBJECT.match(record.subject)
-    if not merge:
-        return []
-    own = merge.group(1)
-    groups: list[tuple[str | None, list[str]]] = []
-    pending: list[str] = []
+    # A plain branch merge ("Merge branch 'py3'") lists its commits too, with no number.
+    own = merge.group(1) if merge else None
+    groups: list[tuple[str | None, list[Record]]] = []
+    pending: list[Record] = []
     for commit in merged_commits(root, record):
-        nested = MERGE_SUBJECT.match(commit.subject)
-        if nested or commit.subject.startswith("Merge "):
-            # A pull request merged into the stack: its head is named by the merge itself.
+        if MERGE_SUBJECT.match(commit.subject) or commit.subject.startswith("Merge "):
             continue
         if any(pattern.match(commit.subject) for pattern in (*SKIP_SUBJECTS, *SKIP_TITLES)):
             continue
-        pending.append(f"{commit_link(base, commit)} {commit.subject}")
+        pending.append(commit)
         stacked = [number for number in heads.get(commit.sha, []) if number != own]
         if stacked:
             groups.append((stacked[0], pending))
             pending = []
     if pending:
-        groups.append((None, pending))
-    # One commit that says what the pull request title says adds nothing under it.
-    title = next((line.strip() for line in record.body.splitlines() if line.strip()), "")
-    if len(groups) == 1 and groups[0][0] is None and len(groups[0][1]) == 1:
-        if groups[0][1][0].split(" ", 1)[-1] == title:
-            return []
-    # Newest first, as the rest of the changelog: the pull request's own commits, then the
-    # stacked pull requests from the last one stacked down to the first.
-    lines: list[str] = []
+        groups.append((own, pending))
+    entries: list[Entry] = []
     for number, commits in reversed(groups):
-        if number is None:
-            lines.extend(reversed(commits))
-        else:
-            lines.append(f"Stacked {pull_link(base, number, record.date)}")
-            lines.extend(f"  {line}" for line in reversed(commits))
-    return lines
+        for index, commit in enumerate(reversed(commits)):
+            text = f"{commit_link(base, commit)} {commit.subject}"
+            if index == 0 and number:
+                text += f" ({pull_link(base, number, record.date)})"
+            entries.append(Entry(commit.date, text))
+    return entries
 
 
 def collect(root: Path, ref: str) -> list[Section]:
@@ -497,9 +485,13 @@ def collect(root: Path, ref: str) -> list[Section]:
                 sections.append(current)
             current = Section(headings[record.sha])
         text = entry_text(record, base)
-        if text:
-            current.entries.append(Entry(record.date, text, nested_lines(root, record, base, heads)))
-            add_people(current, entry_people(root, record))
+        if not text:
+            continue
+        # A merged pull request is the commits it brought in, not its merge commit. A merge with
+        # nothing left to list (only bumps, say) keeps its one line.
+        entries = merged_entries(root, record, base, heads) or [Entry(record.date, text)]
+        current.entries.extend(entries)
+        add_people(current, entry_people(root, record))
     if current.entries:
         sections.append(current)
     return sections
@@ -515,9 +507,7 @@ def render(ref: str, sections: list[Section]) -> str:
         if credits:
             # A trailing backslash is a Markdown line break, so each line renders on its own.
             out.append("\\\n".join(credits) + "\n\n")
-        for entry in section.entries:
-            out.append(f"- {entry.text}\n")
-            out.extend(f"  - {line}\n" if not line.startswith("  ") else f"    - {line[2:]}\n" for line in entry.children)
+        out.extend(f"- {entry.text}\n" for entry in section.entries)
     return "".join(out)
 
 
