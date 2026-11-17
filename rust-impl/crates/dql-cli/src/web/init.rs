@@ -364,7 +364,7 @@ mod tests {
         assert!(!plan.contains("4."));
         let java = plan_text(Path::new("/work/demo"), Runtime::Java);
         assert!(
-            java.contains("4. Download DynamoDB Local from AWS into .dynamodb-local/"),
+            java.contains("4. Start DynamoDB Local with Java on localhost:8000 (data in .dynamodb-local/data/"),
             "{java}"
         );
         let docker = plan_text(Path::new("/work/demo"), Runtime::Docker);
