@@ -570,6 +570,33 @@ fn config_payload(app: &App) -> Value {
     })
 }
 
+/// The DynamoDB Local server behind the endpoint, for the endpoint chip: whether the endpoint is
+/// local, whether its port answers like DynamoDB, and what `dqlrs dynamo` knows about it.
+fn dynamo_reply(app: &App) -> Value {
+    let local = {
+        let state = app.state.lock().expect("web session");
+        state.session.local_endpoint.clone()
+    };
+    let Some((host, port)) = local else {
+        return json!({"local": false});
+    };
+    let loopback = matches!(
+        host.trim_start_matches("http://")
+            .trim_start_matches("https://"),
+        "localhost" | "127.0.0.1" | "::1" | "[::1]"
+    );
+    if !loopback {
+        return json!({"local": false, "host": host, "port": port});
+    }
+    json!({
+        "local": true,
+        "host": host,
+        "port": port,
+        "answering": super::dynamodb_local::answers_like_dynamodb(port),
+        "server": crate::dynamo::server_on(port).map(|server| crate::dynamo::server_json(&server)),
+    })
+}
+
 fn identity_reply(app: &App) -> Value {
     let (local, memory) = {
         let state = app.state.lock().expect("web session");
@@ -671,6 +698,7 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
     match path {
         "/api/config" => Reply::Json(200, config_payload(app)),
         "/api/identity" => Reply::Json(200, identity_reply(app)),
+        "/api/dynamo" => Reply::Json(200, dynamo_reply(app)),
         "/api/tree" => match files::tree(&app.root) {
             Ok(node) => Reply::Json(200, serde_json::to_value(node).unwrap_or(Value::Null)),
             Err(err) => json_error(400, &err),

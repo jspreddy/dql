@@ -2,6 +2,7 @@ mod api_token;
 pub mod args;
 mod cache_seal;
 pub mod config;
+pub mod dynamo;
 pub mod error;
 pub mod help;
 pub mod history;
@@ -60,6 +61,10 @@ pub fn run() -> color_eyre::Result<()> {
     let mut argv: Vec<String> = std::env::args().collect();
     if notebook::is_notebook_invocation(&argv) {
         return notebook::run(&argv);
+    }
+    // `dqlrs dynamo …` has its own commands and flags.
+    if argv.get(1).map(String::as_str) == Some("dynamo") {
+        return dynamo::run(&argv[2..]);
     }
     let web = args::take_web_subcommand(&mut argv);
     let mut args_iter = argv.iter().skip(1);

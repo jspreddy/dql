@@ -1603,13 +1603,15 @@ const endpointButton = document.querySelector("#endpoint");
 const envPop = document.querySelector("#env-pop");
 
 envPop.addEventListener("toggle", (event) => {
-  if (endpointButton.dataset.kind !== "aws") {
+  const kind = endpointButton.dataset.kind;
+  if (kind !== "aws" && kind !== "local") {
     if (envPop.matches(":popover-open")) envPop.hidePopover();
     return;
   }
   endpointButton.setAttribute("aria-expanded", event.newState === "open" ? "true" : "false");
   if (event.newState !== "open") return;
-  void loadEnvironment();
+  if (kind === "local") void loadDynamo({ open: true });
+  else void loadEnvironment();
 });
 
 state.fileTypes = new Set(loadFileTypes());
@@ -1631,6 +1633,7 @@ async function boot() {
   try {
     const config = await api("/api/config");
     applyEnvironment(config);
+    void loadDynamo();
     startEvents();
     await refreshTree();
     if (location.hash === "#tables") {
@@ -1653,7 +1656,7 @@ function applyEnvironment(config) {
   endpointButton.textContent = label;
   setTip(endpointButton, label);
   endpointButton.dataset.kind = environment.kind || "local";
-  if (environment.kind === "aws") {
+  if (environment.kind === "aws" || environment.kind === "local") {
     endpointButton.setAttribute("popovertarget", "env-pop");
     endpointButton.setAttribute("aria-haspopup", "dialog");
     endpointButton.setAttribute("aria-controls", "env-pop");
@@ -1664,6 +1667,112 @@ function applyEnvironment(config) {
     endpointButton.removeAttribute("aria-controls");
     endpointButton.removeAttribute("aria-expanded");
   }
+}
+
+// The local endpoint's DynamoDB Local server: a dot on the chip (running or not answering) and,
+// in the chip's popover, what `dqlrs dynamo` knows about it and the commands to manage it.
+const DYNAMO_REFRESH_MS = 30_000;
+let dynamoTimer = 0;
+
+async function loadDynamo({ open = false } = {}) {
+  clearTimeout(dynamoTimer);
+  if (endpointButton.dataset.kind !== "local") return;
+  if (open) {
+    renderDynamo(null);
+    placeEnvironment();
+  }
+  let info = null;
+  try {
+    info = await api("/api/dynamo");
+  } catch {
+    info = null;
+  }
+  paintDynamoChip(info);
+  if (envPop.matches(":popover-open")) {
+    renderDynamo(info);
+    placeEnvironment();
+  }
+  dynamoTimer = setTimeout(() => void loadDynamo(), DYNAMO_REFRESH_MS);
+}
+
+function paintDynamoChip(info) {
+  const label = state.environment?.label || endpointButton.textContent;
+  if (!info || !info.local) {
+    delete endpointButton.dataset.dynamo;
+    setTip(endpointButton, label);
+    return;
+  }
+  const server = info.server;
+  endpointButton.dataset.dynamo = info.answering ? "running" : "down";
+  const how = server ? ` (${server.kind}${server.owner === "other" ? ", not started by dqlrs" : ""})` : "";
+  setTip(
+    endpointButton,
+    info.answering ? `${label} · DynamoDB Local running${how}` : `${label} · DynamoDB Local is not answering`,
+  );
+}
+
+function dynamoRows(info) {
+  const rows = [["Status", info.answering ? "Running" : "Not answering"]];
+  const server = info.server;
+  if (!server) return rows;
+  rows.push(["Runtime", server.kind === "docker" ? "Docker (compose)" : "Java"]);
+  if (server.pid) rows.push(["Process", String(server.pid)]);
+  if (server.container) rows.push(["Container", server.container]);
+  rows.push(["Data", server.data]);
+  if (server.started) rows.push(["Started", server.started]);
+  rows.push(["Started by", server.owner === "dqlrs" ? "dqlrs dynamo" : "something else"]);
+  if (server.workspace) rows.push(["Workspace", server.workspace]);
+  return rows;
+}
+
+function renderDynamo(info) {
+  envPop.replaceChildren();
+  const head = document.createElement("div");
+  head.className = "env-pop-head";
+  const kicker = document.createElement("span");
+  kicker.className = "env-pop-kicker";
+  kicker.textContent = "DynamoDB Local";
+  const title = document.createElement("strong");
+  title.id = "env-pop-title";
+  title.textContent = state.environment?.label || endpointButton.textContent;
+  head.append(kicker, title);
+  envPop.append(head);
+  if (!info) {
+    const status = document.createElement("p");
+    status.className = "env-pop-status";
+    status.textContent = "Checking DynamoDB Local…";
+    envPop.append(status);
+    return;
+  }
+  const facts = document.createElement("dl");
+  facts.className = "env-pop-facts";
+  facts.dataset.testid = "dynamo-facts";
+  for (const [name, value] of dynamoRows(info)) {
+    const term = document.createElement("dt");
+    term.textContent = name;
+    const detail = document.createElement("dd");
+    detail.textContent = value;
+    facts.append(term, detail);
+  }
+  envPop.append(facts);
+  const port = info.port;
+  const commands = info.answering
+    ? info.server?.owner === "dqlrs"
+      ? [`dqlrs dynamo stop ${port}`, `dqlrs dynamo logs ${port}`, `dqlrs dynamo clean ${port}`]
+      : [`dqlrs dynamo list`, `dqlrs dynamo stop ${port}`]
+    : [`dqlrs dynamo start --port ${port}`, "dqlrs dynamo list"];
+  const help = document.createElement("div");
+  help.className = "env-pop-commands";
+  help.dataset.testid = "dynamo-commands";
+  const lead = document.createElement("p");
+  lead.textContent = info.answering ? "Manage it from a terminal:" : "Start it from a terminal:";
+  help.append(lead);
+  for (const text of commands) {
+    const code = document.createElement("code");
+    code.textContent = text;
+    help.append(code);
+  }
+  envPop.append(help);
 }
 
 function formatExpiration(value) {

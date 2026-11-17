@@ -161,6 +161,7 @@ pub fn help_text() -> String {
         "  dqlrs web --init-examples",
         "                           Start a new workspace in an empty folder from the examples",
         "  dqlrs notebook           Start JupyterLab with a DQL (Rust) kernel (this binary)",
+        "  dqlrs dynamo <command>   List, start, stop, and clean DynamoDB Local (dqlrs dynamo help)",
         "",
         "Options:",
         "  -c, --command <command>  Run this command and exit",
