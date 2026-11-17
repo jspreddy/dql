@@ -20,7 +20,6 @@ Each line says where to look, not what is there.
 
 ### Workflow
 
-- After you open a pull request, run `just verify` through the `just-verify` skill and fix what fails before you start the next work item.
 - Skills live in `.cursor/skills/`, with mirrors in `.claude/skills/`.
 
 ### Layout
