@@ -325,20 +325,21 @@ const lintTip = document.querySelector("#lint-tip");
 
 const RICH_TIP = ".presence-icon, #run, .table-cache, .describe-cache";
 
-// Tooltip delays, by how much the tip matters to what it labels (dqlrs-web/DESIGN.md, Tooltips).
-// - fast: the tip is the only way to read it: lint messages, run errors, truncated values, info
-//   icons, who else is connected.
-// - medium: an icon-only control, where the tip names the action. The default.
-// - slow: the control already says what it does (a visible label, a grip, a stat pill); the tip
-//   only adds detail.
+// Tooltip delays (dqlrs-web/DESIGN.md, Tooltips). Two questions set the tier:
+// 1. How much does the tip matter? Is it the only way to read something (a lint message, a run
+//    error, a truncated value), or does it just name a control?
+// 2. How obvious is the item without it? An obvious item (a visible label, a universal icon such
+//    as close, zoom, trash, play, gear, sun/moon, a resize grip) moves one tier slower.
+// - fast (100 ms): the tip carries information the item does not show.
+// - medium (200 ms, the default): an icon whose meaning is not obvious, or a status whose detail
+//   is only in the tip.
+// - slow (400 ms): the item already says what it is; the tip only repeats or adds a little.
 // An element can set data-tip-delay="fast|medium|slow" to pick its tier.
 const TIP_DELAYS = { fast: 100, medium: 200, slow: 400 };
 const TIP_TIERS = {
   fast: [
     ".lint-gutter",
     ".cm-line",
-    "#lint-status",
-    ".run-status",
     ".run-tree-summary",
     ".schema-sample",
     ".schema-pop-info",
@@ -347,14 +348,26 @@ const TIP_TIERS = {
     ".presence-icon",
   ].join(", "),
   slow: [
+    // Visible labels: the text already names the action or the value.
+    "#run",
+    "#table-query-run",
+    "#run-file",
+    "#stop",
+    "#endpoint",
+    "#table-search",
+    ".result-card-stat",
+    // Universal icons and grips.
     ".side-resize",
     ".results-resize",
-    ".result-card-stat",
+    "[id$='-close']",
+    "#mermaid-zoom-in",
+    "#mermaid-zoom-out",
+    "#theme-toggle",
+    "#settings-toggle",
+    "#new-file",
+    "#clear-results",
+    ".run-float",
     ".node-running",
-    "#table-query-run",
-    "#run",
-    "#table-search",
-    "#endpoint",
   ].join(", "),
 };
 

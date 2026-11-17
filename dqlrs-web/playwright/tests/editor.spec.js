@@ -186,11 +186,12 @@ test("shows the endpoint and the editor shortcut", async ({ page }) => {
     "aria-keyshortcuts",
     mac ? "Meta+Enter Meta+\\" : "Control+Enter Control+\\",
   );
+  // The Run button shows its shortcut, so its tip waits the slow tooltip delay (400 ms).
   const tip = page.locator("#run-tip");
   await page.locator("#run").hover();
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(250);
   await expect(tip).toBeHidden();
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(400);
   await expect(tip).toBeVisible();
   await expect(tip).toHaveText("Run selection");
 });
