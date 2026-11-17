@@ -21,6 +21,25 @@
 }
 
 .btn:hover { background: var(--chip-hover); }
+
+/* A button that has a keyboard shortcut shows it after the label:
+   <button class="btn"><span class="btn-label">Run</span><kbd class="btn-kbd">Esc</kbd></button> */
+.btn:has(.btn-kbd) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-kbd {
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.8;
+  white-space: nowrap;
+}
 .btn:disabled { opacity: 0.6; cursor: default; }
 .btn[hidden] { display: none; }
 

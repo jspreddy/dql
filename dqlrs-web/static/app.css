@@ -3971,12 +3971,46 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
 .row-json .tok-operator { color: var(--text-secondary); }
 
 /* Run files dialog: a tree of the files to run, with a dot and a summary per file. */
-.run-pop-totals {
+/* The header is fixed; actions, summary, and tree scroll together below it. */
+.run-pop-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.run-pop-actions {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: 8px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--line);
+}
+
+.run-pop-status {
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.run-pop-summary-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.run-pop-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.run-pop-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .run-pop-totals[hidden] { display: none; }
@@ -4011,9 +4045,6 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
 .run-total[data-total="failure"][data-zero] .run-total-value { color: var(--muted); }
 
 .run-pop-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
   padding: 12px 20px;
 }
 
@@ -4084,18 +4115,4 @@ th { background: var(--gutter); position: sticky; top: 0; z-index: 3; }
   50% { opacity: 0.35; }
 }
 
-.run-pop-foot {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 20px;
-  border-top: 1px solid var(--line);
-}
-
-.run-pop-status {
-  margin-right: auto;
-  color: var(--muted);
-  font-size: 12.5px;
-}
 

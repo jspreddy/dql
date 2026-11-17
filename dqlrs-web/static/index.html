@@ -326,20 +326,31 @@
           <div class="schema-pop-title-row">
             <h2 id="run-pop-title">Run</h2>
           </div>
-          <p id="run-pop-summary" class="schema-pop-summary"></p>
         </div>
         <button type="button" id="run-pop-close" class="icon-btn" data-tip="Close" aria-label="Close run">
           <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
-      <div id="run-pop-totals" class="run-pop-totals" hidden></div>
-      <div id="run-pop-body" class="run-pop-body"></div>
-      <footer class="run-pop-foot">
-        <span id="run-pop-status" class="run-pop-status"></span>
-        <button type="button" id="run-pop-cancel" class="btn">Cancel</button>
-        <button type="button" id="run-pop-stop" class="btn btn-danger" hidden>Stop</button>
-        <button type="button" id="run-pop-start" class="btn btn-primary">Run</button>
-      </footer>
+      <!-- The header stays put; the actions, summary, and tree scroll together under it. -->
+      <div id="run-pop-scroll" class="run-pop-scroll">
+        <div class="run-pop-actions" role="toolbar" aria-label="Run actions">
+          <button type="button" id="run-pop-cancel" class="btn" aria-keyshortcuts="Escape">
+            <span class="btn-label">Cancel</span><kbd class="btn-kbd">Esc</kbd>
+          </button>
+          <button type="button" id="run-pop-start" class="btn btn-primary">
+            <span class="btn-label">Run</span><kbd class="btn-kbd"><span class="key-mod">Ctrl</span> + Enter</kbd>
+          </button>
+          <button type="button" id="run-pop-stop" class="btn btn-danger" aria-keyshortcuts="Escape" hidden>
+            <span class="btn-label">Stop</span><kbd class="btn-kbd">Esc</kbd>
+          </button>
+          <span id="run-pop-status" class="run-pop-status" role="status"></span>
+        </div>
+        <div class="run-pop-summary-block">
+          <p id="run-pop-summary" class="run-pop-summary"></p>
+          <div id="run-pop-totals" class="run-pop-totals" hidden></div>
+        </div>
+        <div id="run-pop-body" class="run-pop-body"></div>
+      </div>
     </div>
   </dialog>
   <dialog id="row-pop" class="dialog dialog-sheet" aria-labelledby="row-pop-title">

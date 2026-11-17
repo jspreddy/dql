@@ -3778,7 +3778,14 @@ const runPopStatus = document.querySelector("#run-pop-status");
 const runPopStart = document.querySelector("#run-pop-start");
 const runPopCancel = document.querySelector("#run-pop-cancel");
 const runPopStop = document.querySelector("#run-pop-stop");
+const runPopScroll = document.querySelector("#run-pop-scroll");
 let runDialog = null;
+// Run is Ctrl+Enter (⌘+Enter on a Mac), as in the editor. Esc cancels, stops a run, or closes.
+runPopStart.setAttribute("aria-keyshortcuts", macShortcut ? "Meta+Enter" : "Control+Enter");
+
+function setRunPopLabel(button, text) {
+  button.querySelector(".btn-label").textContent = text;
+}
 
 async function runTargetDocuments(path, kind) {
   if (kind === "dir") return folderDocuments(path);
@@ -3822,11 +3829,12 @@ async function openRunDialog(path, kind) {
   runPopStatus.textContent = "";
   runPopStart.hidden = false;
   runPopStart.disabled = !runnable.length;
-  runPopStart.textContent = runnable.length === 1 ? "Run 1 file" : `Run ${runnable.length} files`;
-  runPopCancel.textContent = "Cancel";
+  setRunPopLabel(runPopStart, runnable.length === 1 ? "Run 1 file" : `Run ${runnable.length} files`);
+  setRunPopLabel(runPopCancel, "Cancel");
   runPopCancel.hidden = false;
   runPopStop.hidden = true;
   runPop.showModal();
+  runPopScroll.scrollTop = 0;
   (runnable.length ? runPopStart : runPopCancel).focus();
 }
 
@@ -3897,7 +3905,7 @@ async function startRunDialog() {
   runPopStatus.textContent = status.charAt(0).toUpperCase() + status.slice(1);
   runPopStop.hidden = true;
   runPopCancel.hidden = false;
-  runPopCancel.textContent = "Close";
+  setRunPopLabel(runPopCancel, "Close");
   runPopCancel.focus();
 }
 
@@ -3910,6 +3918,11 @@ document.querySelector("#run-pop-close").addEventListener("click", () => {
   runPop.close();
 });
 runPopStop.addEventListener("click", stopRun);
+runPop.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || !(macShortcut ? event.metaKey : event.ctrlKey)) return;
+  event.preventDefault();
+  if (!runPopStart.hidden && !runPopStart.disabled) void startRunDialog();
+});
 runPop.addEventListener("cancel", (event) => {
   // Escape during a run stops it (the window handler); the dialog stays to show the result.
   if (runDialog?.running) event.preventDefault();

@@ -78,7 +78,8 @@ The action in a dialog or a form. 32px tall.
 | `.btn.btn-danger` | Deletes, overwrites, or stops work: Delete, Stop |
 
 - Label with a verb that says what happens: "Delete", "Run 1 file". Not "OK" or "Yes".
-- Order: quiet actions first, the primary action last (bottom right).
+- Order: quiet actions first, the primary action last (bottom right). An action bar at the top of a sheet (the run dialog) keeps that order but aligns left.
+- A button with a keyboard shortcut shows it after the label: `<span class="btn-label">Run</span><kbd class="btn-kbd">Esc</kbd>`, plus `aria-keyshortcuts`. Use a `.key-mod` span for Ctrl, so a Mac shows ⌘.
 - A destructive confirm focuses Cancel, not the destructive button.
 
 ### Icon button (`.icon-btn`)

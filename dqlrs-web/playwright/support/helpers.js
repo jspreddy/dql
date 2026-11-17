@@ -40,7 +40,7 @@ export async function runFromDialog(page) {
   const dialog = page.locator("#run-pop");
   await expect(dialog).toBeVisible();
   await page.locator("#run-pop-start").click();
-  await expect(page.locator("#run-pop-cancel")).toHaveText("Close");
+  await expect(page.locator("#run-pop-cancel .btn-label")).toHaveText("Close");
   await page.locator("#run-pop-cancel").click();
   await expect(dialog).toBeHidden();
 }
