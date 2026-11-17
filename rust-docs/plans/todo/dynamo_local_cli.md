@@ -1,6 +1,6 @@
 # `dqlrs dynamo`: list, start, stop, and clean DynamoDB Local
 
-Status: in progress on `handle-ddb-local`.
+Status: done on `handle-ddb-local` (Docker paths are unit-tested; the Java path was run end to end).
 
 ## Why
 
