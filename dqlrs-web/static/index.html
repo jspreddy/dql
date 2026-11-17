@@ -297,7 +297,7 @@
               <span class="side-grip" aria-hidden="true"></span>
             </div>
           </div>
-          <section class="table-query-side" aria-label="Query as built">
+          <section class="table-query-side" id="table-query-side" aria-label="Query as built">
             <div class="result-tabs" role="tablist" aria-label="Query panes">
               <button type="button" class="result-tab is-active" role="tab" id="table-query-tab-dql" data-pane="dql" aria-selected="true" aria-controls="table-query-dql">Query as built</button>
               <button type="button" class="result-tab" role="tab" id="table-query-tab-explain" data-pane="explain" aria-selected="false" aria-controls="table-query-explain">Explain</button>
@@ -307,6 +307,10 @@
               <div id="table-query-explain" class="table-query-explain" data-testid="table-query-explain" role="tabpanel" aria-labelledby="table-query-tab-explain" hidden></div>
             </div>
           </section>
+          <!-- At the panel's right end, so it stays put whether the right pane shows or not. -->
+          <button type="button" id="table-query-side-toggle" class="icon-btn table-query-side-toggle" aria-pressed="true" aria-controls="table-query-side" aria-label="Hide the query as built and Explain">
+            <svg class="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/view_sidebar.svg#icon"></use></svg>
+          </button>
         </form>
         <div id="rows-body" class="result-body browser-rows"></div>
       </section>

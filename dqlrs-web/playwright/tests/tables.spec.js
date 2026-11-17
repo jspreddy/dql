@@ -1617,7 +1617,14 @@ test("table browser splits controls from the query as built and its plan", async
   await pressMod(page, "A");
   await page.locator("#run").click();
   await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "3 rows inserted" })).toBeVisible();
-  await page.evaluate(() => localStorage.removeItem("dqlrs-web.table-query-split"));
+  await page.evaluate(() => {
+    localStorage.removeItem("dqlrs-web.table-query-split");
+    localStorage.removeItem("dqlrs-web.table-query-side-hidden");
+  });
+  const explains = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/explain") explains.push(request.url());
+  });
   await page.locator("#table-search").evaluate((input, value) => {
     input.value = value;
   }, name);
@@ -1638,6 +1645,12 @@ test("table browser splits controls from the query as built and its plan", async
   await expect(page.locator("#table-query-resize .side-grip")).toHaveCount(1);
   await page.screenshot({ path: playwrightArtifact(`table-query-split-${testInfo.project.name}.png`) });
 
+  // No plan is fetched while the Explain tab is not showing.
+  await page.locator("#table-query-query").click();
+  await page.locator("#table-query-scan").click();
+  await page.waitForTimeout(500);
+  expect(explains).toEqual([]);
+
   // Explain shows the plan of what Run would read, and follows the controls.
   await page.locator("#table-query-tab-explain").click();
   await expect(page.locator("#table-query-tab-explain")).toHaveAttribute("aria-selected", "true");
@@ -1645,10 +1658,38 @@ test("table browser splits controls from the query as built and its plan", async
   const explain = page.locator("#table-query-explain");
   await expect(explain.locator('[data-testid="explain-op"]').first()).toHaveText(/scan/i);
   await page.locator("#table-query-query").click();
+  // A query without a hash key value has no plan; Explain says what is missing.
+  await expect(explain).toContainText("Query needs a hash key value.");
+  await page.locator('[data-testid="table-query-key-row"]').first().locator('[data-testid="table-query-value"]').fill("ada");
   await expect(explain.locator('[data-testid="explain-op"]').first()).toHaveText(/query/i);
   await page.screenshot({ path: playwrightArtifact(`table-query-explain-${testInfo.project.name}.png`) });
+
+  // The toggle at the right end hides the pane; with it hidden, no plan is fetched.
+  const toggle = page.locator("#table-query-side-toggle");
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  const toggleBox = await toggle.boundingBox();
+  expect(Math.abs(form.x + form.width - (toggleBox.x + toggleBox.width))).toBeLessThan(16);
+  await toggle.click();
+  await expect(page.locator(".table-query-side")).toBeHidden();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(toggle).toBeVisible();
+  expect((await page.locator("#table-query-controls").boundingBox()).width).toBeGreaterThan(form.width - 2);
+  await page.screenshot({ path: playwrightArtifact(`table-query-side-hidden-${testInfo.project.name}.png`) });
+  const before = explains.length;
+  await page.locator("#table-query-scan").click();
+  await page.waitForTimeout(500);
+  expect(explains.length).toBe(before);
+  await toggle.click();
+  await expect(page.locator(".table-query-side")).toBeVisible();
+  // Showing the pane again with Explain open fetches a fresh plan.
+  await expect.poll(() => explains.length).toBeGreaterThan(before);
+  await expect(explain.locator('[data-testid="explain-op"]').first()).toBeVisible();
+
   await page.locator("#table-query-tab-dql").click();
-  await expect(page.locator("#table-query-dql")).toHaveText(/^SELECT \* FROM /);
+  await expect(page.locator("#table-query-dql")).toHaveText(/^SCAN \* FROM /);
+  await page.locator("#table-query-query").click();
+  await expect(page.locator("#table-query-dql")).toHaveText(/^SELECT \* FROM .* WHERE id = 'ada'/);
+  await page.locator("#table-query-scan").click();
 
   // Dragging the divider resizes the panes and the width is kept across reloads.
   const handle = await page.locator("#table-query-resize").boundingBox();
@@ -1663,4 +1704,25 @@ test("table browser splits controls from the query as built and its plan", async
   await page.locator("#table-query-resize").dblclick();
   const reset = await page.locator("#table-query-controls").boundingBox();
   expect(Math.abs(reset.width / form.width - 0.6)).toBeLessThan(0.01);
+
+  // Dragging the right pane under 10% of the panel hides it; dragging back shows it again.
+  const grip = await page.locator("#table-query-resize").boundingBox();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(form.x + form.width * 0.95, grip.y + grip.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator(".table-query-side")).toBeHidden();
+  await expect(page.locator("#table-query-side-toggle")).toHaveAttribute("aria-pressed", "false");
+  expect(await page.evaluate(() => localStorage.getItem("dqlrs-web.table-query-side-hidden"))).toBe("1");
+  await page.reload();
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await page.locator(`#table-${name}`).click();
+  await expect(page.locator("#table-query")).toBeVisible();
+  await expect(page.locator(".table-query-side")).toBeHidden();
+  await page.locator("#table-query-side-toggle").click();
+  await expect(page.locator(".table-query-side")).toBeVisible();
 });

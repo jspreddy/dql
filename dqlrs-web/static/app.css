@@ -2779,6 +2779,7 @@ body.results-resizing * {
 /* Two panes: the controls at the left (60% by default, resizable) and, at the right, tabs for
    the query as built and its plan. The right pane never makes the panel taller: it scrolls. */
 .table-query {
+  position: relative;
   flex: none;
   display: flex;
   flex-direction: row;
@@ -2810,6 +2811,24 @@ body.results-resizing * {
 }
 
 .table-query-side .result-tabs { align-self: flex-start; }
+
+/* The right pane's show/hide toggle, pinned to the panel's top-right corner. */
+.table-query-side-toggle {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 6;
+}
+
+.table-query-side-toggle[aria-pressed="true"] { color: var(--teal-ink); }
+
+.table-query.side-hidden .table-query-side { display: none; }
+
+.table-query.side-hidden .table-query-controls {
+  width: 100% !important;
+  padding-right: 44px;
+  border-right: 0;
+}
 
 .table-query-side-body {
   position: relative;
