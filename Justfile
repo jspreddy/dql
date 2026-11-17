@@ -422,12 +422,15 @@ changelog *args: (_title "changelog")
     if [[ ${#args[@]} -gt 0 && "${args[0]}" == "--" ]]; then
         args=("${args[@]:1}")
     fi
+    # Pull refs say which pull request each stacked commit came from. Best effort: offline, the
+    # commits are listed without stacked pull request headings.
+    git fetch -q origin '+refs/pull/*/head:refs/remotes/origin/pull/*' 2>/dev/null || true
     python3 scripts/changelog.py "${args[@]}"
 
 # Exit 1 when CHANGELOG.md does not match origin/v-rust. Not part of verify.
 [group('other')]
 changelog-check: (_title "changelog-check")
-    cd "{{justfile_directory()}}" && python3 scripts/changelog.py --check
+    cd "{{justfile_directory()}}" && { git fetch -q origin '+refs/pull/*/head:refs/remotes/origin/pull/*' 2>/dev/null || true; } && python3 scripts/changelog.py --check
 
 # Bump Python (bump2version) or Rust (cargo-release) and refresh that lockfile. Flags need `--`: just version -- rust --dry-run patch
 [group('other')]

@@ -8,6 +8,11 @@ file from git. Entries are the first-parent history, newest first:
   pull requests merged before PULL_LINKS_SINCE keep a plain "#N", since those numbers belong
   to a different repository;
 - a commit made on the branch starts with a link to that commit, then its subject;
+- under a merged pull request, every commit it brought in is listed, oldest first. Commits
+  that belonged to a pull request stacked into it are grouped under that pull request's
+  number. Stacked pull requests are found from GitHub's pull refs, fetched as
+  refs/remotes/origin/pull/N (`just changelog` and the Changelog workflow fetch them);
+  without them the commits are listed ungrouped;
 - each version lists the people who authored those changes, linked to their GitHub
   profile when the commit email is a GitHub noreply address;
 - "Bump version:" commits and lockfile sync commits are left out, since the section
@@ -76,7 +81,8 @@ HEADER = """# Changelog
 Generated from the first-parent history of `{ref}` by `scripts/changelog.py`.
 Do not edit by hand: changes are rewritten the next time it runs. Newest first.
 A "Bump version" commit closes a section. Changes after that bump belong to the
-next bump, or to Unreleased when no later bump exists.
+next bump, or to Unreleased when no later bump exists. Under each merged pull
+request are the commits it brought in, grouped by the pull requests stacked into it.
 """
 
 
@@ -95,6 +101,8 @@ class Record:
 class Entry:
     date: str
     text: str
+    # Nested lines under the entry: stacked pull request headings and their commits.
+    children: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -386,8 +394,91 @@ def entry_text(record: Record, base: str) -> str | None:
     return f"{link} {record.subject}"
 
 
+def pull_heads(root: Path) -> dict[str, list[str]]:
+    """Head commit -> pull request numbers, from GitHub's fetched pull refs."""
+    try:
+        raw = git(root, "for-each-ref", "--format=%(objectname) %(refname)", "refs/remotes/origin/pull/")
+    except RuntimeError:
+        return {}
+    heads: dict[str, list[str]] = {}
+    for line in raw.splitlines():
+        sha, _, name = line.partition(" ")
+        number = name.rsplit("/", 1)[-1]
+        if number.isdigit():
+            heads.setdefault(sha, []).append(number)
+    for numbers in heads.values():
+        numbers.sort(key=int)
+    return heads
+
+
+def merged_commits(root: Path, record: Record) -> list[Record]:
+    """The commits a merge brought in, oldest first, without merge commits."""
+    try:
+        git(root, "rev-parse", "-q", "--verify", f"{record.sha}^2")
+    except RuntimeError:
+        return []
+    raw = git(
+        root,
+        "log",
+        "--reverse",
+        "--date=short",
+        "--format=%H%x1f%h%x1f%ad%x1f%an%x1f%ae%x1f%s%x1f%b%x1e",
+        f"{record.sha}^1..{record.sha}^2",
+    )
+    commits: list[Record] = []
+    for piece in raw.split("\x1e"):
+        piece = piece.strip("\n")
+        if not piece:
+            continue
+        parts = piece.split("\x1f")
+        sha, short, date, author, email, subject = (parts + ["", "", "", "", "", ""])[:6]
+        commits.append(Record(sha, short, date, author, email, subject, "\x1f".join(parts[6:])))
+    return commits
+
+
+def nested_lines(root: Path, record: Record, base: str, heads: dict[str, list[str]]) -> list[str]:
+    """Every commit a merged pull request brought in, grouped by the pull requests stacked into it.
+
+    A stacked pull request's commits run from the previous stacked head (exclusive) to its own head
+    (inclusive). Commits after the last stacked head belong to the merged pull request itself."""
+    merge = MERGE_SUBJECT.match(record.subject)
+    if not merge:
+        return []
+    own = merge.group(1)
+    groups: list[tuple[str | None, list[str]]] = []
+    pending: list[str] = []
+    for commit in merged_commits(root, record):
+        nested = MERGE_SUBJECT.match(commit.subject)
+        if nested or commit.subject.startswith("Merge "):
+            # A pull request merged into the stack: its head is named by the merge itself.
+            continue
+        if any(pattern.match(commit.subject) for pattern in (*SKIP_SUBJECTS, *SKIP_TITLES)):
+            continue
+        pending.append(f"{commit_link(base, commit)} {commit.subject}")
+        stacked = [number for number in heads.get(commit.sha, []) if number != own]
+        if stacked:
+            groups.append((stacked[0], pending))
+            pending = []
+    if pending:
+        groups.append((None, pending))
+    # One commit that says what the pull request title says adds nothing under it.
+    title = next((line.strip() for line in record.body.splitlines() if line.strip()), "")
+    if len(groups) == 1 and groups[0][0] is None and len(groups[0][1]) == 1:
+        if groups[0][1][0].split(" ", 1)[-1] == title:
+            return []
+    lines: list[str] = []
+    for number, commits in groups:
+        if number is None:
+            lines.extend(commits)
+        else:
+            lines.append(f"Stacked {pull_link(base, number, record.date)}")
+            lines.extend(f"  {line}" for line in commits)
+    return lines
+
+
 def collect(root: Path, ref: str) -> list[Section]:
     records = history(root, ref)
+    heads = pull_heads(root)
     oldest_first = [record.sha for record in reversed(records)]
     headings = bump_headings(root, ref, oldest_first)
     base = github_base(root)
@@ -404,7 +495,7 @@ def collect(root: Path, ref: str) -> list[Section]:
             current = Section(headings[record.sha])
         text = entry_text(record, base)
         if text:
-            current.entries.append(Entry(record.date, text))
+            current.entries.append(Entry(record.date, text, nested_lines(root, record, base, heads)))
             add_people(current, entry_people(root, record))
     if current.entries:
         sections.append(current)
@@ -421,7 +512,9 @@ def render(ref: str, sections: list[Section]) -> str:
         if credits:
             # A trailing backslash is a Markdown line break, so each line renders on its own.
             out.append("\\\n".join(credits) + "\n\n")
-        out.extend(f"- {entry.text}\n" for entry in section.entries)
+        for entry in section.entries:
+            out.append(f"- {entry.text}\n")
+            out.extend(f"  - {line}\n" if not line.startswith("  ") else f"    - {line[2:]}\n" for line in entry.children)
     return "".join(out)
 
 

@@ -3,7 +3,8 @@
 Generated from the first-parent history of `origin/v-rust` by `scripts/changelog.py`.
 Do not edit by hand: changes are rewritten the next time it runs. Newest first.
 A "Bump version" commit closes a section. Changes after that bump belong to the
-next bump, or to Unreleased when no later bump exists.
+next bump, or to Unreleased when no later bump exists. Under each merged pull
+request are the commits it brought in, grouped by the pull requests stacked into it.
 
 ## Unreleased (2026-11-17)
 
@@ -11,15 +12,76 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
 - [22d1a7f](https://github.com/jspreddy/dql/commit/22d1a7f924d4b898f59f695b8355fbc2f7a4d1ad) feat(web): delay tooltips 100, 200, or 400 ms by how much they matter ([#254](https://github.com/jspreddy/dql/pull/254))
+  - Stacked [#242](https://github.com/jspreddy/dql/pull/242)
+    - [c918cda](https://github.com/jspreddy/dql/commit/c918cda6f893630dee5f8d566ea923fb82d5e2f8) fix(web): check key values against the key type for every table
+    - [dd69e8c](https://github.com/jspreddy/dql/commit/dd69e8c99beee52c0f9771a5e05033a2eedcabcf) fix(web): accept a list of hash keys in Keys mode on range-key tables
+  - Stacked [#244](https://github.com/jspreddy/dql/pull/244)
+    - [2a35d86](https://github.com/jspreddy/dql/commit/2a35d86ca66b74d816695cec22fc6d8dc14ea5e4) feat: one key format for KEYS IN, WHERE ... IN, and the Keys box
+    - [3823720](https://github.com/jspreddy/dql/commit/382372003dde37f93f42d0391764e5ac7011804a) docs(help): keep the key format paragraph prose in HELP SELECT
+    - [17843f0](https://github.com/jspreddy/dql/commit/17843f0cd66743870ad26a1826fda9de5d959ef2) test(web): screenshot the key format in the query editor and table viewer
+  - Stacked [#248](https://github.com/jspreddy/dql/pull/248)
+    - [895ef18](https://github.com/jspreddy/dql/commit/895ef18d3236c0c5a1068705ffbb42c7c4e51543) feat(web): leave repeated keys out of the Keys box statement
+    - [64d5cf0](https://github.com/jspreddy/dql/commit/64d5cf057292d1d34bb195c89f3d11568ba9c2ab) test(web): pin down repeated (hash, range) tuples in the Keys box
+  - Stacked [#249](https://github.com/jspreddy/dql/pull/249)
+    - [a6fe359](https://github.com/jspreddy/dql/commit/a6fe359e3c725d648a8d84027b762109c012d6a0) feat(web): highlight keys in the table browser's Keys box
+    - [281a2cb](https://github.com/jspreddy/dql/commit/281a2cbce6d6634f9bfaab4f2159db3fab08050a) test(web): read the query editor's font, not the first CodeMirror on the page
+  - Stacked [#250](https://github.com/jspreddy/dql/pull/250)
+    - [ca02383](https://github.com/jspreddy/dql/commit/ca0238300eec34b4f35442572b03cbd9177ec240) feat(web): move the run dialog's actions under its title, with shortcuts
+  - Stacked [#251](https://github.com/jspreddy/dql/pull/251)
+    - [ac78b7c](https://github.com/jspreddy/dql/commit/ac78b7c93f6f60f0c02de84c75c2ce0ca35a062d) chore(just): add dynamo-fresh (dd-fresh) to restart DynamoDB Local clean
+  - Stacked [#252](https://github.com/jspreddy/dql/pull/252)
+    - [cf43e5d](https://github.com/jspreddy/dql/commit/cf43e5dcd77a7f73eb4949036a582f51187eb839) feat(web): put the table browser's Run and pager in one bar under the DQL
+    - [6736e15](https://github.com/jspreddy/dql/commit/6736e15ae6c8c4207c3b9af7e4585f02728a75db) feat(web): show Cancel, then rows, capacity, and time, next to the table Run
+  - Stacked [#253](https://github.com/jspreddy/dql/pull/253)
+    - [149b6b5](https://github.com/jspreddy/dql/commit/149b6b5e518c1e98137a45f01e7e045f0e4b3f12) feat(web): split the table query panel into controls and query/explain tabs
+    - [68cb88f](https://github.com/jspreddy/dql/commit/68cb88faa2f28b90e8605b60e7cdd375c54dfe39) feat(web): toggle and drag-to-hide for the table query's right pane
+    - [edcf2f0](https://github.com/jspreddy/dql/commit/edcf2f0c4d7d74dcfa4e2cf5fcac0bd53468889f) test(web): scope the side grip check to the main side divider
+    - [0977b6f](https://github.com/jspreddy/dql/commit/0977b6f6578bf9905ecf22910ff5af3aab29fc41) feat(web): plain explain steps in the table pane, JSON box on its tab bar
+    - [0d13d6e](https://github.com/jspreddy/dql/commit/0d13d6eaedb492f41aaab81fe125d4aea5c71bd6) feat(web): cap the table query's right pane at 55% of the panel
+    - [13dc478](https://github.com/jspreddy/dql/commit/13dc47821da48a89a6c47c09812f78c19dcc2f3e) feat(web): resize the table query panel's height from its bottom edge
+    - [5ab4cff](https://github.com/jspreddy/dql/commit/5ab4cffa014f5732ce35ee16edda1a65ff0433ba) feat(web): put the table query's Run bar under both panes, full width
+    - [2106a9b](https://github.com/jspreddy/dql/commit/2106a9beaae3b977ef3d5336e6e57429637e7ae3) test(web): check the table query's Run bar sits on the panel's bottom edge when taller
+    - [acf0aeb](https://github.com/jspreddy/dql/commit/acf0aebeba447e64cba42cac9f7b94a4f9f45fdf) test(web): allow for the Run bar's padding in the table pager layout check
+  - [1314b58](https://github.com/jspreddy/dql/commit/1314b5859dc31e92be0d2c2d525b3edd2405b06a) feat(web): delay tooltips 100, 200, or 400 ms by how much they matter (WIP)
+  - [493174e](https://github.com/jspreddy/dql/commit/493174e55e49d0897a2b5084c4ce75a3a23f5337) feat(web): rank tooltips by obviousness too; tests and DESIGN.md notes
+  - [805e079](https://github.com/jspreddy/dql/commit/805e0797a5cb2c825064074984dbeb38b03f5a77) fix(web): hand tooltips off at once within 300 ms of the last one hiding
 - [5da83d2](https://github.com/jspreddy/dql/commit/5da83d270b7787e603087f76f31de313d7876b20) Keep the table source beside Scan, Query, and Keys ([#241](https://github.com/jspreddy/dql/pull/241))
+  - [dc3b15a](https://github.com/jspreddy/dql/commit/dc3b15ae8fa727da3cb407b97fd8b13f4a3ddbab) fix(web): keep the table source beside Scan, Query, and Keys
+  - [58e6aa1](https://github.com/jspreddy/dql/commit/58e6aa1fc0e6974145179788b1c7ac8e865154f7) fix(web): keep the table source dropdown a fixed width
 - [cffc77a](https://github.com/jspreddy/dql/commit/cffc77afa8a3755848446c18d67314e121444d99) Show the just verify summary unchanged ([#243](https://github.com/jspreddy/dql/pull/243))
 - [dceff0c](https://github.com/jspreddy/dql/commit/dceff0c23036a67c1fd2d97e6afa24b25a2d4f9a) docs: drop the post-PR just verify workflow step ([#237](https://github.com/jspreddy/dql/pull/237))
 - [f0998f5](https://github.com/jspreddy/dql/commit/f0998f564fc47220add1a32e1c6cf2b56eb19758) feat(web): run DynamoDB condition functions from the table picker ([#238](https://github.com/jspreddy/dql/pull/238))
+  - Stacked [#234](https://github.com/jspreddy/dql/pull/234)
+    - [62760b9](https://github.com/jspreddy/dql/commit/62760b981c5ca5587e05eb7d88e628e501f7553b) fix(web): fetch one extra table row so the last page disables Next
+    - [4cb0fc8](https://github.com/jspreddy/dql/commit/4cb0fc8cfe0c11174d1dc5f9df35f0aec016e211) test(web): walk a thousand numeric ids through the table pager
+  - Stacked [#235](https://github.com/jspreddy/dql/pull/235)
+    - [e79691c](https://github.com/jspreddy/dql/commit/e79691c978ab2d1b1515c3104c62a66513bbff00) feat(web): serve table pager turns from memory until Run
+  - [27d09c0](https://github.com/jspreddy/dql/commit/27d09c0f7b3a5166d7b224ab7f4ffd5f621dd5b4) feat(web): run DynamoDB condition functions from the table picker
 - [7c6717c](https://github.com/jspreddy/dql/commit/7c6717c9d61117f4fc01c15ec11c0a1e89af0cac) fix(web): put table pagination in the query toolbar ([#232](https://github.com/jspreddy/dql/pull/232))
 - [2d12875](https://github.com/jspreddy/dql/commit/2d128755822f3e0ae0f481e74cb0cdc3d5cb51eb) Table browser Keys mode for KEYS IN lookups ([#225](https://github.com/jspreddy/dql/pull/225))
+  - Stacked [#223](https://github.com/jspreddy/dql/pull/223)
+    - [e2c586e](https://github.com/jspreddy/dql/commit/e2c586eb9fa5b2a563979fc51d2260ed23231a11) Add a scan and query picker to the table browser.
+    - [465a009](https://github.com/jspreddy/dql/commit/465a0097fc439d022f292e6ea44bb591ef2d7a32) Suggest table attributes in the query picker, and allow typed names.
+  - [141c323](https://github.com/jspreddy/dql/commit/141c3235f9038fa5ad7cf192d1b428e0022b2cd3) Add a Keys mode to the table browser for KEYS IN lookups.
+  - [ba3183a](https://github.com/jspreddy/dql/commit/ba3183a59de53f5f59aa8ae508e5b4267a9f1052) Require parentheses for hash, range key tuples.
+  - [fa2e6fa](https://github.com/jspreddy/dql/commit/fa2e6fafe166df4a08f213d3f8538c56ecc6a8cf) Let Keys mode pick TABLE or an index.
+  - [6e22729](https://github.com/jspreddy/dql/commit/6e227293f21b4f3fc6cb15b72484c1b0c65f2805) Accept grouped KEYS IN lists and trailing commas.
 - [0cea79f](https://github.com/jspreddy/dql/commit/0cea79f01ecf5a18c389d06aae3e7470a3aa2c4f) test(notebook): say what the page showed when a cell does not finish ([#228](https://github.com/jspreddy/dql/pull/228))
+  - Stacked [#227](https://github.com/jspreddy/dql/pull/227)
+    - [a909ca7](https://github.com/jspreddy/dql/commit/a909ca77680e3b66cc2c0411a8a4d69441b46002) refactor(web): share button and dialog components; add design guidelines
+    - [a1306a6](https://github.com/jspreddy/dql/commit/a1306a6e192f1bdce02aa080cdec58f4266896dc) fix(web): bundle Noto Sans so the app works offline
+    - [c91b43c](https://github.com/jspreddy/dql/commit/c91b43c168d1c878329fc499c088595504f5bcc1) docs(web): plan splitting app.js into modules
+    - [ec4697e](https://github.com/jspreddy/dql/commit/ec4697ee31722e22a972efc43bdea4c568882c01) test(web): read only the new result card in the ST listing test
+  - [8dd5cbe](https://github.com/jspreddy/dql/commit/8dd5cbe24cede53e705ccca3ed0c4627b486d5cc) test(notebook): say what the page showed when a cell does not finish
 - [48eb60b](https://github.com/jspreddy/dql/commit/48eb60be7053d19496f9da185d3a7d0b261061b0) docs: add a Conventional Commits rule ([#221](https://github.com/jspreddy/dql/pull/221))
+  - Stacked [#220](https://github.com/jspreddy/dql/pull/220)
+    - [ab341f7](https://github.com/jspreddy/dql/commit/ab341f705d56ed3d368725921b2c5702247966b1) Link release tags to their changelog heading; date headings by their newest change
+  - [4a9f7ae](https://github.com/jspreddy/dql/commit/4a9f7ae174f55ec1c2846d105bc3cb9d6c02534a) docs: add a Conventional Commits rule
+  - [01c2309](https://github.com/jspreddy/dql/commit/01c2309ca8e828f893f48cfbfb05de822f413536) docs: merge the Conventional Commits rule into the commit rule
 - [4168e63](https://github.com/jspreddy/dql/commit/4168e63026d7ad3d847fe4bc17b870489bec4c5a) Cache cargo in CI and install cargo-release from its release binary ([#218](https://github.com/jspreddy/dql/pull/218))
+  - [c6d0f40](https://github.com/jspreddy/dql/commit/c6d0f408d83f54291a6cba071114a45d994de094) Cache cargo in CI and install cargo-release from its release binary
+  - [c93262f](https://github.com/jspreddy/dql/commit/c93262f59216a7b02226b09eb33886b796d7945e) Key the cargo caches on dependencies, not the whole lockfile
+  - [2c38614](https://github.com/jspreddy/dql/commit/2c38614fc61db4674ee7fc1c6a4bf4404836ffe9) Fail the cache key step when no dependencies are found
 
 ## dqlrs 0.7.11 (2026-11-15)
 
@@ -27,8 +89,21 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5
 
 - [ad1b8ae](https://github.com/jspreddy/dql/commit/ad1b8ae7a564716da459428cf804c48a097c54a4) Add a Release dqlrs workflow and release install commands ([#215](https://github.com/jspreddy/dql/pull/215))
+  - [829e443](https://github.com/jspreddy/dql/commit/829e443a22944b3fdcb81c8e3b75dff5e532aa13) Add a Release dqlrs workflow and release install commands
+  - [7c2da40](https://github.com/jspreddy/dql/commit/7c2da40e3269e41f57965b8384bd94dd9db383bc) Keep the release changelog equal to what v-rust writes
+  - [83d165a](https://github.com/jspreddy/dql/commit/83d165ad19d5c266ecc90c5c12ac66691b9503f7) Pin README install tags with cargo-release replacements
+  - [46c0b94](https://github.com/jspreddy/dql/commit/46c0b94235972742e232de628afeac1cc83f23e4) Add a graph of the versioning and release flow
+  - [ce9657f](https://github.com/jspreddy/dql/commit/ce9657f5a14c175b6e104973320c632cfe5526eb) Draw the release flow graph with direct lines
+  - [f8d7e2d](https://github.com/jspreddy/dql/commit/f8d7e2dd63379980fcd504682dc2ebbb0a424ddf) Remove the uv run task bump entry point
+  - [a0ecb92](https://github.com/jspreddy/dql/commit/a0ecb923c34b90af70b111e42a16400b21ffa00a) Remove the changelog skill
+  - [86ba2b1](https://github.com/jspreddy/dql/commit/86ba2b1aaa7c55cf0e5c79ee0dcc6aca6cb0cd29) Group the release flow entry points by GitHub Actions and manual
+  - [425686f](https://github.com/jspreddy/dql/commit/425686fae90d09be8a18eed83ee0aaca3a397313) Group the release flow files into read and written
+  - [f828ba4](https://github.com/jspreddy/dql/commit/f828ba4aa0d44ae0371f47e230dbcc61d58cb759) Say that v-rust is the GitHub default branch
+  - [41a9860](https://github.com/jspreddy/dql/commit/41a986078209653f70813009920682edad4c8f80) Show the v-rust install next to the release install in the README summary
 - [1796de2](https://github.com/jspreddy/dql/commit/1796de2a4f1c51f954118e43d26fb320a40c82fb) Remove the empty py-plans folder ([#213](https://github.com/jspreddy/dql/pull/213))
 - [2171577](https://github.com/jspreddy/dql/commit/21715779ba7343a94b97f10e02d2e50158069a26) Add pointers for new agents to AGENTS.md ([#209](https://github.com/jspreddy/dql/pull/209))
+  - [ff3b3fa](https://github.com/jspreddy/dql/commit/ff3b3fa2236eedb8c02573003b4d4b2ed2a94fe3) Add MEMORY.md with pointers for new agents
+  - [c193040](https://github.com/jspreddy/dql/commit/c19304061242cbcedf9c2c2fc18f08da89656104) Fold MEMORY.md into AGENTS.md
 
 ## dqlrs 0.7.10 (2026-11-14)
 
@@ -36,6 +111,7 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5
 
 - [2bd5846](https://github.com/jspreddy/dql/commit/2bd58460615c009c13f722287536acdf9860c079) Bump the Rust version with cargo-release; drop -dev0 (0.7.10) ([#210](https://github.com/jspreddy/dql/pull/210))
+  - [2c0c74d](https://github.com/jspreddy/dql/commit/2c0c74db8548f88f8f606d79c1ce1ff2af02fba8) Bump the Rust version with cargo-release and semver pre-releases
 
 ## dqlrs 0.7.10-dev0 (2026-11-13)
 
@@ -46,7 +122,17 @@ Agents: Claude Opus 5.5, Cursor Agent
 - [6925478](https://github.com/jspreddy/dql/commit/6925478449b4ec6c0df51d9996891055d7d56710) Do not link pull requests merged before 2024-10-01 in the changelog ([#203](https://github.com/jspreddy/dql/pull/203))
 - [520f45f](https://github.com/jspreddy/dql/commit/520f45fdb305ec9200b32d39831a13fa1326731b) Document HELP and LS in the README's supported queries ([#202](https://github.com/jspreddy/dql/pull/202))
 - [cd68307](https://github.com/jspreddy/dql/commit/cd683077684ac3a5e2fdfafc2ac4386597929990) Group the changelog by Bump version commits ([#198](https://github.com/jspreddy/dql/pull/198))
+  - [7aeb92a](https://github.com/jspreddy/dql/commit/7aeb92a2b4aee3c56ed9523f6836df373134ded9) Group the changelog by Bump version commits.
+  - [9f420c1](https://github.com/jspreddy/dql/commit/9f420c13b690066d05dac1b748476fa82aa291bf) Run the changelog skill through just.
+  - [9e5979c](https://github.com/jspreddy/dql/commit/9e5979c064faefcb09ea0aa73f68faa849b7c0b4) Show the commit hash on every changelog entry.
+  - [bf75825](https://github.com/jspreddy/dql/commit/bf75825e20e85bda5257205603b2e72278cde6d2) Link each changelog hash at the start of the line.
+  - [8c8a356](https://github.com/jspreddy/dql/commit/8c8a35603aa0d88efd6749065d19485ac6f75232) List contributors under each changelog version.
+  - [0c5df1f](https://github.com/jspreddy/dql/commit/0c5df1f12143c98ecbda7d140ad34847673f9914) Map Sai's author names to the jspreddy GitHub user.
+  - [d6e5b44](https://github.com/jspreddy/dql/commit/d6e5b44540c051b005f1cea27772241a47f075a2) Put changelog contributors on one line under each version heading.
+  - [17f975d](https://github.com/jspreddy/dql/commit/17f975d4f2f2120db3f6096443fe2d7e32e04587) Show Sai Jonnala for every jspreddy alias in the changelog.
 - [33eeec6](https://github.com/jspreddy/dql/commit/33eeec6137127637e20b802c464301e1ec53da07) Add dqlrs web --init-examples to the README banner ([#199](https://github.com/jspreddy/dql/pull/199))
+  - [2138c62](https://github.com/jspreddy/dql/commit/2138c6204ad82a2cb85cd3268717fbc6e7605b5d) Add dqlrs web --init-examples to the README banner
+  - [fe1f244](https://github.com/jspreddy/dql/commit/fe1f24484d99296c15b88d9a2a85d16f6fc9bc2f) Move --init-examples to the third row of the banner commands
 
 ## dqlrs 0.7.9-dev0 (2026-11-13)
 
@@ -54,12 +140,31 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, <a href="https://github.com/dependabot%5Bbot%5D">dependabot[bot]</a>
 
 - [7923d09](https://github.com/jspreddy/dql/commit/7923d093295ab6734976678da2af5d2496d110b1) Color what the dqlrs command prints to the console ([#196](https://github.com/jspreddy/dql/pull/196))
+  - Stacked [#190](https://github.com/jspreddy/dql/pull/190)
+    - [2a9ceff](https://github.com/jspreddy/dql/commit/2a9ceffbd3f6e057705a6648f38aebf2bb561b20) Replace dead diagram links in the example READMEs
+  - Stacked [#191](https://github.com/jspreddy/dql/pull/191)
+    - [0fa9b5b](https://github.com/jspreddy/dql/commit/0fa9b5b4bfa279a8a0c0f79cd54200c1f59ade41) Add dqlrs web --init --examples to start a workspace from the examples
+    - [77586bc](https://github.com/jspreddy/dql/commit/77586bc41e72451c38d7177645cf18265bc09788) Use one flag, --init-examples, instead of --init and --examples
+    - [923e712](https://github.com/jspreddy/dql/commit/923e7122ca8611b9e4b58f66f8ac1ffb2a07505d) Show step progress while dqlrs web --init-examples runs
+  - Stacked [#192](https://github.com/jspreddy/dql/pull/192)
+    - [cd478eb](https://github.com/jspreddy/dql/commit/cd478eba0cfab0c0ec7320638854c4a7f4d7beba) Load tables with progress before dqlrs web starts serving
+    - [cd08eaf](https://github.com/jspreddy/dql/commit/cd08eaf8c4119ab77d75933dd8469e7b7be612b0) Say "table definitions" and show only the bar while loading
+    - [8b20598](https://github.com/jspreddy/dql/commit/8b205980516b52a67ab087e1cc2138fea1765b29) Show the connection and role above the table definition progress
+  - Stacked [#194](https://github.com/jspreddy/dql/pull/194)
+    - [50f97b0](https://github.com/jspreddy/dql/commit/50f97b018567c51e42d4fc6559487b4d4169c921) Drop the git name and email check from the --init-examples docs
+    - [92c51e3](https://github.com/jspreddy/dql/commit/92c51e34e3e18b022dd52f3c496b93aa083dfea2) Say git must be properly installed and ready to commit
+  - Stacked [#195](https://github.com/jspreddy/dql/pull/195)
+    - [3614c6b](https://github.com/jspreddy/dql/commit/3614c6b7c59285cd864dc9641d3cd7364855a69a) Set up DynamoDB Local in dqlrs web --init-examples
+  - [b79eb01](https://github.com/jspreddy/dql/commit/b79eb01ebb09d2d07c04d82660f22d8fca092aca) Color what the dqlrs command prints to the console
+  - [82e0cdb](https://github.com/jspreddy/dql/commit/82e0cdb284079fa9d4d965b16d7f15f9f9fafbe4) Use more colors: headings, JSON, URLs, paths, variables, shortcuts
 - [20e052d](https://github.com/jspreddy/dql/commit/20e052d3b5e0f5543da7994efb03f733e29b5aae) Fix the vulnerabilities cargo audit and pip-audit report ([#187](https://github.com/jspreddy/dql/pull/187))
 - [55de3f6](https://github.com/jspreddy/dql/commit/55de3f6903dd4ad17103d499cfd217b5cc7b40c0) Add a filetype-report skill that renders a PNG of file types in git ([#186](https://github.com/jspreddy/dql/pull/186))
+  - [9daf1af](https://github.com/jspreddy/dql/commit/9daf1afcf366cb4d5252bc1df5d1db021586e761) Add a filetype-report skill that renders a PNG of file types in git.
 - [b3945aa](https://github.com/jspreddy/dql/commit/b3945aac22994e20b0aa2b7c0d2d4275c8bcd146) Bump certifi from 2026.7.22 to 2026.10.18 in /notebook ([#184](https://github.com/jspreddy/dql/pull/184))
 - [a0aa631](https://github.com/jspreddy/dql/commit/a0aa6315b9aab4a0bd4c5fc723e22f892dd8fa47) Bump certifi from 2026.7.22 to 2026.10.18 in /notebook-tests ([#181](https://github.com/jspreddy/dql/pull/181))
 - [e0f7f29](https://github.com/jspreddy/dql/commit/e0f7f2992c9d84608743abd9d76ad8c5095ed8ba) Bump certifi from 2025.7.14 to 2026.10.18 in /py-impl ([#179](https://github.com/jspreddy/dql/pull/179))
 - [415f2dd](https://github.com/jspreddy/dql/commit/415f2dd7e9dd05d1757dc125bfe4e8aa2d9bcecb) github actions: Run just check and update the changelog ([#175](https://github.com/jspreddy/dql/pull/175))
+  - [d592387](https://github.com/jspreddy/dql/commit/d592387986490b15e42006c4e695994a41fe58bf) Run just check and update the changelog in GitHub Actions
 
 ## dqlrs 0.7.8-dev0 (2026-11-12)
 
@@ -68,6 +173,19 @@ Agents: Claude Opus 5.5
 
 - [cffaff7](https://github.com/jspreddy/dql/commit/cffaff750dc25a5225a2d9881c8d6a516d6266e4) Bump dqlrs to 0.7.8-dev0 and update the changelog ([#173](https://github.com/jspreddy/dql/pull/173))
 - [91ef155](https://github.com/jspreddy/dql/commit/91ef155b1170a06d8f15e671bdba8931fa9b9f8f) Organize Rust docs, add a README banner, refresh screenshots ([#170](https://github.com/jspreddy/dql/pull/170))
+  - [06605e0](https://github.com/jspreddy/dql/commit/06605e04ef9c7be290674a2e1e3a81b116b78990) Move Rust plans and archived Cursor plans under rust-docs.
+  - [6e9ce09](https://github.com/jspreddy/dql/commit/6e9ce09a91808df1ce0bcce6536f617d5f20fd9c) Index rust-docs and fix links after the plans move.
+  - [4cd739c](https://github.com/jspreddy/dql/commit/4cd739c4f9dd302daeb865a0b57d6381df52a3d4) Refresh README screenshots and update the README.
+  - [8ff5287](https://github.com/jspreddy/dql/commit/8ff52876cdf6c0ba02f74d9624cdab14ca692bae) Lead the README with a banner and a quick pitch.
+  - [d8964c7](https://github.com/jspreddy/dql/commit/d8964c718f91d664756a4af11a7bb45530184102) Move the security plans into the plans archive.
+  - [1a49d80](https://github.com/jspreddy/dql/commit/1a49d80b02b774cb13e682a06b588564b4297680) Mark the security plans as shipped.
+  - [41ee90f](https://github.com/jspreddy/dql/commit/41ee90f0566254830ffb0909baa48d5842dad3ca) Update docs and screenshots for dqlrs web and the workspace cache.
+  - [6f194d6](https://github.com/jspreddy/dql/commit/6f194d6f5692be9e6d40ddc410f5293e46212f5d) Offer only git-URL installs until there are releases.
+  - [388c315](https://github.com/jspreddy/dql/commit/388c315740884b865d4ed11a12367d2f6c63fcc2) Link the README summary to each surface and mention aws-vault.
+  - [244149a](https://github.com/jspreddy/dql/commit/244149a5ee280d05fba23679fb6cbf5385046300) Point the aws-vault links at the ByteNess fork.
+  - [eb234a3](https://github.com/jspreddy/dql/commit/eb234a371094f228e9af93285411171e3f201c4f) Group Documentation and About this fork under a Maintainer section.
+  - [4decc41](https://github.com/jspreddy/dql/commit/4decc414d12dc42c4bc23b53b67186355386b804) Use the dark theme for the README web screenshots.
+  - [26f0267](https://github.com/jspreddy/dql/commit/26f026729a29de17697f7fad59326468e7c118d6) Use JupyterLab Dark for the README notebook screenshots.
 
 ## dqlrs 0.7.7-dev0 (2026-11-12)
 
@@ -75,7 +193,38 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor
 
 - [f0a8870](https://github.com/jspreddy/dql/commit/f0a887063c750e4f0f1867202ec0b5a68167097b) Make the listed-table search test create its own table ([#172](https://github.com/jspreddy/dql/pull/172))
+  - Stacked [#157](https://github.com/jspreddy/dql/pull/157)
+    - [66145e5](https://github.com/jspreddy/dql/commit/66145e5e7ea8bdbce2aa5c147e911787aeb1b9cf) Keep all dqlrs data in <workspace>/.dqlrs-cache, per connection
+  - Stacked [#158](https://github.com/jspreddy/dql/pull/158)
+    - [ab2965e](https://github.com/jspreddy/dql/commit/ab2965e8d43438c273ca738c8a0fcf2991b07308) Fix the local table example paths for the ./ rule
+  - Stacked [#160](https://github.com/jspreddy/dql/pull/160)
+    - [d065595](https://github.com/jspreddy/dql/commit/d06559513963c8a157fdf94c8d9ea3d3c50f83af) Run test suites' dqlrs outside the repository
+  - Stacked [#161](https://github.com/jspreddy/dql/pull/161)
+    - [6d689df](https://github.com/jspreddy/dql/commit/6d689df1364563defe1795431356cfc06749144e) Clear local tables and the result cache from the settings menu
+  - Stacked [#162](https://github.com/jspreddy/dql/pull/162)
+    - [700445f](https://github.com/jspreddy/dql/commit/700445f6bc3da876388f30b0f6dfaf997a5276ea) Confirm and track tree-menu runs in a full-screen run dialog
+  - Stacked [#163](https://github.com/jspreddy/dql/pull/163)
+    - [36fe6ca](https://github.com/jspreddy/dql/commit/36fe6caaa63463c3d227dcade2283d8814f1e1b8) Measure editor lines until they have a box in web tests
+  - Stacked [#164](https://github.com/jspreddy/dql/pull/164)
+    - [e5de8bd](https://github.com/jspreddy/dql/commit/e5de8bd1bdf78419fc3e619fc3f18b982aedd1e4) Extract reusable web components from app.js, with component tests
+  - Stacked [#165](https://github.com/jspreddy/dql/pull/165)
+    - [b4d6b84](https://github.com/jspreddy/dql/commit/b4d6b84497fd3ee702d49a0384b58cb170673bb8) Add a generated CHANGELOG.md and a changelog skill
+  - Stacked [#166](https://github.com/jspreddy/dql/pull/166)
+    - [57d2f31](https://github.com/jspreddy/dql/commit/57d2f31dec173f7c139e2f731ace7422c568f09a) Add ST as short for SHOW TABLES
+  - Stacked [#167](https://github.com/jspreddy/dql/pull/167)
+    - [efae0cc](https://github.com/jspreddy/dql/commit/efae0cc94f54d70fb4f02a5b75482fc0d4931415) Let ST take a quoted or bare pattern
+  - Stacked [#168](https://github.com/jspreddy/dql/pull/168)
+    - [2c118cf](https://github.com/jspreddy/dql/commit/2c118cf1e58d55017884cf8cb2638287f36c370f) Make a bare ST pattern match anywhere in the name
+  - Stacked [#169](https://github.com/jspreddy/dql/pull/169)
+    - [9477025](https://github.com/jspreddy/dql/commit/94770251dacc338b2a65100a5b71f10f36091029) Make the web UI a subcommand: dqlrs web
+  - Stacked [#171](https://github.com/jspreddy/dql/pull/171)
+    - [361b1d4](https://github.com/jspreddy/dql/commit/361b1d443539affcd1e1e8bf1a46992e40854468) Wait for the workspace watch before the web server accepts clients
+    - [c7a5af2](https://github.com/jspreddy/dql/commit/c7a5af2faa28a3d60cd2de546d4952232ad8cbeb) Fix web tests for canonical paths and closed-tab presence
+  - [7647ea3](https://github.com/jspreddy/dql/commit/7647ea3784c0ae729dbfcd703fd882c81206cb09) Make the listed-table search test create its own table
 - [5c033fa](https://github.com/jspreddy/dql/commit/5c033fa6defcb04917b897c984f262a2a7d2fd9f) Use local and temp table definitions in the linter and structure view ([#155](https://github.com/jspreddy/dql/pull/155))
+  - Stacked [#154](https://github.com/jspreddy/dql/pull/154)
+    - [ccfe284](https://github.com/jspreddy/dql/commit/ccfe284838fe03028d530770dad9176c0578ec3d) Keep comments out of lint underlines
+  - [60a32d6](https://github.com/jspreddy/dql/commit/60a32d6950dbdb349f136de9aeca89e2716dd8bf) Use local and temp table definitions in the linter and structure view
 
 ## dqlrs 0.7.6-dev0 (2026-11-11)
 
@@ -84,9 +233,29 @@ Agents: Claude Opus 5.5, Cursor Agent
 
 - [19976a9](https://github.com/jspreddy/dql/commit/19976a9bb9f38eab1250f66d4e56fd5c6664a376) Bump Rust version: 0.7.5-dev0 → 0.7.6-dev0 ([#153](https://github.com/jspreddy/dql/pull/153))
 - [4dfee18](https://github.com/jspreddy/dql/commit/4dfee184831a2ce29e6d1f1aacb51909857db738) Keep a folder open when a pending folder click fires ([#152](https://github.com/jspreddy/dql/pull/152))
+  - Stacked [#142](https://github.com/jspreddy/dql/pull/142)
+    - [58bac4f](https://github.com/jspreddy/dql/commit/58bac4ffc04e195bccaf5b99560bddc2698b2f1d) Show the cached schema in the table structure view.
+    - [d77440a](https://github.com/jspreddy/dql/commit/d77440a958dba73a6a7234fcd5165085a3570276) Show the table definition as columns next to the formatted create query.
+    - [1923bf0](https://github.com/jspreddy/dql/commit/1923bf0adae2cfb795f6c835f44999e6c35c61d3) Group the create query and column table under Definition.
+    - [5aa953a](https://github.com/jspreddy/dql/commit/5aa953a4f60e0102b69bd7055c64c94fd91a6018) Note that result structure is partial and drop the table footer line.
+    - [eb11464](https://github.com/jspreddy/dql/commit/eb1146445059d4465ecdad55bda21d1b5a268e0c) Style the result structure note as a note card.
+    - [91cf4ec](https://github.com/jspreddy/dql/commit/91cf4ec867897fade5e2888f9427f87d7f381133) Add a shared note card with error, success, alert, and info variants.
+    - [b0a5607](https://github.com/jspreddy/dql/commit/b0a5607d1a7882e359d871c57014d145c451ffbd) Name insert, update, delete, count, and drop results.
+    - [f91a29d](https://github.com/jspreddy/dql/commit/f91a29d9f8a304c88a5c207a8f5f07597f67f4f2) Name load and save results.
+  - Stacked [#148](https://github.com/jspreddy/dql/pull/148)
+    - [1b38143](https://github.com/jspreddy/dql/commit/1b38143e17a2f01b8a151d3ebdb41314af1a076c) Address review of the table structure view
+  - Stacked [#150](https://github.com/jspreddy/dql/pull/150)
+    - [b213103](https://github.com/jspreddy/dql/commit/b21310373196670ad0de51d43a26d8fb40e7e5dd) Scroll the table structure dialog as one surface
+  - Stacked [#151](https://github.com/jspreddy/dql/pull/151)
+    - [397655b](https://github.com/jspreddy/dql/commit/397655b6b446c53af3f0297f08688105d77b56ab) Resolve file paths in a .dql file against the file or the workspace
+  - [d47befd](https://github.com/jspreddy/dql/commit/d47befd18eb229a8c3c9c1b59ab52f0461ee7123) Keep a folder open when a pending folder click fires
 - [e82478a](https://github.com/jspreddy/dql/commit/e82478a4b6ed87caf1823edb4b42c81022883c30) Fix flaky file-tree drag and rename web tests ([#147](https://github.com/jspreddy/dql/pull/147))
+  - [3842cc2](https://github.com/jspreddy/dql/commit/3842cc216336d715b1d79d346b859f895d80bdf5) Make the file-tree drag test deterministic
+  - [847a446](https://github.com/jspreddy/dql/commit/847a446f7e437a3b0f5d521884e8e40b8d8da52a) Keep a tree rename open when the tree repaints
 - [125f2b4](https://github.com/jspreddy/dql/commit/125f2b44d0d62f8383fb2891c1a327ac320f2ba6) Fix two racy web tests ([#146](https://github.com/jspreddy/dql/pull/146))
 - [acc9313](https://github.com/jspreddy/dql/commit/acc9313df5c08e136dda077b28c71b602e277dad) git-graph skill: always output a PNG ([#145](https://github.com/jspreddy/dql/pull/145))
+  - Stacked [#144](https://github.com/jspreddy/dql/pull/144)
+    - [0609fbc](https://github.com/jspreddy/dql/commit/0609fbcdb3500818a2723dee2e5c9048d01e4df2) git-graph skill: always output a PNG
 - [8fda720](https://github.com/jspreddy/dql/commit/8fda72044c78b7307116aae903b941f0144edbaa) Add branching rule: v-rust is the target branch, use stacked PRs ([#143](https://github.com/jspreddy/dql/pull/143))
 - [a4b2ccc](https://github.com/jspreddy/dql/commit/a4b2cccea7d00d0a207753f47353d8565d5b56f6) notebook-tests: pass --allow-root to JupyterLab when running as root
 - [652b4e8](https://github.com/jspreddy/dql/commit/652b4e8b9ae0192cd04f9e31b2790c1db2a67a9d) Use per-file .md symlinks in .claude/rules for Cursor .mdc rules
@@ -99,7 +268,44 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [c611335](https://github.com/jspreddy/dql/commit/c611335736bfc1ef12d38ce3860c8a35e1b4eb39) Replace browser confirm and prompt with in-app dialogs ([#141](https://github.com/jspreddy/dql/pull/141))
+  - Stacked [#137](https://github.com/jspreddy/dql/pull/137)
+    - [f2b326b](https://github.com/jspreddy/dql/commit/f2b326b97bac85e470bb5e1eecee374567614eef) Add Harbor and Pine single-table examples.
+    - [730cb48](https://github.com/jspreddy/dql/commit/730cb48563ce34a238717ababe9be4c5961cdfef) Add AWS DynamoDB design pattern examples.
+    - [28d9dc1](https://github.com/jspreddy/dql/commit/28d9dc105a9d6479e66fbd924c20286d2b3f74b0) Document the AWS design-pattern data models.
+    - [a6383f2](https://github.com/jspreddy/dql/commit/a6383f2cbce8afc6a775547ecbaa5542900e52ae) Document the earlier example data models.
+  - Stacked [#139](https://github.com/jspreddy/dql/pull/139)
+    - [eb21c18](https://github.com/jspreddy/dql/commit/eb21c186ce2fceab8293fcc595357185b229b9d1) Show markdown and HTML in the web UI, and run only .dql files from a folder.
+    - [5d6489f](https://github.com/jspreddy/dql/commit/5d6489f1a4997d5ba9cb2f3aa646fe48d7f3ce79) Resolve document links from the open file and filter the tree by type.
+    - [1057cd4](https://github.com/jspreddy/dql/commit/1057cd46e64056e39f9045824d534d80e083b48c) Expect the file type filters in the side heading.
+    - [b493786](https://github.com/jspreddy/dql/commit/b493786165b0d0a9f246c6ce180b36795b560f4d) Start the file tree collapsed and add fold buttons.
+    - [6880feb](https://github.com/jspreddy/dql/commit/6880feb1015de4757b187dfb0a35b0343219b90d) Put the file icons on the title row and the type pills below.
+    - [b65b1ac](https://github.com/jspreddy/dql/commit/b65b1acabfeb4006544992d4476f90913b6a3a66) delete un-needed json files for aws examples
+    - [ffacce3](https://github.com/jspreddy/dql/commit/ffacce3217b95ef234de5feaf7dbe25ac4eafd46) Drop links to the removed AWS example JSON files.
+    - [d7231f7](https://github.com/jspreddy/dql/commit/d7231f78f684e8085898cba5da1352fdf4dd0a8a) Render mermaid diagrams inside markdown files.
+    - [b27569f](https://github.com/jspreddy/dql/commit/b27569fa36ec77b8dcadf1b70aa29718a08b3d38) Serve Mermaid from the web app's vendor scripts.
+    - [d216a25](https://github.com/jspreddy/dql/commit/d216a251cf9775c901a2b0e73cb1e01eb7678cd8) Use Material icons from the vendor folder.
+    - [7d6a443](https://github.com/jspreddy/dql/commit/7d6a443b39863a1685887161eaf92f25ec357e91) Color CSV like JSON and Markdown like HTML.
+    - [91eb39e](https://github.com/jspreddy/dql/commit/91eb39e1ed25883935dba3b31400b3f588d1ce96) Match the group-by button border to the other controls.
+    - [f851d97](https://github.com/jspreddy/dql/commit/f851d9727c8274f69694cc6dcfd703846deae32b) Show hover help with the custom tip instead of the browser tooltip.
+    - [e15fcb0](https://github.com/jspreddy/dql/commit/e15fcb0981d7990981d21f5423fa10cb7ad8d9ab) Color the file suffix in the nav tree and drop the type pill.
+    - [1428ffa](https://github.com/jspreddy/dql/commit/1428ffac0b44aceb63a4b80e134c581d5e923087) Mark nav files and folders with outlined type icons.
+    - [c6885d3](https://github.com/jspreddy/dql/commit/c6885d3d0b6e5ddc6d88d551a7338dc81d00ddf1) Color nav file icons with the type inks.
+    - [bef3b7b](https://github.com/jspreddy/dql/commit/bef3b7b10fbcba10c3f841d5851fd61054ba6d36) Use a dark glow on Mermaid nodes in dark mode.
+    - [77fb9ed](https://github.com/jspreddy/dql/commit/77fb9ed5228702cc9949ac618c34e985c5e24560) Let markdown documents use the full pane width.
+    - [6f311bd](https://github.com/jspreddy/dql/commit/6f311bd1bc3348b296d57bd04fae51d0f629627f) Color Mermaid diagrams from the active theme and open them full screen.
+    - [cdf2101](https://github.com/jspreddy/dql/commit/cdf21012b4a79734e588bce237af866c79a54aa3) Zoom Mermaid full screen with the wheel and pan it by dragging.
+    - [ee06df9](https://github.com/jspreddy/dql/commit/ee06df943befe7a167dc6e283f9b76f0c208c3be) Let Mermaid full-screen zoom past the fitted scale.
+    - [d6040ec](https://github.com/jspreddy/dql/commit/d6040ec31145b40ec56efcd61d60ca7e4bdc9327) Scale the full-screen Mermaid drawing with the zoom label.
+    - [b3d79c6](https://github.com/jspreddy/dql/commit/b3d79c6b01f1e23a0b1f1528b320a8ff0ab0a55f) Restore node hover and click in the full-screen Mermaid view.
+    - [ff10515](https://github.com/jspreddy/dql/commit/ff105157d11834ac6bcd8ee521e39d151359fd1b) Use Noto Sans for the web interface.
+    - [c5294ba](https://github.com/jspreddy/dql/commit/c5294ba26ea355bc12e837a5372c1c6e6acee857) Wrap Mermaid node labels so the box grows with the text.
+    - [abab9b0](https://github.com/jspreddy/dql/commit/abab9b015e81fa8fdafe6ae5957169b2128282ae) cealnup diagram.html files in favor of markdown render for mermaid
+    - [9731c8b](https://github.com/jspreddy/dql/commit/9731c8bb5b6b4fca1730e7272b42a5ef65c27fa4) Use Mermaid's built-in flowchart label wrapping.
+  - [350fc8d](https://github.com/jspreddy/dql/commit/350fc8d2939ca59b5d49c899e86c1964bceeee31) Replace window.confirm with an in-app delete dialog.
+  - [38f233b](https://github.com/jspreddy/dql/commit/38f233bd40cb3b66b5d95366161687ebd1fd8985) Replace window.prompt with an in-app input dialog.
+  - [38356b8](https://github.com/jspreddy/dql/commit/38356b87aee85028aa1a9259b6219cca9e123f40) Show the full path in the delete confirm dialog.
 - [9ec5563](https://github.com/jspreddy/dql/commit/9ec55636daa423a83df6602c88dd4ae447bbd7aa) Add Sai Phaninder Reddy Jonnala's copyright to the MIT notice ([#138](https://github.com/jspreddy/dql/pull/138))
+  - [c9effae](https://github.com/jspreddy/dql/commit/c9effae95186034200133c260853938b909be7bb) Add Sai Phaninder Reddy Jonnala's copyright to the MIT notice.
 
 ## dqlrs 0.7.4-dev0 (2026-11-08)
 
@@ -107,7 +313,13 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [bfab7d5](https://github.com/jspreddy/dql/commit/bfab7d58b5ca8e1bc896c5d3cd514a973451e4c0) Let the git graph take a commit count and a cutoff ([#136](https://github.com/jspreddy/dql/pull/136))
+  - [942f2eb](https://github.com/jspreddy/dql/commit/942f2ebe91b5d46e8e06f1e8a3a3f85f18eea5fe) Let the git graph take a commit count and a cutoff.
+  - [6e0652f](https://github.com/jspreddy/dql/commit/6e0652fd3de8fabc2bb7d4f1d45b2a6eace3c50d) Choose git-graph branches with git and prune only when a cutoff is set.
+  - [d92b6ca](https://github.com/jspreddy/dql/commit/d92b6ca396be6d9d5012868afbd16db614e25ff3) Keep git graph commit subjects under 80 characters.
+  - [687219e](https://github.com/jspreddy/dql/commit/687219ebd8a81a725cab848017ed7d510177a9fa) update git-graph skill and script
+  - [651de3d](https://github.com/jspreddy/dql/commit/651de3d80fb04d77cb4f2355b8dfe8d7ece29f8d) Raise the git graph default commit count to 100.
 - [9620ca2](https://github.com/jspreddy/dql/commit/9620ca25f2ef7538c0760886d05643bcf75107ac) Write each git graph to a new SVG file ([#135](https://github.com/jspreddy/dql/pull/135))
+  - [ef4ae0c](https://github.com/jspreddy/dql/commit/ef4ae0c03fd10a739c51d749eedfcd02a2b3d2b4) Write each git graph to a new SVG file.
 
 ## dqlrs 0.7.3-dev0 (2026-11-07)
 
@@ -115,7 +327,12 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [ad7cce5](https://github.com/jspreddy/dql/commit/ad7cce58d9518ed498a5500ad6d0ce8a7f798302) Wait for the tree event in the events stream test ([#134](https://github.com/jspreddy/dql/pull/134))
+  - [668aa18](https://github.com/jspreddy/dql/commit/668aa184d7102d16261d3dc6a8cec725aff88003) Wait for the tree event before asserting it.
 - [da931d7](https://github.com/jspreddy/dql/commit/da931d7596fb6b4caf1ea915e186831736cd5d71) Lint the open file on save, fetch, and open ([#133](https://github.com/jspreddy/dql/pull/133))
+  - [9667126](https://github.com/jspreddy/dql/commit/966712658222d02e1c61522d96f36710444dd76b) Lint the open file on save, fetch, and open.
+  - [0254865](https://github.com/jspreddy/dql/commit/02548651714e8eb4d3397b67e1d1241ae543bfaf) Keep lint ranges inside the document while editing.
+  - [0f8d376](https://github.com/jspreddy/dql/commit/0f8d3763c89ba9ba64be101010d1eb580d733b14) Drop lint marks on edit so a bad range cannot reject a keystroke.
+  - [5d2de6c](https://github.com/jspreddy/dql/commit/5d2de6c7d6f8e5df8ec36ab694d4ed5a271d14ee) Log a lint failure and keep the editor edit.
 
 ## dqlrs 0.7.2-dev0 (2026-11-07)
 
@@ -123,10 +340,36 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [ee4f2e5](https://github.com/jspreddy/dql/commit/ee4f2e59cd432c59da672fb22507275f28197471) Add LOCALTABLE and TEMPTABLE beside DynamoDB tables ([#130](https://github.com/jspreddy/dql/pull/130))
+  - [3416246](https://github.com/jspreddy/dql/commit/341624643c1ea77d13228ab21cf017d9635fd9c3) Add local file tables and process-local temp tables.
+  - [488ce2f](https://github.com/jspreddy/dql/commit/488ce2fd7365629129ddd104da184b292e632285) Show CSV and JSON files in the web file tree.
+  - [c7d13ef](https://github.com/jspreddy/dql/commit/c7d13ef737d16578c0f571df4d5fd29c76296de4) Open CSV and JSON files as paged tables.
+  - [5e4f5d0](https://github.com/jspreddy/dql/commit/5e4f5d0ac871cf5f4115872acecebf4343db4737) Show result structure for a data file page.
+  - [160bb1e](https://github.com/jspreddy/dql/commit/160bb1e7865eebade3747574df57cbbce5d0a666) Describe result structure in Rust.
+  - [7b823cf](https://github.com/jspreddy/dql/commit/7b823cff1e2ccf357b4c3c131cc55366eecca87d) Refactor file deletion logic and update tests for improved clarity. Adjusted confirmation messages for folder deletion and ensured proper handling of non-empty folders in both the frontend and backend. Updated Playwright tests to reflect these changes and verify correct error messages.
+  - [3a43aeb](https://github.com/jspreddy/dql/commit/3a43aeb38451dcbf81da5b2477196b549cdae637) format
+  - [f9e203b](https://github.com/jspreddy/dql/commit/f9e203bb2760b261d79dd0f2e00cb156d556dd62) Keep a dirty editor when a file poll sees a newer copy.
+  - [dfccec5](https://github.com/jspreddy/dql/commit/dfccec566efe2d66f3fd81b360708564ce1ff5dc) Push file, tree, presence, and table changes on one event stream.
+  - [4de3c20](https://github.com/jspreddy/dql/commit/4de3c20f718dad195b4c72bad41108c130d775dd) Cover the remaining web API routes with HTTP tests.
+  - [6803c7f](https://github.com/jspreddy/dql/commit/6803c7fa0837a021174b7cf90e0dcc476807646b) Show a white editor cursor in dark mode.
+  - [30e6ca2](https://github.com/jspreddy/dql/commit/30e6ca2eeaf32c7f8a950d694d3b7fd50f0e3d3e) Test that the editor caret flips between black and white.
+  - [798cd2e](https://github.com/jspreddy/dql/commit/798cd2ee6e01219673ef543d1eda52663a9f04f7) Add example queries for local tables and temp tables.
+  - [75b7790](https://github.com/jspreddy/dql/commit/75b779031abc4cf05b47f886439331df9e34c86d) Name the tables in the SSE tables event.
+  - [7a6497f](https://github.com/jspreddy/dql/commit/7a6497f3275a17103a749ce0d7b1f6830c294b35) moving around local and temp table examples
+  - [6835360](https://github.com/jspreddy/dql/commit/68353600ef89c21e7777cac024ed75ce85f03202) update some example table names for clarity
 - [a311ec8](https://github.com/jspreddy/dql/commit/a311ec821c4a9e4b3c2762e4e2c505a7dc6a188b) Use Playwright screenshots for web UI evidence ([#131](https://github.com/jspreddy/dql/pull/131))
+  - [5cf42fa](https://github.com/jspreddy/dql/commit/5cf42faedecd774f97e9df97bace859064e13ab1) Tell agents to use Playwright for the web UI.
 - [7beba3c](https://github.com/jspreddy/dql/commit/7beba3c40ea959e044b1c257267f27ef3cc97b24) Add Run file to the file context menu ([#121](https://github.com/jspreddy/dql/pull/121))
+  - [4383b83](https://github.com/jspreddy/dql/commit/4383b83b069d7ecddde98ae5fa8c4ccd35f090c1) Add Run file to the file context menu
+  - [df3b45a](https://github.com/jspreddy/dql/commit/df3b45a70c208c9f3f2fcc3aeefbdd7246667c61) Mark the open file and the file that is running
+  - [fc11e7a](https://github.com/jspreddy/dql/commit/fc11e7a7f912e28664d222356726bf6c80b49cbe) Underline the open filename in the editor
+  - [bb9fe59](https://github.com/jspreddy/dql/commit/bb9fe59b02ce54a4dbb74cccd516413c9212ea64) Seat the editor filename underline on the header edge
+  - [faeed7d](https://github.com/jspreddy/dql/commit/faeed7d8f8ba4964c727977ba9ce859e48de8927) Save new Playwright screenshots with playwrightArtifact
 - [c34616b](https://github.com/jspreddy/dql/commit/c34616bfb5a1f3803a99afca40a1e830026ff1eb) Keep the API and MCP token across restarts ([#120](https://github.com/jspreddy/dql/pull/120))
+  - [abc93e6](https://github.com/jspreddy/dql/commit/abc93e6e162ed36d3baebd679454231b8824f0d3) Keep the API and MCP token in the user key store
 - [8427878](https://github.com/jspreddy/dql/commit/84278783eddcf6bed9ad804239c4294e5ae18f7e) Add DynamoDB Local just aliases and dd-clean ([#119](https://github.com/jspreddy/dql/pull/119))
+  - [ebcfcb0](https://github.com/jspreddy/dql/commit/ebcfcb075765d69ce54c8c817263ba950afb3a3f) Add just dd-clean for DynamoDB Local data.
+  - [458dacf](https://github.com/jspreddy/dql/commit/458dacf0198e9343af052f9caf9589819aca4341) Group the DynamoDB Local recipes and alias dd to dynamo.
+  - [641de69](https://github.com/jspreddy/dql/commit/641de6914e5f26a987203109882785f75b838cb4) just recipe for dd-clean
 
 ## dqlrs 0.7.1-dev0 (2026-10-30)
 
@@ -134,27 +377,72 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [fb44c4c](https://github.com/jspreddy/dql/commit/fb44c4ccc3dd5ad1bf5a5ba6888d687b0259ef07) Seal both disk caches with AES-256-GCM ([#113](https://github.com/jspreddy/dql/pull/113))
+  - Stacked [#111](https://github.com/jspreddy/dql/pull/111)
+    - [ee7fd1d](https://github.com/jspreddy/dql/commit/ee7fd1ddba887bc811929531bbc2c9a45270f751) Plan encryption for the workspace result cache and the local API.
+  - Stacked [#112](https://github.com/jspreddy/dql/pull/112)
+    - [f36607e](https://github.com/jspreddy/dql/commit/f36607ee1e0e6524501581d9885945f51adf92b0) Require a per-process token on the local API.
+  - [5c6a30e](https://github.com/jspreddy/dql/commit/5c6a30ea19f90167c219d805a3a628e659d73cd0) Seal both disk caches with AES-256-GCM.
+  - [c5833df](https://github.com/jspreddy/dql/commit/c5833dff1e51eba3dddacb68b1be0d0abe26f947) Zeroize transient cache key buffers on drop.
+  - [1e3cd92](https://github.com/jspreddy/dql/commit/1e3cd92fd71eba0167e3edbbf60e8140d57f4e58) Add support for handling missing login keychain in key management
 - [7ae753e](https://github.com/jspreddy/dql/commit/7ae753e83c3d90971fba42da18a67f69d68020e7) Make just check report-only and add just fix ([#110](https://github.com/jspreddy/dql/pull/110))
+  - [4b8cd18](https://github.com/jspreddy/dql/commit/4b8cd184c3f9aa67307d51179295836619471754) Make just check report-only and add just fix.
+  - [09a5b8f](https://github.com/jspreddy/dql/commit/09a5b8fb5c2bde5efcaefab7727416e551dce4f4) Run just fix and just check before committing.
 - [85ce1be](https://github.com/jspreddy/dql/commit/85ce1be9fa4c383f809c8302e72cec04cb772a91) Keep the editor outline on the dragged lines ([#109](https://github.com/jspreddy/dql/pull/109))
+  - [ff75f1c](https://github.com/jspreddy/dql/commit/ff75f1c93821606f3fa880c05bad1c32d3084f36) Drag editor selections in steps so the outline keeps its range.
+  - [e126347](https://github.com/jspreddy/dql/commit/e126347b3af7f5743fe998758b9dd8a7fa3e9083) Keep statement drags on the line ends.
 - [2be49e9](https://github.com/jspreddy/dql/commit/2be49e9511f044d004929b41abb08691da8c1a68) Say when just verify succeeded, and describe the failure ([#108](https://github.com/jspreddy/dql/pull/108))
+  - [66823a1](https://github.com/jspreddy/dql/commit/66823a15c051716389bdf3ad22e7ec1a039a6029) Say when just verify succeeded, and describe the recipe that failed.
 - [7381e8a](https://github.com/jspreddy/dql/commit/7381e8a48d3254fcdd8d77b3e3bca443ef9e71d9) Load every table definition when the web server starts ([#107](https://github.com/jspreddy/dql/pull/107))
+  - [72b82ac](https://github.com/jspreddy/dql/commit/72b82ace91bc735c5ac3a84975628e6805793e50) Add --load-tables to warm the table cache when the web server starts.
 - [c913a00](https://github.com/jspreddy/dql/commit/c913a00961d33f27c42ab0540c67a485b649ddae) Add Ctrl+\ to run the selection ([#106](https://github.com/jspreddy/dql/pull/106))
+  - [6e3dcfc](https://github.com/jspreddy/dql/commit/6e3dcfc53228c4522fc25390fb15fd8b86d83676) Add Ctrl+\ as another way to run the selection.
 - [8c6660d](https://github.com/jspreddy/dql/commit/8c6660dd37ab9f8ee54d83540c201b6b42ca4da0) rules
 - [a4aa3e5](https://github.com/jspreddy/dql/commit/a4aa3e5a7944a622428b751d0b43553572d65e40) guard rails specificity
 - [4db98d6](https://github.com/jspreddy/dql/commit/4db98d63211c33b29e644f387f29b36bd70d3173) adding hooks and other guard rails for the examples directory
 - [822a6c8](https://github.com/jspreddy/dql/commit/822a6c8d8a62cadd46cd0425c6209c099bca13ef) Refresh query files changed elsewhere and show connected clients ([#103](https://github.com/jspreddy/dql/pull/103))
+  - [cf2f5e5](https://github.com/jspreddy/dql/commit/cf2f5e5a59dfceed10e7c82a57d50f42315c2170) Refresh query files that change on disk and show who is connected.
+  - [4eaa7cd](https://github.com/jspreddy/dql/commit/4eaa7cdb45cacdda6b107cdb058d268f3ecaa36b) Name each open tab dqlrs: W1 and paint the title bar with that color.
+  - [e218673](https://github.com/jspreddy/dql/commit/e21867363a28bb54b0709e65431bd62254b4fc4e) Put this window's identity on the logo instead of the whole title bar.
+  - [cb716d8](https://github.com/jspreddy/dql/commit/cb716d8e8938e31303c0130f05272c51bba85185) Angle the identity block so its right edge is a forward slash.
+  - [e9753b4](https://github.com/jspreddy/dql/commit/e9753b46b5f4aaea2f858caca6a6b77ad5eb825c) Shift the identity block's slanted edge left by 10px.
+  - [7cc9ea2](https://github.com/jspreddy/dql/commit/7cc9ea21310f54c1df67918e95bdf05b11a60f12) Show the same connection summary when any profile icon is hovered.
+  - [f2f294a](https://github.com/jspreddy/dql/commit/f2f294a745dc60bdde3b2013836e8fac9536bb77) Save file-watch screenshots under .playwright-artifacts.
 - [2b9916f](https://github.com/jspreddy/dql/commit/2b9916fbc3b38e45a12293b1e10d80f1c3f118ae) Add a just-verify skill that reports headings and the exit code ([#105](https://github.com/jspreddy/dql/pull/105))
+  - [cb70f0e](https://github.com/jspreddy/dql/commit/cb70f0e33bcdbb81b9e1f8f6536c2fe2a715c44c) Add a just-verify skill that prints headings and the exit code.
 - [c95187c](https://github.com/jspreddy/dql/commit/c95187c632abb8b4c1452c296bfcd30303eeda14) Add an MCP help tool for DQL syntax ([#104](https://github.com/jspreddy/dql/pull/104))
+  - [ccb081e](https://github.com/jspreddy/dql/commit/ccb081e45479d25c10aba53f569c85f4d64af733) Add an MCP help tool for DQL syntax.
+  - [2ba2a36](https://github.com/jspreddy/dql/commit/2ba2a3687fa898af69f54500d1c1bea3134bf33f) Tell MCP clients when to edit .dql files locally.
 - [8e71084](https://github.com/jspreddy/dql/commit/8e7108448238efb464fe1800b6ddc4332c276927) Refresh the day-binned work metrics page ([#102](https://github.com/jspreddy/dql/pull/102))
+  - [766785b](https://github.com/jspreddy/dql/commit/766785b008f9645bc9c2694677d85eb3d4563e40) Refresh the day-binned work metrics page.
 - [55abbb3](https://github.com/jspreddy/dql/commit/55abbb3db7fd3a61e30f11d2411aceba8b6a72ae) Show local and global indexes as tables on the describe card ([#101](https://github.com/jspreddy/dql/pull/101))
 - [a241f8b](https://github.com/jspreddy/dql/commit/a241f8bf9c333ac24e8180155e1399346db55729) Fix the needless borrow flagged by rust-clippy ([#100](https://github.com/jspreddy/dql/pull/100))
+  - [7494928](https://github.com/jspreddy/dql/commit/7494928582ba57730647fd66cd9a1a70cfec7869) Drop a needless borrow in the formatted schema test
 - [0e37845](https://github.com/jspreddy/dql/commit/0e37845ed81af6969e1d5fe8911ebcce771f0189) Keep the row view button at the left edge while a table scrolls sideways ([#99](https://github.com/jspreddy/dql/pull/99))
 - [327dfee](https://github.com/jspreddy/dql/commit/327dfee449959f18c9ecd9aae12e05252e887386) Format the CREATE TABLE statement shown when describing a table ([#98](https://github.com/jspreddy/dql/pull/98))
+  - [2debcd2](https://github.com/jspreddy/dql/commit/2debcd2ce2eeac836192ed3e90b00031edc74403) Format the CREATE TABLE statement shown for a described table
 - [0b4fb7d](https://github.com/jspreddy/dql/commit/0b4fb7d8ee158e0e487f6c11cf9243feb0a9e466) Keep table column headers fixed while rows scroll ([#97](https://github.com/jspreddy/dql/pull/97))
+  - [f6448f2](https://github.com/jspreddy/dql/commit/f6448f2dd31a531633d1efa5754928539a3cde75) Keep every table column header fixed while rows scroll
 - [748af47](https://github.com/jspreddy/dql/commit/748af47aba70a7079da47cd3b1cffe2499ac776a) Match LS, SHOW TABLES, and search against the table list ([#96](https://github.com/jspreddy/dql/pull/96))
+  - [7c046a6](https://github.com/jspreddy/dql/commit/7c046a695c9d56123e924a116fb399e1fdc2eed2) Match table patterns against the full table list
 - [80f50b8](https://github.com/jspreddy/dql/commit/80f50b8c487f0b151340f33d40cb4d973e47516a) skill + data
 - [06906e8](https://github.com/jspreddy/dql/commit/06906e8d2ea435cc68cead57844549b29cdd11d6) Add rewrite metrics to the Rust docs ([#84](https://github.com/jspreddy/dql/pull/84))
+  - [9c571ef](https://github.com/jspreddy/dql/commit/9c571ef3daa789bd51e1aae4e8b40866e3b98d91) Add a rewrite metrics page to the Rust docs.
+  - [e098c44](https://github.com/jspreddy/dql/commit/e098c44b34ede234599b994372f15e97da76608f) Add days worked for each rewrite feature group.
+  - [ef0a1fe](https://github.com/jspreddy/dql/commit/ef0a1fe6816430891898193b62c327cef0c9b0c5) Add an hourly bin of the rewrite metrics.
+  - [bcc5c45](https://github.com/jspreddy/dql/commit/bcc5c45ec1190a98a6a607a88024c19db8886e38) Plot hours worked per day and split out Rust improvements.
+  - [d296c3d](https://github.com/jspreddy/dql/commit/d296c3d6ebdc8f11b50921f884dc1a0fde2ac386) Plot commits and tokens on the daily hours graph.
+  - [4ffeb6b](https://github.com/jspreddy/dql/commit/4ffeb6b859d367caf2f9faa7a2e53b07eed775b3) Draw each day's commits as a circle sized by the count.
+  - [7b603e8](https://github.com/jspreddy/dql/commit/7b603e8c13049737c64808653c66d75456aab3e9) Add a work-metrics skill that charts commits, hours, and token spend.
+  - [b4a6441](https://github.com/jspreddy/dql/commit/b4a64410646f9f946fe761b41220a158905f6470) Keep this repo's agent usage even in hours without a commit.
+  - [5afd049](https://github.com/jspreddy/dql/commit/5afd04913f56c5a6390fd78670c0f3ae3aea2935) Separate chart series with a wider hue palette.
+  - [60631eb](https://github.com/jspreddy/dql/commit/60631ebc9d2518cb5d3419cc3dc5289ad7217eb8) Publish the work-metrics page on an hour bin.
+  - [49efe3a](https://github.com/jspreddy/dql/commit/49efe3aa28de90ab9f47162a868485fb18c5f6fe) Count worked hours from commits and report them by day.
+  - [d65c5aa](https://github.com/jspreddy/dql/commit/d65c5aaa68220fff7671d7beb0ba2b0f55cc6cc8) Line commit circles up above the hours bars.
+  - [9978536](https://github.com/jspreddy/dql/commit/9978536f2e9bc9ea79e512cd4a0ea3a01b420ca1) Draw timeline tokens as green dots.
+  - [5724079](https://github.com/jspreddy/dql/commit/57240792119de95eb29d348d7b7232c200155658) Add a pie chart of hours worked by category.
+  - [e943d0d](https://github.com/jspreddy/dql/commit/e943d0d6737f8f0bea21af90826fbdd6e2ecb5a5) List category descriptions under Areas of work.
 - [e8755d2](https://github.com/jspreddy/dql/commit/e8755d2d8e121ac83c31e114a8cad2e9dcc2141c) Drop the extra columns table ported from Python ([#80](https://github.com/jspreddy/dql/pull/80))
+  - [6dc02db](https://github.com/jspreddy/dql/commit/6dc02dbce03f02a5b562d32b763d7092f198cdf1) Drop the extra columns table ported from Python.
 
 ## dqlrs 0.7.0-dev0 (2026-10-22)
 
@@ -162,9 +450,142 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [2330f06](https://github.com/jspreddy/dql/commit/2330f0619738310725fe57d55f1e242a221f4472) Match analyze scans to scan cards and show real RCU ([#95](https://github.com/jspreddy/dql/pull/95))
+  - Stacked [#81](https://github.com/jspreddy/dql/pull/81)
+    - [795c67a](https://github.com/jspreddy/dql/commit/795c67a452ad622811b0441a11380c2fd5bc2acb) Cache table lists and definitions as they are fetched.
+    - [5731b13](https://github.com/jspreddy/dql/commit/5731b137cdc1d2ba2613a97ed1e7cf5064239428) Show the table cache age beside the refresh button.
+    - [124c439](https://github.com/jspreddy/dql/commit/124c4398ae52e8c6aaf9252ed8d5c6d70f5edc0f) Add a Settings menu with highlight options and clear table cache.
+    - [f8b6d98](https://github.com/jspreddy/dql/commit/f8b6d98f980ed8de940daec271e9b104d4543394) Show the table cache age in the Settings menu.
+  - Stacked [#82](https://github.com/jspreddy/dql/pull/82)
+    - [f70929d](https://github.com/jspreddy/dql/commit/f70929dd2665cf59ba07d3b520c8d10a5fc5c40f) Add a title-bar search for tables, columns, and queries.
+  - Stacked [#83](https://github.com/jspreddy/dql/pull/83)
+    - [5d95e63](https://github.com/jspreddy/dql/commit/5d95e6364153b9d8ad9939618cd27fd8e26f5757) Add a dqlrs MCP server for the web workspace.
+    - [d775c78](https://github.com/jspreddy/dql/commit/d775c78c008933b6c66daa1e71d5b0adcbb28781) Serve MCP at /mcp when the web server starts with --mcp.
+    - [acd16eb](https://github.com/jspreddy/dql/commit/acd16ebaad1d9c8eb0bc4b37fbe3468ea699f66b) Print MCP setup hints when the web or MCP server starts.
+  - Stacked [#86](https://github.com/jspreddy/dql/pull/86)
+    - [1cbcba4](https://github.com/jspreddy/dql/commit/1cbcba45e016f50c3d4a2fd98b82ec767569b681) Add query linting in the web editor and as an MCP tool.
+    - [ad71167](https://github.com/jspreddy/dql/commit/ad71167a61b4821fd3ce92e8de9022ed731fa4f8) Add an MCP tool that lints a workspace query file.
+    - [c03e572](https://github.com/jspreddy/dql/commit/c03e57234ce00d8fb4574eff3c5edfe31bc2384c) Prove that lint does not run the script it checks.
+  - Stacked [#87](https://github.com/jspreddy/dql/pull/87)
+    - [0ed8935](https://github.com/jspreddy/dql/commit/0ed893521e1ee380cfb8dc703ca4a8111a96eab7) Make help examples runnable on a fresh session.
+    - [09f932d](https://github.com/jspreddy/dql/commit/09f932d6e1d1fd9d7bbe4376b30f3926a958c3a3) Make HELP a query with a highlighted page.
+  - Stacked [#88](https://github.com/jspreddy/dql/pull/88)
+    - [c9270b0](https://github.com/jspreddy/dql/commit/c9270b0cd5fd0f6d5cd4c714bad951f469f25c92) Print attribute names and values in EXPLAIN plans.
+    - [bc43bd4](https://github.com/jspreddy/dql/commit/bc43bd46393939862241e2876c6897166146d961) Skip the ls cache hint when building the web table card.
+    - [d58a513](https://github.com/jspreddy/dql/commit/d58a513543a06f11acd8b7651bb47cd89bd48e3b) Reload SHOW TABLES and DESCRIBE from the database.
+    - [8b01e21](https://github.com/jspreddy/dql/commit/8b01e21d9b48b2f306667cb5270e20abf3b31473) Show the ls cache hint as an icon on the result card.
+    - [40192ff](https://github.com/jspreddy/dql/commit/40192ff05a2a718a6310b6a6a5122dd2d8138b10) Write Playwright screenshots under .playwright-artifacts.
+    - [bd83f52](https://github.com/jspreddy/dql/commit/bd83f52ac0a7c25b71da018a8f2d00a0df4c5a69) Ignore the ls cache hint in the DESCRIBE comparison.
+    - [6df0684](https://github.com/jspreddy/dql/commit/6df06847ff99af20fe3e2d4ec6104d2007f101dd) Add an mcp-smoke recipe and run it from verify.
+    - [f5d2013](https://github.com/jspreddy/dql/commit/f5d201321786645690bcc26bb0813ca29b0e5c2b) Run mcp-test from verify.
+    - [80a6816](https://github.com/jspreddy/dql/commit/80a6816221a3f803bd441335da22740a644f1c61) title bar layout
+    - [020efa7](https://github.com/jspreddy/dql/commit/020efa718e11fb86e481096800c62ad4b870bba8) minor visual updates
+    - [9461b74](https://github.com/jspreddy/dql/commit/9461b74c03249030d85a0732f58444b438947f6b) no query section on help result cards
+  - Stacked [#89](https://github.com/jspreddy/dql/pull/89)
+    - [c880473](https://github.com/jspreddy/dql/commit/c880473d72fe9e268aeb29a5335f88c39ae60132) Add Result, History, and Lint tabs to the result pane.
+  - Stacked [#90](https://github.com/jspreddy/dql/pull/90)
+    - [a4b2fe5](https://github.com/jspreddy/dql/commit/a4b2fe5b4fc77590d8b86823949df2709a07e50e) Make LS a statement instead of a meta command.
+  - Stacked [#91](https://github.com/jspreddy/dql/pull/91)
+    - [58d8f26](https://github.com/jspreddy/dql/commit/58d8f26ceedc0f84c42f81730f6a5d41cea41085) Select nested map and list paths and alias columns.
+    - [f523c62](https://github.com/jspreddy/dql/commit/f523c62fb6d4abc0c70cf12a0e89d18e6eb99662) Satisfy clippy on nested paths and LS globs.
+  - Stacked [#92](https://github.com/jspreddy/dql/pull/92)
+    - [10cc1fb](https://github.com/jspreddy/dql/commit/10cc1fb7e32a3cd65b09074c99269aeda28698a1) Order explain card fields in the pretty view and JSON.
+  - Stacked [#93](https://github.com/jspreddy/dql/pull/93)
+    - [9d5197a](https://github.com/jspreddy/dql/commit/9d5197ab562a4a2c7d4631f25d160f54d1d0ce8a) Clear folder query results from the file menu.
+  - Stacked [#94](https://github.com/jspreddy/dql/pull/94)
+    - [0603e17](https://github.com/jspreddy/dql/commit/0603e1787748efa237e4f31893932f2b0e9cf412) Scroll wide result tables sideways inside the card.
+  - [ec9d44f](https://github.com/jspreddy/dql/commit/ec9d44fb5dea9726735bdd9352bbfd51c795f61d) Show real read capacity on result cards.
+  - [525fa35](https://github.com/jspreddy/dql/commit/525fa35a5e32fc16b4d47c62a84e90f75a105cee) Enhance explain plan display in editor tests and UI.
+  - [5359bd8](https://github.com/jspreddy/dql/commit/5359bd8fd4bff244e425c47535b19e91ffca31ab) Refactor run button UI and tooltip behavior in editor tests and application.
+  - [bcfd5b4](https://github.com/jspreddy/dql/commit/bcfd5b4f7ed262b042e3d47616f3191ed6a76f8e) examples: nested attributes
+  - [4d4af7e](https://github.com/jspreddy/dql/commit/4d4af7e6c4479cd6cfdec6276903ec57b6a59623) examples for dot notation in queries
+  - [e8256d2](https://github.com/jspreddy/dql/commit/e8256d2bde714bdd374034e12a5e8a04f961e48a) Add Playwright tests for nested attribute examples in SELECT and SCAN queries
+  - [93074c5](https://github.com/jspreddy/dql/commit/93074c56873a6589d046b8e799d2094dd1019129) cleanup
 - [b663e01](https://github.com/jspreddy/dql/commit/b663e0156ff33991359872725c275a23c8e01a63) Show the full structure sample and scroll sideways ([#79](https://github.com/jspreddy/dql/pull/79))
+  - Stacked [#63](https://github.com/jspreddy/dql/pull/63)
+    - [5f93291](https://github.com/jspreddy/dql/commit/5f9329108be5280eb913af9b7856bd24f70c5587) Style the CLI results table like the web results card.
+    - [98295b1](https://github.com/jspreddy/dql/commit/98295b1b701ba82d317f9ba6b68fc88257b077a6) Paint the CLI results card with the TUI palette.
+    - [c5850c2](https://github.com/jspreddy/dql/commit/c5850c2ff6b2d22d7ae1003ab83d87ece349ea58) Name result columns the flush clips off screen.
+    - [2fc7eb1](https://github.com/jspreddy/dql/commit/2fc7eb1d881eb23cfe7e7fd1aace946e5a4f5e6d) Show clipped columns in an info panel.
+    - [c4244da](https://github.com/jspreddy/dql/commit/c4244dafe71dcaa9a38046d1b4ff180064f11243) Draw the clipped-column note with the results card block.
+  - Stacked [#64](https://github.com/jspreddy/dql/pull/64)
+    - [1eaa004](https://github.com/jspreddy/dql/commit/1eaa00401b49189a10e6c3f741108ea80e46c1e1) Scroll wide results with the left and right arrows.
+  - Stacked [#65](https://github.com/jspreddy/dql/pull/65)
+    - [c11f67d](https://github.com/jspreddy/dql/commit/c11f67df079e9003698fe4cb7b4ccb7a5d4d8245) Show a result row as highlighted JSON from an eye icon.
+    - [8ecc378](https://github.com/jspreddy/dql/commit/8ecc378b32c298b5aa6ba097d853effa906fc096) Drop to_string from a result-card width assertion.
+    - [4e5d0cd](https://github.com/jspreddy/dql/commit/4e5d0cdf1dd084ae0bb104269952d88934669035) Limit the git graph to commits that are not already in v-rust.
+    - [f64b280](https://github.com/jspreddy/dql/commit/f64b2801f896b97d426fbdacc512849db3fddeb7) Add functionality to close row popover on outside click and update tests
+    - [2ae6e71](https://github.com/jspreddy/dql/commit/2ae6e71d47fc667c33356fa01ce21a8d4b097fe1) Show the other key chips under the row popup title.
+  - Stacked [#67](https://github.com/jspreddy/dql/pull/67)
+    - [7bb77e5](https://github.com/jspreddy/dql/commit/7bb77e50121cbb9f7a1fd5eaa20a8c37dc4c198d) Run a whole DQL file or folder from the web editor.
+    - [25d490b](https://github.com/jspreddy/dql/commit/25d490bc1217f55ca029c29b469be409a0b40029) Mark Run file and Run folder with a fast-forward icon.
+    - [8e28e8b](https://github.com/jspreddy/dql/commit/8e28e8b41abfbd36a9680a73505af0a293eaf77e) Color Run file and Run folder as danger actions.
+  - Stacked [#68](https://github.com/jspreddy/dql/pull/68)
+    - [adf677d](https://github.com/jspreddy/dql/commit/adf677d539672fa9263376d42ddde56dea0ef22d) Keep web query results with each file.
+    - [4d8a2a6](https://github.com/jspreddy/dql/commit/4d8a2a6bfdf472cae538cb3e8e9819e92c823c80) gitignore .cache files
+    - [19fbf25](https://github.com/jspreddy/dql/commit/19fbf2538c2f11df4d0dfb619be4afc65c584e88) Stop echoing the query text above result cards.
+    - [7ed18bb](https://github.com/jspreddy/dql/commit/7ed18bb359d3737e266fc2d33a9797823e489c3b) Store each statement as its own query result file.
+    - [3449e5c](https://github.com/jspreddy/dql/commit/3449e5c07315f693f08554febdfa334de4d32077) Show a result card's query from a left chevron.
+    - [1c0c270](https://github.com/jspreddy/dql/commit/1c0c2704dda8e5a50aee71d0f3683a8dde5f097f) Pin a smaller result-card chevron to the top of the card.
+    - [150b13d](https://github.com/jspreddy/dql/commit/150b13d74f284221d2b347d8d1fa2bbbed710f71) Replace the result-card chevron with a quiet dot.
+    - [274ab6b](https://github.com/jspreddy/dql/commit/274ab6bb1340760a62d206956842b292cf419a47) Show a query dot on every result and hold its open size.
+    - [cac8fb2](https://github.com/jspreddy/dql/commit/cac8fb2b9b01435c686c5bfb233465876935c277) TestFix: Update CSS color assertion in editor tests to handle detached nodes correctly.
+    - [74396e3](https://github.com/jspreddy/dql/commit/74396e39ff8fd21f454ca0639320ffade5ed7602) Align the result query dot with the first line of text.
+    - [18d8f80](https://github.com/jspreddy/dql/commit/18d8f8037e091c76bfc85a3c4388fa349d7c7bfd) Match the results resize handle to the nav grip.
+    - [161f977](https://github.com/jspreddy/dql/commit/161f977ff771d059247c3929816c6989594652f0) Pin the latest query result to the top of the results pane.
+    - [ecbdcb9](https://github.com/jspreddy/dql/commit/ecbdcb9989cbd6d3cc556fabf99adc0b1dd17770) Show the result count and clear icon in a right-aligned chip.
+  - Stacked [#69](https://github.com/jspreddy/dql/pull/69)
+    - [75fcb37](https://github.com/jspreddy/dql/commit/75fcb370177475bd0a3cc8c50b17dae8963e4cfe) Show the AWS session in the header and open caller identity.
+    - [da28b30](https://github.com/jspreddy/dql/commit/da28b30465644e2ffc578079ad9331894820709a) Remove the query row-count chip from the Results bar.
+    - [ec3b408](https://github.com/jspreddy/dql/commit/ec3b40804de7cadd339d1886f77e0845c1ab456d) Place the result card row count next to the structure icon.
+  - Stacked [#70](https://github.com/jspreddy/dql/pull/70)
+    - [3ddf318](https://github.com/jspreddy/dql/commit/3ddf3182da615e8cbb609acc8da679c8aced023f) Add a saved light and dark theme to the web UI.
+  - Stacked [#71](https://github.com/jspreddy/dql/pull/71)
+    - [d25c8de](https://github.com/jspreddy/dql/commit/d25c8de82418554d8be49328fdd7ffac3c7dfaca) Show consumed capacity and elapsed time on the result card.
+  - Stacked [#72](https://github.com/jspreddy/dql/pull/72)
+    - [d5be5eb](https://github.com/jspreddy/dql/commit/d5be5ebddea8a758468dd467716ce1459242ef77) Suggest catalog tables and keys in the editor.
+  - Stacked [#73](https://github.com/jspreddy/dql/pull/73)
+    - [30bcdb9](https://github.com/jspreddy/dql/commit/30bcdb9bbf86c230b5701c00d36f73368ca61b7b) Store web query results in .dqlrs-web-cache and clear them from the nav menu.
+  - Stacked [#74](https://github.com/jspreddy/dql/pull/74)
+    - [2ad9178](https://github.com/jspreddy/dql/commit/2ad91786faa640f21075b04aa0ca077acc8efae3) Limit the git graph to commits that are not already in v-rust.
+    - [98c36bc](https://github.com/jspreddy/dql/commit/98c36bc8808de47ac45707ff46e7a6075fb47d3c) Draw the git graph from origin branches after fetch.
+    - [f4d76b0](https://github.com/jspreddy/dql/commit/f4d76b05df155be09ba478a32bbf86b096248460) Drop git graph commits older than one week before origin/v-rust.
+    - [4d20f3e](https://github.com/jspreddy/dql/commit/4d20f3e1b34fcdc1efdb9813acfe9294d5a3d6fe) Limit the git graph to open branches from the last two days.
+    - [fbecdf6](https://github.com/jspreddy/dql/commit/fbecdf675d3c84235b847c7677a71798291a5351) Run the git graph script first and keep install steps in the FAQ.
+    - [7dfef4e](https://github.com/jspreddy/dql/commit/7dfef4e492cdd79f056a0d3a57bd89416bc85c14) fix flakey test
+  - Stacked [#75](https://github.com/jspreddy/dql/pull/75)
+    - [46bbb5c](https://github.com/jspreddy/dql/commit/46bbb5c20326b596d994fcb452fa8a7afe4c467f) Fill the screen with the table structure popup.
+  - Stacked [#76](https://github.com/jspreddy/dql/pull/76)
+    - [41f3630](https://github.com/jspreddy/dql/commit/41f36308f0673637b053e4d85b079ce22a80cdea) Show a retry when the web server goes away.
+  - Stacked [#77](https://github.com/jspreddy/dql/pull/77)
+    - [c081451](https://github.com/jspreddy/dql/commit/c081451bc0ed96d64060936ae54ad73d4b1f3ed2) Fill the screen with the result structure and row popups.
+  - Stacked [#78](https://github.com/jspreddy/dql/pull/78)
+    - [c6bfa45](https://github.com/jspreddy/dql/commit/c6bfa45d736763383c2802ae77849beebd8623ee) Size structure columns to their content and give Sample the rest.
+  - [d99bf58](https://github.com/jspreddy/dql/commit/d99bf58aeaf3711bbb865b727ecb4dbc527983ba) Show the full structure sample and scroll sideways.
 - [cf624e4](https://github.com/jspreddy/dql/commit/cf624e4d4bf835ecdb990ca12299fd299e23578e) Scroll clear so the REPL input returns to the top ([#62](https://github.com/jspreddy/dql/pull/62))
+  - Stacked [#57](https://github.com/jspreddy/dql/pull/57)
+    - [73fb1ed](https://github.com/jspreddy/dql/commit/73fb1edd438c9a3941ab4d3a6ff40506cb93cc84) Rewrite the top-level README for developers.
+    - [94058ee](https://github.com/jspreddy/dql/commit/94058eea5ea4112d341178803283dd44e1f20845) Move maintainer notes out of the README.
+    - [9bc2e6e](https://github.com/jspreddy/dql/commit/9bc2e6e84d83277acd0f91238634f140dea330c4) Refresh the notebook README screenshot in a clean sample folder.
+    - [6707929](https://github.com/jspreddy/dql/commit/6707929c1a24e89d8b1cb53c6d13184f1ecf371b) Organize product screenshots by interface.
+  - Stacked [#58](https://github.com/jspreddy/dql/pull/58)
+    - [74a4959](https://github.com/jspreddy/dql/commit/74a4959a98955aa5d90b1d04dd08a8898efc1dec) Fix REPL SQL submit after paste and semicolon stripping.
+    - [5f3bcd1](https://github.com/jspreddy/dql/commit/5f3bcd18659d5e20e59afd6ebfa4d0dc378323b5) Recapture CLI screenshots with rich color from a pasted SELECT.
+    - [e866ee9](https://github.com/jspreddy/dql/commit/e866ee9f579ba7984ca33efd6411e9b2287b747d) Use a black terminal background for CLI screenshots.
+    - [c217a13](https://github.com/jspreddy/dql/commit/c217a13346095d6be8c2d6f6e587c25e31d9558b) Require a semicolon to submit SQL in the REPL.
+  - Stacked [#60](https://github.com/jspreddy/dql/pull/60)
+    - [a8a1884](https://github.com/jspreddy/dql/commit/a8a18846eb48a5a5b94e203706db84e6cb5db747) Add an in-memory Ratatui test suite for the REPL.
+  - Stacked [#61](https://github.com/jspreddy/dql/pull/61)
+    - [14db3df](https://github.com/jspreddy/dql/commit/14db3df910c238c861d7d97afb46e255754c6c89) Add a git-graph skill for one screenshot above v-rust.
+    - [aed199a](https://github.com/jspreddy/dql/commit/aed199a2ab8e5e079b205356ab85e58499dfea04) Give the git graph page a white html background.
+    - [a807c47](https://github.com/jspreddy/dql/commit/a807c474abb581b27e309f6706fd329f014349d2) Paint the git graph SVG with an opaque white background.
+    - [3b1565f](https://github.com/jspreddy/dql/commit/3b1565f54185ec0823a1b68dc87d7c92d45ddfd2) Keep the git graph skill to a single SVG.
+    - [79c8ca0](https://github.com/jspreddy/dql/commit/79c8ca097f1afc701b1c6c00f36e795c149a5b12) Keep the git graph white background in the script.
+    - [8d006b4](https://github.com/jspreddy/dql/commit/8d006b4de96ce24d0a5cc6e10ef8ac99e948e21d) Drop the git graph skill's check instructions.
+    - [1efb2ff](https://github.com/jspreddy/dql/commit/1efb2ff1b7fd18eb76c4f5eee2be20ba9315e2f7) Color the git graph HEAD label blue.
+  - [a82e285](https://github.com/jspreddy/dql/commit/a82e285d90a97f87f27cb236c5a56368464c48d3) Scroll clear so the REPL input returns to the top.
 - [2c5b407](https://github.com/jspreddy/dql/commit/2c5b407c0f38972d4ab61c3e744ffb6ded4d84ff) Document installs from the v-rust branch ([#56](https://github.com/jspreddy/dql/pull/56))
+  - [31385f4](https://github.com/jspreddy/dql/commit/31385f4c9a94786498e87b09c56e13c2f9b86c9e) Document installs from the v-rust branch.
+  - [ab4e139](https://github.com/jspreddy/dql/commit/ab4e1391252ac0c0b063289c291bef7e04e61d12) Use cargo install --git for the end-user Rust install.
 - [73be2bf](https://github.com/jspreddy/dql/commit/73be2bfcfaee3ef3bb5359bb59e7a41c0f0021da) just check
 - [8b13a78](https://github.com/jspreddy/dql/commit/8b13a78d73eb1118d240ef121b409fa6782bedca) Reapply "Add a Stop control for a running web query."
 
@@ -174,9 +595,77 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [0ad28b9](https://github.com/jspreddy/dql/commit/0ad28b97ea17e5d98fa905c91314cb6586cfc201) Fix WHERE contains() errors on reserved fields ([#54](https://github.com/jspreddy/dql/pull/54))
+  - Stacked [#48](https://github.com/jspreddy/dql/pull/48)
+    - [99a8530](https://github.com/jspreddy/dql/commit/99a85305f4a4e345608c21a0ead374cbd6ca3751) Note that the target state is Rust.
+    - [1dc09c0](https://github.com/jspreddy/dql/commit/1dc09c0a8ba9ef0bd25870288629fdea2712fee8) Serve the web UI from dqlrs --web.
+    - [ddf7b84](https://github.com/jspreddy/dql/commit/ddf7b8402cf2167feb91113ca3b7b86b05e34d01) Build the web recipes with the rust-impl toolchain.
+    - [263e1ff](https://github.com/jspreddy/dql/commit/263e1ff1db5c6f5345993c65dc6929a5c3162542) Answer each web request before reading the next.
+    - [985d2ba](https://github.com/jspreddy/dql/commit/985d2baecee50a98b2b1b2991e7000b49efd09c6) Use an empty SHOW TABLES pattern that does not match zzqq keys.
+    - [f8abd8f](https://github.com/jspreddy/dql/commit/f8abd8fa54f42d71d2b0adeba6c33a333fd0a5f9) Add architecture, package, and runtime diagrams for dqlrs.
+    - [421265f](https://github.com/jspreddy/dql/commit/421265f2939b67a18a2fc08521bdf01d139409f7) Add web unit tests and enhance Playwright test configurations.
+    - [27be742](https://github.com/jspreddy/dql/commit/27be742b34fa677631bd3c5ba1b4da8efcd26497) move recipes around
+    - [d92f835](https://github.com/jspreddy/dql/commit/d92f835312306aa8bbef5ce0dac7217721a10bc2) additional just recipes
+    - [e435d2e](https://github.com/jspreddy/dql/commit/e435d2ec21bf60e188dd06e155df82522c68016c) commit rule
+    - [1385155](https://github.com/jspreddy/dql/commit/138515568bbeb1e2d382f074fe9d6292a8ed948f) Document how the web UI is packaged into dqlrs.
+    - [85e0d46](https://github.com/jspreddy/dql/commit/85e0d468fba02d9964f4c64826493e794e388ffa) remove old html file
+  - Stacked [#49](https://github.com/jspreddy/dql/pull/49)
+    - [30893c0](https://github.com/jspreddy/dql/commit/30893c0fe164ac8aa731c750b3d6b8337038a46a) Add a SAVE and LOAD example query.
+    - [19b2693](https://github.com/jspreddy/dql/commit/19b269331acd914e3b64c11ba9360f2b2772e7db) Add Playwright coverage for SAVE and LOAD.
+    - [353c691](https://github.com/jspreddy/dql/commit/353c6914508c64332fb330a1de6760a7a132ef88) Check SAVE paths before reading.
+    - [d15db41](https://github.com/jspreddy/dql/commit/d15db415209b332e7bad1150910c158b1403ccf5) Let SAVE create missing parent directories.
+    - [62d8e62](https://github.com/jspreddy/dql/commit/62d8e626b1c3e92d80b63e02aa366feb29f5df81) Stop black-box flakes after create and on short name tokens.
+    - [f7127ac](https://github.com/jspreddy/dql/commit/f7127acf87ee65ca59658aff6c2a9d86af62a8ef) fix flakey test
+    - [b2c1f5b](https://github.com/jspreddy/dql/commit/b2c1f5b244f19d481b2a8f9d1330d6af723f14cf) Add titles to Justfile recipes and create justfile.html documentation
+    - [5b47bea](https://github.com/jspreddy/dql/commit/5b47bea4fda2eaa44799805a82f02eec282386ac) mermaid diagram skill
+    - [db2c948](https://github.com/jspreddy/dql/commit/db2c9487a5d451ba92ab3811f32f2dc7741a88c3) html-explainer skill
+    - [ecd5f26](https://github.com/jspreddy/dql/commit/ecd5f26327ed06b76a6d31fccf84950ff2d7f813) explainer
+    - [7000e58](https://github.com/jspreddy/dql/commit/7000e58931fb32ad37de8b1be4ca916544173f16) Let the left nav drag to resize and remember its width.
+    - [6c0b469](https://github.com/jspreddy/dql/commit/6c0b469990b158032a7c5ccf155441f05ca53706) Keep the tables search on a cached catalog.
+    - [8adc8a5](https://github.com/jspreddy/dql/commit/8adc8a5624b2863a05533266c25757190585ccb1) Add a Stop control for a running web query.
+    - [57497fe](https://github.com/jspreddy/dql/commit/57497fefae6670cd4806a203de501006e1f77dc9) Revert "Add a Stop control for a running web query."
+  - Stacked [#53](https://github.com/jspreddy/dql/pull/53)
+    - [9378539](https://github.com/jspreddy/dql/commit/9378539478fc552041654b4d2b1165a802d47287) Show result and table structure from data already in hand.
+    - [76e3f3c](https://github.com/jspreddy/dql/commit/76e3f3c1def1a07835edf88235682b9d2452f0c4) Use SCAN in the structure popup test.
+    - [7b545e7](https://github.com/jspreddy/dql/commit/7b545e74e54b5c80618df50529084db775f7b841) Put the structure icon on each query result card.
+    - [63ffcda](https://github.com/jspreddy/dql/commit/63ffcda6f3ccbb5e3d237ea2c26932af646307e8) Show the ran query in the result structure popup.
+    - [c23e826](https://github.com/jspreddy/dql/commit/c23e826611cd7d5c9c5b23bff9c0ff284ab56991) Move the result query into the structure popup title.
+    - [2bac523](https://github.com/jspreddy/dql/commit/2bac52383b66168ec08a9173208c599bd983568e) Restack the result structure popup title.
+    - [04032eb](https://github.com/jspreddy/dql/commit/04032ebfafe38967eee5a465972a7478dffec9fb) Keep the structure info icon on the Result structure line.
+    - [88c74d5](https://github.com/jspreddy/dql/commit/88c74d51e9ca1958769012b195a13264e4de8aba) Keep the info control inside the Result structure kicker.
+  - [3a140dd](https://github.com/jspreddy/dql/commit/3a140dd4ae128e1669c1f1ade220c044df231733) Keep contains() filters when a projection is present.
+  - [c2e982c](https://github.com/jspreddy/dql/commit/c2e982ce9c57de3b5dd41cba627dd466e85b36ff) Add sample queries and Playwright coverage for DynamoDB functions.
+  - [fe1ce54](https://github.com/jspreddy/dql/commit/fe1ce543df61f6423147bfd6686faa504a4531e0) Add condition-function queries to py/rs parity tests.
+  - [62da4a0](https://github.com/jspreddy/dql/commit/62da4a0b420e8048b051fc2d36cd8fca3227a285) just check
+  - [ae6b299](https://github.com/jspreddy/dql/commit/ae6b299e34749e848c81fcc898e81491118c9f24) just check fix
+  - [a66fe85](https://github.com/jspreddy/dql/commit/a66fe8586ffd0043fb37ad9a731854f6a9ac2122) Fix flakey test
 - [4077f4e](https://github.com/jspreddy/dql/commit/4077f4e546050bbb94f7f177b16be7a0c2269eb7) Soften key column borders to match the grid ([#47](https://github.com/jspreddy/dql/pull/47))
+  - [fc18365](https://github.com/jspreddy/dql/commit/fc183657a380b24d0a6c4f0760c58865d7fa66ba) Soften key column borders to match the grid.
+  - [bdb7199](https://github.com/jspreddy/dql/commit/bdb7199a592d7cd0f44a335dfbc56f0de45ec5d2) Query an index whose range is the table hash key.
 - [66b9682](https://github.com/jspreddy/dql/commit/66b968238452f8ee6d499d42835929221ff9ad13) Cursor/grouped changes ([#46](https://github.com/jspreddy/dql/pull/46))
+  - Stacked [#41](https://github.com/jspreddy/dql/pull/41)
+    - [97e7ab6](https://github.com/jspreddy/dql/commit/97e7ab6199bcc77461da188dc4b251b9a50ed6bd) Add a refresh button that reloads the table list.
+  - Stacked [#42](https://github.com/jspreddy/dql/pull/42)
+    - [13a9052](https://github.com/jspreddy/dql/commit/13a90523a857250e7e3e5387445780b61d6bf559) Add SHOW TABLES LIKE and honor ls glob refresh=True.
+    - [170e12d](https://github.com/jspreddy/dql/commit/170e12de921aba08124300e0f84fcec162e41892) Assert the web refresh test against throughput, which Local accepts.
+    - [aafea31](https://github.com/jspreddy/dql/commit/aafea317d87aca734a39dd4e0a1310731e7f77f2) Match both tables in the SHOW TABLES and ls glob acceptance tests.
+  - Stacked [#43](https://github.com/jspreddy/dql/pull/43)
+    - [8953ab2](https://github.com/jspreddy/dql/commit/8953ab21507c53cb04691d18822afd992a232012) Add DESCRIBE and print the ls description for one match.
+    - [113b525](https://github.com/jspreddy/dql/commit/113b525d7e4d24837234eb44817b57b9bb835a53) Beautify the table description card and highlight its query.
+  - Stacked [#44](https://github.com/jspreddy/dql/pull/44)
+    - [120d991](https://github.com/jspreddy/dql/commit/120d9919ffd22b7461b4e4bb97b9cbd992d8399c) Show intelligent ls matches when nothing matches exactly.
+    - [03c0af3](https://github.com/jspreddy/dql/commit/03c0af39c43857f7771272d210d3d8f0d8a3d05f) Beautify the intelligent-match result list.
+    - [6368a96](https://github.com/jspreddy/dql/commit/6368a96f18e1fa7d6c4010a59fb3e952b11a3891) Keep the intelligent-match pattern highlight tight against the comma.
+    - [f260962](https://github.com/jspreddy/dql/commit/f26096280c1dc2e2ead3a04f776821e635e4023d) Rank missed ls patterns by similar names and related keys.
+    - [f124bf0](https://github.com/jspreddy/dql/commit/f124bf0465188e104de6f32fd8bb06d383e61ac6) Keep a partial name from matching every near-duplicate.
+    - [7749c4b](https://github.com/jspreddy/dql/commit/7749c4b422877e001402da1d875a13a6cc2749f8) Show similar names when SHOW TABLES LIKE matches nothing.
+    - [41c47b8](https://github.com/jspreddy/dql/commit/41c47b8f2138cd1726203a647ddf062287b57e2f) Show missed SHOW TABLES LIKE results in the table list.
+    - [fb30851](https://github.com/jspreddy/dql/commit/fb3085112ad58ff7735aef2b5ed94212916427f4) Filter the tables sidebar with the same matching as ls.
+    - [52c66f1](https://github.com/jspreddy/dql/commit/52c66f11335cf4f4fbda64afdbd24105fcafbc2e) Shorten the tables search note so it fits the sidebar.
+    - [38cd05d](https://github.com/jspreddy/dql/commit/38cd05d60bf338a7297354a682601ba63308350e) Format ls and SHOW TABLES as the summary list.
+    - [159a479](https://github.com/jspreddy/dql/commit/159a479f9b4315ecad21ec497e6b1e1bf014c4e2) fix flakey test platform specificity
+    - [b3a4a69](https://github.com/jspreddy/dql/commit/b3a4a6980185f57a3ebb5b4b68745f606da5ee3a) fix tests for cross platform runs
 - [df2f68c](https://github.com/jspreddy/dql/commit/df2f68cf8cb56d82ff49fcbe5dd3ca2c095758d3) Fix duplicated editor imports that break the web UI ([#40](https://github.com/jspreddy/dql/pull/40))
+  - [788979e](https://github.com/jspreddy/dql/commit/788979e2c6c10485ab73bac8e7cbd36899e23338) Drop the duplicated editor imports that break the web UI.
 - [a213428](https://github.com/jspreddy/dql/commit/a213428803464cae3df5875fc0bc0f63c93ad710) Merge branch 'sai/test' into v-rust
 
 ## dqlrs 0.6.5-dev0 (2026-10-10)
@@ -185,13 +674,252 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [67bf93c](https://github.com/jspreddy/dql/commit/67bf93ce9ab9fb34523df25521aadad513c4630c) Add a floating play button for the current selection ([#35](https://github.com/jspreddy/dql/pull/35))
+  - Stacked [#22](https://github.com/jspreddy/dql/pull/22)
+    - [52c8110](https://github.com/jspreddy/dql/commit/52c811006519c6bd650734b5acd07bb9880c17de) Plan a headless dqlrs --serve worker for notebooks.
+    - [a486aef](https://github.com/jspreddy/dql/commit/a486aefde2e8062875d9dc71fe0f39bca804df93) Put loopback --bind in v1 of the dqlrs serve plan.
+    - [2b076c8](https://github.com/jspreddy/dql/commit/2b076c87203b034e082b5c44e4b5855ba00a42d8) Add dqlrs --serve JSON-lines worker with loopback --bind.
+    - [0356c72](https://github.com/jspreddy/dql/commit/0356c72f7e14fa01f1996dc0250dc43239b37220) Test dqlrs --serve over stdio, bind, and package smoke.
+    - [9206d60](https://github.com/jspreddy/dql/commit/9206d600dcd7f2cae9b229dd3dc76eab7c16e005) Document dqlrs --serve and mark the headless worker plan implemented.
+    - [de7164f](https://github.com/jspreddy/dql/commit/de7164f6bcda8dd0dcf2f04aef77de13c3dec409) Exit --serve --bind after shutdown and drop hanging bind subprocess tests.
+    - [e5f975a](https://github.com/jspreddy/dql/commit/e5f975a60448cc985ec7397813b23f7e59fa3566) Add plan for a JupyterLab notebook frontend.
+    - [4ecc512](https://github.com/jspreddy/dql/commit/4ecc512b9916eb27db41eb1badb2ed08752b7c0d) Add JupyterLab project, DQL wrapper kernels, and start script.
+    - [1ab7fd2](https://github.com/jspreddy/dql/commit/1ab7fd2f2069de2f54128722f1a8adc9521645a0) Add getting-started notebooks for the Python Engine and dqlrs.
+    - [6612a67](https://github.com/jspreddy/dql/commit/6612a67faa10714ee5281fc45c5fe5eadf198091) Document the notebook UI and link it from the repo root.
+    - [c14d632](https://github.com/jspreddy/dql/commit/c14d632b36eb311de4180d25b31da195e9228340) Parse concatenated DQL JSON rows and tidy Jupyter config.
+    - [68b12d4](https://github.com/jspreddy/dql/commit/68b12d4998a4126b78480f5df88d33dfe9fbcd0f) Stream bulk-write progress events from dqlrs --serve.
+    - [47c91b0](https://github.com/jspreddy/dql/commit/47c91b003d4fb1cb3304aadd93d2d5975458e34b) Emit JSON and IPython progress from Python Engine bulk writes.
+    - [0af1749](https://github.com/jspreddy/dql/commit/0af174965f85242ee095bb172c29583a4d250e4b) Show live bulk-write progress in DQL notebook kernels and magics.
+    - [f218f5b](https://github.com/jspreddy/dql/commit/f218f5bc67c9f21301faf3bb4f758c8e2766d2f5) Document serve progress events and notebook kernel attach.
+    - [e3ac92f](https://github.com/jspreddy/dql/commit/e3ac92f44b40f714372eab1689fa9d973d8463ec) Add dqlrs notebook to launch JupyterLab from the installed binary.
+    - [cdeb77e](https://github.com/jspreddy/dql/commit/cdeb77e60f8bec6002e3be0b54acfe356a5f5b2e) Document dqlrs notebook for cargo-installed binaries.
+    - [e420ec0](https://github.com/jspreddy/dql/commit/e420ec06f7d2df241127315ad420baa0b9ba0951) Treat DynamoDB ResourceNotFound as success for DROP IF EXISTS.
+    - [5955378](https://github.com/jspreddy/dql/commit/59553780f0ba15b19eb88b8934a2eb1bb32de478) Add black-box coverage for serve progress, notebook flags, and DROP IF EXISTS.
+    - [54397aa](https://github.com/jspreddy/dql/commit/54397aac0186580930b4057c4093055b5f9483cb) Stop SELECT/SCAN notebook progress bars after the query finishes.
+  - Stacked [#25](https://github.com/jspreddy/dql/pull/25)
+    - [e2a0c0a](https://github.com/jspreddy/dql/commit/e2a0c0a8b45d406c2de2346d79a14d8beb18b4f4) Add Playwright tests for the DQL notebook UI.
+    - [c7a80bd](https://github.com/jspreddy/dql/commit/c7a80bd88d67260babb44450585bdf5a362f7051) Run notebook Playwright tests in the installed Chrome.
+    - [e7ef37f](https://github.com/jspreddy/dql/commit/e7ef37f3556964324fa48d6154ab7802bd029ffe) Enhance notebook test runner with new options and documentation.
+    - [fc5f9fa](https://github.com/jspreddy/dql/commit/fc5f9fa945110177e0c21ceda9cc5465dad517c6) use "just" for top level dev entry point
+    - [06bdfbc](https://github.com/jspreddy/dql/commit/06bdfbc2d8d49eea961f06a444e67f7187f207cc) checkpoint
+    - [0f966ee](https://github.com/jspreddy/dql/commit/0f966eea42bbc1fc8084ebc6718dfa138f8bb0e8) Fix Python lint and pin the Rich console size in tests.
+    - [9e561c1](https://github.com/jspreddy/dql/commit/9e561c181a63698eb6ff21e741961f974cbe46d9) Add slow notebook test support and update test configurations.
+    - [12c7612](https://github.com/jspreddy/dql/commit/12c7612ac665d5cbb6b68ea56f699a974f5bdcb9) Fix the TCP serve test hang on shared progress reads.
+    - [1b39041](https://github.com/jspreddy/dql/commit/1b3904137cb7d7aa7a5c0b0e8cd264de634e5515) fix test for dynamic version
+    - [2dcde2d](https://github.com/jspreddy/dql/commit/2dcde2d87ba23211785369583e6434f2c56f3590) just commands
+    - [1887257](https://github.com/jspreddy/dql/commit/1887257f81923628e7ad3e6101db1510e9792af1) Stop dqlrs notebook servers with one Ctrl+C or from another terminal.
+    - [40f6b01](https://github.com/jspreddy/dql/commit/40f6b01565bbe1458efb01a0aea71f8ec6df310c) Add just dynamo-stop to choose which DynamoDB Local processes to stop.
+    - [a151dfa](https://github.com/jspreddy/dql/commit/a151dfab6c2645d4937342d99ae15372be402fc9) explainer
+  - Stacked [#27](https://github.com/jspreddy/dql/pull/27)
+    - [5bbd6ff](https://github.com/jspreddy/dql/commit/5bbd6ff58b619fab661337dce7f596496789d075) Add DQLRS Web interface mockups.
+    - [7c87f46](https://github.com/jspreddy/dql/commit/7c87f462ae8a01a284949289b7fc6f5ba1ddf6f3) Add denser DQLRS Web mockups with ls-style table search.
+    - [cf2bba3](https://github.com/jspreddy/dql/commit/cf2bba3da3a0baf25d0f94e289531769343c6993) Implement the DQLRS Web query editor and table browser.
+    - [29c8038](https://github.com/jspreddy/dql/commit/29c8038158a275303218c9a15235b296fbd1fb09) Highlight DQL queries with a CodeMirror mode.
+    - [f09ce7c](https://github.com/jspreddy/dql/commit/f09ce7c72ae78e256e5132bad907ff264e22a370) Tint alternate queries and mark writes in the editor.
+    - [fc56a08](https://github.com/jspreddy/dql/commit/fc56a0854430aa9f1f92417e21c5d44d76034f66) Note query bands and red DROP and DELETE in the web README.
+    - [6acb4b9](https://github.com/jspreddy/dql/commit/6acb4b92c19aee5707f57a0ae37d7b03ad553a3b) Darken the red band on even write queries.
+    - [f6bfce4](https://github.com/jspreddy/dql/commit/f6bfce45b1fedbc91d867bff0b74e3175c609595) Extend query highlights across touching comments and the following blank line.
+    - [cf928b9](https://github.com/jspreddy/dql/commit/cf928b9d3c6d455b3518e415e7e2d25caf7d514a) Include a file's final blank line in the previous query highlight.
+    - [0d2541b](https://github.com/jspreddy/dql/commit/0d2541b294942852ecf6fd872aecca7d7fac20c2) Add query and comment variations to the sample posts file.
+    - [6683cbe](https://github.com/jspreddy/dql/commit/6683cbe96cfab73e5bdf5f6d4d20b62e58d5f390) Add editor toggles for minimal write bars and even/odd bands.
+    - [1fb2dfa](https://github.com/jspreddy/dql/commit/1fb2dfa7e403ce981f69ee3bda93049cbcac233b) Mark the query Run will execute and bind it to Ctrl+Enter.
+    - [9b6c8ab](https://github.com/jspreddy/dql/commit/9b6c8ab0e468d035e22f6a701698068040b877b5) Draw the run border as a 1px black line at half opacity.
+    - [00dd8a7](https://github.com/jspreddy/dql/commit/00dd8a7ff985b15993c0dc358794e6d78d162088) Manage files and folders from the query tree.
+    - [8414bf7](https://github.com/jspreddy/dql/commit/8414bf7fbcf0849ac70902a92a8fe389f01108bb) Add an HTML explanation of what this branch adds.
+    - [64be797](https://github.com/jspreddy/dql/commit/64be7973241c6d0552920560abd2d77121cf1b01) Show query progress beside Results and mark the query in the gutter.
+    - [5a2328d](https://github.com/jspreddy/dql/commit/5a2328d0ddb00e820588fc92027e4e9e68c316b0) Keep syntax colors under a 25% black text selection.
+    - [4774732](https://github.com/jspreddy/dql/commit/4774732051b9025696a052ec5eddcb560c59f939) Mark the run range with one background instead of a border.
+    - [0c85827](https://github.com/jspreddy/dql/commit/0c858276cbef4f301fd3a621103ec65fd5ffe833) Lighten the run highlight to 10% and outline it in blue.
+    - [ed862c5](https://github.com/jspreddy/dql/commit/ed862c578c8919ae768b58b45a50abaafd123089) Pull the selection border in to 5px and tint the wash blue.
+    - [d1c69ba](https://github.com/jspreddy/dql/commit/d1c69ba6df03ffe60191712216c5227580af4872) Lower the selection wash to 5% opacity.
+    - [0cc1d86](https://github.com/jspreddy/dql/commit/0cc1d86e40f24e59516247d314fe7fc47a7497ad) Round the selection highlight box by 2px.
+    - [8837aae](https://github.com/jspreddy/dql/commit/8837aaeceaf34d08d2613fc6a64947a49f2c8617) Stop the cursor highlight at the end of the current query.
+    - [0de601a](https://github.com/jspreddy/dql/commit/0de601a7f6bd8ee6751eb0af83358978cb5c81f8) Add space above and below the editor lines.
+  - Stacked [#28](https://github.com/jspreddy/dql/pull/28)
+    - [9792928](https://github.com/jspreddy/dql/commit/9792928d122eda92609d25ae660614b083352435) Add Playwright tests for the DQLRS web UI.
+    - [6e97228](https://github.com/jspreddy/dql/commit/6e972289245eee808486c1d0a89412470502682d) Count painted write bars in the highlight test.
+  - Stacked [#29](https://github.com/jspreddy/dql/pull/29)
+    - [35a5ccb](https://github.com/jspreddy/dql/commit/35a5ccbf0174b66211d18c7927c3984e6b8f1c6f) Make the results pane resizable and easier to scan.
+  - Stacked [#30](https://github.com/jspreddy/dql/pull/30)
+    - [41384db](https://github.com/jspreddy/dql/commit/41384dbb81c3cb0e6656bd254d6d20936acbee78) Add just commands for the web app and its Playwright tests.
+  - Stacked [#31](https://github.com/jspreddy/dql/pull/31)
+    - [b084dd4](https://github.com/jspreddy/dql/commit/b084dd40ccc7da575aae413bcda1abe0bc23c877) Show explain plans as operations and conditions.
+    - [3952862](https://github.com/jspreddy/dql/commit/3952862396cd059fe85ee2b37fdbddd0dfcd8039) Add a JSON toggle on the explain plan card.
+  - Stacked [#32](https://github.com/jspreddy/dql/pull/32)
+    - [6041d35](https://github.com/jspreddy/dql/commit/6041d3559e7590b6f25d5c5e1bcec0b4842d1f48) Add sample queries with uneven item shapes.
+    - [ffddf6b](https://github.com/jspreddy/dql/commit/ffddf6b8c930758eb5ec49d0e77ba510565c2edb) Add a single-table cosmos sample.
+  - Stacked [#33](https://github.com/jspreddy/dql/pull/33)
+    - [43906f6](https://github.com/jspreddy/dql/commit/43906f6b68667827f41704f1cc1af89eef750a44) Show the table list in the nav on Tables.
+  - Stacked [#34](https://github.com/jspreddy/dql/pull/34)
+    - [0b902b9](https://github.com/jspreddy/dql/commit/0b902b90dc7d2c30fb476241f3eded0a21e4ae3c) Order result columns by table keys, then index keys.
+    - [e06ba1d](https://github.com/jspreddy/dql/commit/e06ba1d7978de7f897c8825105626062378e11d6) Mark hash and range key columns with icons and tint.
+    - [34c9d8e](https://github.com/jspreddy/dql/commit/34c9d8e69c7d4dc8c59c5278b21bf034711ea275) Show hash and range icons in the table list.
+  - [0c43b1d](https://github.com/jspreddy/dql/commit/0c43b1db37b91a471116035e13c62d2951f20254) Add a floating play button beside the run selection.
 - [9de655a](https://github.com/jspreddy/dql/commit/9de655af43c11049a5c38cc4f77153cc93c92e5c) test(black-box-tests): fail the run when teardown DROP exits non-zero
 - [b4bc473](https://github.com/jspreddy/dql/commit/b4bc4730e96734c8a89c9eb5a9041336a4c8110c) Sai/pexpect acceptance tests ([#24](https://github.com/jspreddy/dql/pull/24))
+  - [fcb8f3b](https://github.com/jspreddy/dql/commit/fcb8f3b7e7a51b8ee1915b625de181cc65f0a2b0) plan for acceptance tests using pexpect instead of custom bash harness
+  - [418252e](https://github.com/jspreddy/dql/commit/418252e9e608adac2f151795d2dac97632be33cb) refined plan
+  - [aa25dec](https://github.com/jspreddy/dql/commit/aa25decc25b94f15ff2a380309d6449529992356) test(black-box-tests): add pytest+pexpect project skeleton and run.sh
+  - [0a7a13b](https://github.com/jspreddy/dql/commit/0a7a13be45c9b6d9902c3f3086eedd62c6203ec1) test(black-box-tests): add Cli helper and conftest for Local and both binaries
+  - [b047ac0](https://github.com/jspreddy/dql/commit/b047ac0004a9eaae8a36b4c89edaa53bc961eb36) test(black-box-tests): replace case folders with test_NNN pytest modules
+  - [e7c0431](https://github.com/jspreddy/dql/commit/e7c0431fd9aa4cfdafd7cefb9afd7a4969b20952) docs(black-box-tests): document pytest harness and diagnostic groups
+  - [b1cae81](https://github.com/jspreddy/dql/commit/b1cae81c183baa633f3c2aed94efbd34d726bd41) fix(black-box-tests): allow empty extra pytest args on bash 3.2
+  - [6d23796](https://github.com/jspreddy/dql/commit/6d23796fcef645a1e99517dd0ac0f7e91a7f3ca8) plan completed
+  - [2fb9759](https://github.com/jspreddy/dql/commit/2fb97591c468626d57ab19dfc6c7fffc1a305530) plan for verbose output
+  - [038a684](https://github.com/jspreddy/dql/commit/038a684a5059aa3a0d26a64bcdf75d41f4b58d32) refine verbose output plan
+  - [212d1f9](https://github.com/jspreddy/dql/commit/212d1f9965bc029dab763b081b2645652a4246c1) refine plan
+  - [54be9da](https://github.com/jspreddy/dql/commit/54be9da9b5f1b1b7023c38bd2606c2579be707a6) test(black-box-tests): add rich for verbose transcripts
+  - [7067f67](https://github.com/jspreddy/dql/commit/7067f67a324ac42b753d70df685a38136e7df27f) test(black-box-tests): add Rich transcript reporter
+  - [f7730d8](https://github.com/jspreddy/dql/commit/f7730d839e03cf5a30031b0abc46edc84743bc61) test(black-box-tests): add verbose descriptions to acceptance tests
+  - [3f3bad0](https://github.com/jspreddy/dql/commit/3f3bad0b19c949d1c7a259ba9f25a214a7bdf338) test(black-box-tests): print Rich transcripts when pytest is verbose
+  - [cce5137](https://github.com/jspreddy/dql/commit/cce513710ee3b5d700d509aea1bee6226dacb463) docs(black-box-tests): document -v CLI transcripts
+  - [aeaa282](https://github.com/jspreddy/dql/commit/aeaa282d544e3ff7a8d08bb00f7cb8a493373282) Complete implementation of verbose transcript features in black-box tests
 - [87662dd](https://github.com/jspreddy/dql/commit/87662dd3d1ef640b705bafd5186f3f7c07a1f613) Sai/test case file renames ([#18](https://github.com/jspreddy/dql/pull/18))
+  - [83e1a01](https://github.com/jspreddy/dql/commit/83e1a0104588bcbad85a6c771bded5c92ff0202c) plan
+  - [df4ecda](https://github.com/jspreddy/dql/commit/df4ecdae17e8a7368ae35f8e529fa8ee81606441) rename case step files with numeric order prefix
 - [cb4c107](https://github.com/jspreddy/dql/commit/cb4c107aa30ffdf779894dd5198d93c8cdac897a) Black-box SELECT with pk, sk, and extra filters ([#16](https://github.com/jspreddy/dql/pull/16))
+  - [0f76953](https://github.com/jspreddy/dql/commit/0f769538a249a885e20c4d50b965625b34210985) test(black-box): SELECT by pk, sk prefix, and extra filters
+  - [5d78928](https://github.com/jspreddy/dql/commit/5d7892810d68b950b2225ff8e4d6d717fca2af06) test(black-box): UPDATE all but two rows, SCAN attribute_exists count
+  - [ba6f761](https://github.com/jspreddy/dql/commit/ba6f761cf8574183e253f422f80dc22af5d795b7) fix(dqlrs): FilterExpression NOT, empty values, placeholder remaps
+  - [9005cc4](https://github.com/jspreddy/dql/commit/9005cc4a82fa5a28d278bd842324cec2f67a1c44) ci: register workflows without default-branch working-directory
+  - [f8957cf](https://github.com/jspreddy/dql/commit/f8957cf28b64d1977cb44f796fff806fc52cd9ff) skip teardown option
+  - [5c84b22](https://github.com/jspreddy/dql/commit/5c84b2235fb94cf5f1e67740b5f27fe3c4a77bc8) Better isolate black-box table names
 - [b2b9d01](https://github.com/jspreddy/dql/commit/b2b9d018c543358998a3651eee0f12a4635b0888) Print hierarchical Setup/Input/Expect/Teardown in -v ([#15](https://github.com/jspreddy/dql/pull/15))
+  - [b0889e1](https://github.com/jspreddy/dql/commit/b0889e1961d8fb083c425e88483541d86303d8e8) Print hierarchical Setup/Input/Expect/Teardown in -v and fail on teardown errors.
 - [481d531](https://github.com/jspreddy/dql/commit/481d53196a77763f3bcfbb15952741982440bb0f) Black-box acceptance tests against DynamoDB Local ([#14](https://github.com/jspreddy/dql/pull/14))
+  - [8caae6e](https://github.com/jspreddy/dql/commit/8caae6e52336559a7d6156c8de53b606c9f7eb8b) docs(plans): black-box acceptance tests under manual-tests/
+  - [d935882](https://github.com/jspreddy/dql/commit/d935882fa684ba55ae1878c28beea4200067e49e) docs(manual-tests): black-box acceptance test contract
+  - [9202899](https://github.com/jspreddy/dql/commit/9202899df6207ae2e820d655eb8c4d0cf7d94a38) chore(manual-tests): add acceptance case folder skeleton
+  - [ef2c995](https://github.com/jspreddy/dql/commit/ef2c9956341c22eac116aa94822e736b264066e3) test(manual-tests): add black-box CLI harness for DynamoDB Local
+  - [0392a14](https://github.com/jspreddy/dql/commit/0392a1443626844688b77c25fbaba08890e748f2) test(manual-tests): add getting-started, select, and load seed cases
+  - [f9e6637](https://github.com/jspreddy/dql/commit/f9e66373ed2fafb54b8a17ae0d5673a1f38d24f1) docs: point verification at black-box acceptance suite
+  - [94c641a](https://github.com/jspreddy/dql/commit/94c641a09c03825688ec46c281b690d335492753) fix(manual-tests): read case files and normalize single-item JSON
+  - [bb546d3](https://github.com/jspreddy/dql/commit/bb546d30049aadd2febabce3ee360759580752a9) chore: rename manual-tests to black-box-tests
+  - [86f7947](https://github.com/jspreddy/dql/commit/86f7947e5c8f75aee131d3f7cc29ee856006ae09) fix: reuse DynamoDB Local when the port is already open
+  - [9458a1c](https://github.com/jspreddy/dql/commit/9458a1c3e99c9f8dd5b28618eb158603d791f67f) fix(harness): run on macOS bash 3.2
+  - [a8a7cde](https://github.com/jspreddy/dql/commit/a8a7cde39184b6aa0dc317c218034a805728f5bf) test(black-box): add a CLI case for each statement family
+  - [18f1472](https://github.com/jspreddy/dql/commit/18f1472d7701cf466ee6b223d7ca4f066159a747) re-ordering the black-box tests
+  - [3a4f101](https://github.com/jspreddy/dql/commit/3a4f10138e452bef27251176f287413c6d732ca3) feat(harness): enhance verbosity and color output in black-box tests
+  - [2b86a23](https://github.com/jspreddy/dql/commit/2b86a235eef7b12de4700c2e120a6347d6046788) color attempt 1
+  - [0302e50](https://github.com/jspreddy/dql/commit/0302e50c772a871c5312d178be7e73884097013a) pretty printing tweaks
+  - [b5e6683](https://github.com/jspreddy/dql/commit/b5e66831926ce91088ff3606072f4683f78a0ed0) dont print empty result + alignment
 - [f01415b](https://github.com/jspreddy/dql/commit/f01415b87e5927b732ad398cbcf6b1d55ab8f75b) Rust Implementation ([#13](https://github.com/jspreddy/dql/pull/13))
+  - Stacked [#9](https://github.com/jspreddy/dql/pull/9)
+    - [51d7f58](https://github.com/jspreddy/dql/commit/51d7f58e1e59bde24e105cae99af89bec3e07e17) Add Rust rewrite planning docs
+    - [5c5b3bb](https://github.com/jspreddy/dql/commit/5c5b3bbb3743fe55deeffffe2ca881231380d414) Add initial Rust implementation workspace
+    - [5b06ba5](https://github.com/jspreddy/dql/commit/5b06ba5ec6912f01462839d949e919a029b73525) Mirror Python tests in Rust parity suite
+    - [007159c](https://github.com/jspreddy/dql/commit/007159c61f9bdfb284e9c93005ad5b7ec1326bf5) Add Rust query limit and scan filter support
+    - [61813da](https://github.com/jspreddy/dql/commit/61813da619f617f54c5955a15b2ae0c3bdb111de) Add Rust boolean where conditions
+    - [657a749](https://github.com/jspreddy/dql/commit/657a74996789b528af823957a0ed2f5c11c93b40) Add Rust in-memory delete support
+    - [69721a3](https://github.com/jspreddy/dql/commit/69721a3a0141abecdeef1ee76efd716e905735ed) Document expanded Rust implementation slice
+    - [22cd173](https://github.com/jspreddy/dql/commit/22cd17340d91e7ffaecb438311f48e31de6fa127) Update Rust CLI plan to use ratatui
+    - [6e6b5a5](https://github.com/jspreddy/dql/commit/6e6b5a527551e3a7cefa9f7dd3c0ece3dee6aed8) Expand Rust parser Phase 1 AST surface
+    - [07596fc](https://github.com/jspreddy/dql/commit/07596fc4c3eed504845c85381aee3ed41a5b3160) Complete Rust parser Phase 1 parity
+    - [b943018](https://github.com/jspreddy/dql/commit/b94301872b6dc44e769f766ef7d52a5b1734de7e) Mark Rust migration Phase 1 done
+    - [434b265](https://github.com/jspreddy/dql/commit/434b2657feaf0b2a14dd2b75d23eadaf5cdd0b41) Add Rust expression compatibility crate
+    - [3b66d1e](https://github.com/jspreddy/dql/commit/3b66d1e3d5f35ff6ef1ab26981718db956bc06d5) Fix expression crate lint
+    - [27b6115](https://github.com/jspreddy/dql/commit/27b6115889d455531929901ec07d7b8e1ccd87c3) Mark Rust migration Phase 2 done
+    - [92f312d](https://github.com/jspreddy/dql/commit/92f312d5df5380b469e705712ec6e8ecf635ed2c) Add Rust metadata and query planning crate
+    - [16964b9](https://github.com/jspreddy/dql/commit/16964b9c70ddf41a5733a993f05e322a7504a26e) Mark Rust migration Phase 3 done
+    - [360b0bf](https://github.com/jspreddy/dql/commit/360b0bf56efd0b3c07febc954839d92db65cc0bb) Add Phase 4 engine backend boundary
+    - [4e59834](https://github.com/jspreddy/dql/commit/4e5983403df46556e780e607a163c17aa62fcfc8) Wire engine reads through planner and expressions
+    - [ac9facc](https://github.com/jspreddy/dql/commit/ac9facc48d76e7164acdd5ec4d542feba96a1e7e) Document Rust migration Phase 4 progress
+    - [92ac4bd](https://github.com/jspreddy/dql/commit/92ac4bd905e416a23c4f2a21b3de8fe3aaf084fd) phase 4 checkpoint
+    - [06e7640](https://github.com/jspreddy/dql/commit/06e76402931c1205b4971c2a702e4c936ed07ef4) test(dql-engine): add DynamoDB Local harness and update README
+    - [3a4edad](https://github.com/jspreddy/dql/commit/3a4edadb461463c5ccf1fdebc65fd090fbd9b489) feat(dql-parser): parse USING, KEYS IN, CONSISTENT, and ORDER BY
+    - [714ab77](https://github.com/jspreddy/dql/commit/714ab778250c081ec0c0ea4a6da5aacc2109436d) feat(dql-engine): wire USING index and scan rejection into planner
+    - [9959fbb](https://github.com/jspreddy/dql/commit/9959fbb67cae02eda75766bf87c16e9343670cf4) feat(dql-engine): implement KEYS IN via batch_get_item
+    - [83c35c6](https://github.com/jspreddy/dql/commit/83c35c670afd2e699c54607d7a84c531d6191c37) feat(dql-engine): COUNT, projections, and consistent reads
+    - [2c7227e](https://github.com/jspreddy/dql/commit/2c7227e3a5c4217c35fc703fee3e3c22514c291d) feat(dql-engine): complete UPDATE and ALTER parity tests
+    - [d1eb44f](https://github.com/jspreddy/dql/commit/d1eb44ff31df52e9d097d56c5c9fdef3e27dc559) feat(dql-engine): CREATE/DUMP index metadata round-trip
+    - [c4b94c1](https://github.com/jspreddy/dql/commit/c4b94c11fd0fc1b4ecc39263fe3732a3610bcec4) test(dql-engine): index planner and SELECT parity against Local
+    - [4058138](https://github.com/jspreddy/dql/commit/4058138f7aecdebdb06375a972b18458abd2ea04) test(dql-engine): FilterExpression parity for SCAN and SELECT
+    - [c23fb83](https://github.com/jspreddy/dql/commit/c23fb837b137a46ab813604e5cddf63e0346e4c1) feat(dql-expr,dql-engine): selection arithmetic evaluator
+    - [31a52ef](https://github.com/jspreddy/dql/commit/31a52ef336ddbfaca6033d01d9f288ee1c9a66b4) feat(dql-engine): DELETE USING/KEYS IN and INSERT keyword syntax
+    - [47033ea](https://github.com/jspreddy/dql/commit/47033eafd10f70ee665505181f8e5b8a7172fc0b) feat(dql-engine): EXPLAIN kwargs, ANALYZE capacity, and THROTTLE
+    - [e3695c3](https://github.com/jspreddy/dql/commit/e3695c3460670ac5b95a76c4c1308a6809d20480) feat(dql-engine): CSV LOAD support
+    - [b5d6379](https://github.com/jspreddy/dql/commit/b5d63798c461f5336811f5d0b8752e7a6fe09891) test(dql-engine): DynamoDB Local parity integration suite
+    - [dc93862](https://github.com/jspreddy/dql/commit/dc938627382b2ab800133f608bead1b1dbc6d834) docs: mark Phase 4 DynamoDB execution engine complete
+    - [883fe25](https://github.com/jspreddy/dql/commit/883fe2526cf4d3fb1c56ff0ca6a4dda2b0d8f794) Phase 4: tests passing
+    - [b8c571d](https://github.com/jspreddy/dql/commit/b8c571db3d04143480d0a6074303ad5ac08c248f) docs: add Phase 5 CLI, REPL, and output implementation plan
+    - [91a47df](https://github.com/jspreddy/dql/commit/91a47df23d4e5365cbe800add7086f9661aa6814) moving the plan into .cursor folder
+    - [81c50a2](https://github.com/jspreddy/dql/commit/81c50a2701ea18ce551d08ec7d6448b471b52608) original dql arch
+    - [028a558](https://github.com/jspreddy/dql/commit/028a558810032acd34549620270e40d7c5d075f0) phase 5 step 1
+    - [72802ae](https://github.com/jspreddy/dql/commit/72802ae80ed46ba59a72102151dcff38ecd05a12) feat(cli): complete Phase 5 REPL, meta-commands, and parity tests
+    - [d4b5d5e](https://github.com/jspreddy/dql/commit/d4b5d5e607eecca3026b929f9a606db39ed4c2c4) plan 5 done?
+    - [d9adfee](https://github.com/jspreddy/dql/commit/d9adfeea4bc012633817762c2e0fd41311dac265) phase 6 plan: packaging and release
+    - [3e42148](https://github.com/jspreddy/dql/commit/3e421487999f506b6b27b65f6475741bb76f9ff6) build: add release profile and toolchain pin
+    - [94b198b](https://github.com/jspreddy/dql/commit/94b198b24de9c99e2fae7c9ded64cef0bf932735) ci: add Rust fmt, clippy, and test workflow
+    - [77a196c](https://github.com/jspreddy/dql/commit/77a196cf2bd0faf5fed0607068a5643be2ef841e) test: add package smoke test for release binary
+    - [fb86c47](https://github.com/jspreddy/dql/commit/fb86c4785971468d9ed228642c89e093f1aa62a3) ci: add GitHub release workflow for Rust binary
+    - [a8e1628](https://github.com/jspreddy/dql/commit/a8e1628f263b5e11eb00bb07b6a238dc5d7f95fc) docs: add Rust install script and cargo install instructions
+    - [04a3d74](https://github.com/jspreddy/dql/commit/04a3d740ea46c9bb9ce04a75cad4952a3aa579cc) docs: add Python-to-Rust migration notes
+    - [92653dc](https://github.com/jspreddy/dql/commit/92653dc0c61f1393cc777ee6f55a1a432f4bcdeb) chore: unify version bump across Python and Rust
+    - [ed4f0aa](https://github.com/jspreddy/dql/commit/ed4f0aa7970f8ec7d089f30a163d439bc9f8e69e) correcting rust authorship
+    - [6e6f4d5](https://github.com/jspreddy/dql/commit/6e6f4d53d18b468f2cd1abd02d0c2173d394d772) readme update
+    - [8f2d988](https://github.com/jspreddy/dql/commit/8f2d9886107bc4fa79a18de7bdfe88dfbf458910) fix: route REPL meta output through output pane and truncate ls names
+    - [7a99089](https://github.com/jspreddy/dql/commit/7a990898a54d38126f667eaa22afb40740745f2c) fix: output ordering
+    - [6bd495c](https://github.com/jspreddy/dql/commit/6bd495c72684668297d0a9ecfe4836ab05c506ba) cargo fmt
+    - [3451d7d](https://github.com/jspreddy/dql/commit/3451d7d09179e96909611f9d3d24dafea9914a94) parity analysis and plans
+  - Stacked [#10](https://github.com/jspreddy/dql/pull/10)
+    - [5a0a8ca](https://github.com/jspreddy/dql/commit/5a0a8ca39b6f11cc5504eabc921d700301ad0762) fix(cli): default to AWS SDK backend when -H is unset
+    - [f43f236](https://github.com/jspreddy/dql/commit/f43f23646530ffab26fa0e657357b2615a1df168) feat(engine): complete ORDER BY / ASC / DESC parity with Python
+    - [dff90c9](https://github.com/jspreddy/dql/commit/dff90c9d9297a9c6d3d629752412361da954bd34) feat(engine): complete index projection and count-on-index parity
+    - [2d6caaa](https://github.com/jspreddy/dql/commit/2d6caaa7665fcc1b437d78be7bde40d515377250) feat(parser): accept hyphenated DynamoDB attribute names
+    - [4e96c01](https://github.com/jspreddy/dql/commit/4e96c014b2c88e872feb6a920222e1a4a4fdf0d4) fix(expr): use full DynamoDB reserved-word list
+    - [3d77bf5](https://github.com/jspreddy/dql/commit/3d77bf5b2eb7fd545b5ac0bcf8a7f869e037c0ee) fix(memory): resolve dashed and nested fields in filters
+    - [667cb8f](https://github.com/jspreddy/dql/commit/667cb8f1d03c8d79f6ec6baa5c631249e155196d) test(engine): enable reserved-word and dashed-field regressions
+    - [efd627b](https://github.com/jspreddy/dql/commit/efd627bbc8c9f4f2662bde39ac2e135792081d94) docs(plans): mark parity 4 expression regressions complete
+    - [bb9e7b4](https://github.com/jspreddy/dql/commit/bb9e7b480c2679c0269106fb8921fc78594e9372) feat(parser): parse SAVE clause on SELECT and SCAN
+    - [306a99a](https://github.com/jspreddy/dql/commit/306a99a4f07a3df18e0822b210313e8afe786caa) feat(engine): SAVE/LOAD JSON CSV and gzip
+    - [020d900](https://github.com/jspreddy/dql/commit/020d9003f37764a5d11c6d3670654993174d951d) feat(engine): MessagePack SAVE/LOAD as pickle replacement
+    - [adc5961](https://github.com/jspreddy/dql/commit/adc59619a0f797f0591e4b8cd412f270b80a3f58) docs: MessagePack replaces pickle for SAVE/LOAD
+    - [8a8e6ff](https://github.com/jspreddy/dql/commit/8a8e6ff3df412386a1dbc3c99e0623d437b1bbb2) test(engine): enable SAVE/LOAD format parity with MessagePack
+    - [4e10577](https://github.com/jspreddy/dql/commit/4e10577b9fa15b9b63a8ad7d766c953af7f878db) parity plan 5 done
+    - [760a5b5](https://github.com/jspreddy/dql/commit/760a5b500f5c4432d501b515655318cb0b366d90) fix(cli): honor display=less for command output
+    - [cc24159](https://github.com/jspreddy/dql/commit/cc241596e1bf13679ce97e9826dd999ca2755044) fix(parser): populate ParseError offsets for caret display
+    - [789f925](https://github.com/jspreddy/dql/commit/789f9259e0e52958cf52441c1a48ec041f2fa0a7) test(models): enable total GSI throughput parity test
+    - [70c7b88](https://github.com/jspreddy/dql/commit/70c7b88af02b7a41a36f07f6c3e67bf52f7b9cd1) feat(cli): CloudWatch metrics for ls
+    - [eb844af](https://github.com/jspreddy/dql/commit/eb844af1ce795809de0e4c0184b8fe7ec14b437b) feat(output): richer table detail for ls
+    - [af092c5](https://github.com/jspreddy/dql/commit/af092c53a1e7b6318e22ad82a4f0766283f02308) feat(cli): optional watch capacity dashboard
+    - [7452b5c](https://github.com/jspreddy/dql/commit/7452b5cfc63cc6d3c4bc13cba874144c231c2a39) chore(tests): remove unused pending helper
+    - [d30cab0](https://github.com/jspreddy/dql/commit/d30cab0dc8128ad4bc05e88d46be046df157ba38) parity 6 plan done
+    - [fb9d2df](https://github.com/jspreddy/dql/commit/fb9d2df507fabd695ff01db7279f51b3dfae3b92) feat(cli): shell-style REPL transcript with mouse scroll
+    - [da88e62](https://github.com/jspreddy/dql/commit/da88e62d45402c75c4be78b96239b52a73060f24) chore(rust-impl): apply rustfmt
+    - [d0ccd6b](https://github.com/jspreddy/dql/commit/d0ccd6b91ddf4535192a3f1a793c78a3eeee3cd2) rich output format plan
+    - [a73ea8f](https://github.com/jspreddy/dql/commit/a73ea8f88af0197afbe2cdd87d35e546195aa9ee) feat(cli): add rich query format with ratatui tables
+    - [7645694](https://github.com/jspreddy/dql/commit/76456944af631769e0c83a78f7bb1bc1ca4a246a) rich format plan done
+    - [286425f](https://github.com/jspreddy/dql/commit/286425ff3b89eccd02ef5c82368b90b1928304f2) Document SOLID design debt and refresh rust-impl README.
+    - [78c9c7b](https://github.com/jspreddy/dql/commit/78c9c7bbdaec56dc21a18df2390b6ae46a89cb76) fix(cli):  scroll is lagging but able to select text
+    - [f370b8c](https://github.com/jspreddy/dql/commit/f370b8c6747163e3f109929f7d01a1900412a79a) better terminal prompt & results
+    - [530d5d1](https://github.com/jspreddy/dql/commit/530d5d13eadef48e794a3383c17f5b786e222b62) cargo fmt
+    - [1883f72](https://github.com/jspreddy/dql/commit/1883f72ff1a352d515e1821efccf69851bbd9926) feat(cli): multi-line prompt editing and smarter command history
+    - [e00fa0f](https://github.com/jspreddy/dql/commit/e00fa0f3e517268580540b62719685a892c9b35e) feat(cli): add history meta-command for list, search, dedupe, remove, and edit
+    - [34bfb7a](https://github.com/jspreddy/dql/commit/34bfb7a1c72e52544e236200ceaba410c254dd3f) feat(cli): show colorful grouped help for queries and meta-commands
+    - [a740c61](https://github.com/jspreddy/dql/commit/a740c61f884cf9533bc455cdc3c6a3495b0bd11a) fix(cli): use a top border on command panels instead of scrollback rules
+    - [de3a1df](https://github.com/jspreddy/dql/commit/de3a1df7e9fa6089c8c795b7f769efb87d3292de) fix clippy warnings
+    - [6692dee](https://github.com/jspreddy/dql/commit/6692dee9502f1364cdd3ea0161bfdf5e457b6d04) Fix the prompt for localhost, cleanup
+    - [fb7adf2](https://github.com/jspreddy/dql/commit/fb7adf285aeb32e988a32962c5886591e6614974) rename rust binary to 'dqlrs'
+    - [d3bd7bd](https://github.com/jspreddy/dql/commit/d3bd7bdbf2e1bdcf8293781efeb394c4236d5fb9) wip: checkpoint
+    - [32288c3](https://github.com/jspreddy/dql/commit/32288c3312f1f6d4b58bea01286689c82bb2afa0) docs: point clone, install, and source URLs at this fork
+  - Stacked [#11](https://github.com/jspreddy/dql/pull/11)
+    - [0dcf008](https://github.com/jspreddy/dql/commit/0dcf008a0098007d2810ed7b854943226d20b9ec) dual implementation folders plan
+    - [090a2c4](https://github.com/jspreddy/dql/commit/090a2c4f8668935084bacb3592542acdb664dcb8) dual plan refined to separate git mv vs code changes
+    - [7ab2f56](https://github.com/jspreddy/dql/commit/7ab2f5615ef7a2acb033e8e40bfb6830a12a4360) Move the Python implementation into py-impl so it no longer owns the repo root.
+    - [c9f0993](https://github.com/jspreddy/dql/commit/c9f0993a4d2f016fec1afa026a0124fcac3b0e61) Move Sphinx docs into py-docs to sit beside the Python implementation.
+    - [c97427c](https://github.com/jspreddy/dql/commit/c97427c634e0a7b32d2ff276d1c2f679d29eff8d) Move the Python-to-Rust migration guide into rust-docs.
+    - [992a707](https://github.com/jspreddy/dql/commit/992a707d26ad85f992d947404274939d8d040208) Add py-plans for Python-only design notes.
+    - [07a5431](https://github.com/jspreddy/dql/commit/07a5431e6904346689895a5f321838b3f34a0111) Point Python packaging, Sphinx, and bump tooling at py-impl and py-docs.
+    - [8e660ca](https://github.com/jspreddy/dql/commit/8e660ca9b73ebc4a77747263dcbc415c327b83f5) Give the Rust client its own user docs and install scripts.
+    - [5204b49](https://github.com/jspreddy/dql/commit/5204b4958bc9f85dc0df0cd73d7742964c961912) Let Python and Rust bump versions independently.
+    - [ea26679](https://github.com/jspreddy/dql/commit/ea26679af9a853a1c1548d92a8dc4e3fa1896be6) Run Python and Rust CI from path filters instead of v-next/v-rust branches.
+    - [02b0062](https://github.com/jspreddy/dql/commit/02b0062b2ed655a107debac21d2c44d94939e83a) Replace the mixed root README with a short Markdown index.
+    - [3d3f91e](https://github.com/jspreddy/dql/commit/3d3f91ee8d08c93bd984677a188494208e0ceff6) readme updates
+    - [29dcb1c](https://github.com/jspreddy/dql/commit/29dcb1ce40f5308c842f505c8e6a44177b4df46a) minor readme update
+    - [559835d](https://github.com/jspreddy/dql/commit/559835d12b6b2a38a916812f2c86f3d71c237a98) readme update
+    - [c9b49f8](https://github.com/jspreddy/dql/commit/c9b49f8fd94e89b1506fac9be011f3abd8af53c0) readme updates
+    - [7fb54b6](https://github.com/jspreddy/dql/commit/7fb54b62474171ea4e7cd38fba7d43115335ec22) Move all helper scripts into a shared top-level scripts/ directory.
+    - [e806f3e](https://github.com/jspreddy/dql/commit/e806f3e18de1e30a9b2e1a04508b08a0975765af) Point callers at repo-root scripts and unify bump-version by language.
+    - [c4691c8](https://github.com/jspreddy/dql/commit/c4691c800924a9346a4ab54f6767da4aa56fe066) py dev docs update
 
 ## dql (Python) 0.6.4-dev12 (2026-07-02)
 
@@ -199,18 +927,64 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Cursor Agent
 
 - [8bae5e4](https://github.com/jspreddy/dql/commit/8bae5e47ef0de4504041d37287775d5200f37e48) Use `uv` ([#4](https://github.com/jspreddy/dql/pull/4))
+  - Stacked [#6](https://github.com/jspreddy/dql/pull/6)
+    - [0955afb](https://github.com/jspreddy/dql/commit/0955afb75035152addc9d253afdc3c26ad693d83) Agent changes: migrate to uv
+    - [ca5ac33](https://github.com/jspreddy/dql/commit/ca5ac333759bd900c7595b1882c411f0ccbe11d2) fix attempt 1
+    - [fca8f2f](https://github.com/jspreddy/dql/commit/fca8f2fd65422de1d4a3cfa444e08c90c1345527) migrate all tox scripts to uv taskipy tasks
+    - [0e6fb4e](https://github.com/jspreddy/dql/commit/0e6fb4ea9b1ef308ed4fdc432111c019c37de1ed) cleanup
+    - [59a3ed5](https://github.com/jspreddy/dql/commit/59a3ed57491adf07f7528bb74880fa4843321374) wrap history read in try
+    - [aad681c](https://github.com/jspreddy/dql/commit/aad681c0174bca9bf797e9151003824eb6359ea8) backup
+    - [660fed6](https://github.com/jspreddy/dql/commit/660fed6da5628d75885781db038b485cbf2ee75b) remove poetry
+    - [967efb1](https://github.com/jspreddy/dql/commit/967efb15368de29652015bd191354759ea82d5a3) cleanup
+    - [850b08a](https://github.com/jspreddy/dql/commit/850b08a1f5c5d0a0c88458c09d5745402b48d7e2) install gnureadline to fix flakey builtin python module of readline
+    - [2501f5d](https://github.com/jspreddy/dql/commit/2501f5d399b84f15c07db4d0cd2881935411ed84) changelog
+    - [7cd69c7](https://github.com/jspreddy/dql/commit/7cd69c702d84a43e69340649871691b69a8b3ff6) lint fix
+    - [f944eb7](https://github.com/jspreddy/dql/commit/f944eb7e16f394b1dace36baf0e156f1ff784de1) changelog update
+    - [1ab30bf](https://github.com/jspreddy/dql/commit/1ab30bfa6cb1d9834f9fec71135dc7aa57e810bf) changelog updates
+    - [111ccf3](https://github.com/jspreddy/dql/commit/111ccf35482800b259eaf8e84a8b5da29a26e321) lint fixes
+    - [eb2412a](https://github.com/jspreddy/dql/commit/eb2412a2d63c8b20e14449b952378cb81051e543) chore: tasks
+    - [19435b8](https://github.com/jspreddy/dql/commit/19435b8a700d69d2bcf6f2538a35a82565d6a2fd) wip: why is readline not working properly
+    - [a08d76c](https://github.com/jspreddy/dql/commit/a08d76ce7b8ad29a180b87524a8a25344b2e7a3c) Fix readline history by sharing gnureadline via sys.modules
+  - Stacked [#8](https://github.com/jspreddy/dql/pull/8)
+    - [ac47b7d](https://github.com/jspreddy/dql/commit/ac47b7d6702419b6d37c72cbc248e9eb5859b7b2) fix some lint issues
+    - [616c10b](https://github.com/jspreddy/dql/commit/616c10bd09d94b6c8f6fac484172fe25c4926eee) fixing issues raised by agent review
+    - [bcfc76c](https://github.com/jspreddy/dql/commit/bcfc76cabf8c1970138298156ca777f66f683460) Add error handling for readline history length retrieval and corresponding test case
+    - [68de554](https://github.com/jspreddy/dql/commit/68de5541f14663207450ec5f1d958b76213c4a18) Update project configuration for versioning using bump2version
+    - [8936129](https://github.com/jspreddy/dql/commit/8936129a247596bbe7f468948709ffaf9fb651f5) Fix task bump argument passing for bump2version.
+    - [0917e1a](https://github.com/jspreddy/dql/commit/0917e1ac537bc3aa1797ac403c140463ecff50e6) Update test-specific command in pyproject.toml to simplify usage by removing argument placeholder.
+    - [21feb1a](https://github.com/jspreddy/dql/commit/21feb1a923162d7ca5e63fc64e28627a5d30b630) Refactor dependency management in pyproject.toml by replacing dev-dependencies with a dependency-groups section for improved organization.
+    - [6bd8f36](https://github.com/jspreddy/dql/commit/6bd8f367604407bb016841f310c27b545cc438d9) Remove left over clutter from poetry optional dependencies
+    - [1203e11](https://github.com/jspreddy/dql/commit/1203e11c286c6e61838b4cd55e4496362651863f) uv migration + py [3.10, 3.11] compat
+    - [7de3d74](https://github.com/jspreddy/dql/commit/7de3d7495c960151b534f6ed8a9302d5cdca8535) Add *uv run task test-matrix* command for multi python test
+    - [ffa79a7](https://github.com/jspreddy/dql/commit/ffa79a762857cf009d11276b0ccb433a16f74b02) lint fix
+    - [40628a2](https://github.com/jspreddy/dql/commit/40628a2b85a8d9b6c9907244a950d2ab6cf17ee6) lint issues
+    - [f8d7732](https://github.com/jspreddy/dql/commit/f8d773283ad7a8a16a929b2c58873765ae6051ff) Update GitHub Actions workflows to use latest action versions
+    - [6189b94](https://github.com/jspreddy/dql/commit/6189b943f16bec91ace96ba9ae9848bb5b19fee1) changelog
+    - [00beeed](https://github.com/jspreddy/dql/commit/00beeed3aa395a1b305390f5e66f7358654a59e8) fix import ordering with pyparsing_compat
+    - [80db975](https://github.com/jspreddy/dql/commit/80db975e0e81fef85e6e11f4353485a182821a5c) Enhance bump-version script to handle git tags during commit amendments
+    - [a5deed0](https://github.com/jspreddy/dql/commit/a5deed088fb02fb08c9eb550b02dfc58e540a484) Fix black formatting lint
 
 ## dql (Python) 0.6.4-dev10 (2025-12-05)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)
 
 - [377b54b](https://github.com/jspreddy/dql/commit/377b54b7b62ea9ff0dbd3c90c1c27a7880620ea2) Bug: Index auto-select when not specified. ([#5](https://github.com/jspreddy/dql/pull/5))
+  - [f6959a9](https://github.com/jspreddy/dql/commit/f6959a974bba5ee79debef2b43d66e4049236ffb) If the first available matching index is table, use it.
+  - [f8ede16](https://github.com/jspreddy/dql/commit/f8ede16688c32c183a83576a4a3e215a5c082aec) changelog
 
 ## dql (Python) 0.6.4-dev9 (2025-08-01)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)
 
 - [affbc43](https://github.com/jspreddy/dql/commit/affbc43ab3e4bde4bf429183d0f342e583f73ddd) 0.6.4-dev9: Rich format update + Bugfixes + CI ([#3](https://github.com/jspreddy/dql/pull/3))
+  - [a4bfae8](https://github.com/jspreddy/dql/commit/a4bfae882bfd5d3d7ad781e7dc8db25e25a3f2ae) download dynamodb local if not exists
+  - [cb3ab3c](https://github.com/jspreddy/dql/commit/cb3ab3c41353d80aeb674f000e93d6ec14d4ee94) combination script
+  - [00b350d](https://github.com/jspreddy/dql/commit/00b350d0b3bbaad8c337dfbbfc4e3824980d530f) rich format: limit cols to display; print all col names in result;
+  - [0a6dcc8](https://github.com/jspreddy/dql/commit/0a6dcc8c12f5a4ed574cb83cee149cc0d8a96c57) bugfix: boolean keyword not parsing properly
+  - [a306375](https://github.com/jspreddy/dql/commit/a306375fa2747b8bb09e5b7a69e5dd132a90b90f) use latest github runner
+  - [adddaae](https://github.com/jspreddy/dql/commit/adddaae5b9ced11bb3a601d27b74bfda99ed7712) lint fixes
+  - [913a33f](https://github.com/jspreddy/dql/commit/913a33fb3cf2f51226b087f82e46ed7a5de0c440) flakey typing is bad
+  - [26d99f3](https://github.com/jspreddy/dql/commit/26d99f31755c5aeaf018847494e46611f687e4d5) fixing error
 - [7790973](https://github.com/jspreddy/dql/commit/779097379c0faa94d4578c16ae57f33246b343b7) formatting of changes.rst file
 
 ## dql (Python) 0.6.4-dev8 (2024-12-19)
@@ -218,6 +992,35 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy)
 Contributors: [Sai Jonnala](https://github.com/jspreddy)
 
 - [fdde996](https://github.com/jspreddy/dql/commit/fdde996818c28606a1dca536d981abd254cdca5a) sai/dev ([#2](https://github.com/jspreddy/dql/pull/2))
+  - [f8d8580](https://github.com/jspreddy/dql/commit/f8d8580d9a7b7275bb2317f7b8f5798757307aba) Moving functions around into categories.
+  - [e94ac64](https://github.com/jspreddy/dql/commit/e94ac643a944502c52b29eb783e1d61582f3d8fd) adding c command as alias to clear.
+  - [bc22630](https://github.com/jspreddy/dql/commit/bc226308253fd2d66de4de6545dfe7324508bc14) lint fix
+  - [261d703](https://github.com/jspreddy/dql/commit/261d70371088df5e7116b9e07bc8c23a881ac8a8) adding version, iam commands to cli
+  - [568e527](https://github.com/jspreddy/dql/commit/568e527248923952cf7476cea60010b5ec15a5e7) adding manual test data
+  - [75fb695](https://github.com/jspreddy/dql/commit/75fb695772d7e39b0fc26a722f0791900ca53f74) Adding a rich format
+  - [4ef29ab](https://github.com/jspreddy/dql/commit/4ef29abc8254d047186bb493c87a720684c53875) BugFix: analyze reprinting results over and over
+  - [ba2364b](https://github.com/jspreddy/dql/commit/ba2364b3c2e2145b902e83cceaf0fe17488b90e1) lint fix
+  - [255f75e](https://github.com/jspreddy/dql/commit/255f75e1791f0b463088ccbf040b4fead6cb3aac) RichFormat: preserve order of important cols
+  - [8e42674](https://github.com/jspreddy/dql/commit/8e42674566cacce0e311e5de2230ba13a0f98b7c) more fake user data
+  - [eb89c28](https://github.com/jspreddy/dql/commit/eb89c285919e61862ba775bfe08a80d17f1cff1a) test_cli: Pytest update, syrupy update - replace snapshottest with syrupy, - update tests to work with pytest - some lint fixes
+  - [7900be3](https://github.com/jspreddy/dql/commit/7900be3078df9f96bbb30291f704148a791d82e8) somewhat working tests
+  - [c5f0189](https://github.com/jspreddy/dql/commit/c5f0189681b4f053aaf15a68e42f3e8160945894) skipping a failing test due to dynamodb-local bug
+  - [3abff2e](https://github.com/jspreddy/dql/commit/3abff2edabc9a9369346c68831d87d3d0890c1ff) BugFix: save as binary mode: error due to encoding being specified
+  - [0ffc3a1](https://github.com/jspreddy/dql/commit/0ffc3a1086c158adef5557719ad49a2aed08c13f) lint fix
+  - [e7df60a](https://github.com/jspreddy/dql/commit/e7df60a3e003ef87ebabd6f601b6909c2e03cef7) "cleanup"
+  - [9627ba4](https://github.com/jspreddy/dql/commit/9627ba426db1f520de491a3dce6edc3ea3f4c12c) fixing lint + test
+  - [6b02b56](https://github.com/jspreddy/dql/commit/6b02b561d4595f400481ff0eb44c7ac305928fe7) format
+  - [efd9d64](https://github.com/jspreddy/dql/commit/efd9d6460c5ee070bdbb65e23d3574ed22e5a801) lint fix
+  - [36c026c](https://github.com/jspreddy/dql/commit/36c026c85dcc0922ba8308eb142d42dbadfa03eb) mypy lint fixes
+  - [dd83d05](https://github.com/jspreddy/dql/commit/dd83d051890435b92f5e7d2e5d3b6dc69e1665af) pylintrc disable variable renames
+  - [24a0454](https://github.com/jspreddy/dql/commit/24a04547c605ee091a72fcc7395571653a06e8d5) more lint fixes
+  - [e182fd0](https://github.com/jspreddy/dql/commit/e182fd043965c46a7c6d294fc03c9d41b50276a8) try code workflows with java
+  - [7209af5](https://github.com/jspreddy/dql/commit/7209af5b11e53f348291f779778914a234b3ffff) ci try
+  - [32a4f17](https://github.com/jspreddy/dql/commit/32a4f17c31a14ff177ab6e268f9c89207c877e7c) ci try
+  - [17821b5](https://github.com/jspreddy/dql/commit/17821b53f244d363efe3e9ce026960d8bea84791) ci try
+  - [cc8962d](https://github.com/jspreddy/dql/commit/cc8962d0274d99953cfb5978d905cfe984174541) ci try
+  - [a62b0b9](https://github.com/jspreddy/dql/commit/a62b0b9e2026a53354dc0f6dfbc1145809c50486) minor cleanup of tox.ini and help.py
+  - [e9a4366](https://github.com/jspreddy/dql/commit/e9a4366bebd40fc83485dccab4e9dc72f6187e37) changelog
 - [08fa8a1](https://github.com/jspreddy/dql/commit/08fa8a11b9ce5e22ac2b7fd0a8eb9370d2266f58) github job changes
 - [1863d23](https://github.com/jspreddy/dql/commit/1863d23205b214b6aff52be03ae7b3acef14bd1a) readme updates for v-next
 
@@ -299,6 +1102,12 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 
 - [d8c2862](https://github.com/jspreddy/dql/commit/d8c28621d9c378b6416f87c6b5863c573861096a) doc: update readme installation instructions
 - [e8c6aa7](https://github.com/jspreddy/dql/commit/e8c6aa7d72dd19a1825ade9b846ef6cfed8ea68b) Adding clear command and excluding clear, exit from history (#43)
+  - [6005004](https://github.com/jspreddy/dql/commit/6005004ceca76c64aa2bca24d8cb266e49429dc2) Adding clear command and excluding clear, exit from history
+  - [69af181](https://github.com/jspreddy/dql/commit/69af181645b3b3c89fa45d962e80a1a33636c87a) Code formatting
+  - [0611643](https://github.com/jspreddy/dql/commit/06116434c8f34edaa644fb2ae45f078611708324) help docs for clear and cls
+  - [6941852](https://github.com/jspreddy/dql/commit/69418527ebea2bb0bebbbeefdb6d7871abbe6e18) doc re-generate
+  - [949dee9](https://github.com/jspreddy/dql/commit/949dee90470b8ba63828130b540e97be6a105d4e) fixing error with exiting via shortcut
+  - [b0231a0](https://github.com/jspreddy/dql/commit/b0231a041a2235338b09fef28eaaaea698d8db72) fixing error in conditional import of readline
 - [4951ffe](https://github.com/jspreddy/dql/commit/4951ffe3eb75c93176f0267330106b87ef2214f3) chore: configure workflow to auto-publish on tag (continues #42)
 - [9383e32](https://github.com/jspreddy/dql/commit/9383e3208edbe762ead499c288fead81e1ae3a46) doc: fix title underline in changelog
 - [50574c2](https://github.com/jspreddy/dql/commit/50574c2f45a8de2de5f880136d1896b6c5c87b96) doc: update the build badge in the readme
@@ -308,6 +1117,23 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 Contributors: [Sai Jonnala](https://github.com/jspreddy)
 
 - [6850068](https://github.com/jspreddy/dql/commit/6850068b058556bbdcdd6a4fa527b2bee925747f) WIP: Fixing missing dependency (typing_extensions) + chores (#42)
+  - [377e250](https://github.com/jspreddy/dql/commit/377e250d0c11c41be1ce0ab0603f44e56df0207a) chore: black formatting
+  - [63d9632](https://github.com/jspreddy/dql/commit/63d9632e77623cde681ba28a268f64a00651fe8d) Fixes, Chores, Additions, see changelog
+  - [e21835f](https://github.com/jspreddy/dql/commit/e21835fe07c79ca28bea3cb43bb098e6a4e13ebb) testing github actions
+  - [c403114](https://github.com/jspreddy/dql/commit/c4031147c227c25b95f1cf8627d5d4bfd66b56e2) wip: debug github workflows
+  - [3471385](https://github.com/jspreddy/dql/commit/34713851cbeee67584af16f9e56e39e93ee5582c) wip: github actions
+  - [01e8d99](https://github.com/jspreddy/dql/commit/01e8d991a24999d77e84e91a656dcc5507b2a7ca) wip: github actions
+  - [d9569cf](https://github.com/jspreddy/dql/commit/d9569cf2e88d23799e4643280ad27866305cfa94) wip: github actions
+  - [0749c57](https://github.com/jspreddy/dql/commit/0749c57329b03417e162aace4cddc846668e299c) wip: github actions
+  - [2ab332f](https://github.com/jspreddy/dql/commit/2ab332f2871f038e12a11a67530f225d6fd37de2) wip: github actions
+  - [6c72eb5](https://github.com/jspreddy/dql/commit/6c72eb574b1317da2fde58350cd282d9b18ed73a) wip: github actions
+  - [68fcfb1](https://github.com/jspreddy/dql/commit/68fcfb19764f11acfc7dd5717cd152c8bf4840bc) wip: github actions
+  - [4cee4cb](https://github.com/jspreddy/dql/commit/4cee4cbae753a2acdd30b7d781cd747e8021fc7e) wip: build-job & artifact
+  - [c0d72f4](https://github.com/jspreddy/dql/commit/c0d72f4e09b4b72348fb2ba61474c46f4cf250ce) wip: publish job
+  - [25adebf](https://github.com/jspreddy/dql/commit/25adebffe5c5e0654651f2e52ce660ceaae8aaae) wip: revert publish job
+  - [290b473](https://github.com/jspreddy/dql/commit/290b47380c40491c32c1b75f1ea2cad4a6b729a6) cleanup + changelog
+  - [98a7c47](https://github.com/jspreddy/dql/commit/98a7c47783b5c97de4c3053a74aa8d1fc378a9f0) run the workflow on pull_request
+  - [fbc2b49](https://github.com/jspreddy/dql/commit/fbc2b49e1be397c99094072dc6423d523a0adaba) Dont need to build on each push
 
 ## dql (Python) 0.6.1 (2021-01-24)
 
@@ -322,6 +1148,20 @@ Contributors: Steven Arcangeli
 Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 
 - [3750d37](https://github.com/jspreddy/dql/commit/3750d375ca3dc0cead8235fcd4590d432ab2cd90) Feature: Retain query history across sessions. (#41)
+  - [045e601](https://github.com/jspreddy/dql/commit/045e60188a0db0bbfd3097ce46879c3e51358764) Minor refactor + Function Documentation
+  - [992e054](https://github.com/jspreddy/dql/commit/992e0543805b4f99f5b233dab31e2a360eebf4c3) Feature: Retain query history across sessions.
+  - [f16ede7](https://github.com/jspreddy/dql/commit/f16ede71707e021bda54bb2d0b4b4c5a671076af) changelog
+  - [5fefcac](https://github.com/jspreddy/dql/commit/5fefcac5c0c629dd747eb6503ee5e95719560df4) fixing lint issues
+  - [cdfb0e6](https://github.com/jspreddy/dql/commit/cdfb0e61743119d80ee273c9c66b97c88909381d) fixing mypy lint issue
+  - [7b2419f](https://github.com/jspreddy/dql/commit/7b2419fdf26861f40fb993da1f62faa862795190) Fixing history loss when using multiple sessions.
+  - [aff98f1](https://github.com/jspreddy/dql/commit/aff98f12cb3f62dbb590c7913572d95e1e16989d) Extracting the history management into its own class
+  - [35e5dda](https://github.com/jspreddy/dql/commit/35e5ddab520896552be5bcd4d1de826114ed0a90) cleanup
+  - [b6ffad6](https://github.com/jspreddy/dql/commit/b6ffad62150364e498c6ddfb2b61ba6c98c978e5) adding ls snapshot test for listing multiple tables
+  - [20d7f72](https://github.com/jspreddy/dql/commit/20d7f721ccf9fc167b94764fdb2e1a01ed39f57e) only trying to write history when it is > 0
+  - [a83baff](https://github.com/jspreddy/dql/commit/a83baffacca0a80065b41dabe3d95c992674fb62) Raising exception when write history failure
+  - [7ae26d4](https://github.com/jspreddy/dql/commit/7ae26d4d549424ee17fba92afa28028db83b7721) cleanup print
+  - [d14683d](https://github.com/jspreddy/dql/commit/d14683db1ed74ff33f9b0783e12e0c76a1971e60) Basic Unit tests for the history manager.
+  - [1704b83](https://github.com/jspreddy/dql/commit/1704b83bb2781b8a50aaeea681c31d08146ff32b) fixing test
 - [d37f07f](https://github.com/jspreddy/dql/commit/d37f07f04a588d55d889e4da0aa7cf5827c29e2f) Add a note about PartiQL in the README
 
 ## dql (Python) 0.6.1-dev0 (2020-11-23)
@@ -329,6 +1169,8 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 
 - [acb03f1](https://github.com/jspreddy/dql/commit/acb03f10387715c9f39ffd48eb26b2d5310c488c) Dynamo local path to be within project root + gitignore (#38)
+  - [000175f](https://github.com/jspreddy/dql/commit/000175f7369ded4129bd679912d78aa856e5c781) Dynamo local path to be within project root + gitignore
+  - [e235426](https://github.com/jspreddy/dql/commit/e235426b1e32df8139d0b4e12f3c7fe237070371) Tracking for new release + Change log
 - [4706ad7](https://github.com/jspreddy/dql/commit/4706ad7762a2027db3bbf21da6f4ef915f8c6c6b) Fix #36: Constraint functions should accept quoted field names
 - [3c95123](https://github.com/jspreddy/dql/commit/3c95123566723d4e9ef863583f81cec5a704a1f3) Parser extracts values during parsing for conditional constraints
 - [e245229](https://github.com/jspreddy/dql/commit/e2452294b68e1e117e73e5949a5cb1b9e817c45f) Change the parsing logic for constraint expressions
@@ -349,11 +1191,14 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 - [6a30999](https://github.com/jspreddy/dql/commit/6a30999845d92c05c3b55b4d1b6c6b83c3c58c14) Add new formatter for JSON output
 - [33f9443](https://github.com/jspreddy/dql/commit/33f944338113bb46381d6d8fb49fe95f1fc2ea4f) Update changelog
 - [4179c3f](https://github.com/jspreddy/dql/commit/4179c3f4366c0dd3b4c6063d289f4881ce617b92) CHANGES.rst: new line (#33)
+  - [736a050](https://github.com/jspreddy/dql/commit/736a050cff42248041d3d2852e8aea755a2ee906) adding new line so that the display is correct.
 - [bfaef96](https://github.com/jspreddy/dql/commit/bfaef969ca41781807b5e7935e691199e1eca0c5) Fix tests and lint
 - [99d0216](https://github.com/jspreddy/dql/commit/99d021616af5bc131fdb7e014393ca6fff38a2df) Fix #30: ls command accepts glob patterns
 - [3cb64a1](https://github.com/jspreddy/dql/commit/3cb64a17688d81275ce3073dedfc7d655cde8311) Leave the stack trace out of the parse exception display
 - [aa86dd3](https://github.com/jspreddy/dql/commit/aa86dd30eb4e10b17c042bca5263f29972b760ba) Upgrade dynamo3 to pre-release version
 - [b41482c](https://github.com/jspreddy/dql/commit/b41482c55524289f3dfffad304af31495c7c6f32) Fixed #31: On-Demand tables cause ZeroDivisionError with ls (#32)
+  - [a5c0a18](https://github.com/jspreddy/dql/commit/a5c0a18c8bf93b9727b6f2c6c9a27fea20c9d28c) Fixed #31: On-Demand tables cause ZeroDivisionError with ls
+  - [79f3f8b](https://github.com/jspreddy/dql/commit/79f3f8b838a6d9fa87f4c8d25fe175fa79a2d378) Tracking the changes in CHANGES.rst
 - [550c86d](https://github.com/jspreddy/dql/commit/550c86d706bd82517b8fe0dd2ee2fd9a5469c37d) Enable mypy checking for untyped defs
 - [374e736](https://github.com/jspreddy/dql/commit/374e736baef35a2112ec8fe6e5a3eec461e9c5c9) Add mypy as a test requirement
 - [5e73670](https://github.com/jspreddy/dql/commit/5e73670f29d21eed1d96d4a74dbd73e818d6aad7) Make the mypy checking slightly stricter
@@ -361,12 +1206,33 @@ Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 - [9e54053](https://github.com/jspreddy/dql/commit/9e540531a17c43247c06e0c4acc0f1ee60529808) Add mypy checking in lint step
 - [f997bff](https://github.com/jspreddy/dql/commit/f997bffcf6d1cd9f239a04ae06f0e3c9c200c17a) Use requirements files to manage test/dev dependencies
 - [731b500](https://github.com/jspreddy/dql/commit/731b50074f62be5bcccb74012c9608c16b9b7444) Better errors (#28)
+  - [93f430b](https://github.com/jspreddy/dql/commit/93f430b8e68621d2da9c1d9566f90eee4843791a) Adding `rich` and `botocore` to the requirements.
+  - [bce6d7d](https://github.com/jspreddy/dql/commit/bce6d7d4e0fcc4983acccf6faf62bbe025fc89bf) Adding .editorconfig
+  - [24d32be](https://github.com/jspreddy/dql/commit/24d32bea20b6d78eebd7083b3a57608a71d88f78) Error handling for -c option + Rich errors.
+  - [cc9e952](https://github.com/jspreddy/dql/commit/cc9e95281834a909fb812d0d002489576cf6c6ba) Cleanup of unused import
+  - [e82a3b4](https://github.com/jspreddy/dql/commit/e82a3b40ab49673c2cd05617f8244b6df6c37ae4) Handling exceptions via a wrapper.
+  - [263e6d6](https://github.com/jspreddy/dql/commit/263e6d6880546363e1150ddc3693b4392d5377cc) setting up a coverage tox env
+  - [d9a5c05](https://github.com/jspreddy/dql/commit/d9a5c05dcec88fbadd7e63669dff05ad8fdc68b5) Refactoring the with_exception_handling using  @contextmanager
+  - [b82153c](https://github.com/jspreddy/dql/commit/b82153c8e6bdec3a9fc296a223f3d6247df7bd80) spooky season updates
 
 ## dql (Python) 0.5.29-dev0 (2020-09-07)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy), Steven Arcangeli
 
 - [66b0b4e](https://github.com/jspreddy/dql/commit/66b0b4e88c4e3a73143f065c669b25de8853aade) Development environment updates + CI updates to run with proper java version (#27)
+  - Stacked #1
+    - [44e2fb8](https://github.com/jspreddy/dql/commit/44e2fb875ebb4cd9dc97c60044997ddcf635f68f) Getting project to work with pyenv
+    - [9f98e94](https://github.com/jspreddy/dql/commit/9f98e944d2b819b03ff839da005832b61cd473a1) adding tox and tox-pyenv to the dev requirements + docs for dev
+    - [3f08d8e](https://github.com/jspreddy/dql/commit/3f08d8e2a59fe32ab22e15dbd174df0f0f658774) python version removal
+    - [8658f5f](https://github.com/jspreddy/dql/commit/8658f5f595cec77dacd49e6fe07bf180434ccf32) recomending java installations
+    - [51ac0c2](https://github.com/jspreddy/dql/commit/51ac0c282bc63db2f66daacef7e05a976982bab6) Updating the docs for developers
+    - [6e8b133](https://github.com/jspreddy/dql/commit/6e8b133a9e96d7c9614596c1f382dd12d20d6ea9) Ignoring .idea folder
+    - [b8194ff](https://github.com/jspreddy/dql/commit/b8194ff6bbfdaea97c23910c61f979d1b3594d26) Using bump2version instead of bumpversion, updating docs with the info
+    - [2825925](https://github.com/jspreddy/dql/commit/2825925b225eec7871296fa936e0b4111e290309) Enabling auto-commit on bump2version
+    - [2332098](https://github.com/jspreddy/dql/commit/23320989e02eb2d6f8a4fb148fedb15c2f8d36bd) More dev notes on how to test, install package, run executable
+    - [f2f0b50](https://github.com/jspreddy/dql/commit/f2f0b501bef3b01761efa4ed41c4aeab30459f02) debugging travis-ci issue with java version
+    - [524391b](https://github.com/jspreddy/dql/commit/524391b92521a75f39b825e8f43dcdbf1aae04f2) a new hope
+    - [4686799](https://github.com/jspreddy/dql/commit/46867998198575df2b928d2da24194a8f90447de) CI is finally working with the proper java version
 - [265a3ab](https://github.com/jspreddy/dql/commit/265a3ab548e27206c60f6a40d9de3fe20fc1089c) Typo
 - [192325b](https://github.com/jspreddy/dql/commit/192325ba7c95418ddf94ba540ae578886ae1dd06) Remove python 2 code from the install.py file
 - [59fe0eb](https://github.com/jspreddy/dql/commit/59fe0eb2b6cfe3cbe584d2eba3fd3393838d0abc) Remove python 2-to-3 compatibility code
