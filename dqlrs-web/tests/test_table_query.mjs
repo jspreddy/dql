@@ -203,9 +203,15 @@ test("keys mode builds KEYS IN from the typed list", () => {
     buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, 1), (tom, 3)," }),
     "SELECT * FROM posts KEYS IN ('ada', 1), ('tom', 3)",
   );
+  // A lone hash value on a range-key table reads every item under that hash key.
+  assert.equal(readError(table, { ...defaultReadState(), mode: "keys", batchKeys: "a,b,c" }), "");
   assert.equal(
-    readError(table, { ...defaultReadState(), mode: "keys", batchKeys: "ada, 1" }),
-    "Range keys go in parentheses: (hash, range).",
+    buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys: "a,b,c" }),
+    "SELECT * FROM posts WHERE id = 'a'; SELECT * FROM posts WHERE id = 'b'; SELECT * FROM posts WHERE id = 'c'",
+  );
+  assert.equal(
+    buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, 1), tom" }),
+    "SELECT * FROM posts KEYS IN ('ada', 1); SELECT * FROM posts WHERE id = 'tom'",
   );
   assert.equal(
     buildReadStatement("posts", table, {

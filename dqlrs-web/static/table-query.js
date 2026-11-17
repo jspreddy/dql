@@ -251,9 +251,6 @@ export function keysModeError(table, parsed, sourceName, extra) {
   const source = sourceOf(table, sourceName, "query");
   const tablePk = !source.name;
   const hasRange = Boolean(source.rangeKey);
-  if (tablePk && hasRange && result.keys.some((key) => key.length < 2)) {
-    return "Range keys go in parentheses: (hash, range).";
-  }
   if (!hasRange && result.keys.some((key) => key.length > 1)) {
     return tablePk ? "This table only has a hash key." : "This index only has a hash key.";
   }
@@ -462,12 +459,21 @@ export function buildReadStatement(tableName, table, state, extra) {
     const parsed = parseBatchKeys(current.batchKeys);
     if (keysModeError(table, parsed, current.source, extra)) return "";
     const source = sourceOf(table, current.source, "query");
-    if (!source.name) {
-      return `SELECT * FROM ${quoteIdent(name)} KEYS IN ${formatKeysInClause(parsed.keys, table, extra, source)}`;
+    if (source.name) {
+      return parsed.keys
+        .map((fields) => formatIndexKeySelect(name, source, fields, table, extra))
+        .join("; ");
     }
-    return parsed.keys
-      .map((fields) => formatIndexKeySelect(name, source, fields, table, extra))
-      .join("; ");
+    // KEYS IN gets items by their whole primary key. On a table with a range key, a lone hash
+    // value is not a whole key, so it reads every item under that hash key with a query.
+    const whole = source.rangeKey ? parsed.keys.filter((fields) => fields.length > 1) : parsed.keys;
+    const hashOnly = source.rangeKey ? parsed.keys.filter((fields) => fields.length === 1) : [];
+    const statements = [];
+    if (whole.length) {
+      statements.push(`SELECT * FROM ${quoteIdent(name)} KEYS IN ${formatKeysInClause(whole, table, extra, source)}`);
+    }
+    for (const fields of hashOnly) statements.push(formatIndexKeySelect(name, source, fields, table, extra));
+    return statements.join("; ");
   }
   const source = sourceOf(table, current.source, current.mode);
   const verb = current.mode === "query" ? "SELECT" : "SCAN";
