@@ -1145,7 +1145,8 @@ main { flex: 1; min-width: 0; min-height: 0; display: flex; }
   cursor: pointer;
 }
 
-#run {
+/* The play-and-shortcut Run button: the editor's #run and the table browser's #table-query-run. */
+.run-btn {
   display: inline-flex;
   flex-flow: row nowrap;
   align-items: center;
@@ -2872,6 +2873,14 @@ body.results-resizing * {
   cursor: default;
 }
 
+/* Under the DQL preview: Run at the left, the pager pushed to the right. */
+.table-query-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .table-query-pager {
   display: flex;
   align-items: center;
@@ -2882,13 +2891,6 @@ body.results-resizing * {
 
 .table-query-pager #page-label {
   white-space: nowrap;
-}
-
-#table-query-run {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 24px;
 }
 
 #table-query-run.is-pending {

@@ -159,7 +159,7 @@
             </button>
           </span>
           <div class="run-box">
-            <button type="button" id="run" class="primary" aria-label="Run selection">
+            <button type="button" id="run" class="primary run-btn" aria-label="Run selection">
               <svg class="icon run-play" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/play_arrow.svg#icon"></use></svg>
               <span id="run-shortcut" class="run-shortcut"><span class="key-mod">Ctrl</span> + Enter</span>
             </button>
@@ -251,17 +251,6 @@
               <button type="button" id="table-query-forward" aria-pressed="true">Forward</button>
               <button type="button" id="table-query-reverse" aria-pressed="false">Reverse</button>
             </div>
-            <div class="table-query-pager" id="table-query-pager">
-              <span id="page-label" class="meta"></span>
-              <div class="table-query-seg" role="group" aria-label="Page">
-                <button type="button" id="page-prev">Previous</button>
-                <button type="button" id="page-next">Next</button>
-              </div>
-            </div>
-            <button type="submit" id="table-query-run" class="primary">
-              <svg class="icon run-play" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/play_arrow.svg#icon"></use></svg>
-              Run
-            </button>
           </div>
           <div class="table-query-section" id="table-query-key-section">
             <div class="table-query-section-head">
@@ -285,6 +274,20 @@
             <p class="table-query-hint" id="table-query-batch-hint"></p>
           </div>
           <pre id="table-query-dql" class="table-query-dql" data-testid="table-query-dql"></pre>
+          <!-- Under the DQL it runs: Run at the left, the pager at the right. -->
+          <div class="table-query-actions" id="table-query-actions">
+            <button type="submit" id="table-query-run" class="primary run-btn" aria-label="Run query">
+              <svg class="icon run-play" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/play_arrow.svg#icon"></use></svg>
+              <span class="run-shortcut"><span class="key-mod">Ctrl</span> + Enter</span>
+            </button>
+            <div class="table-query-pager" id="table-query-pager">
+              <span id="page-label" class="meta"></span>
+              <div class="table-query-seg" role="group" aria-label="Page">
+                <button type="button" id="page-prev">Previous</button>
+                <button type="button" id="page-next">Next</button>
+              </div>
+            </div>
+          </div>
           <p id="table-query-error" class="table-query-error" hidden></p>
         </form>
         <div id="rows-body" class="result-body browser-rows"></div>

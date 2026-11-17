@@ -179,7 +179,16 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   await expect(row).not.toContainText("RANGE");
   await expect(page.locator("#rows-title")).toHaveText(name);
   await expect(page.locator("#rows-meta")).toHaveText("50 rows at a time");
-  await expect(page.locator("#table-query .table-query-toolbar #table-query-pager")).toBeVisible();
+  await expect(page.locator("#table-query .table-query-actions #table-query-pager")).toBeVisible();
+  // Run and the pager share one bar under the DQL preview: Run at the left, the pager at the right.
+  const dqlBox = await page.locator("#table-query-dql").boundingBox();
+  const barBox = await page.locator("#table-query-actions").boundingBox();
+  const runBox = await page.locator("#table-query-run").boundingBox();
+  const pagerBox = await page.locator("#table-query-pager").boundingBox();
+  expect(barBox.y).toBeGreaterThanOrEqual(dqlBox.y + dqlBox.height);
+  expect(runBox.x - barBox.x).toBeLessThan(4);
+  expect(Math.abs(barBox.x + barBox.width - (pagerBox.x + pagerBox.width))).toBeLessThan(4);
+  expect(Math.abs(runBox.y + runBox.height / 2 - (pagerBox.y + pagerBox.height / 2))).toBeLessThan(4);
   await expect(page.locator("#tables-view > .pager")).toHaveCount(0);
   await expect(page.locator("#page-label")).toHaveText("Showing 1–50");
   await expect(page.locator("#page-prev")).toBeDisabled();
@@ -1050,8 +1059,14 @@ test("table browser scan and query pickers filter without typing DQL", async ({ 
   await filter.locator('[data-testid="table-query-value"]').fill("open");
   await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name} WHERE status = 'open'`);
   await expect(page.locator("#table-query-run")).toHaveClass(/is-pending/);
-  await page.locator("#table-query-run").click();
+  // Run looks and reads like the editor's Run, and Ctrl+Enter (⌘+Enter on a Mac) runs from a filter.
+  const runLabel = (selector) => page.locator(selector).evaluate((el) => el.textContent.replace(/\s+/g, " ").trim());
+  expect(await runLabel("#table-query-run")).toBe(await runLabel("#run"));
+  expect(await runLabel("#table-query-run")).toMatch(/^(Ctrl|⌘) \+ Enter$/);
+  await expect(page.locator("#table-query-run")).toHaveAttribute("aria-keyshortcuts", /^(Control|Meta)\+Enter$/);
+  await filter.locator('[data-testid="table-query-value"]').press("ControlOrMeta+Enter");
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
+  await expect(page.locator("#table-query-run")).not.toHaveClass(/is-pending/);
   await expect(page.locator("#rows-table tbody")).toContainText("ada");
   await expect(page.locator("#rows-table tbody")).toContainText("tom");
   await expect(page.locator("#rows-table tbody")).not.toContainText("shut");

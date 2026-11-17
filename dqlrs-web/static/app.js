@@ -1105,6 +1105,16 @@ document.querySelector("#refresh-tables").addEventListener("click", () => {
 });
 document.querySelector("#page-prev").addEventListener("click", () => changePage(-1));
 document.querySelector("#page-next").addEventListener("click", () => changePage(1));
+// The table browser's Run matches the editor's: same button, and Ctrl+Enter (⌘+Enter on a Mac)
+// from anywhere in the form. The Keys editor handles the key itself and marks it handled.
+const tableQueryRun = document.querySelector("#table-query-run");
+tableQueryRun.setAttribute("aria-keyshortcuts", macShortcut ? "Meta+Enter" : "Control+Enter");
+setTip(tableQueryRun, `Run query (${modLabel} + Enter)`);
+document.querySelector("#table-query").addEventListener("keydown", (event) => {
+  if (event.defaultPrevented || event.key !== "Enter" || !(macShortcut ? event.metaKey : event.ctrlKey)) return;
+  event.preventDefault();
+  if (!tableQueryRun.disabled) tableQueryRun.click();
+});
 const tableQuery = attachTableQuery(document.querySelector("#table-query"), {
   createKeysEditor,
   onRun({ dql }) {
