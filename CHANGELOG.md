@@ -10,6 +10,7 @@ next bump, or to Unreleased when no later bump exists.
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [22d1a7f](https://github.com/jspreddy/dql/commit/22d1a7f924d4b898f59f695b8355fbc2f7a4d1ad) feat(web): delay tooltips 100, 200, or 400 ms by how much they matter ([#254](https://github.com/jspreddy/dql/pull/254))
 - [5da83d2](https://github.com/jspreddy/dql/commit/5da83d270b7787e603087f76f31de313d7876b20) Keep the table source beside Scan, Query, and Keys ([#241](https://github.com/jspreddy/dql/pull/241))
 - [cffc77a](https://github.com/jspreddy/dql/commit/cffc77afa8a3755848446c18d67314e121444d99) Show the just verify summary unchanged ([#243](https://github.com/jspreddy/dql/pull/243))
 - [dceff0c](https://github.com/jspreddy/dql/commit/dceff0c23036a67c1fd2d97e6afa24b25a2d4f9a) docs: drop the post-PR just verify workflow step ([#237](https://github.com/jspreddy/dql/pull/237))
