@@ -248,6 +248,123 @@ export function dedupeKeys(keys, table, extra, source) {
   return { keys: unique, dropped: (keys || []).length - unique.length };
 }
 
+/**
+ * Pieces of the Keys box text for highlighting, covering every character in order:
+ * `{ text, kind, key }`. `key` numbers each key (a lone value or a tuple) from 0, so keys can
+ * alternate colors. `kind` is "hash" or "range" for values, "tuple" for a key's parentheses,
+ * "punct" for commas and the parentheses around a list of tuples, "error" for what cannot be
+ * a key (a tuple with three or more parts, an unclosed quote, an extra ")"), or "" for space.
+ */
+export function keyHighlightSpans(text) {
+  const src = String(text || "");
+  const tokens = [];
+  let i = 0;
+  while (i < src.length) {
+    const ch = src[i];
+    if (ch === "(" || ch === ")" || ch === ",") {
+      tokens.push({ t: ch, s: i, e: i + 1 });
+      i += 1;
+    } else if (/\s/.test(ch)) {
+      let j = i;
+      while (j < src.length && /\s/.test(src[j])) j += 1;
+      tokens.push({ t: "ws", s: i, e: j });
+      i = j;
+    } else if (ch === "'" || ch === '"') {
+      let j = i + 1;
+      let closed = false;
+      while (j < src.length) {
+        if (src[j] === ch && src[j + 1] === ch) {
+          j += 2;
+          continue;
+        }
+        j += 1;
+        if (src[j - 1] === ch) {
+          closed = true;
+          break;
+        }
+      }
+      tokens.push({ t: "v", s: i, e: j, bad: !closed });
+      i = j;
+    } else {
+      let j = i;
+      while (j < src.length && !"(),\n\r".includes(src[j])) j += 1;
+      let end = j;
+      while (end > i && /\s/.test(src[end - 1])) end -= 1;
+      tokens.push({ t: "v", s: i, e: end });
+      if (end < j) tokens.push({ t: "ws", s: end, e: j });
+      i = j;
+    }
+  }
+
+  // Group tokens by parentheses: a group holds values, nested groups, and separators.
+  let at = 0;
+  const readGroup = (open) => {
+    const node = { open, close: null, items: [] };
+    while (at < tokens.length) {
+      const token = tokens[at];
+      at += 1;
+      if (token.t === "(") node.items.push(readGroup(token));
+      else if (token.t === ")") {
+        if (open) {
+          node.close = token;
+          return node;
+        }
+        node.items.push({ stray: token });
+      } else node.items.push(token);
+    }
+    return node;
+  };
+  const root = readGroup(null);
+
+  const kinds = new Map();
+  const keyOf = new Map();
+  let keyIndex = 0;
+  const mark = (token, kind, key = null) => {
+    if (!token) return;
+    kinds.set(token, kind);
+    if (key !== null) keyOf.set(token, key);
+  };
+  const isGroup = (item) => item && item.items;
+  const visitList = (node) => {
+    for (const item of node.items) {
+      if (item.stray) mark(item.stray, "error");
+      else if (isGroup(item)) visitGroup(item);
+      else if (item.t === "v") {
+        mark(item, item.bad ? "error" : "hash", keyIndex);
+        keyIndex += 1;
+      } else if (item.t === ",") mark(item, "punct");
+    }
+  };
+  const visitGroup = (group) => {
+    if (group.items.some(isGroup)) {
+      // A list of tuples: its own parentheses are punctuation.
+      mark(group.open, "punct");
+      mark(group.close, group.close ? "punct" : null);
+      visitList(group);
+      return;
+    }
+    const values = group.items.filter((item) => item.t === "v");
+    const key = keyIndex;
+    keyIndex += 1;
+    const tooMany = values.length > 2 || !group.close;
+    mark(group.open, tooMany ? "error" : "tuple", key);
+    mark(group.close, tooMany ? "error" : "tuple", key);
+    values.forEach((value, index) => {
+      mark(value, tooMany || value.bad ? "error" : index === 0 ? "hash" : "range", key);
+    });
+    for (const item of group.items) {
+      if (item.t === "," || item.t === "ws") mark(item, item.t === "," ? "punct" : "", key);
+    }
+  };
+  visitList(root);
+
+  return tokens.map((token) => ({
+    text: src.slice(token.s, token.e),
+    kind: kinds.get(token) || "",
+    key: keyOf.has(token) ? keyOf.get(token) : null,
+  }));
+}
+
 export function formatKeysInClause(keys, table, extra, source) {
   const src = source || tableSource(table);
   return (keys || []).map((fields) => {
@@ -632,6 +749,24 @@ function newRow(attribute, op, extra) {
   };
 }
 
+// The Keys box interface keys-editor.js also provides, over a plain textarea.
+function textareaKeysEditor(textarea) {
+  return {
+    get value() {
+      return textarea.value;
+    },
+    set value(text) {
+      textarea.value = text;
+    },
+    set placeholder(text) {
+      textarea.placeholder = text;
+    },
+    focus: () => textarea.focus(),
+    hasFocus: () => document.activeElement === textarea,
+    onInput: (listener) => textarea.addEventListener("input", listener),
+  };
+}
+
 export function attachTableQuery(host, handlers = {}) {
   const onRun = handlers.onRun || (() => {});
   const onChange = handlers.onChange || (() => {});
@@ -656,7 +791,12 @@ export function attachTableQuery(host, handlers = {}) {
   const keyHost = host.querySelector("#table-query-keys");
   const filterHost = host.querySelector("#table-query-filters");
   const batchSection = host.querySelector("#table-query-batch");
-  const batchInput = host.querySelector("#table-query-batch-keys");
+  // The Keys box. app.js passes a CodeMirror editor (keys-editor.js) through
+  // handlers.createKeysEditor; without one, the plain textarea stands in.
+  const batchTextarea = host.querySelector("#table-query-batch-keys");
+  const batchInput = handlers.createKeysEditor
+    ? handlers.createKeysEditor(batchTextarea, { submit: () => host.querySelector("#table-query-run")?.click() })
+    : textareaKeysEditor(batchTextarea);
   const batchHint = host.querySelector("#table-query-batch-hint");
   const preview = host.querySelector("#table-query-dql");
   const errorNode = host.querySelector("#table-query-error");
@@ -694,7 +834,7 @@ export function attachTableQuery(host, handlers = {}) {
     const range = source.rangeKey;
     paintBatchHint();
     batchInput.placeholder = range ? `(${hash}, ${range})` : "a, b, c";
-    if (document.activeElement !== batchInput) batchInput.value = state.batchKeys || "";
+    if (!batchInput.hasFocus()) batchInput.value = state.batchKeys || "";
   }
 
   function sourceItems(mode, tableLabel) {
@@ -977,7 +1117,7 @@ export function attachTableQuery(host, handlers = {}) {
     paint();
     batchInput.focus();
   });
-  batchInput.addEventListener("input", () => {
+  batchInput.onInput(() => {
     state.batchKeys = batchInput.value;
     livePreview();
   });

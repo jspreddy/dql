@@ -1,5 +1,6 @@
 import { test, expect } from "../support/app.js";
 import { playwrightArtifact } from "../support/artifacts.js";
+import { themeColor } from "../support/helpers.js";
 
 // Key inputs check the value against the key's type for every table. A string key takes any
 // text; a number key says so before Run when the text is not a number.
@@ -95,4 +96,36 @@ test("a,b,c reads every item under each hash key on a table with a range key", a
   await page.locator("#table-query-run").click();
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
   await expect(page.locator("#rows-table tbody")).not.toContainText("z");
+});
+
+test("the Keys box highlights each key, alternating colors, with tuple parts apart", async ({ page, app }, testInfo) => {
+  const name = uniqueTable("hl");
+  app.trackTable(name);
+  app.command(`CREATE TABLE ${name} (id STRING HASH KEY, sk STRING RANGE KEY);`);
+  app.command(`INSERT INTO ${name} (id, sk) VALUES ('a', 'x'), ('b', 'y');`);
+  await openTable(page, app, name);
+  await page.locator("#table-query-keys-mode").click();
+  const editor = page.locator("#table-query-batch-keys");
+  await expect(editor).toHaveClass(/cm-editor/);
+  const keys = page.locator('[data-testid="table-query-batch-keys"]');
+  await keys.fill("(a, x), b, (c, z)\n((d, 1), (e, 2)), f, (g, h, i)");
+
+  const first = editor.locator(".kh-hash.kh-c0").first();
+  await expect(first).toHaveText("a");
+  await expect(first).toHaveCSS("color", await themeColor(page, "--tok-type"));
+  const second = editor.locator(".kh-hash.kh-c1").first();
+  await expect(second).toHaveText("b");
+  await expect(second).toHaveCSS("color", await themeColor(page, "--tok-fn"));
+  await expect(editor.locator(".kh-range").first()).toHaveText("x");
+  await expect(editor.locator(".kh-range").first()).toHaveCSS("color", await themeColor(page, "--tok-number"));
+  await expect(editor.locator(".kh-alt-1").first()).toHaveCSS("background-color", await themeColor(page, "--hover-quiet"));
+  await expect(editor.locator(".kh-punct", { hasText: "," }).first()).toHaveCSS("color", await themeColor(page, "--muted"));
+  await expect(editor.locator(".kh-error").first()).toHaveCSS("color", await themeColor(page, "--danger"));
+  await expect(page.locator("#table-query-error")).toContainText("at most two parts");
+  await editor.screenshot({ path: playwrightArtifact(`table-keys-highlight-${testInfo.project.name}.png`) });
+
+  // Ctrl/Cmd+Enter in the Keys box runs, as in the query editor.
+  await keys.fill("(a, x), b");
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+Enter" : "Control+Enter");
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
 });

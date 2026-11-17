@@ -11,6 +11,7 @@ import {
   ensureQueryKeys,
   filterAttributes,
   formatCondition,
+  keyHighlightSpans,
   keyValueError,
   parseBatchKeys,
   quoteIdent,
@@ -322,4 +323,21 @@ test("keys mode leaves out repeated keys and pairs a lone hash key covers", () =
   assert.equal(dedupeKeys([["a", "1"], ["a", "1.0"]], strings).dropped, 0);
   assert.deepEqual(dedupeKeys([["a", "1"], ["a", "1"]], strings), { keys: [["a", "1"]], dropped: 1 });
   assert.deepEqual(dedupeKeys([["a"], ["a", "1"], ["a"]], table), { keys: [["a"]], dropped: 2 });
+});
+
+test("keyHighlightSpans marks keys, tuple parts, punctuation, and errors", () => {
+  const marks = (text) => {
+    const spans = keyHighlightSpans(text);
+    assert.equal(spans.map((span) => span.text).join(""), text, "covers every character");
+    return spans.filter((span) => span.kind).map((span) => `${span.text}:${span.kind}${span.key === null ? "" : "#" + span.key}`);
+  };
+  assert.deepEqual(marks("a, b"), ["a:hash#0", ",:punct", "b:hash#1"]);
+  assert.deepEqual(marks("(a, 1), c"), ["(:tuple#0", "a:hash#0", ",:punct#0", "1:range#0", "):tuple#0", ",:punct", "c:hash#1"]);
+  assert.deepEqual(marks("((a, 1))"), ["(:punct", "(:tuple#0", "a:hash#0", ",:punct#0", "1:range#0", "):tuple#0", "):punct"]);
+  assert.deepEqual(marks("new york\n(b, 2)"), ["new york:hash#0", "(:tuple#1", "b:hash#1", ",:punct#1", "2:range#1", "):tuple#1"]);
+  assert.deepEqual(marks("'x, y', z"), ["'x, y':hash#0", ",:punct", "z:hash#1"]);
+  assert.ok(marks("(a, b, c)").every((mark) => mark.includes(":error") || mark.includes(":punct")));
+  assert.deepEqual(marks("'open"), ["'open:error#0"]);
+  assert.deepEqual(marks("a)"), ["a:hash#0", "):error"]);
+  assert.deepEqual(marks(""), []);
 });

@@ -104,7 +104,7 @@ The 22px controls in the top bar, the side header, the pane headers, and the pag
 
 ### Script components
 
-`context-menu.js` (right-click menus), `run-tree.js` (the run dialog's file tree), `describe-card.js`, `note-card.js`, and `statement-text.js` each export functions that build or describe one piece of UI. A new piece of UI with its own state goes in its own module, with a spec under `playwright/tests/components/`.
+`context-menu.js` (right-click menus), `run-tree.js` (the run dialog's file tree), `keys-editor.js` (the table browser's Keys box: a CodeMirror editor that colors keys, not DQL), `describe-card.js`, `note-card.js`, and `statement-text.js` each export functions that build or describe one piece of UI. A new piece of UI with its own state goes in its own module, with a spec under `playwright/tests/components/`.
 
 ### Icons
 

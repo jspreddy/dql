@@ -27,6 +27,7 @@ import {
 } from "./statement-text.js";
 import { unifiedDiff } from "./file-patch.js";
 import { attachTableQuery } from "./table-query.js";
+import { createKeysEditor } from "./keys-editor.js";
 import { createRowsCache } from "./table-rows-cache.js";
 
 const apiToken = document.querySelector('meta[name="dqlrs-token"]')?.content || "";
@@ -1105,6 +1106,7 @@ document.querySelector("#refresh-tables").addEventListener("click", () => {
 document.querySelector("#page-prev").addEventListener("click", () => changePage(-1));
 document.querySelector("#page-next").addEventListener("click", () => changePage(1));
 const tableQuery = attachTableQuery(document.querySelector("#table-query"), {
+  createKeysEditor,
   onRun({ dql }) {
     state.tableDql = dql || "";
     state.page = 0;
