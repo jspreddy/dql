@@ -738,6 +738,15 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
                 Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
             }
         }
+        "/api/explain" => {
+            let name = query_value(query, "table");
+            let dql = query_value(query, "dql");
+            let mut state = lock_state(app);
+            match table_explain(&mut state, &name, &dql) {
+                Ok(payload) => Reply::Json(200, payload),
+                Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
+            }
+        }
         "/api/rows" => {
             let name = query_value(query, "table");
             let page = query_value(query, "page")
@@ -1206,6 +1215,29 @@ fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Resul
         "read_units": read_units,
         "write_units": write_units,
     }))
+}
+
+/// EXPLAIN for the table browser: the plan of each statement its first page would run, with the
+/// same LIMIT as `/api/rows`, so the plan matches what Run reads.
+fn table_explain(state: &mut WebState, name: &str, dql: &str) -> Result<Value, String> {
+    if !safe_table_name(name) {
+        return Err(format!("unsupported table name {name:?}"));
+    }
+    let (statements, _) = browser_read_dql(name, dql, PAGE_SIZE.saturating_add(1))?;
+    let mut plans = Vec::new();
+    for statement in &statements {
+        let envelope = state
+            .session
+            .execute_for_serve(&format!("EXPLAIN {statement}"));
+        if !envelope.ok {
+            return Err(ExecText::from_envelope(&envelope).failure());
+        }
+        plans.push(json!({
+            "statement": statement,
+            "plan": envelope.message.unwrap_or_default(),
+        }));
+    }
+    Ok(json!({"name": name, "plans": plans}))
 }
 
 /// SCAN/SELECT of `name` only. Paged reads append LIMIT; KEYS IN and multi-query keys cannot.
@@ -2458,6 +2490,22 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         assert!(created.contains("\"ok\":true"), "{created}");
         let page = http_body(addr, "GET", "/api/rows?table=posts&page=0", "");
         assert!(page.contains("\"id\""), "{page}");
+        // The table browser's Explain tab: the plan of what Run would read, LIMIT included.
+        let explain = http_body(addr, "GET", "/api/explain?table=posts", "");
+        let explain_json: Value = serde_json::from_str(&explain).expect(&explain);
+        assert_eq!(
+            explain_json["plans"][0]["statement"],
+            "SCAN * FROM posts LIMIT 51"
+        );
+        assert!(
+            explain_json["plans"][0]["plan"]
+                .as_str()
+                .unwrap()
+                .contains("posts"),
+            "{explain}"
+        );
+        let bad = http(addr, "GET", "/api/explain?table=no%20such", "");
+        assert!(bad.contains("502"), "{bad}");
         // The table browser shows these as the read's time and cost pills.
         let page_json: Value = serde_json::from_str(&page).expect(&page);
         assert!(page_json["elapsed_ms"].is_u64(), "{page}");

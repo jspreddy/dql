@@ -1105,6 +1105,176 @@ document.querySelector("#refresh-tables").addEventListener("click", () => {
 });
 document.querySelector("#page-prev").addEventListener("click", () => changePage(-1));
 document.querySelector("#page-next").addEventListener("click", () => changePage(1));
+// The table query panel: controls at the left, and at the right the query as built and its
+// plan (Explain). The divider between them works like the main side divider.
+const tableQueryForm = document.querySelector("#table-query");
+const tableQueryControls = document.querySelector("#table-query-controls");
+const tableQueryResize = document.querySelector("#table-query-resize");
+const tableQueryExplain = document.querySelector("#table-query-explain");
+const TABLE_QUERY_SPLIT_KEY = "dqlrs-web.table-query-split";
+const TABLE_QUERY_SPLIT_DEFAULT = 0.6;
+let tableQueryPane = "dql";
+let tableQueryDraft = { table: "", dql: "", error: "" };
+let tableExplainTimer = 0;
+let tableExplainSeq = 0;
+
+function tableQuerySplitLimits() {
+  const width = tableQueryForm.getBoundingClientRect().width;
+  const min = Math.min(360, Math.floor(width / 2));
+  const max = Math.max(min, Math.floor(width - 240));
+  return { width, min, max };
+}
+
+/** Set the controls pane to `fraction` of the panel, kept between the limits. */
+function applyTableQuerySplit(fraction, persist) {
+  const { width, min, max } = tableQuerySplitLimits();
+  if (!width) return;
+  const px = Math.min(max, Math.max(min, Math.round(fraction * width)));
+  const next = px / width;
+  tableQueryControls.style.width = (next * 100).toFixed(2) + "%";
+  tableQueryResize.setAttribute("aria-valuemin", String(Math.round((min / width) * 100)));
+  tableQueryResize.setAttribute("aria-valuemax", String(Math.round((max / width) * 100)));
+  tableQueryResize.setAttribute("aria-valuenow", String(Math.round(next * 100)));
+  if (persist) {
+    try {
+      localStorage.setItem(TABLE_QUERY_SPLIT_KEY, next.toFixed(4));
+    } catch {
+      /* the split still works for this page */
+    }
+  }
+}
+
+function savedTableQuerySplit() {
+  let saved = NaN;
+  try {
+    saved = Number(localStorage.getItem(TABLE_QUERY_SPLIT_KEY));
+  } catch {
+    /* fall back to the default */
+  }
+  return Number.isFinite(saved) && saved > 0 && saved < 1 ? saved : TABLE_QUERY_SPLIT_DEFAULT;
+}
+
+let tableQueryDrag = null;
+tableQueryResize.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  tableQueryResize.setPointerCapture(event.pointerId);
+  tableQueryDrag = { x: event.clientX, width: tableQueryControls.getBoundingClientRect().width };
+  document.body.classList.add("table-query-resizing");
+});
+tableQueryResize.addEventListener("pointermove", (event) => {
+  if (!tableQueryDrag) return;
+  const total = tableQueryForm.getBoundingClientRect().width;
+  applyTableQuerySplit((tableQueryDrag.width + event.clientX - tableQueryDrag.x) / total, false);
+});
+function endTableQueryDrag(event) {
+  if (!tableQueryDrag) return;
+  if (event && tableQueryResize.hasPointerCapture(event.pointerId)) {
+    tableQueryResize.releasePointerCapture(event.pointerId);
+  }
+  tableQueryDrag = null;
+  document.body.classList.remove("table-query-resizing");
+  const total = tableQueryForm.getBoundingClientRect().width;
+  applyTableQuerySplit(tableQueryControls.getBoundingClientRect().width / total, true);
+}
+tableQueryResize.addEventListener("pointerup", endTableQueryDrag);
+tableQueryResize.addEventListener("pointercancel", endTableQueryDrag);
+tableQueryResize.addEventListener("dblclick", () => {
+  try {
+    localStorage.removeItem(TABLE_QUERY_SPLIT_KEY);
+  } catch {
+    /* nothing saved */
+  }
+  applyTableQuerySplit(TABLE_QUERY_SPLIT_DEFAULT, false);
+});
+tableQueryResize.addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  event.preventDefault();
+  const total = tableQueryForm.getBoundingClientRect().width;
+  const step = event.shiftKey ? 80 : 28;
+  const current = tableQueryControls.getBoundingClientRect().width;
+  applyTableQuerySplit((current + (event.key === "ArrowRight" ? step : -step)) / total, true);
+});
+// The form is hidden until a table opens, so size it whenever it becomes visible or resizes.
+new ResizeObserver(() => {
+  if (!tableQueryDrag && tableQueryForm.getBoundingClientRect().width) {
+    applyTableQuerySplit(savedTableQuerySplit(), false);
+  }
+}).observe(tableQueryForm);
+
+// Tabs: "Query as built" shows the DQL; "Explain" shows the plan of what Run would read.
+const tableQueryTabs = [...document.querySelectorAll(".table-query-side .result-tab")];
+function selectTableQueryPane(pane) {
+  tableQueryPane = pane;
+  for (const tab of tableQueryTabs) {
+    const active = tab.dataset.pane === pane;
+    tab.classList.toggle("is-active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+    tab.tabIndex = active ? 0 : -1;
+  }
+  document.querySelector("#table-query-dql").hidden = pane !== "dql";
+  tableQueryExplain.hidden = pane !== "explain";
+  if (pane === "explain") loadTableExplain();
+}
+for (const tab of tableQueryTabs) {
+  tab.addEventListener("click", () => selectTableQueryPane(tab.dataset.pane));
+  tab.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const index = tableQueryTabs.indexOf(tab);
+    const next = tableQueryTabs[(index + (event.key === "ArrowRight" ? 1 : tableQueryTabs.length - 1)) % tableQueryTabs.length];
+    selectTableQueryPane(next.dataset.pane);
+    next.focus();
+  });
+}
+
+function scheduleTableExplain() {
+  clearTimeout(tableExplainTimer);
+  tableExplainTimer = setTimeout(loadTableExplain, 300);
+}
+
+async function loadTableExplain() {
+  clearTimeout(tableExplainTimer);
+  const { table, dql, error } = tableQueryDraft;
+  const seq = ++tableExplainSeq;
+  if (!table) {
+    tableQueryExplain.replaceChildren(note("Open a table to see its plan.", false));
+    return;
+  }
+  if (error) {
+    tableQueryExplain.replaceChildren(note(error, true));
+    return;
+  }
+  tableQueryExplain.replaceChildren(note("Explaining…", false));
+  try {
+    const query = new URLSearchParams({ table });
+    if (dql) query.set("dql", dql);
+    const payload = await api("/api/explain?" + query.toString());
+    if (seq !== tableExplainSeq) return;
+    const parts = [];
+    for (const item of payload.plans || []) {
+      const steps = parseExplainPlan(item.plan || "");
+      if (payload.plans.length > 1) {
+        const label = document.createElement("p");
+        label.className = "table-query-explain-statement";
+        label.textContent = item.statement;
+        parts.push(label);
+      }
+      if (steps) {
+        parts.push(explainPlan(steps));
+      } else {
+        const raw = document.createElement("pre");
+        raw.className = "table-query-dql";
+        raw.textContent = item.plan || "";
+        parts.push(raw);
+      }
+    }
+    tableQueryExplain.replaceChildren(...(parts.length ? parts : [note("No plan.", false)]));
+  } catch (error2) {
+    if (seq !== tableExplainSeq) return;
+    tableQueryExplain.replaceChildren(note(error2.message, true));
+  }
+}
+
 // The table browser's Run matches the editor's: same button, and Ctrl+Enter (⌘+Enter on a Mac)
 // from anywhere in the form. The Keys editor handles the key itself and marks it handled.
 const tableQueryRun = document.querySelector("#table-query-run");
@@ -1117,6 +1287,10 @@ document.querySelector("#table-query").addEventListener("keydown", (event) => {
 });
 const tableQuery = attachTableQuery(document.querySelector("#table-query"), {
   createKeysEditor,
+  onChange({ table, dql, error }) {
+    tableQueryDraft = { table: table?.name || state.table || "", dql: dql || "", error: error || "" };
+    if (tableQueryPane === "explain") scheduleTableExplain();
+  },
   onRun({ dql }) {
     state.tableDql = dql || "";
     state.page = 0;

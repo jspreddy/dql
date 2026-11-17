@@ -180,12 +180,13 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   await expect(page.locator("#rows-title")).toHaveText(name);
   await expect(page.locator("#rows-meta")).toHaveText("50 rows at a time");
   await expect(page.locator("#table-query .table-query-actions #table-query-pager")).toBeVisible();
-  // Run and the pager share one bar under the DQL preview: Run at the left, the pager at the right.
+  // Run and the pager share one bar in the controls pane: Run at the left, the pager at the right.
+  // The query as built sits in the right-hand pane.
   const dqlBox = await page.locator("#table-query-dql").boundingBox();
   const barBox = await page.locator("#table-query-actions").boundingBox();
   const runBox = await page.locator("#table-query-run").boundingBox();
   const pagerBox = await page.locator("#table-query-pager").boundingBox();
-  expect(barBox.y).toBeGreaterThanOrEqual(dqlBox.y + dqlBox.height);
+  expect(dqlBox.x).toBeGreaterThanOrEqual(barBox.x + barBox.width);
   expect(runBox.x - barBox.x).toBeLessThan(4);
   expect(Math.abs(barBox.x + barBox.width - (pagerBox.x + pagerBox.width))).toBeLessThan(4);
   expect(Math.abs(runBox.y + runBox.height / 2 - (pagerBox.y + pagerBox.height / 2))).toBeLessThan(4);
@@ -1599,3 +1600,67 @@ async function expectSampleColumnTakesTheRest(page) {
   const content = widths.slice(0, 4).reduce((sum, width) => sum + width, 0);
   expect(widths[4]).toBeGreaterThan(content);
 }
+
+test("table browser splits controls from the query as built and its plan", async ({ page, app }, testInfo) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, sk NUMBER RANGE KEY);`,
+      `INSERT INTO ${name} (id, sk) VALUES ('ada', 1), ('ada', 2), ('tom', 3);`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "3 rows inserted" })).toBeVisible();
+  await page.evaluate(() => localStorage.removeItem("dqlrs-web.table-query-split"));
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);
+
+  // Controls at the left, 60% by default; tabs for the query as built and its plan at the right.
+  const form = await page.locator("#table-query").boundingBox();
+  const controls = await page.locator("#table-query-controls").boundingBox();
+  const side = await page.locator(".table-query-side").boundingBox();
+  expect(Math.abs(controls.width / form.width - 0.6)).toBeLessThan(0.01);
+  expect(side.x).toBeGreaterThanOrEqual(controls.x + controls.width - 1);
+  await expect(page.locator(".table-query-side .result-tab")).toHaveText(["Query as built", "Explain"]);
+  await expect(page.locator("#table-query-tab-dql")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name}`);
+  // The divider is the main side divider's component.
+  await expect(page.locator("#table-query-resize")).toHaveClass(/side-resize/);
+  await expect(page.locator("#table-query-resize .side-grip")).toHaveCount(1);
+  await page.screenshot({ path: playwrightArtifact(`table-query-split-${testInfo.project.name}.png`) });
+
+  // Explain shows the plan of what Run would read, and follows the controls.
+  await page.locator("#table-query-tab-explain").click();
+  await expect(page.locator("#table-query-tab-explain")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#table-query-dql")).toBeHidden();
+  const explain = page.locator("#table-query-explain");
+  await expect(explain.locator('[data-testid="explain-op"]').first()).toHaveText(/scan/i);
+  await page.locator("#table-query-query").click();
+  await expect(explain.locator('[data-testid="explain-op"]').first()).toHaveText(/query/i);
+  await page.screenshot({ path: playwrightArtifact(`table-query-explain-${testInfo.project.name}.png`) });
+  await page.locator("#table-query-tab-dql").click();
+  await expect(page.locator("#table-query-dql")).toHaveText(/^SELECT \* FROM /);
+
+  // Dragging the divider resizes the panes and the width is kept across reloads.
+  const handle = await page.locator("#table-query-resize").boundingBox();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 - 150, handle.y + handle.height / 2, { steps: 5 });
+  await page.mouse.up();
+  const narrower = await page.locator("#table-query-controls").boundingBox();
+  expect(narrower.width).toBeLessThan(controls.width - 100);
+  const saved = await page.evaluate(() => Number(localStorage.getItem("dqlrs-web.table-query-split")));
+  expect(Math.abs(saved - narrower.width / form.width)).toBeLessThan(0.01);
+  await page.locator("#table-query-resize").dblclick();
+  const reset = await page.locator("#table-query-controls").boundingBox();
+  expect(Math.abs(reset.width / form.width - 0.6)).toBeLessThan(0.01);
+});
