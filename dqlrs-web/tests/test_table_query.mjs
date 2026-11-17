@@ -305,6 +305,12 @@ test("keys mode leaves out repeated keys and pairs a lone hash key covers", () =
     buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys, source });
   assert.equal(keys("a, a, b"), "SELECT * FROM posts KEYS IN 'a', 'b'");
   assert.equal(keys(`"a", a`), "SELECT * FROM posts KEYS IN 'a'");
+  // A repeated (hash, range) tuple, however it is written, is one key.
+  assert.equal(keys("(a, 1), (a, 1)"), "SELECT * FROM posts KEYS IN ('a', 1)");
+  assert.equal(keys(`(a, 1), ('a', 1), ("a", '1')`), "SELECT * FROM posts KEYS IN ('a', 1)");
+  assert.equal(keys("((a, 1), (a, 1), (b, 2))"), "SELECT * FROM posts KEYS IN ('a', 1), ('b', 2)");
+  assert.equal(keys("(a, 1)\n(b, 2)\n(a, 1)"), "SELECT * FROM posts KEYS IN ('a', 1), ('b', 2)");
+  assert.equal(keys("(a, 1), (b, 1), (a, 2)"), "SELECT * FROM posts KEYS IN ('a', 1), ('b', 1), ('a', 2)");
   assert.equal(keys("(a, 1), (a, 1.0), (a, 2)"), "SELECT * FROM posts KEYS IN ('a', 1), ('a', 2)");
   assert.equal(keys("(a, 1), a, (b, 1)"), "SELECT * FROM posts KEYS IN 'a', ('b', 1)");
   assert.equal(
@@ -314,5 +320,6 @@ test("keys mode leaves out repeated keys and pairs a lone hash key covers", () =
   // A string range key keeps 1 and 1.0 apart: they are different strings.
   const strings = { ...table, attributes: table.attributes.map((attr) => ({ ...attr, type: "STRING" })) };
   assert.equal(dedupeKeys([["a", "1"], ["a", "1.0"]], strings).dropped, 0);
+  assert.deepEqual(dedupeKeys([["a", "1"], ["a", "1"]], strings), { keys: [["a", "1"]], dropped: 1 });
   assert.deepEqual(dedupeKeys([["a"], ["a", "1"], ["a"]], table), { keys: [["a"]], dropped: 2 });
 });
