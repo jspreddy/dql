@@ -10,6 +10,7 @@ import {
   ensureQueryKeys,
   filterAttributes,
   formatCondition,
+  keyValueError,
   parseBatchKeys,
   quoteIdent,
   quoteValue,
@@ -240,4 +241,54 @@ test("query without hash metadata accepts a typed hash name", () => {
     buildReadStatement("posts", empty, state),
     "SELECT * FROM posts WHERE pk = 'ada'",
   );
+});
+
+test("keyValueError rejects text only for number keys", () => {
+  assert.equal(keyValueError("sk", "NUMBER", "abc"), 'sk is a number. "abc" is not.');
+  assert.equal(keyValueError("sk", "N", " x "), 'sk is a number. "x" is not.');
+  for (const ok of ["1", "-2", "+3", "4.5", ".5", "6.", "1e3", "2.5E-4", ""]) {
+    assert.equal(keyValueError("sk", "NUMBER", ok), "", ok);
+  }
+  assert.equal(keyValueError("id", "STRING", "anything at all"), "");
+  assert.equal(keyValueError("id", "", "abc"), "");
+});
+
+test("number keys are checked the same way in Keys, Query, and Scan", () => {
+  const numeric = {
+    name: "nums",
+    keys: [
+      { name: "n", role: "hash" },
+      { name: "sk", role: "range" },
+    ],
+    indexes: [{ name: "by-t", kind: "global", hashKey: "t", rangeKey: "" }],
+    attributes: [
+      { name: "n", type: "NUMBER" },
+      { name: "sk", type: "NUMBER" },
+      { name: "t", type: "NUMBER" },
+    ],
+  };
+  const keys = (batchKeys, source = "") => readError(numeric, { ...defaultReadState(), mode: "keys", batchKeys, source });
+  assert.equal(keys("(ada, 1)"), 'n is a number. "ada" is not.');
+  assert.equal(keys("(1, x)"), 'sk is a number. "x" is not.');
+  assert.equal(keys("('1', 2)"), "");
+  assert.equal(keys("open", "by-t"), 't is a number. "open" is not.');
+  assert.equal(keys("7", "by-t"), "");
+
+  const query = ensureQueryKeys(numeric, { ...defaultReadState(), mode: "query" });
+  query.keys[0].value = "abc";
+  assert.equal(readError(numeric, query), 'n is a number. "abc" is not.');
+  query.keys[0].value = "1";
+  query.keys.push({ id: "r", attribute: "sk", role: "range", op: "between", value: "1", value2: "z" });
+  assert.equal(readError(numeric, query), 'sk is a number. "z" is not.');
+  query.keys[1].value2 = "9";
+  assert.equal(readError(numeric, query), "");
+  query.keys[1].op = "begins_with";
+  query.keys[1].value = "z";
+  assert.equal(readError(numeric, query), "");
+
+  const scan = { ...defaultReadState(), mode: "scan", keys: [{ id: "s", attribute: "n", role: "hash", op: "gt", value: "x" }] };
+  assert.equal(readError(numeric, scan), 'n is a number. "x" is not.');
+
+  const strings = { ...numeric, attributes: numeric.attributes.map((attr) => ({ ...attr, type: "STRING" })) };
+  assert.equal(readError(strings, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, x)" }), "");
 });

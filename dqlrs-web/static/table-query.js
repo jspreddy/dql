@@ -61,6 +61,22 @@ export function quoteValue(raw, type) {
   return "'" + text.replaceAll("'", "''") + "'";
 }
 
+const NUMBER_TEXT = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
+/**
+ * Why `raw` cannot be a value of key `name` with attribute `type`, or "" when it can. Only a
+ * NUMBER key can reject a value: a string key quotes whatever is typed. Without this check a
+ * number key passes the text into the statement unquoted, and the error only shows after Run.
+ */
+export function keyValueError(name, type, raw) {
+  const kind = String(type || "").toUpperCase();
+  const text = String(raw ?? "").trim();
+  if ((kind === "NUMBER" || kind === "N") && text && !NUMBER_TEXT.test(text)) {
+    return `${name} is a number. ${JSON.stringify(text)} is not.`;
+  }
+  return "";
+}
+
 export function parseBatchKeys(text) {
   const src = String(text || "");
   let i = 0;
@@ -228,7 +244,7 @@ export function batchKeyHint(table, sourceName) {
   return `${hash} keys: a, b, c`;
 }
 
-export function keysModeError(table, parsed, sourceName) {
+export function keysModeError(table, parsed, sourceName, extra) {
   const result = parsed || parseBatchKeys("");
   if (result.errors.length) return result.errors[0];
   if (!result.keys.length) return "Keys needs at least one key.";
@@ -240,6 +256,14 @@ export function keysModeError(table, parsed, sourceName) {
   }
   if (!hasRange && result.keys.some((key) => key.length > 1)) {
     return tablePk ? "This table only has a hash key." : "This index only has a hash key.";
+  }
+  for (const fields of result.keys) {
+    for (const [index, value] of fields.entries()) {
+      const name = index === 0 ? source.hashKey : source.rangeKey;
+      if (!name) continue;
+      const message = keyValueError(name, attributeType(table, extra, name), value);
+      if (message) return message;
+    }
   }
   return "";
 }
@@ -436,7 +460,7 @@ export function buildReadStatement(tableName, table, state, extra) {
   const current = ensureQueryKeys(table, state || defaultReadState());
   if (current.mode === "keys") {
     const parsed = parseBatchKeys(current.batchKeys);
-    if (keysModeError(table, parsed, current.source)) return "";
+    if (keysModeError(table, parsed, current.source, extra)) return "";
     const source = sourceOf(table, current.source, "query");
     if (!source.name) {
       return `SELECT * FROM ${quoteIdent(name)} KEYS IN ${formatKeysInClause(parsed.keys, table, extra, source)}`;
@@ -472,18 +496,37 @@ export function buildReadStatement(tableName, table, state, extra) {
   return sql;
 }
 
-export function readError(table, state) {
+export function readError(table, state, extra) {
   const current = ensureQueryKeys(table, state || defaultReadState());
   if (current.mode === "keys") {
-    return keysModeError(table, parseBatchKeys(current.batchKeys), current.source);
+    return keysModeError(table, parseBatchKeys(current.batchKeys), current.source, extra);
   }
-  if (current.mode !== "query") return "";
-  const hash = sourceKeys(table, current.source, current.mode).find((key) => key.role === "hash");
-  const row = hash
-    ? (current.keys || []).find((item) => item.attribute === hash.name)
-    : (current.keys || []).find((item) => String(item.attribute || "").trim());
-  if (!row || !String(row.attribute || "").trim()) return "Query needs a hash key.";
-  if (!String(row.value ?? "").length) return "Query needs a hash key value.";
+  if (current.mode === "query") {
+    const hash = sourceKeys(table, current.source, current.mode).find((key) => key.role === "hash");
+    const row = hash
+      ? (current.keys || []).find((item) => item.attribute === hash.name)
+      : (current.keys || []).find((item) => String(item.attribute || "").trim());
+    if (!row || !String(row.attribute || "").trim()) return "Query needs a hash key.";
+    if (!String(row.value ?? "").length) return "Query needs a hash key value.";
+  }
+  return keyRowsError(table, current, extra);
+}
+
+// The key rows of Query and Scan compare a typed key with what was typed. A NUMBER key must get
+// a number, the same check Keys mode makes.
+function keyRowsError(table, current, extra) {
+  for (const row of current.keys || []) {
+    const name = String(row.attribute || "").trim();
+    if (!name) continue;
+    const op = opById(row.op, opsFor("key", row.role, current.mode));
+    if (op.fn || op.size || op.type || op.values === 0) continue;
+    const type = attributeType(table, extra, name);
+    const values = op.values === 2 ? [row.value, row.value2] : [row.value];
+    for (const value of values) {
+      const message = keyValueError(name, type, value);
+      if (message) return message;
+    }
+  }
   return "";
 }
 
@@ -592,7 +635,7 @@ export function attachTableQuery(host, handlers = {}) {
   }
 
   function error() {
-    return readError(table, state);
+    return readError(table, state, extra);
   }
 
   function unusedKeys() {
