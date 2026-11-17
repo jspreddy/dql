@@ -40,6 +40,10 @@ jobs:
           ref: v-rust
           fetch-depth: 0
 
+      # GitHub's pull refs say which stacked pull request each merged commit came from.
+      - name: Fetch pull request heads
+        run: git fetch -q origin '+refs/pull/*/head:refs/remotes/origin/pull/*'
+
       - name: Start from the latest v-rust
         run: |
           git checkout -q -B changelog origin/v-rust

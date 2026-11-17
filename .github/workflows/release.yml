@@ -69,6 +69,10 @@ jobs:
 
       # Cache keys use the dependencies in Cargo.lock without the workspace's own crates, whose
       # versions change on every release (scripts/cargo-deps-hash.sh).
+      # GitHub's pull refs say which stacked pull request each merged commit came from.
+      - name: Fetch pull request heads
+        run: git fetch -q origin '+refs/pull/*/head:refs/remotes/origin/pull/*'
+
       - name: Hash the dependencies
         id: deps
         # An assignment, so a failing script fails the step (echo "$(...)" would not).
