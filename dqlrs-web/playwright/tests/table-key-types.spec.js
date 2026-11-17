@@ -80,6 +80,15 @@ test("a,b,c reads every item under each hash key on a table with a range key", a
   await expect(page.locator("#rows-table tbody")).not.toContainText("d");
   await page.screenshot({ path: playwrightArtifact(`table-key-types-hash-list-${testInfo.project.name}.png`) });
 
+  // Repeated keys are left out of the statement, and the hint says how many.
+  await keys.fill("a, b, a, (b, y), c, c");
+  await expect(error).toHaveText("");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SELECT * FROM ${name} KEYS IN 'a', 'b', 'c'`);
+  await expect(page.locator("#table-query-batch-hint")).toHaveText("id keys, or (id, sk) pairs · 3 repeated keys left out");
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(4);
+  await page.screenshot({ path: playwrightArtifact(`table-key-types-dedupe-${testInfo.project.name}.png`) });
+
   // A pair is a whole key: (a, x) is one item; b alone is every item under b.
   await keys.fill("(a, x), b");
   await expect(error).toHaveText("");

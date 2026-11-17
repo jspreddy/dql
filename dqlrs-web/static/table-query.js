@@ -218,6 +218,36 @@ export function parseBatchKeys(text) {
   return { keys, errors };
 }
 
+/**
+ * `keys` without repeats, and how many were dropped. Two keys are the same when they name the
+ * same values (as DynamoDB sees them: 1 and 1.0 are one number). A pair whose hash value is also
+ * listed alone is dropped too: the lone value already reads every item under that hash key.
+ * DynamoDB rejects a batch get whose key list repeats a key, so this is more than tidying up.
+ */
+export function dedupeKeys(keys, table, extra, source) {
+  const src = source || tableSource(table);
+  const canonical = (value, name) => {
+    const type = String(attributeType(table, extra, name) || "").toUpperCase();
+    const text = String(value ?? "").trim();
+    if ((type === "NUMBER" || type === "N") && text && Number.isFinite(Number(text))) return `N:${Number(text)}`;
+    return `S:${String(value ?? "")}`;
+  };
+  const hashes = new Set(
+    (src.rangeKey ? keys || [] : []).filter((fields) => fields.length === 1).map((fields) => canonical(fields[0], src.hashKey)),
+  );
+  const seen = new Set();
+  const unique = [];
+  for (const fields of keys || []) {
+    const hash = canonical(fields[0], src.hashKey);
+    if (fields.length > 1 && hashes.has(hash)) continue;
+    const id = fields.map((value, index) => canonical(value, index === 0 ? src.hashKey : src.rangeKey)).join("\u0000");
+    if (seen.has(id)) continue;
+    seen.add(id);
+    unique.push(fields);
+  }
+  return { keys: unique, dropped: (keys || []).length - unique.length };
+}
+
 export function formatKeysInClause(keys, table, extra, source) {
   const src = source || tableSource(table);
   return (keys || []).map((fields) => {
@@ -464,14 +494,15 @@ export function buildReadStatement(tableName, table, state, extra) {
     const parsed = parseBatchKeys(current.batchKeys);
     if (keysModeError(table, parsed, current.source, extra)) return "";
     const source = sourceOf(table, current.source, "query");
+    const { keys } = dedupeKeys(parsed.keys, table, extra, source);
     if (source.name) {
-      return parsed.keys
+      return keys
         .map((fields) => formatIndexKeySelect(name, source, fields, table, extra))
         .join("; ");
     }
     // One KEYS IN for the table. dqlrs reads whole keys with a batch get and, on a table with a
     // range key, every item under a lone hash value.
-    return `SELECT * FROM ${quoteIdent(name)} KEYS IN ${formatKeysInClause(parsed.keys, table, extra, source)}`;
+    return `SELECT * FROM ${quoteIdent(name)} KEYS IN ${formatKeysInClause(keys, table, extra, source)}`;
   }
   const source = sourceOf(table, current.source, current.mode);
   const verb = current.mode === "query" ? "SELECT" : "SCAN";
@@ -661,7 +692,7 @@ export function attachTableQuery(host, handlers = {}) {
     const source = sourceOf(table, state.source, "query");
     const hash = source.hashKey || "hash";
     const range = source.rangeKey;
-    batchHint.textContent = batchKeyHint(table, state.source);
+    paintBatchHint();
     batchInput.placeholder = range ? `(${hash}, ${range})` : "a, b, c";
     if (document.activeElement !== batchInput) batchInput.value = state.batchKeys || "";
   }
@@ -836,7 +867,23 @@ export function attachTableQuery(host, handlers = {}) {
     return kind === "key" ? state.keys : state.filters;
   }
 
+  // The hint under the Keys box says how many repeated keys the statement leaves out.
+  function paintBatchHint() {
+    const hint = batchKeyHint(table, state.source);
+    let dropped = 0;
+    if (state.mode === "keys") {
+      const parsed = parseBatchKeys(state.batchKeys);
+      if (!parsed.errors.length) {
+        dropped = dedupeKeys(parsed.keys, table, extra, sourceOf(table, state.source, "query")).dropped;
+      }
+    }
+    batchHint.textContent = dropped
+      ? `${hint} · ${dropped} repeated ${dropped === 1 ? "key" : "keys"} left out`
+      : hint;
+  }
+
   function livePreview() {
+    paintBatchHint();
     const sql = statement();
     paintPreview(preview, sql);
     const message = error();

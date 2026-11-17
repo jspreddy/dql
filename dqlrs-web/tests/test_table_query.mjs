@@ -6,6 +6,7 @@ import {
   attributeLabel,
   batchKeyHint,
   buildReadStatement,
+  dedupeKeys,
   defaultReadState,
   ensureQueryKeys,
   filterAttributes,
@@ -297,4 +298,21 @@ test("number keys are checked the same way in Keys, Query, and Scan", () => {
 
   const strings = { ...numeric, attributes: numeric.attributes.map((attr) => ({ ...attr, type: "STRING" })) };
   assert.equal(readError(strings, { ...defaultReadState(), mode: "keys", batchKeys: "(ada, x)" }), "");
+});
+
+test("keys mode leaves out repeated keys and pairs a lone hash key covers", () => {
+  const keys = (batchKeys, source = "") =>
+    buildReadStatement("posts", table, { ...defaultReadState(), mode: "keys", batchKeys, source });
+  assert.equal(keys("a, a, b"), "SELECT * FROM posts KEYS IN 'a', 'b'");
+  assert.equal(keys(`"a", a`), "SELECT * FROM posts KEYS IN 'a'");
+  assert.equal(keys("(a, 1), (a, 1.0), (a, 2)"), "SELECT * FROM posts KEYS IN ('a', 1), ('a', 2)");
+  assert.equal(keys("(a, 1), a, (b, 1)"), "SELECT * FROM posts KEYS IN 'a', ('b', 1)");
+  assert.equal(
+    keys("open, open, shut", "by-status"),
+    "SELECT * FROM posts WHERE status = 'open' USING by-status; SELECT * FROM posts WHERE status = 'shut' USING by-status",
+  );
+  // A string range key keeps 1 and 1.0 apart: they are different strings.
+  const strings = { ...table, attributes: table.attributes.map((attr) => ({ ...attr, type: "STRING" })) };
+  assert.equal(dedupeKeys([["a", "1"], ["a", "1.0"]], strings).dropped, 0);
+  assert.deepEqual(dedupeKeys([["a"], ["a", "1"], ["a"]], table), { keys: [["a"]], dropped: 2 });
 });
