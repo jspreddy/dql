@@ -1764,6 +1764,9 @@ test("table browser splits controls from the query as built and its plan", async
   const taller = await panel.boundingBox();
   expect(taller.height).toBeGreaterThan(natural.height + 100);
   expect(Number(await page.evaluate(() => localStorage.getItem("dqlrs-web.table-query-height")))).toBe(Math.round(taller.height));
+  // The Run bar is locked to the panel's bottom edge; the panes take the extra height.
+  const tallBar = await page.locator("#table-query-actions").boundingBox();
+  expect(Math.abs(tallBar.y + tallBar.height - (taller.y + taller.height))).toBeLessThan(3);
   await page.screenshot({ path: playwrightArtifact(`table-query-taller-${testInfo.project.name}.png`) });
   // Shorter than its controls, the panel scrolls them; the Run bar stays in view under both panes.
   await page.locator("#table-query-height").focus();
