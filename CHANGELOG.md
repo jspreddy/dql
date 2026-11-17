@@ -5,11 +5,12 @@ Do not edit by hand: changes are rewritten the next time it runs. Newest first.
 A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists.
 
-## Unreleased (2026-11-16)
+## Unreleased (2026-11-17)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [cffc77a](https://github.com/jspreddy/dql/commit/cffc77afa8a3755848446c18d67314e121444d99) Show the just verify summary unchanged ([#243](https://github.com/jspreddy/dql/pull/243))
 - [dceff0c](https://github.com/jspreddy/dql/commit/dceff0c23036a67c1fd2d97e6afa24b25a2d4f9a) docs: drop the post-PR just verify workflow step ([#237](https://github.com/jspreddy/dql/pull/237))
 - [f0998f5](https://github.com/jspreddy/dql/commit/f0998f564fc47220add1a32e1c6cf2b56eb19758) feat(web): run DynamoDB condition functions from the table picker ([#238](https://github.com/jspreddy/dql/pull/238))
 - [7c6717c](https://github.com/jspreddy/dql/commit/7c6717c9d61117f4fc01c15ec11c0a1e89af0cac) fix(web): put table pagination in the query toolbar ([#232](https://github.com/jspreddy/dql/pull/232))
