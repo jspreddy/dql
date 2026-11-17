@@ -2831,6 +2831,15 @@ body.results-resizing * {
   max-width: min(360px, 100%);
 }
 
+/* One width for every mode. 380px fits the longest example label,
+   "organ-donor-index (global: organ_donor_status, age)", plus the menu arrow. */
+#table-query-source {
+  width: 380px;
+  min-width: 380px;
+  max-width: 380px;
+  field-sizing: fixed;
+}
+
 .table-query-seg {
   display: flex;
   border: 1px solid var(--line-control);
