@@ -191,8 +191,9 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   expect(barBox.y).toBeGreaterThanOrEqual(dqlBox.y + dqlBox.height);
   expect(barBox.y).toBeGreaterThanOrEqual(controlsBox.y + controlsBox.height - 1);
   expect(Math.abs(barBox.width - formBox.width)).toBeLessThan(2);
-  expect(runBox.x - barBox.x).toBeLessThan(4);
-  expect(Math.abs(barBox.x + barBox.width - (pagerBox.x + pagerBox.width))).toBeLessThan(4);
+  // The bar has 10px of padding on each side.
+  expect(runBox.x - barBox.x).toBeLessThan(14);
+  expect(Math.abs(barBox.x + barBox.width - (pagerBox.x + pagerBox.width))).toBeLessThan(14);
   expect(Math.abs(runBox.y + runBox.height / 2 - (pagerBox.y + pagerBox.height / 2))).toBeLessThan(4);
   await expect(page.locator("#tables-view > .pager")).toHaveCount(0);
   await expect(page.locator("#page-label")).toHaveText("Showing 1–50");
