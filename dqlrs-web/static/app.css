@@ -2810,7 +2810,24 @@ body.results-resizing * {
   padding: 8px 10px 10px 14px;
 }
 
-.table-query-side .result-tabs { align-self: flex-start; }
+.table-query-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: 36px;
+}
+
+.table-query-json {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.table-query-json[hidden] { display: none; }
 
 /* The right pane's show/hide toggle, pinned to the panel's top-right corner. */
 .table-query-side-toggle {
@@ -2844,7 +2861,24 @@ body.results-resizing * {
 
 .table-query-side-body > [role="tabpanel"][hidden] { display: none; }
 
-.table-query-explain .explain { margin: 0; }
+/* In the pane the plan is plain steps: no card border, shadow, or title. */
+#table-query-explain .explain {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+#table-query-explain .explain + .explain,
+#table-query-explain .table-query-explain-statement:not(:first-child) { margin-top: 10px; }
+
+#table-query-explain .table-query-explain-statement {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+}
 
 /* The divider between the panes uses the main side divider's look (.side-resize, .side-grip). */
 body.table-query-resizing .table-query-resize .side-grip {

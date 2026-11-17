@@ -1662,7 +1662,18 @@ test("table browser splits controls from the query as built and its plan", async
   await expect(explain).toContainText("Query needs a hash key value.");
   await page.locator('[data-testid="table-query-key-row"]').first().locator('[data-testid="table-query-value"]').fill("ada");
   await expect(explain.locator('[data-testid="explain-op"]').first()).toHaveText(/query/i);
+  // The pane's plan is plain steps: no "Explain" title or JSON box inside it. The JSON box sits
+  // on the tab bar and only shows with Explain selected.
+  await expect(explain.locator(".explain-head")).toHaveCount(0);
+  const json = page.locator('[data-testid="table-query-json"]');
+  await expect(json).toBeVisible();
+  await expect(explain.locator('[data-testid="explain-json"]')).toBeHidden();
   await page.screenshot({ path: playwrightArtifact(`table-query-explain-${testInfo.project.name}.png`) });
+  await json.check();
+  await expect(explain.locator('[data-testid="explain-json"]')).toBeVisible();
+  await expect(explain.locator('[data-testid="explain-step"]').first()).toBeHidden();
+  await json.uncheck();
+  await expect(explain.locator('[data-testid="explain-step"]').first()).toBeVisible();
 
   // The toggle at the right end hides the pane; with it hidden, no plan is fetched.
   const toggle = page.locator("#table-query-side-toggle");
@@ -1687,6 +1698,7 @@ test("table browser splits controls from the query as built and its plan", async
 
   await page.locator("#table-query-tab-dql").click();
   await expect(page.locator("#table-query-dql")).toHaveText(/^SCAN \* FROM /);
+  await expect(page.locator('[data-testid="table-query-json"]')).toBeHidden();
   await page.locator("#table-query-query").click();
   await expect(page.locator("#table-query-dql")).toHaveText(/^SELECT \* FROM .* WHERE id = 'ada'/);
   await page.locator("#table-query-scan").click();

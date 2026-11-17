@@ -1257,8 +1257,18 @@ new ResizeObserver(() => {
   }
 }).observe(tableQueryForm);
 
-// Tabs: "Query as built" shows the DQL; "Explain" shows the plan of what Run would read.
+// Tabs: "Query as built" shows the DQL; "Explain" shows the plan of what Run would read. The
+// JSON box beside the tabs (Explain only) swaps the plan for its raw JSON, like the editor's.
 const tableQueryTabs = [...document.querySelectorAll(".table-query-side .result-tab")];
+const tableQueryJson = document.querySelector("#table-query-json");
+const tableQueryJsonInput = tableQueryJson.querySelector("input");
+tableQueryJsonInput.checked = localStorage.getItem(EXPLAIN_JSON_KEY) === "1";
+tableQueryJsonInput.addEventListener("change", () => {
+  localStorage.setItem(EXPLAIN_JSON_KEY, tableQueryJsonInput.checked ? "1" : "0");
+  for (const card of tableQueryExplain.querySelectorAll(".explain")) {
+    card.classList.toggle("raw", tableQueryJsonInput.checked);
+  }
+});
 function selectTableQueryPane(pane) {
   tableQueryPane = pane;
   for (const tab of tableQueryTabs) {
@@ -1269,6 +1279,7 @@ function selectTableQueryPane(pane) {
   }
   document.querySelector("#table-query-dql").hidden = pane !== "dql";
   tableQueryExplain.hidden = pane !== "explain";
+  tableQueryJson.hidden = pane !== "explain";
   if (pane === "explain" && !tableQuerySideHidden()) loadTableExplain();
 }
 for (const tab of tableQueryTabs) {
@@ -1317,13 +1328,16 @@ async function loadTableExplain() {
         parts.push(label);
       }
       if (steps) {
-        parts.push(explainPlan(steps));
+        parts.push(explainPlan(steps, { head: false }));
       } else {
         const raw = document.createElement("pre");
         raw.className = "table-query-dql";
         raw.textContent = item.plan || "";
         parts.push(raw);
       }
+    }
+    for (const part of parts) {
+      if (part.classList.contains("explain")) part.classList.toggle("raw", tableQueryJsonInput.checked);
     }
     tableQueryExplain.replaceChildren(...(parts.length ? parts : [note("No plan.", false)]));
   } catch (error2) {
@@ -4641,7 +4655,9 @@ function explainRows(step) {
   return rows;
 }
 
-function explainPlan(steps) {
+/** The plan card. `head: false` leaves out the "Explain" title and JSON box, for a host that has
+ * its own (the table query pane puts the JSON box on its tab bar). */
+function explainPlan(steps, { head: withHead = true } = {}) {
   const card = document.createElement("section");
   card.className = "explain";
   card.dataset.testid = "explain-plan";
@@ -4674,7 +4690,7 @@ function explainPlan(steps) {
     for (const field of explainRows(step)) row[field.label] = field.value;
     return row;
   }), null, 2);
-  card.append(head, json);
+  card.append(...(withHead ? [head] : []), json);
   for (const step of steps) {
     const row = document.createElement("div");
     row.className = "explain-step";
