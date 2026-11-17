@@ -564,7 +564,6 @@ export function attachTableQuery(host, handlers = {}) {
   let focusAttr = "";
 
   const sourceSelect = host.querySelector("#table-query-source");
-  const sourceWrap = host.querySelector("#table-query-source-wrap");
   const scanBtn = host.querySelector("#table-query-scan");
   const queryBtn = host.querySelector("#table-query-query");
   const keysModeBtn = host.querySelector("#table-query-keys-mode");
@@ -579,7 +578,6 @@ export function attachTableQuery(host, handlers = {}) {
   const keyHost = host.querySelector("#table-query-keys");
   const filterHost = host.querySelector("#table-query-filters");
   const batchSection = host.querySelector("#table-query-batch");
-  const batchSource = host.querySelector("#table-query-batch-source");
   const batchInput = host.querySelector("#table-query-batch-keys");
   const batchHint = host.querySelector("#table-query-batch-hint");
   const preview = host.querySelector("#table-query-dql");
@@ -609,7 +607,6 @@ export function attachTableQuery(host, handlers = {}) {
     keysModeBtn.setAttribute("aria-pressed", isKeys ? "true" : "false");
     forwardBtn.setAttribute("aria-pressed", state.order === "forward" ? "true" : "false");
     reverseBtn.setAttribute("aria-pressed", state.order === "reverse" ? "true" : "false");
-    sourceWrap.classList.toggle("hidden", isKeys);
     orderGroup.classList.toggle("hidden", isKeys);
     keySection.classList.toggle("hidden", isKeys);
     filterSection.classList.toggle("hidden", isKeys);
@@ -633,12 +630,11 @@ export function attachTableQuery(host, handlers = {}) {
 
   function paintSources() {
     const selected = state.source || "";
-    fillSelect(sourceSelect, sourceItems(state.mode, "Table"), selected);
-    fillSelect(batchSource, sourceItems("query", "TABLE"), selected);
-    if (![...batchSource.options].some((node) => node.value === selected)) {
+    const sourceMode = state.mode === "keys" ? "query" : state.mode;
+    fillSelect(sourceSelect, sourceItems(sourceMode, "Table"), selected);
+    if (![...sourceSelect.options].some((node) => node.value === selected)) {
       state.source = "";
       sourceSelect.value = "";
-      batchSource.value = "";
     }
   }
 
@@ -871,11 +867,7 @@ export function attachTableQuery(host, handlers = {}) {
 
   sourceSelect.addEventListener("change", () => {
     state.source = sourceSelect.value;
-    state.keys = [];
-    paint();
-  });
-  batchSource.addEventListener("change", () => {
-    state.source = batchSource.value;
+    if (state.mode !== "keys") state.keys = [];
     paint();
   });
   scanBtn.addEventListener("click", () => {

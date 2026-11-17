@@ -1034,6 +1034,9 @@ test("table browser scan and query pickers filter without typing DQL", async ({ 
   await expect(page.locator("#table-query-source")).toHaveValue("");
   await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name}`);
   await expect(page.locator("#table-query-source")).toContainText("by-status");
+  const scanLead = await modeGroupBox(page);
+  expect(scanLead.sourceLeft).toBeGreaterThanOrEqual(scanLead.buttonsRight - 1);
+  expect(scanLead.sourceWidth).toBe(380);
 
   await page.locator("#table-query-add-filter").click();
   const filter = page.locator('[data-testid="table-query-filter-row"]');
@@ -1055,6 +1058,11 @@ test("table browser scan and query pickers filter without typing DQL", async ({ 
 
   await page.locator("#table-query-query").click();
   await expect(page.locator("#table-query-query")).toHaveAttribute("aria-pressed", "true");
+  const queryLead = await modeGroupBox(page);
+  expect(queryLead.left).toBe(scanLead.left);
+  expect(queryLead.top).toBe(scanLead.top);
+  expect(Math.abs(queryLead.sourceLeft - scanLead.sourceLeft)).toBeLessThanOrEqual(1);
+  expect(queryLead.sourceWidth).toBe(scanLead.sourceWidth);
   const key = page.locator('[data-testid="table-query-key-row"]');
   await expect(key).toHaveCount(1);
   await expect(key.locator('[data-testid="table-query-attr"]')).toHaveValue("id");
@@ -1080,6 +1088,9 @@ test("table browser scan and query pickers filter without typing DQL", async ({ 
   await expect(page.locator("#rows-table tbody td:not(.row-peek)").nth(1)).toHaveText("1");
 
   await page.locator("#table-query-source").selectOption("by-status");
+  const indexLead = await modeGroupBox(page);
+  expect(Math.abs(indexLead.sourceLeft - scanLead.sourceLeft)).toBeLessThanOrEqual(1);
+  expect(indexLead.sourceWidth).toBe(scanLead.sourceWidth);
   await expect(page.locator('[data-testid="table-query-key-row"] [data-testid="table-query-attr"]')).toHaveValue("status");
   await page.locator('[data-testid="table-query-key-row"] [data-testid="table-query-value"]').fill("open");
   await page.locator('[data-testid="table-query-filter-row"] [data-testid="table-query-remove"]').click();
@@ -1287,15 +1298,21 @@ test("table browser keys mode batch-gets typed hash and hash-range keys", async 
   await expect(page.locator(`#table-${name}`)).toBeVisible();
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);
 
+  const scanLead = await modeGroupBox(page);
   await page.locator("#table-query-keys-mode").click();
   await expect(page.locator("#table-query-keys-mode")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator("#table-query-source-wrap")).toBeHidden();
+  const keysLead = await modeGroupBox(page);
+  expect(keysLead.left).toBe(scanLead.left);
+  expect(keysLead.top).toBe(scanLead.top);
+  expect(Math.abs(keysLead.sourceLeft - scanLead.sourceLeft)).toBeLessThanOrEqual(1);
+  expect(keysLead.sourceWidth).toBe(scanLead.sourceWidth);
+  await expect(page.locator("#table-query-source-wrap")).toBeVisible();
   await expect(page.locator("#table-query-order")).toBeHidden();
   await expect(page.locator("#table-query-key-section")).toBeHidden();
   await expect(page.locator("#table-query-filter-section")).toBeHidden();
   await expect(page.locator("#table-query-batch")).toBeVisible();
-  await expect(page.locator("#table-query-batch-source")).toHaveValue("");
-  await expect(page.locator("#table-query-batch-source")).toContainText("TABLE");
+  await expect(page.locator("#table-query-source")).toHaveValue("");
+  await expect(page.locator("#table-query-source")).toContainText("Table");
   await expect(page.locator("#table-query-run")).toBeDisabled();
   await expect(page.locator("#table-query-error")).toHaveText("Keys needs at least one key.");
 
@@ -1341,8 +1358,13 @@ test("table browser keys mode queries a chosen index", async ({ page, app }, tes
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);
 
   await page.locator("#table-query-keys-mode").click();
-  await expect(page.locator("#table-query-batch-source")).toHaveValue("");
-  await page.locator("#table-query-batch-source").selectOption("by-status");
+  await expect(page.locator("#table-query-source")).toHaveValue("");
+  const tableLead = await modeGroupBox(page);
+  await page.locator("#table-query-source").selectOption("by-status");
+  const indexLead = await modeGroupBox(page);
+  expect(Math.abs(indexLead.sourceLeft - tableLead.sourceLeft)).toBeLessThanOrEqual(1);
+  expect(indexLead.sourceWidth).toBe(tableLead.sourceWidth);
+  expect(indexLead.sourceWidth).toBe(380);
   await page.locator('[data-testid="table-query-batch-keys"]').fill("open");
   await expect(page.locator("#table-query-dql")).toHaveText(
     `SELECT * FROM ${name} WHERE status = 'open' USING by-status`,
@@ -1465,6 +1487,21 @@ async function expectNumericPage(page, pageIndex, total = 1000) {
   else await expect(page.locator("#page-prev")).toBeEnabled();
   if (end >= total) await expect(page.locator("#page-next")).toBeDisabled();
   else await expect(page.locator("#page-next")).toBeEnabled();
+}
+
+async function modeGroupBox(page) {
+  return page.locator(".table-query-lead").evaluate((node) => {
+    const group = node.getBoundingClientRect();
+    const buttons = node.querySelector("[aria-label='Read type']").getBoundingClientRect();
+    const source = node.querySelector("#table-query-source").getBoundingClientRect();
+    return {
+      left: Math.round(group.left),
+      top: Math.round(group.top),
+      buttonsRight: Math.round(buttons.right),
+      sourceLeft: Math.round(source.left),
+      sourceWidth: Math.round(source.width),
+    };
+  });
 }
 
 function uniqueTable() {

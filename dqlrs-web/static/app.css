@@ -2791,6 +2791,14 @@ body.results-resizing * {
   gap: 8px;
 }
 
+.table-query-lead {
+  display: flex;
+  flex: none;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
 .table-query-field {
   display: flex;
   flex-direction: column;
@@ -2821,6 +2829,15 @@ body.results-resizing * {
 .table-query-field select {
   min-width: 180px;
   max-width: min(360px, 100%);
+}
+
+/* One width for every mode. 380px fits the longest example label,
+   "organ-donor-index (global: organ_donor_status, age)", plus the menu arrow. */
+#table-query-source {
+  width: 380px;
+  min-width: 380px;
+  max-width: 380px;
+  field-sizing: fixed;
 }
 
 .table-query-seg {
@@ -2889,16 +2906,6 @@ body.results-resizing * {
   align-items: center;
   gap: 8px;
   min-height: 18px;
-}
-
-#table-query-batch-source {
-  height: 18px;
-  min-width: 108px;
-  max-width: min(240px, 100%);
-  border: 1px solid var(--line-control);
-  border-radius: 6px;
-  padding: 0 6px;
-  font-size: 11px;
 }
 
 #table-query-add-key,
