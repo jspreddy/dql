@@ -118,7 +118,7 @@ test("resizes the results pane from the top handle", async ({ page }) => {
   const results = page.locator("#results");
   const handle = page.locator("#results-resize");
   const resultsGrip = page.locator(".results-grip");
-  const sideGrip = page.locator(".side-grip");
+  const sideGrip = page.locator("#side-resize .side-grip");
   await expect(handle).toBeVisible();
   const gripColor = await themeColor(page, "--grip");
   await expect(resultsGrip).toHaveCSS("background-color", gripColor);
