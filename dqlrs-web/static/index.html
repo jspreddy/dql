@@ -280,6 +280,9 @@
               <svg class="icon run-play" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/play_arrow.svg#icon"></use></svg>
               <span class="run-shortcut"><span class="key-mod">Ctrl</span> + Enter</span>
             </button>
+            <!-- While a page loads: Cancel. After it loads: rows, capacity, and time pills. -->
+            <button type="button" id="table-query-cancel" class="table-query-cancel" aria-keyshortcuts="Escape" hidden>Cancel</button>
+            <span id="table-query-stats" class="table-query-stats" aria-label="Last read"></span>
             <div class="table-query-pager" id="table-query-pager">
               <span id="page-label" class="meta"></span>
               <div class="table-query-seg" role="group" aria-label="Page">

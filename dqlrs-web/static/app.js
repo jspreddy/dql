@@ -5797,6 +5797,7 @@ function clearRows() {
   document.querySelector("#page-next").disabled = true;
   document.querySelector("#rows-body").replaceChildren();
   setBrowserSchema(null);
+  document.querySelector("#table-query-stats").replaceChildren();
 }
 
 function rowAttributeNames(payload) {
@@ -5825,14 +5826,60 @@ function paintRowPage(payload) {
   tableQuery.addAttributes(rowAttributeNames(payload));
   body.replaceChildren(dataTable(rows, "rows-table", payload.columns));
   body.scrollTop = 0;
+  paintRowStats(payload);
   setBrowserSchema(rows.length || (payload.columns || []).length ? {
     table: payload.name || state.table,
     title: payload.name || state.table,
   } : null);
 }
 
+// Next to Run: Cancel while a page loads, then the page's rows, capacity, and time as pills.
+const tableQueryCancel = document.querySelector("#table-query-cancel");
+const tableQueryStats = document.querySelector("#table-query-stats");
+let rowsAbort = null;
+
+function paintRowStats(payload) {
+  const chips = [];
+  if (payload) {
+    const count = (payload.items || []).length;
+    chips.push(statChip(count + (count === 1 ? " row" : " rows"), "table-query-count", "Rows on this page"));
+    const capacity = formatCapacity(payload.read_units, payload.write_units);
+    if (capacity) chips.push(statChip(capacity, "table-query-capacity", "Consumed capacity"));
+    const elapsed = formatElapsed(payload.elapsed_ms);
+    if (elapsed) chips.push(statChip(elapsed, "table-query-time", "Elapsed time"));
+  }
+  tableQueryStats.replaceChildren(...chips);
+}
+
+function setRowsLoading(controller) {
+  rowsAbort = controller;
+  tableQueryCancel.hidden = !controller;
+  if (controller) tableQueryStats.replaceChildren();
+}
+
+function cancelRows() {
+  if (!rowsAbort) return;
+  const controller = rowsAbort;
+  setRowsLoading(null);
+  controller.byUser = true;
+  controller.abort();
+  // The server stops the read like an editor run's Stop.
+  api("/api/stop", { method: "POST" }).catch(() => {});
+}
+
+tableQueryCancel.addEventListener("click", cancelRows);
+document.querySelector("#tables-view").addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !rowsAbort) return;
+  event.preventDefault();
+  cancelRows();
+});
+
 async function loadRows() {
   closeRowPop();
+  if (rowsAbort) {
+    rowsAbort.abort();
+    setRowsLoading(null);
+  }
   if (!state.table) return;
   const body = document.querySelector("#rows-body");
   document.querySelector("#rows-title").textContent = state.table;
@@ -5848,16 +5895,25 @@ async function loadRows() {
   const generation = rowsCache.generation;
   body.replaceChildren(note("Loading…", false));
   setBrowserSchema(null);
+  const controller = new AbortController();
+  setRowsLoading(controller);
   try {
     const query = new URLSearchParams({ table, page: String(page) });
     if (dql) query.set("dql", dql);
-    const payload = await api("/api/rows?" + query.toString());
+    const payload = await api("/api/rows?" + query.toString(), { signal: controller.signal });
+    if (rowsAbort === controller) setRowsLoading(null);
     if (rowsCache.generation !== generation) return;
     rowsCache.set(table, dql, page, payload);
     if (state.table === table && state.tableDql === dql && state.page === page) {
       paintRowPage(payload);
     }
   } catch (error) {
+    if (rowsAbort === controller) setRowsLoading(null);
+    if (controller.signal.aborted) {
+      // Cancel leaves a note; a newer read that replaced this one paints its own rows.
+      if (controller.byUser) body.replaceChildren(note("Read cancelled.", false));
+      return;
+    }
     if (rowsCache.generation !== generation) return;
     if (state.table === table && state.tableDql === dql && state.page === page) {
       body.replaceChildren(note(error.message, true));
@@ -5946,6 +6002,7 @@ async function api(url, options = {}) {
     method: options.method || "GET",
     headers: options.body ? { "Content-Type": "application/json" } : undefined,
     body: options.body ? JSON.stringify(options.body) : undefined,
+    signal: options.signal,
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw tokenError(response, payload);

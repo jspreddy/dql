@@ -745,6 +745,8 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
                 .unwrap_or(0)
                 .max(0) as usize;
             let dql = query_value(query, "dql");
+            // A fresh read starts uncancelled; /api/stop cancels it like an editor run.
+            app.cancel.clear();
             let mut state = lock_state(app);
             match table_rows(&mut state, &name, page, &dql) {
                 Ok(payload) => Reply::Json(200, payload),
@@ -1166,13 +1168,19 @@ fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Resul
     let fetch_limit = start.saturating_add(PAGE_SIZE).saturating_add(1);
     let (statements, _) = browser_read_dql(name, dql, fetch_limit)?;
     let mut items = Vec::new();
+    let started = std::time::Instant::now();
+    let (mut read_units, mut write_units) = (0.0, 0.0);
     for statement in &statements {
         let envelope = state.session.execute_for_serve(statement);
         if !envelope.ok {
             return Err(ExecText::from_envelope(&envelope).failure());
         }
+        let (read, write) = state.session.engine.statement_capacity();
+        read_units += read;
+        write_units += write;
         items.extend(envelope.items.unwrap_or_default());
     }
+    let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
     let statement = statements.join("; ");
     let end = (start + PAGE_SIZE).min(items.len());
     let window = items.get(start..end).unwrap_or(&[]);
@@ -1194,6 +1202,9 @@ fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Resul
         "columns": columns,
         "has_more": items.len() > end,
         "dql": statement,
+        "elapsed_ms": elapsed_ms,
+        "read_units": read_units,
+        "write_units": write_units,
     }))
 }
 
@@ -2447,6 +2458,11 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         assert!(created.contains("\"ok\":true"), "{created}");
         let page = http_body(addr, "GET", "/api/rows?table=posts&page=0", "");
         assert!(page.contains("\"id\""), "{page}");
+        // The table browser shows these as the read's time and cost pills.
+        let page_json: Value = serde_json::from_str(&page).expect(&page);
+        assert!(page_json["elapsed_ms"].is_u64(), "{page}");
+        assert!(page_json["read_units"].is_number(), "{page}");
+        assert!(page_json["write_units"].is_number(), "{page}");
         let structure = http_body(addr, "GET", "/api/structure?table=posts", "");
         let structure_json: serde_json::Value = serde_json::from_str(&structure).expect(&structure);
         assert_eq!(structure_json["kind"], "table");

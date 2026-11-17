@@ -1621,7 +1621,8 @@ body.results-resizing * {
 }
 
 #result-body .result-card-meta,
-#result-body .result-card-stat {
+#result-body .result-card-stat,
+.table-query-stats .result-card-stat {
   display: inline-flex;
   align-items: center;
   flex: none;
@@ -2880,6 +2881,28 @@ body.results-resizing * {
   align-items: center;
   gap: 8px;
 }
+
+.table-query-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.table-query-stats:empty { display: none; }
+
+.table-query-cancel {
+  height: 22px;
+  padding: 0 10px;
+  border: 1px solid var(--line-control);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.table-query-cancel:hover { background: var(--hover-quiet); }
+.table-query-cancel[hidden] { display: none; }
 
 .table-query-pager {
   display: flex;

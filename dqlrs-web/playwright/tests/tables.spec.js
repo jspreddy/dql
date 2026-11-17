@@ -213,7 +213,38 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   await expect(page.locator("#page-label")).toHaveText("Showing 1–50");
   await expect(page.locator("#rows-table tbody tr")).toHaveCount(50);
   expect(rowPages).toEqual([]);
+  // Next to Run: the page's rows and the read's time (and capacity when it used any) as pills.
+  await expect(page.locator('[data-testid="table-query-count"]')).toHaveText("50 rows");
+  await expect(page.locator('[data-testid="table-query-time"]')).toHaveText(/^\d+(\.\d+)? m?s$/);
+  await expect(page.locator("#table-query-cancel")).toBeHidden();
+  const runRight = await page.locator("#table-query-run").boundingBox();
+  const countBox = await page.locator('[data-testid="table-query-count"]').boundingBox();
+  expect(countBox.x).toBeGreaterThan(runRight.x + runRight.width);
   await page.screenshot({ path: playwrightArtifact(`table-pager-toolbar-${testInfo.project.name}.png`) });
+
+  // While a page loads, Cancel takes the pills' place; it drops the read and stops it on the server.
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route("**/api/rows?*", async (route) => {
+    await held;
+    await route.continue().catch(() => {});
+  });
+  const stop = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/stop");
+  // A new read (a filter) is not cached, so it goes to the server.
+  await page.locator("#table-query-add-filter").click();
+  const filterRow = page.locator('[data-testid="table-query-filter-row"]');
+  await filterRow.locator('[data-testid="table-query-attr"]').fill("id");
+  await filterRow.locator('[data-testid="table-query-value"]').fill("r00");
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#table-query-cancel")).toBeVisible();
+  await expect(page.locator("#table-query-stats")).toBeHidden();
+  await page.screenshot({ path: playwrightArtifact(`table-run-cancel-${testInfo.project.name}.png`) });
+  await page.locator("#table-query-cancel").click();
+  await stop;
+  await expect(page.locator("#rows-body")).toHaveText("Read cancelled.");
+  await expect(page.locator("#table-query-cancel")).toBeHidden();
+  release();
+  await page.unroute("**/api/rows?*");
 });
 
 test("pages a thousand numeric ids forward and back", async ({ page, app }, testInfo) => {
