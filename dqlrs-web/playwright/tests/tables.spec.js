@@ -1157,7 +1157,9 @@ test("table query dropdowns keep one style and width", async ({ page, app }, tes
   const equals = await box(op);
   const sourceBox = await box(source);
   expect(equals).toEqual({ width: 120, height: 24, radius: "6px", border: "1px" });
-  expect(sourceBox).toMatchObject({ width: 380, height: 24, radius: "6px", border: "1px" });
+  // The source sits in an input group: the group has the border and radius, the menu none.
+  expect(sourceBox).toMatchObject({ width: 380, border: "0px" });
+  expect(await box(page.locator("#table-query-source-wrap"))).toMatchObject({ height: 24, radius: "6px", border: "1px" });
 
   await op.selectOption("begins_with");
   expect(await box(op)).toEqual(equals);
