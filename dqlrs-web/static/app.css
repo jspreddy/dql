@@ -2973,13 +2973,17 @@ body.table-query-resizing * {
   border: 1px solid var(--line-control);
   border-radius: 6px;
   padding: 0 8px;
-  min-width: 0;
+  background: var(--paper);
   color: var(--text);
 }
 
-.table-query-field select {
-  min-width: 180px;
-  max-width: min(360px, 100%);
+.table-query select {
+  field-sizing: fixed;
+}
+
+.table-query select:disabled {
+  color: var(--muted);
+  background: var(--chip);
 }
 
 /* One width for every mode. 380px fits the longest example label,
@@ -2988,7 +2992,19 @@ body.table-query-resizing * {
   width: 380px;
   min-width: 380px;
   max-width: 380px;
-  field-sizing: fixed;
+}
+
+/* Condition menus stay put when the choice changes. Widths fit the longest label. */
+.table-query-cond select[data-field="op"] {
+  width: 120px;
+}
+
+.table-query-cond select[data-field="sizeOp"] {
+  width: 64px;
+}
+
+.table-query-cond select[data-field="type"] {
+  width: 88px;
 }
 
 .table-query-seg {
@@ -3121,8 +3137,6 @@ body.table-query-resizing * {
   align-items: center;
   gap: 4px;
 }
-
-.table-query-cond select { min-width: 108px; }
 
 .table-query-cond input[data-field="attribute"] {
   width: 140px;
