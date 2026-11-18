@@ -11,6 +11,10 @@ latest commit of each pull request, stacked ones included, names that pull reque
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [d971622](https://github.com/jspreddy/dql/commit/d97162295dbafe34d9bcb61479abe0b44a0e7e9d) feat(web): drop tooltips that only repeat what the item shows ([#266](https://github.com/jspreddy/dql/pull/266))
+- [8132b2c](https://github.com/jspreddy/dql/commit/8132b2c2aa0ec3fec3c787bd196344a95d23b44f) feat(web): label the table source input group Index ([#265](https://github.com/jspreddy/dql/pull/265))
+- [a7bbd5a](https://github.com/jspreddy/dql/commit/a7bbd5a29a49c082611d7b75ad7d1ce577cfee05) test(web): the source's border and radius belong to its input group
+- [18474fb](https://github.com/jspreddy/dql/commit/18474fb401cfa04482ceb7f3d46d4578f878e4ac) feat(web): table source as an "On [ -- ]" input group; -- adds nothing
 - [494d288](https://github.com/jspreddy/dql/commit/494d288cba91a26c0b59c905993115a4462ed86e) fix(web): give table query dropdowns one style ([#260](https://github.com/jspreddy/dql/pull/260))
 - [718a74a](https://github.com/jspreddy/dql/commit/718a74aac1d70b604841f34638e2fcff4e0df63b) fix(web): separate table list group titles with space and a rule ([#259](https://github.com/jspreddy/dql/pull/259))
 - [a2149da](https://github.com/jspreddy/dql/commit/a2149dac597362b123ada900f1f42566ad4636d9) feat(web): dqlrs web --local brings up DynamoDB Local and serves against it ([#257](https://github.com/jspreddy/dql/pull/257))
