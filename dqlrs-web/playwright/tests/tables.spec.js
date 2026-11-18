@@ -1112,6 +1112,74 @@ test("scrolls a wide result table sideways inside the card", async ({ page, app 
   });
 });
 
+test("table query dropdowns keep one style and width", async ({ page, app }, testInfo) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, status STRING);`,
+      `INSERT INTO ${name} (id, status) VALUES ('ada', 'open');`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "one row inserted" })).toBeVisible();
+
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await expect(page.locator(`#table-${name}`)).toBeVisible();
+  await page.locator("#table-query-add-filter").click();
+  const filter = page.locator('[data-testid="table-query-filter-row"]');
+  const op = filter.locator('[data-testid="table-query-op"]');
+  const source = page.locator("#table-query-source");
+
+  async function box(locator) {
+    const node = await locator.elementHandle();
+    return node.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return {
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        radius: style.borderRadius,
+        border: style.borderTopWidth,
+      };
+    });
+  }
+
+  const equals = await box(op);
+  const sourceBox = await box(source);
+  expect(equals).toEqual({ width: 120, height: 24, radius: "6px", border: "1px" });
+  expect(sourceBox).toMatchObject({ width: 380, height: 24, radius: "6px", border: "1px" });
+
+  await op.selectOption("begins_with");
+  expect(await box(op)).toEqual(equals);
+  await op.selectOption("size");
+  const sizeOp = filter.locator('[data-testid="table-query-size-op"]');
+  await expect(sizeOp).toBeVisible();
+  const sizeEquals = await box(sizeOp);
+  expect(sizeEquals).toMatchObject({ width: 64, height: 24, radius: "6px", border: "1px" });
+  await sizeOp.selectOption("le");
+  expect(await box(sizeOp)).toEqual(sizeEquals);
+  await op.selectOption("attribute_type");
+  const type = filter.locator('[data-testid="table-query-type"]');
+  await expect(type).toBeVisible();
+  const typeBox = await box(type);
+  expect(typeBox).toMatchObject({ width: 88, height: 24, radius: "6px", border: "1px" });
+  await type.selectOption("BOOL");
+  expect(await box(type)).toEqual(typeBox);
+  await page.locator("#table-query-controls").screenshot({
+    path: playwrightArtifact(`table-query-dropdowns-${testInfo.project.name}.png`),
+  });
+});
+
 test("table browser scan and query pickers filter without typing DQL", async ({ page, app }, testInfo) => {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
