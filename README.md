@@ -122,8 +122,11 @@ too.
 
 ### Manage DynamoDB Local
 
-`dqlrs dynamo` lists, starts, stops, and cleans up DynamoDB Local servers, the
-ones `--init-examples` started and any others it finds:
+`dqlrs web --local` serves against DynamoDB Local: it uses the one already on
+`--port` (default 8000) or starts one there, with Java when it is installed,
+else Docker (`--dynamodb java|docker` picks). `dqlrs dynamo` lists, starts,
+stops, and cleans up those servers, the ones `--init-examples` started, and any
+others it finds:
 
 ```bash
 dqlrs dynamo list                 # port, runtime, status, data, started, who started it

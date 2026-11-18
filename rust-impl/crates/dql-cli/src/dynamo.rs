@@ -456,6 +456,33 @@ pub(crate) fn free_port() -> u16 {
         .unwrap_or(DEFAULT_PORT)
 }
 
+/// For `dqlrs web --local`: use the DynamoDB Local that answers on `port`, or start one there
+/// for the workspace `dir`.
+pub(crate) fn ensure_running(port: u16, kind: Option<Kind>, dir: &Path) -> color_eyre::Result<()> {
+    let progress = Progress::stdout();
+    if local::answers_like_dynamodb(port) {
+        let how = match server_on(port) {
+            Some(server) if server.owner == Owner::Dqlrs => format!(" ({})", server.kind.name()),
+            Some(server) => format!(" ({}, not started by dqlrs)", server.kind.name()),
+            None => String::new(),
+        };
+        progress.say_check(&format!(
+            "Using DynamoDB Local on {}:{port}{how}",
+            local::HOST
+        ));
+        return Ok(());
+    }
+    let options = StartOptions {
+        kind,
+        port: Some(port),
+        dir: dir.to_path_buf(),
+        data: None,
+        use_workspace_compose: true,
+    };
+    start(&options, &progress)?;
+    Ok(())
+}
+
 /// Start DynamoDB Local. Returns the record of the running server.
 pub(crate) fn start(options: &StartOptions, progress: &Progress) -> color_eyre::Result<Record> {
     let port = options.port.unwrap_or(DEFAULT_PORT);

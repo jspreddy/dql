@@ -50,6 +50,7 @@ const KNOWN_FLAGS: &[&str] = &[
     "--dir",
     "--load-tables",
     "--init-examples",
+    "--local",
     "--yes",
     "--dynamodb",
     "--version",
@@ -133,8 +134,14 @@ pub fn run() -> color_eyre::Result<()> {
     if args.yes && !args.init_examples {
         bail!("--yes requires `dqlrs web --init-examples`");
     }
-    if args.dynamodb.is_some() && !args.init_examples {
-        bail!("--dynamodb requires `dqlrs web --init-examples`");
+    if args.local && !args.web {
+        bail!("--local requires `dqlrs web` (the notebook has its own: `dqlrs notebook --local`)");
+    }
+    if args.local && args.host.is_some() {
+        bail!("--local connects to DynamoDB Local on localhost; leave out -H/--host");
+    }
+    if args.dynamodb.is_some() && !args.init_examples && !args.local {
+        bail!("--dynamodb requires `dqlrs web --init-examples` or `dqlrs web --local`");
     }
     let dynamodb = args
         .dynamodb
@@ -191,6 +198,28 @@ pub fn run() -> color_eyre::Result<()> {
                 set_default_env("AWS_SECRET_ACCESS_KEY", "fakekey");
                 set_default_env("AWS_EC2_METADATA_DISABLED", "true");
             }
+        }
+        // --local: use the DynamoDB Local on --port, or start one there (`dqlrs dynamo start`),
+        // and serve against it.
+        if args.local && args.host.is_none() {
+            let cwd = std::env::current_dir().wrap_err("current directory")?;
+            let dir = match &args.dir {
+                Some(dir) => cwd.join(dir),
+                None => cwd,
+            };
+            let kind = match dynamodb {
+                Some(web::dynamodb_local::Runtime::Java) => Some(dynamo::Kind::Java),
+                Some(web::dynamodb_local::Runtime::Docker) => Some(dynamo::Kind::Docker),
+                Some(web::dynamodb_local::Runtime::Skip) => {
+                    bail!("--local needs DynamoDB Local; --dynamodb takes java or docker with it")
+                }
+                None => None,
+            };
+            dynamo::ensure_running(args.port, kind, &dir)?;
+            args.host = Some(web::dynamodb_local::HOST.to_string());
+            set_default_env("AWS_ACCESS_KEY_ID", "fakeid");
+            set_default_env("AWS_SECRET_ACCESS_KEY", "fakekey");
+            set_default_env("AWS_EC2_METADATA_DISABLED", "true");
         }
         // The workspace is --dir or the current directory; Session resolves it once.
         let session = Session::new_for_serve(&args).wrap_err("failed to start session")?;

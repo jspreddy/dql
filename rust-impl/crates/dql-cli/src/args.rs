@@ -91,9 +91,15 @@ pub struct CliArgs {
     pub init_examples: bool,
 
     #[arg(
+        long = "local",
+        help = "With `web`, start DynamoDB Local (or use the one on --port) and connect to it"
+    )]
+    pub local: bool,
+
+    #[arg(
         long = "dynamodb",
         value_name = "java|docker|skip",
-        help = "With `web --init-examples`, how to run DynamoDB Local instead of asking"
+        help = "With `web --init-examples` or `web --local`, how to run DynamoDB Local"
     )]
     pub dynamodb: Option<String>,
 
@@ -158,6 +164,7 @@ pub fn help_text() -> String {
         "Usage:",
         "  dqlrs [options]          Start the REPL (or run -c)",
         "  dqlrs web [options]      Serve the query editor and table browser",
+        "  dqlrs web --local        Start DynamoDB Local (or use a running one) and serve against it",
         "  dqlrs web --init-examples",
         "                           Start a new workspace in an empty folder from the examples",
         "  dqlrs notebook           Start JupyterLab with a DQL (Rust) kernel (this binary)",
@@ -178,9 +185,11 @@ pub fn help_text() -> String {
         "                           before the server starts",
         "      --init-examples      With web, after a confirm: git init an empty folder, copy the",
         "                           examples in, and commit them",
+        "      --local              With web, start DynamoDB Local on --port (default 8000), or use",
+        "                           the one already there, and connect to it",
         "      --dynamodb <java|docker|skip>",
-        "                           With web --init-examples, how to run DynamoDB Local (else it asks;",
-        "                           with --yes it skips)",
+        "                           With web --init-examples or --local, how to run DynamoDB Local",
+        "                           (--init-examples asks otherwise; with --yes it skips)",
         "      --yes                With web --init-examples, skip the confirmation",
         "      --version            Print the version and exit",
         "",
@@ -287,6 +296,25 @@ mod tests {
         assert_eq!(args.bind.as_deref(), Some("127.0.0.1:7400"));
         assert!(args.command.is_none());
         assert!(!args.web);
+    }
+
+    #[test]
+    fn parses_web_local_with_a_port_and_runtime() {
+        let args = parse(&[
+            "dqlrs",
+            "web",
+            "--local",
+            "-p",
+            "8001",
+            "--dynamodb",
+            "docker",
+        ]);
+        assert!(args.web);
+        assert!(args.local);
+        assert_eq!(args.port, 8001);
+        assert_eq!(args.dynamodb.as_deref(), Some("docker"));
+        assert!(args.host.is_none());
+        assert!(help_text().contains("dqlrs web --local"));
     }
 
     #[test]

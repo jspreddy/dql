@@ -104,8 +104,10 @@ dqlrs notebook           Start JupyterLab with a DQL (Rust) kernel (this binary)
                          before the server starts
     --init-examples      With web, after a confirm: git init an empty folder, copy the
                          examples in, and commit them
-    --dynamodb <MODE>    With web --init-examples, run DynamoDB Local with java or docker,
-                         or skip (else it asks; with --yes it skips)
+    --local              With web, start DynamoDB Local on --port (default 8000), or use
+                         the one already there, and connect to it
+    --dynamodb <MODE>    With web --init-examples or --local, run DynamoDB Local with java
+                         or docker (--init-examples: or skip; else it asks, with --yes it skips)
     --yes                With web --init-examples, skip the confirmation
     --version            Print the version and exit
     -h, --help           Print help
@@ -195,6 +197,11 @@ dqlrs dynamo logs  [PORT]
 The shared folder is `~/.local/share/dqlrs/dynamodb-local` (`DQLRS_DYNAMO_HOME`
 overrides it): `install/` holds the Java download, `instances/` a record and a
 log per port, `compose/` the generated compose files.
+
+`dqlrs web --local` connects the web UI to DynamoDB Local on `--port` (default
+8000): it uses the server already answering there, or runs `dqlrs dynamo start`
+for that port with this workspace's data. `--dynamodb java|docker` picks the
+runtime; `-H` cannot be combined with it.
 
 In `dqlrs web`, the endpoint chip shows a green dot while a local endpoint's
 DynamoDB Local answers and a red one when it does not. Click it for the
