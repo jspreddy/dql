@@ -2768,12 +2768,18 @@ body.results-resizing * {
 }
 
 .table-group {
-  padding: 8px 8px 2px;
+  margin: 14px 0 8px;
+  padding: 6px 8px 8px;
+  border-bottom: 1px solid var(--line);
   font-size: 10px;
   font-weight: 650;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
+}
+
+#table-list > .table-group:first-child {
+  margin-top: 4px;
 }
 
 .table-row .keys {
