@@ -83,3 +83,31 @@ test("leaving before the delay shows nothing", async ({ page }) => {
   await page.waitForTimeout(500);
   await expect(page.locator("#lint-tip")).toBeHidden();
 });
+
+test("items that say what they are have no tooltip", async ({ page }) => {
+  // The endpoint chip, a labeled button, universal icons, and resize grips.
+  for (const selector of [
+    "#endpoint",
+    "#run-file",
+    "#settings-toggle",
+    "#side-resize",
+    "#results-resize",
+    "#table-query-resize",
+    "#table-query-height",
+    "#schema-pop-close",
+    "#run-pop-close",
+    "#row-pop-close",
+    "#patch-pop-close",
+    "#mermaid-zoom-in",
+    "#mermaid-zoom-out",
+    "#mermaid-screen-close",
+  ]) {
+    await expect(page.locator(selector), selector).not.toHaveAttribute("data-tip");
+  }
+  await page.locator("#endpoint").hover();
+  await page.waitForTimeout(500);
+  await expect(page.locator("#lint-tip")).toBeHidden();
+  // Controls whose tip still adds something keep it.
+  await expect(page.locator("#collapse-tree")).toHaveAttribute("data-tip", "Collapse all folders");
+  await expect(page.locator("#new-file")).toHaveAttribute("data-tip", "New .dql file");
+});

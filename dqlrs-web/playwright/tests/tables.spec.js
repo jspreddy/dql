@@ -1157,7 +1157,9 @@ test("table query dropdowns keep one style and width", async ({ page, app }, tes
   const equals = await box(op);
   const sourceBox = await box(source);
   expect(equals).toEqual({ width: 120, height: 24, radius: "6px", border: "1px" });
-  expect(sourceBox).toMatchObject({ width: 380, height: 24, radius: "6px", border: "1px" });
+  // The source sits in an input group: the group has the border and radius, the menu none.
+  expect(sourceBox).toMatchObject({ width: 380, border: "0px" });
+  expect(await box(page.locator("#table-query-source-wrap"))).toMatchObject({ height: 24, radius: "6px", border: "1px" });
 
   await op.selectOption("begins_with");
   expect(await box(op)).toEqual(equals);
@@ -1211,6 +1213,27 @@ test("table browser scan and query pickers filter without typing DQL", async ({ 
   await expect(page.locator("#table-query-query")).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator("#table-query-forward")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#table-query-source")).toHaveValue("");
+  // The source reads as one input group, "Index [ -- ▾ ]", with no separate label above it.
+  const sourceGroup = page.locator("#table-query-source-wrap");
+  await expect(sourceGroup).toHaveClass(/input-group/);
+  await expect(sourceGroup.locator(".input-group-text")).toHaveText("Index");
+  await expect(page.locator("#table-query")).not.toContainText("Source");
+  const groupBox = await sourceGroup.boundingBox();
+  const selectBox = await page.locator("#table-query-source").boundingBox();
+  const textBox = await sourceGroup.locator(".input-group-text").boundingBox();
+  expect(textBox.x + textBox.width).toBeLessThanOrEqual(selectBox.x + 1);
+  expect(Math.abs(groupBox.height - selectBox.height)).toBeLessThanOrEqual(2);
+  expect(Math.round(groupBox.height)).toBe(24);
+  // "--" (the default) adds nothing; Table adds `USING -`; an index adds `USING name`.
+  await expect(page.locator("#table-query-source option").first()).toHaveText("--");
+  await expect(page.locator("#table-query-source option").nth(1)).toHaveText("Table");
+  await page.screenshot({ path: playwrightArtifact(`table-source-group-${testInfo.project.name}.png`) });
+  await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name}`);
+  await page.locator("#table-query-source").selectOption("-");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name} USING -`);
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);
+  await page.locator("#table-query-source").selectOption("");
   await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name}`);
   await expect(page.locator("#table-query-source")).toContainText("by-status");
   const scanLead = await modeGroupBox(page);

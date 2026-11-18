@@ -2979,7 +2979,7 @@ body.table-query-resizing * {
 .table-query-toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
 }
 
@@ -2987,18 +2987,10 @@ body.table-query-resizing * {
   display: flex;
   flex: none;
   flex-wrap: nowrap;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
 }
 
-.table-query-field {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.table-query-field > span,
 .table-query-section-head {
   color: var(--muted);
   font-size: 10px;
@@ -3007,7 +2999,6 @@ body.table-query-resizing * {
   text-transform: uppercase;
 }
 
-.table-query-field select,
 .table-query-cond select,
 .table-query-cond input {
   height: 24px;
@@ -3033,6 +3024,7 @@ body.table-query-resizing * {
   width: 380px;
   min-width: 380px;
   max-width: 380px;
+  padding: 0 8px;
 }
 
 /* Condition menus stay put when the choice changes. Widths fit the longest label. */

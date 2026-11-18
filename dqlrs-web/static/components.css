@@ -63,6 +63,47 @@
 .btn-danger:hover { background: var(--danger-hover); }
 .btn-danger:focus-visible { outline-color: var(--danger-outline); }
 
+/* Input group: a leading label and one control in a single bordered box, read as one phrase:
+   <label class="input-group"><span class="input-group-text">Index</span><select>…</select></label> */
+.input-group {
+  display: inline-flex;
+  align-items: stretch;
+  height: 24px;
+  border: 1px solid var(--line-control);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.input-group-text {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 0 8px;
+  border-right: 1px solid var(--line-control);
+  background: var(--chip);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.input-group > select,
+.input-group > input {
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.input-group:focus-within {
+  outline: 2px solid var(--teal);
+  outline-offset: 1px;
+}
+
+.input-group > select:focus-visible,
+.input-group > input:focus-visible { outline: none; }
+
 /* Icon button: a 28px square with one 12 to 14px icon, such as a dialog's close. It needs an
    aria-label, and a data-tip when the icon alone does not say what it does. */
 .icon-btn {

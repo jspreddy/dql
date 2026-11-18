@@ -1807,7 +1807,9 @@ test("the endpoint chip shows DynamoDB Local's status and how to manage it", asy
   }));
   await page.reload();
   await expect(chip).toHaveAttribute("data-dynamo", "down");
-  await expect(chip).toHaveAttribute("data-tip", "localhost:8000 · DynamoDB Local is not answering");
+  // No tooltip on the chip; the dot's meaning is in its accessible name.
+  await expect(chip).not.toHaveAttribute("data-tip");
+  await expect(chip).toHaveAttribute("aria-label", "localhost:8000, DynamoDB Local not answering");
   await chip.click();
   await expect(page.locator('[data-testid="dynamo-facts"]')).toHaveText("StatusNot answering");
   await expect(page.locator('[data-testid="dynamo-commands"] code')).toHaveText([

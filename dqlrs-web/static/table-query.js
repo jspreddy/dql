@@ -383,7 +383,7 @@ export function formatIndexKeySelect(tableName, source, fields, table, extra) {
   if (fields.length > 1 && source && source.rangeKey) {
     sql += ` AND ${quoteIdent(source.rangeKey)} = ${quoteValue(fields[1], attributeType(table, extra, source.rangeKey))}`;
   }
-  if (source && source.name) sql += " USING " + quoteIdent(source.name);
+  if (usesIndex(source)) sql += usingClause(source);
   return sql;
 }
 
@@ -401,7 +401,7 @@ export function keysModeError(table, parsed, sourceName, extra) {
   if (result.errors.length) return result.errors[0];
   if (!result.keys.length) return "Keys needs at least one key.";
   const source = sourceOf(table, sourceName, "query");
-  const tablePk = !source.name;
+  const tablePk = !usesIndex(source);
   const hasRange = Boolean(source.rangeKey);
   if (!hasRange && result.keys.some((key) => key.length > 1)) {
     return tablePk ? "This table only has a hash key." : "This index only has a hash key.";
@@ -428,6 +428,24 @@ export function opsFor(kind, role, mode) {
   return KEY_SCAN_OPS;
 }
 
+/**
+ * The source menu's values: "" is "--" (no USING; dqlrs picks an index itself), TABLE_SOURCE
+ * ("-") is the table (`USING -` turns that off), and anything else names an index (`USING name`).
+ * Keys mode reads by primary key, where the table and "--" are the same read (KEYS IN).
+ */
+export const TABLE_SOURCE = "-";
+
+/** True when `source` names an index rather than "--" or the table. */
+export function usesIndex(source) {
+  return Boolean(source && source.name && source.name !== TABLE_SOURCE);
+}
+
+/** ` USING …` for `source`, or "" for "--". */
+export function usingClause(source) {
+  if (!source || !source.name) return "";
+  return " USING " + (source.name === TABLE_SOURCE ? TABLE_SOURCE : quoteIdent(source.name));
+}
+
 export function tableSource(table) {
   const keys = Array.isArray(table && table.keys) ? table.keys : [];
   const hash = keys.find((key) => key.role === "hash");
@@ -445,7 +463,7 @@ export function listedIndexes(table) {
 }
 
 export function availableSources(table, mode) {
-  const sources = [tableSource(table)];
+  const sources = [tableSource(table), { ...tableSource(table), name: TABLE_SOURCE }];
   for (const index of listedIndexes(table)) {
     if (mode === "scan" && index.kind === "local") continue;
     sources.push({
@@ -612,7 +630,7 @@ export function buildReadStatement(tableName, table, state, extra) {
     if (keysModeError(table, parsed, current.source, extra)) return "";
     const source = sourceOf(table, current.source, "query");
     const { keys } = dedupeKeys(parsed.keys, table, extra, source);
-    if (source.name) {
+    if (usesIndex(source)) {
       return keys
         .map((fields) => formatIndexKeySelect(name, source, fields, table, extra))
         .join("; ");
@@ -637,7 +655,7 @@ export function buildReadStatement(tableName, table, state, extra) {
   const where = [...keys, ...filters];
   let sql = `${verb} * FROM ${quoteIdent(name)}`;
   if (where.length) sql += " WHERE " + where.join(" AND ");
-  if (source.name) sql += " USING " + quoteIdent(source.name);
+  sql += usingClause(source);
   if (current.order === "reverse") {
     if (current.mode === "query") sql += " DESC";
     else {
@@ -839,7 +857,8 @@ export function attachTableQuery(host, handlers = {}) {
 
   function sourceItems(mode, tableLabel) {
     return availableSources(table, mode).map((source) => {
-      if (!source.name) return { value: "", label: tableLabel };
+      if (!source.name) return { value: "", label: "--" };
+      if (source.name === TABLE_SOURCE) return { value: TABLE_SOURCE, label: tableLabel };
       const keys = [source.hashKey, source.rangeKey].filter(Boolean).join(", ");
       const kind = source.kind === "local" ? "local" : "global";
       return { value: source.name, label: keys ? `${source.name} (${kind}: ${keys})` : `${source.name} (${kind})` };

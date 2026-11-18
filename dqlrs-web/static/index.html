@@ -50,7 +50,7 @@
     <div class="header-tools">
       <div id="presence" class="presence" role="list" aria-label="Connected clients"></div>
       <div class="header-toggles">
-        <button type="button" id="settings-toggle" class="theme-toggle" popovertarget="settings-pop" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-pop" aria-label="Settings" data-tip="Settings">
+        <button type="button" id="settings-toggle" class="theme-toggle" popovertarget="settings-pop" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-pop" aria-label="Settings">
           <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/settings.svg#icon"></use></svg>
         </button>
         <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false" aria-label="Switch to dark mode" data-tip="Dark mode">
@@ -141,7 +141,7 @@
         </div>
         <div id="table-list" class="table-list"></div>
       </div>
-      <div id="side-resize" class="side-resize" role="separator" aria-orientation="vertical" aria-label="Resize navigation" data-tip="Drag to resize the left nav" tabindex="0">
+      <div id="side-resize" class="side-resize" role="separator" aria-orientation="vertical" aria-label="Resize navigation" tabindex="0">
         <span class="side-grip" aria-hidden="true"></span>
       </div>
     </aside>
@@ -153,7 +153,7 @@
             <span id="file-name">No file open</span>
             <button type="button" id="patch-recall" class="patch-recall hidden">Unsaved patch</button>
             <button type="button" id="lint-status" class="lint-status hidden" aria-live="polite"></button>
-            <button type="button" id="run-file" class="hidden" data-tip="Run this file">
+            <button type="button" id="run-file" class="hidden">
               <svg class="icon ff-icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/fast_forward.svg#icon"></use></svg>
               Run file
             </button>
@@ -171,7 +171,7 @@
         </div>
         <section class="results" id="results">
           <div class="results-bar">
-            <div id="results-resize" class="results-resize" role="separator" aria-orientation="horizontal" aria-label="Resize results" data-tip="Drag to resize results" tabindex="0">
+            <div id="results-resize" class="results-resize" role="separator" aria-orientation="horizontal" aria-label="Resize results" tabindex="0">
               <span class="results-grip" aria-hidden="true"></span>
             </div>
             <div class="pane-head results-head">
@@ -247,8 +247,9 @@
                       <button type="button" id="table-query-query" aria-pressed="false">Query</button>
                       <button type="button" id="table-query-keys-mode" aria-pressed="false">Keys</button>
                     </div>
-                    <label class="table-query-field" id="table-query-source-wrap">
-                      <span>Source</span>
+                    <!-- One input group: "Index" then --, the table, or an index. -->
+                    <label class="input-group" id="table-query-source-wrap">
+                      <span class="input-group-text">Index</span>
                       <select id="table-query-source" aria-label="Table or index"></select>
                     </label>
                   </div>
@@ -280,7 +281,7 @@
                 </div>
                 <p id="table-query-error" class="table-query-error" hidden></p>
               </div>
-              <div id="table-query-resize" class="side-resize table-query-resize" role="separator" aria-orientation="vertical" aria-label="Resize query panes" data-tip="Drag to resize" tabindex="0">
+              <div id="table-query-resize" class="side-resize table-query-resize" role="separator" aria-orientation="vertical" aria-label="Resize query panes" tabindex="0">
                 <span class="side-grip" aria-hidden="true"></span>
               </div>
             </div>
@@ -319,7 +320,7 @@
             </div>
           </div>
           <!-- The bottom edge sets the panel's height, like the results pane's top edge. -->
-          <div id="table-query-height" class="results-resize table-query-height" role="separator" aria-orientation="horizontal" aria-label="Resize query panel" data-tip="Drag to resize the query panel" tabindex="0">
+          <div id="table-query-height" class="results-resize table-query-height" role="separator" aria-orientation="horizontal" aria-label="Resize query panel" tabindex="0">
             <span class="results-grip" aria-hidden="true"></span>
           </div>
           <!-- At the panel's right end, so it stays put whether the right pane shows or not. -->
@@ -348,7 +349,7 @@
           <div id="schema-pop-query" class="schema-pop-query" hidden></div>
           <p id="schema-pop-summary" class="schema-pop-summary"></p>
         </div>
-        <button type="button" id="schema-pop-close" class="icon-btn" data-tip="Close" aria-label="Close structure">
+        <button type="button" id="schema-pop-close" class="icon-btn" aria-label="Close structure">
           <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
@@ -367,7 +368,7 @@
             <h2 id="run-pop-title">Run</h2>
           </div>
         </div>
-        <button type="button" id="run-pop-close" class="icon-btn" data-tip="Close" aria-label="Close run">
+        <button type="button" id="run-pop-close" class="icon-btn" aria-label="Close run">
           <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
@@ -401,7 +402,7 @@
           <h2 id="row-pop-title">Row</h2>
           <div id="row-pop-keys" class="row-pop-keys"></div>
         </div>
-        <button type="button" id="row-pop-close" class="icon-btn" data-tip="Close" aria-label="Close row">
+        <button type="button" id="row-pop-close" class="icon-btn" aria-label="Close row">
           <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
@@ -413,7 +414,7 @@
     <div class="dialog-card patch-pop-card">
       <header class="patch-pop-head">
         <h2 id="patch-pop-title" class="dialog-title">File changed on disk</h2>
-        <button type="button" id="patch-pop-close" class="icon-btn" data-tip="Close" aria-label="Close unsaved patch">
+        <button type="button" id="patch-pop-close" class="icon-btn" aria-label="Close unsaved patch">
           <svg class="icon" width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
         </button>
       </header>
@@ -438,15 +439,15 @@
   </dialog>
   <dialog id="mermaid-screen" aria-label="Diagram full screen">
     <div class="mermaid-screen-bar">
-      <button type="button" id="mermaid-zoom-out" aria-label="Zoom out" data-tip="Zoom out">
+      <button type="button" id="mermaid-zoom-out" aria-label="Zoom out">
         <svg class="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/zoom_out.svg#icon"></use></svg>
       </button>
       <span id="mermaid-zoom-label" class="mermaid-zoom-label">100%</span>
-      <button type="button" id="mermaid-zoom-in" aria-label="Zoom in" data-tip="Zoom in">
+      <button type="button" id="mermaid-zoom-in" aria-label="Zoom in">
         <svg class="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/zoom_in.svg#icon"></use></svg>
       </button>
       <button type="button" id="mermaid-zoom-fit" aria-label="Fit diagram" data-tip="Fit">Fit</button>
-      <button type="button" id="mermaid-screen-close" aria-label="Exit full screen" data-tip="Exit full screen">
+      <button type="button" id="mermaid-screen-close" aria-label="Exit full screen">
         <svg class="icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/close.svg#icon"></use></svg>
       </button>
     </div>
