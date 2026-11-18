@@ -916,6 +916,71 @@ test("a local table's definition is cached for the linter and the structure view
   await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(1);
 });
 
+test("table list group titles have space and a rule", async ({ page, app }, testInfo) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  const stem = uniqueTable();
+  const ddb = `${stem}_ddb`;
+  const local = `${stem}_local`;
+  const temp = `${stem}_temp`;
+  app.trackTable(ddb);
+  fs.writeFileSync(path.join(app.workspace, "queries", "people.csv"), "id,name\na,ada\n");
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${ddb};`,
+      `CREATE TABLE ${ddb} (id STRING HASH KEY);`,
+      `INSERT INTO ${ddb} (id) VALUES ('a');`,
+      `DROP LOCALTABLE IF EXISTS ${local};`,
+      `CREATE LOCALTABLE ${local} AS './people.csv';`,
+      `DROP TEMPTABLE IF EXISTS ${temp};`,
+      `CREATE TEMPTABLE ${temp} AS (SCAN * FROM ${ddb});`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(7);
+
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, `${stem}*`);
+  await page.locator("#mode-tables").click();
+  await page.locator("#group-tables").click();
+  const groups = page.locator("#table-list .table-group");
+  await expect(groups).toHaveText(["Local", "Temp", "DynamoDB"]);
+  await expect(page.locator(`#table-${local}`)).toBeVisible();
+  await expect(page.locator(`#table-${temp}`)).toBeVisible();
+  await expect(page.locator(`#table-${ddb}`)).toBeVisible();
+  const styles = await groups.evaluateAll((nodes) => nodes.map((node) => {
+    const style = getComputedStyle(node);
+    const box = node.getBoundingClientRect();
+    return {
+      borderBottomWidth: style.borderBottomWidth,
+      borderBottomStyle: style.borderBottomStyle,
+      marginTop: parseFloat(style.marginTop),
+      marginBottom: parseFloat(style.marginBottom),
+      paddingBottom: parseFloat(style.paddingBottom),
+      width: Math.round(box.width),
+    };
+  }));
+  for (const style of styles) {
+    expect(style.borderBottomStyle).toBe("solid");
+    expect(style.borderBottomWidth).toBe("1px");
+    expect(style.paddingBottom).toBeGreaterThanOrEqual(8);
+    expect(style.marginBottom).toBeGreaterThanOrEqual(8);
+  }
+  expect(styles[1].marginTop).toBeGreaterThan(styles[0].marginTop);
+  const listWidth = Math.round((await page.locator("#table-list").boundingBox()).width);
+  expect(styles[0].width).toBe(listWidth);
+  await page.locator("#table-list").screenshot({ path: playwrightArtifact(`table-group-titles-${testInfo.project.name}.png`) });
+
+  await page.locator("#mode-query").click();
+  await replaceEditor(page, `DROP LOCALTABLE ${local};\nDROP TEMPTABLE ${temp};`);
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(2);
+});
+
 test("gives each query result its own named card and structure icon", async ({ page, app }) => {
   await page.goto(`${app.baseURL}/`);
   await expect(page.locator("#file-name")).toHaveText("edit.dql");
