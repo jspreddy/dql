@@ -310,16 +310,16 @@ pub enum Statement {
         selection: Selection,
         condition: Option<Condition>,
         options: QueryOptions,
-        /// Inner equijoin against one other in-memory table.
-        join: Option<EquiJoin>,
+        /// Inner equijoins, applied left to right, against in-memory tables.
+        joins: Vec<EquiJoin>,
     },
     Select {
         table: String,
         selection: Selection,
         condition: Option<Condition>,
         options: QueryOptions,
-        /// Inner equijoin against one other in-memory table.
-        join: Option<EquiJoin>,
+        /// Inner equijoins, applied left to right, against in-memory tables.
+        joins: Vec<EquiJoin>,
     },
     /// `WITH name AS (SELECT|SCAN ...), ... SELECT|SCAN ...`
     ///
@@ -379,6 +379,8 @@ pub struct EquiJoin {
     pub table: String,
     pub left_attr: String,
     pub right_attr: String,
+    /// Earlier table that owns `left_attr` when the `ON` clause qualifies it.
+    pub left_table: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -804,6 +806,8 @@ impl<'a> Parser<'a> {
             self.parse_select()
         } else if self.accept_keyword("SCAN") {
             self.parse_scan()
+        } else if self.accept_keyword("WITH") {
+            self.parse_with()
         } else {
             Err(self.error("expected SELECT or SCAN"))
         }
@@ -1123,7 +1127,7 @@ impl<'a> Parser<'a> {
         let selection = self.parse_selection_until(|parser| parser.peek_keyword("FROM"))?;
         self.expect_keyword("FROM")?;
         let table = self.expect_ident()?;
-        let join = self.parse_equijoin(&table)?;
+        let joins = self.parse_joins(&table)?;
         let (condition, tail_options) = self.parse_query_tail()?;
         options = merge_query_options(options, tail_options);
         reject_count_with_save(&selection, &options)?;
@@ -1132,7 +1136,7 @@ impl<'a> Parser<'a> {
             selection,
             condition,
             options,
-            join,
+            joins,
         })
     }
 
@@ -1144,7 +1148,7 @@ impl<'a> Parser<'a> {
         let selection = self.parse_selection_until(|parser| parser.peek_keyword("FROM"))?;
         self.expect_keyword("FROM")?;
         let table = self.expect_ident()?;
-        let join = self.parse_equijoin(&table)?;
+        let joins = self.parse_joins(&table)?;
         let (condition, tail_options) = self.parse_query_tail()?;
         options = merge_query_options(options, tail_options);
         reject_count_with_save(&selection, &options)?;
@@ -1153,49 +1157,42 @@ impl<'a> Parser<'a> {
             selection,
             condition,
             options,
-            join,
+            joins,
         })
     }
 
-    /// `JOIN other ON left.column = right.column`, or nothing when the next word is not JOIN.
-    fn parse_equijoin(&mut self, left_table: &str) -> Result<Option<EquiJoin>, ParseError> {
-        if !self.accept_keyword("JOIN") {
-            return Ok(None);
-        }
-        let right_table = self.expect_ident()?;
-        if right_table.eq_ignore_ascii_case(left_table) {
-            return Err(self.error("JOIN needs a different table"));
-        }
-        self.expect_keyword("ON")?;
-        let (q1, a1) = self.parse_join_ref()?;
-        self.expect_symbol('=')?;
-        let (q2, a2) = self.parse_join_ref()?;
-        let (left_attr, right_attr) = match (q1.as_deref(), q2.as_deref()) {
-            (None, None) => (a1, a2),
-            (Some(qa), Some(qb)) => {
-                let a_left = qa.eq_ignore_ascii_case(left_table);
-                let a_right = qa.eq_ignore_ascii_case(&right_table);
-                let b_left = qb.eq_ignore_ascii_case(left_table);
-                let b_right = qb.eq_ignore_ascii_case(&right_table);
-                if a_left && b_right {
-                    (a1, a2)
-                } else if a_right && b_left {
-                    (a2, a1)
-                } else {
-                    return Err(self.error(format!(
-                        "ON must compare {left_table}.column and {right_table}.column"
-                    )));
-                }
+    /// Zero or more `JOIN other ON left.column = right.column` clauses.
+    fn parse_joins(&mut self, from_table: &str) -> Result<Vec<EquiJoin>, ParseError> {
+        let mut known = vec![from_table.to_string()];
+        let mut joins = Vec::new();
+        while self.accept_keyword("JOIN") {
+            let right_table = self.expect_ident()?;
+            if known
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(&right_table))
+            {
+                return Err(self.error("JOIN needs a different table"));
             }
-            _ => {
-                return Err(self.error("qualify both ON columns as table.column, or neither"));
-            }
-        };
-        Ok(Some(EquiJoin {
-            table: right_table,
-            left_attr,
-            right_attr,
-        }))
+            self.expect_keyword("ON")?;
+            let (q1, a1) = self.parse_join_ref()?;
+            self.expect_symbol('=')?;
+            let (q2, a2) = self.parse_join_ref()?;
+            let (left_table, left_attr, right_attr) =
+                assign_join_attrs(&known, &right_table, q1, a1, q2, a2).ok_or_else(|| {
+                    self.error(format!(
+                        "ON must compare one new table column with {}.column",
+                        known.join(" or ")
+                    ))
+                })?;
+            joins.push(EquiJoin {
+                table: right_table.clone(),
+                left_attr,
+                right_attr,
+                left_table,
+            });
+            known.push(right_table);
+        }
+        Ok(joins)
     }
 
     fn parse_join_ref(&mut self) -> Result<(Option<String>, String), ParseError> {
@@ -2425,6 +2422,39 @@ impl<'a> Parser<'a> {
     }
 }
 
+fn assign_join_attrs(
+    known: &[String],
+    right_table: &str,
+    q1: Option<String>,
+    a1: String,
+    q2: Option<String>,
+    a2: String,
+) -> Option<(Option<String>, String, String)> {
+    fn known_name(known: &[String], name: &str) -> Option<String> {
+        known
+            .iter()
+            .find(|item| item.eq_ignore_ascii_case(name))
+            .cloned()
+    }
+    match (q1, q2) {
+        (None, None) => Some((None, a1, a2)),
+        (Some(qa), Some(qb)) => {
+            let a_left = known_name(known, &qa);
+            let b_left = known_name(known, &qb);
+            let a_right = qa.eq_ignore_ascii_case(right_table);
+            let b_right = qb.eq_ignore_ascii_case(right_table);
+            if a_left.is_some() && b_right {
+                Some((a_left, a1, a2))
+            } else if b_left.is_some() && a_right {
+                Some((b_left, a2, a1))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
 /// Prefix of every key-list shape error, so WHERE parsing reports them instead of backtracking.
 const KEY_FORMAT: &str = "key list: ";
 const KEY_PARTS_ERROR: &str = "key list: a key has at most two parts: (hash, range)";
@@ -2745,14 +2775,16 @@ mod tests {
                 match body.as_ref() {
                     Statement::Select {
                         table,
-                        join: Some(join),
+                        joins,
                         condition: Some(_),
                         ..
                     } => {
                         assert_eq!(table, "orders");
-                        assert_eq!(join.table, "people");
-                        assert_eq!(join.left_attr, "customer");
-                        assert_eq!(join.right_attr, "id");
+                        assert_eq!(joins.len(), 1);
+                        assert_eq!(joins[0].table, "people");
+                        assert_eq!(joins[0].left_attr, "customer");
+                        assert_eq!(joins[0].right_attr, "id");
+                        assert_eq!(joins[0].left_table.as_deref(), Some("orders"));
                     }
                     other => panic!("unexpected body: {other:?}"),
                 }

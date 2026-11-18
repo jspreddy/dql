@@ -914,4 +914,209 @@ mod tests {
             .to_string();
         assert!(direct.contains("Load it with CREATE TEMPTABLE"), "{direct}");
     }
+
+    fn posts_and_customers(engine: &mut crate::InMemoryEngine) {
+        engine
+            .execute("CREATE TABLE posts (id STRING HASH KEY, customer STRING)")
+            .unwrap();
+        engine
+            .execute("CREATE TABLE customers (id STRING HASH KEY, name STRING)")
+            .unwrap();
+        engine
+            .execute(
+                "INSERT INTO posts (id, customer) VALUES ('a', 'c1'), ('b', 'c1'), ('c', 'c9')",
+            )
+            .unwrap();
+        engine
+            .execute("INSERT INTO customers (id, name) VALUES ('c1', 'Ada'), ('c2', 'Grace')")
+            .unwrap();
+    }
+
+    #[test]
+    fn temp_table_from_a_join_of_two_tables() {
+        let mut engine = in_memory_engine();
+        posts_and_customers(&mut engine);
+        engine
+            .execute(
+                "CREATE TEMPTABLE hot AS (\
+                    WITH orders AS (SCAN * FROM posts), people AS (SCAN * FROM customers) \
+                    SELECT * FROM orders JOIN people ON orders.customer = people.id\
+                 )",
+            )
+            .unwrap();
+        let hot = items_of(engine.execute("SCAN * FROM hot").unwrap());
+        assert_eq!(hot.len(), 2, "{hot:?}");
+        assert!(hot.iter().all(|row| cell(row, "name") == "Ada"), "{hot:?}");
+        assert!(engine.execute("SCAN * FROM orders").is_err());
+        assert!(engine.execute("SCAN * FROM people").is_err());
+    }
+
+    #[test]
+    fn temp_table_from_a_join_of_two_temp_tables() {
+        let mut engine = in_memory_engine();
+        posts_and_customers(&mut engine);
+        engine
+            .execute("CREATE TEMPTABLE orders AS (SCAN * FROM posts)")
+            .unwrap();
+        engine
+            .execute("CREATE TEMPTABLE people AS (SCAN * FROM customers)")
+            .unwrap();
+        engine
+            .execute(
+                "CREATE TEMPTABLE hot AS (\
+                    SELECT * FROM orders JOIN people ON orders.customer = people.id\
+                 )",
+            )
+            .unwrap();
+        let hot = items_of(engine.execute("SCAN * FROM hot").unwrap());
+        assert_eq!(hot.len(), 2, "{hot:?}");
+        assert!(hot.iter().all(|row| cell(row, "name") == "Ada"), "{hot:?}");
+        assert_eq!(
+            items_of(engine.execute("SCAN * FROM orders").unwrap()).len(),
+            3
+        );
+        assert_eq!(
+            items_of(engine.execute("SCAN * FROM people").unwrap()).len(),
+            2
+        );
+    }
+
+    #[test]
+    fn four_table_join() {
+        let mut engine = in_memory_engine();
+        engine
+            .execute("CREATE TABLE a (id STRING HASH KEY, nxt STRING)")
+            .unwrap();
+        engine
+            .execute("CREATE TABLE b (id STRING HASH KEY, nxt STRING)")
+            .unwrap();
+        engine
+            .execute("CREATE TABLE c (id STRING HASH KEY, nxt STRING)")
+            .unwrap();
+        engine
+            .execute("CREATE TABLE d (id STRING HASH KEY, label STRING)")
+            .unwrap();
+        engine
+            .execute("INSERT INTO a (id, nxt) VALUES ('a', 'b')")
+            .unwrap();
+        engine
+            .execute("INSERT INTO b (id, nxt) VALUES ('b', 'c')")
+            .unwrap();
+        engine
+            .execute("INSERT INTO c (id, nxt) VALUES ('c', 'd')")
+            .unwrap();
+        engine
+            .execute("INSERT INTO d (id, label) VALUES ('d', 'end')")
+            .unwrap();
+        let joined = items_of(
+            engine
+                .execute(
+                    "WITH wa AS (SCAN * FROM a), wb AS (SCAN * FROM b), \
+                     wc AS (SCAN * FROM c), wd AS (SCAN * FROM d) \
+                     SELECT * FROM wa \
+                     JOIN wb ON wa.nxt = wb.id \
+                     JOIN wc ON wb.nxt = wc.id \
+                     JOIN wd ON wc.nxt = wd.id",
+                )
+                .unwrap(),
+        );
+        assert_eq!(joined.len(), 1, "{joined:?}");
+        assert_eq!(cell(&joined[0], "id"), "a");
+        assert_eq!(cell(&joined[0], "label"), "end");
+        assert_eq!(cell(&joined[0], "wb.id"), "b");
+        assert_eq!(cell(&joined[0], "wc.id"), "c");
+        assert_eq!(cell(&joined[0], "wd.id"), "d");
+    }
+
+    fn insert_numbered(
+        engine: &mut crate::InMemoryEngine,
+        table: &str,
+        columns: &str,
+        rows: &[(String, String)],
+    ) {
+        let values = rows
+            .iter()
+            .map(|(left, right)| format!("('{left}', '{right}')"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        engine
+            .execute(&format!("INSERT INTO {table} ({columns}) VALUES {values}"))
+            .unwrap();
+    }
+
+    #[test]
+    fn join_one_thousand_rows_to_ten() {
+        let mut engine = in_memory_engine();
+        engine
+            .execute("CREATE TABLE big (id STRING HASH KEY, bucket STRING)")
+            .unwrap();
+        engine
+            .execute("CREATE TABLE small (id STRING HASH KEY, name STRING)")
+            .unwrap();
+        let left: Vec<(String, String)> = (0..1000)
+            .map(|n| (n.to_string(), (n % 10).to_string()))
+            .collect();
+        let right: Vec<(String, String)> =
+            (0..10).map(|n| (n.to_string(), format!("n{n}"))).collect();
+        insert_numbered(&mut engine, "big", "id, bucket", &left);
+        insert_numbered(&mut engine, "small", "id, name", &right);
+        let joined = items_of(
+            engine
+                .execute(
+                    "WITH lefts AS (SCAN * FROM big), rights AS (SCAN * FROM small) \
+                     SELECT * FROM lefts JOIN rights ON lefts.bucket = rights.id",
+                )
+                .unwrap(),
+        );
+        assert_eq!(joined.len(), 1000);
+        assert_eq!(
+            joined
+                .iter()
+                .filter(|row| cell(row, "name") == "n5")
+                .count(),
+            100
+        );
+        let row = joined
+            .iter()
+            .find(|row| cell(row, "id") == "15")
+            .expect("row 15");
+        assert_eq!(cell(row, "bucket"), "5");
+        assert_eq!(cell(row, "name"), "n5");
+        assert_eq!(cell(row, "rights.id"), "5");
+    }
+
+    #[test]
+    fn join_one_thousand_rows_to_one_thousand() {
+        let mut engine = in_memory_engine();
+        engine
+            .execute("CREATE TABLE big (id STRING HASH KEY, mark STRING)")
+            .unwrap();
+        engine
+            .execute("CREATE TABLE other (id STRING HASH KEY, note STRING)")
+            .unwrap();
+        let left: Vec<(String, String)> = (0..1000)
+            .map(|n| (n.to_string(), format!("L{n}")))
+            .collect();
+        let right: Vec<(String, String)> = (0..1000)
+            .map(|n| (n.to_string(), format!("R{n}")))
+            .collect();
+        insert_numbered(&mut engine, "big", "id, mark", &left);
+        insert_numbered(&mut engine, "other", "id, note", &right);
+        let joined = items_of(
+            engine
+                .execute(
+                    "WITH lefts AS (SCAN * FROM big), rights AS (SCAN * FROM other) \
+                     SELECT * FROM lefts JOIN rights ON lefts.id = rights.id",
+                )
+                .unwrap(),
+        );
+        assert_eq!(joined.len(), 1000);
+        let row = joined
+            .iter()
+            .find(|row| cell(row, "id") == "15")
+            .expect("row 15");
+        assert_eq!(cell(row, "mark"), "L15");
+        assert_eq!(cell(row, "note"), "R15");
+        assert!(!row.contains_key("rights.id"));
+    }
 }

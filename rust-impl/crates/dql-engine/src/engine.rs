@@ -671,13 +671,13 @@ impl<B: DynamoBackend> Engine<B> {
                 selection,
                 condition,
                 options,
-                join,
+                joins,
             } => {
                 self.apply_throttle_config(options.throttle.as_ref());
-                if let Some(join) = join {
-                    self.join_reads(table, selection, condition.as_ref(), options, join)
-                } else {
+                if joins.is_empty() {
                     self.scan(table, selection, condition.as_ref(), options)
+                } else {
+                    self.join_reads(table, selection, condition.as_ref(), options, joins)
                 }
             }
             Statement::Select {
@@ -685,13 +685,13 @@ impl<B: DynamoBackend> Engine<B> {
                 selection,
                 condition,
                 options,
-                join,
+                joins,
             } => {
                 self.apply_throttle_config(options.throttle.as_ref());
-                if let Some(join) = join {
-                    self.join_reads(table, selection, condition.as_ref(), options, join)
-                } else {
+                if joins.is_empty() {
                     self.select(table, selection, condition.as_ref(), options)
+                } else {
+                    self.join_reads(table, selection, condition.as_ref(), options, joins)
                 }
             }
             Statement::With { ctes, body } => self.run_with(ctes, body),
@@ -825,14 +825,14 @@ impl<B: DynamoBackend> Engine<B> {
         result
     }
 
-    /// Inner equijoin of two tables already in memory. Each side is scanned once.
+    /// Inner equijoins of tables already in memory. Each side is scanned once.
     fn join_reads(
         &mut self,
         table: &str,
         selection: &Selection,
         condition: Option<&Condition>,
         options: &QueryOptions,
-        join: &EquiJoin,
+        joins: &[EquiJoin],
     ) -> Result<StatementResult, EngineError> {
         self.ensure_save_path(options)?;
         if matches!(selection, Selection::CountAll) {
@@ -846,19 +846,25 @@ impl<B: DynamoBackend> Engine<B> {
             ));
         }
         self.require_memory_table(table)?;
-        self.require_memory_table(&join.table)?;
+        for join in joins {
+            self.require_memory_table(&join.table)?;
+        }
         let mut fetch_options = options.clone();
         fetch_options.save_file = None;
         fetch_options.save_create_parents = false;
         let left = self.scan(table, &Selection::All, condition, &fetch_options)?;
-        let right = self.scan(&join.table, &Selection::All, None, &QueryOptions::default())?;
-        let mut merged = merge_equijoin(
-            statement_items(left)?,
-            statement_items(right)?,
-            &join.left_attr,
-            &join.right_attr,
-            &join.table,
-        );
+        let mut merged = statement_items(left)?;
+        for join in joins {
+            let right = self.scan(&join.table, &Selection::All, None, &QueryOptions::default())?;
+            merged = merge_equijoin(
+                merged,
+                statement_items(right)?,
+                join.left_table.as_deref(),
+                &join.left_attr,
+                &join.right_attr,
+                &join.table,
+            );
+        }
         apply_projection(&mut merged, selection);
         self.maybe_save(options, StatementResult::Items(merged))
     }
@@ -879,7 +885,8 @@ impl<B: DynamoBackend> Engine<B> {
             }
             | Statement::Scan {
                 table, selection, ..
-            } => (table, selection),
+            } => (table.as_str(), selection),
+            Statement::With { body, .. } => return self.temp_source_columns(body),
             _ => {
                 return Err(EngineError::Runtime(
                     "CREATE TEMPTABLE requires SELECT or SCAN".to_string(),
@@ -2277,9 +2284,19 @@ fn join_value_key(value: &Value) -> String {
     format!("{value:?}")
 }
 
+fn row_join_value<'a>(row: &'a Item, table: Option<&str>, attr: &str) -> Option<&'a Value> {
+    if let Some(table) = table {
+        if let Some(value) = row.get(&format!("{table}.{attr}")) {
+            return Some(value);
+        }
+    }
+    row.get(attr)
+}
+
 fn merge_equijoin(
     left_rows: Vec<Item>,
     right_rows: Vec<Item>,
+    left_table: Option<&str>,
     left_attr: &str,
     right_attr: &str,
     right_table: &str,
@@ -2293,7 +2310,7 @@ fn merge_equijoin(
     }
     let mut merged = Vec::new();
     for left in left_rows {
-        let Some(value) = left.get(left_attr) else {
+        let Some(value) = row_join_value(&left, left_table, left_attr) else {
             continue;
         };
         let Some(matches) = buckets.get(&join_value_key(value)) else {
