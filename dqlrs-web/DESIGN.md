@@ -82,6 +82,16 @@ The action in a dialog or a form. 32px tall.
 - A button with a keyboard shortcut shows it after the label: `<span class="btn-label">Run</span><kbd class="btn-kbd">Esc</kbd>`, plus `aria-keyshortcuts`. Use a `.key-mod` span for Ctrl, so a Mac shows ⌘.
 - A destructive confirm focuses Cancel, not the destructive button.
 
+### Input group (`.input-group`)
+
+A leading label and one control in a single 24px bordered box, read as one phrase: `On [ Table ▾ ]` in the table browser. The label (`.input-group-text`) sits on the chip fill; the control has no border of its own. Focus rings the whole group.
+
+```html
+<label class="input-group"><span class="input-group-text">On</span><select aria-label="Table or index">…</select></label>
+```
+
+Use it instead of a separate uppercase field label when the label is a word that leads into the value.
+
 ### Icon button (`.icon-btn`)
 
 A 28px square with one 12 to 14px icon, such as a dialog's close. It needs an `aria-label`. Add `data-tip` when the icon alone doesn't say what it does.

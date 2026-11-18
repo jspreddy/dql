@@ -1211,6 +1211,27 @@ test("table browser scan and query pickers filter without typing DQL", async ({ 
   await expect(page.locator("#table-query-query")).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator("#table-query-forward")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#table-query-source")).toHaveValue("");
+  // The source reads as one input group, "On [ Table ▾ ]", with no separate label above it.
+  const sourceGroup = page.locator("#table-query-source-wrap");
+  await expect(sourceGroup).toHaveClass(/input-group/);
+  await expect(sourceGroup.locator(".input-group-text")).toHaveText("On");
+  await expect(page.locator("#table-query")).not.toContainText("Source");
+  const groupBox = await sourceGroup.boundingBox();
+  const selectBox = await page.locator("#table-query-source").boundingBox();
+  const textBox = await sourceGroup.locator(".input-group-text").boundingBox();
+  expect(textBox.x + textBox.width).toBeLessThanOrEqual(selectBox.x + 1);
+  expect(Math.abs(groupBox.height - selectBox.height)).toBeLessThanOrEqual(2);
+  expect(Math.round(groupBox.height)).toBe(24);
+  // "--" (the default) adds nothing; Table adds `USING -`; an index adds `USING name`.
+  await expect(page.locator("#table-query-source option").first()).toHaveText("--");
+  await expect(page.locator("#table-query-source option").nth(1)).toHaveText("Table");
+  await page.screenshot({ path: playwrightArtifact(`table-source-group-${testInfo.project.name}.png`) });
+  await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name}`);
+  await page.locator("#table-query-source").selectOption("-");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name} USING -`);
+  await page.locator("#table-query-run").click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(3);
+  await page.locator("#table-query-source").selectOption("");
   await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name}`);
   await expect(page.locator("#table-query-source")).toContainText("by-status");
   const scanLead = await modeGroupBox(page);

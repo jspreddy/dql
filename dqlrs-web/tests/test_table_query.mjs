@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  TABLE_SOURCE,
+  usesIndex,
+  usingClause,
   availableSources,
   attributeLabel,
   batchKeyHint,
@@ -104,12 +107,26 @@ test("scan reverse orders by the source range key", () => {
 test("scan omits local indexes; query keeps them", () => {
   const scan = availableSources(table, "scan").map((source) => source.name);
   const query = availableSources(table, "query").map((source) => source.name);
-  assert.deepEqual(scan, ["", "by-status"]);
-  assert.deepEqual(query, ["", "by-status", "kind-index"]);
+  assert.deepEqual(scan, ["", "-", "by-status"]);
+  assert.deepEqual(query, ["", "-", "by-status", "kind-index"]);
   assert.deepEqual(
     sourceKeys(table, "kind-index", "query").map((key) => key.name),
     ["id", "kind"],
   );
+});
+
+test("the source adds nothing for --, USING - for the table, and USING name for an index", () => {
+  const read = (mode, source, extra = {}) => buildReadStatement("items", table, { ...defaultReadState(), mode, source, ...extra });
+  assert.equal(read("scan", ""), "SCAN * FROM items");
+  assert.equal(read("scan", "-"), "SCAN * FROM items USING -");
+  assert.equal(read("scan", "by-status"), "SCAN * FROM items USING by-status");
+  // Keys mode reads by primary key: -- and the table are the same KEYS IN read.
+  assert.equal(read("keys", "", { batchKeys: "a" }), "SELECT * FROM items KEYS IN 'a'");
+  assert.equal(read("keys", "-", { batchKeys: "a" }), "SELECT * FROM items KEYS IN 'a'");
+  assert.equal(usingClause({ name: "" }), "");
+  assert.equal(usingClause({ name: TABLE_SOURCE }), " USING -");
+  assert.ok(!usesIndex({ name: TABLE_SOURCE }));
+  assert.ok(usesIndex({ name: "by-status" }));
 });
 
 test("exists and type conditions omit or quote values", () => {
