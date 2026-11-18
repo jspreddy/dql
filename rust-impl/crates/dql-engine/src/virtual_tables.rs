@@ -893,7 +893,7 @@ mod tests {
             filtered[0].get("name"),
             Some(&Value::String("Ada".to_string()))
         );
-        assert!(filtered[0].get("id").is_none());
+        assert!(!filtered[0].contains_key("id"));
 
         engine
             .execute("CREATE TEMPTABLE orders AS (SCAN * FROM posts)")
