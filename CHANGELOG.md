@@ -11,6 +11,7 @@ latest commit of each pull request, stacked ones included, names that pull reque
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [494d288](https://github.com/jspreddy/dql/commit/494d288cba91a26c0b59c905993115a4462ed86e) fix(web): give table query dropdowns one style ([#260](https://github.com/jspreddy/dql/pull/260))
 - [718a74a](https://github.com/jspreddy/dql/commit/718a74aac1d70b604841f34638e2fcff4e0df63b) fix(web): separate table list group titles with space and a rule ([#259](https://github.com/jspreddy/dql/pull/259))
 - [a2149da](https://github.com/jspreddy/dql/commit/a2149dac597362b123ada900f1f42566ad4636d9) feat(web): dqlrs web --local brings up DynamoDB Local and serves against it ([#257](https://github.com/jspreddy/dql/pull/257))
 - [517000f](https://github.com/jspreddy/dql/commit/517000f3904a7d550aa9de5489041ae63eaffa38) feat(cli): color dqlrs dynamo's output like the rest of the CLI
