@@ -351,19 +351,11 @@ const TIP_TIERS = {
     // Visible labels: the text already names the action or the value.
     "#run",
     "#table-query-run",
-    "#run-file",
     "#stop",
-    "#endpoint",
     "#table-search",
     ".result-card-stat",
-    // Universal icons and grips.
-    ".side-resize",
-    ".results-resize",
-    "[id$='-close']",
-    "#mermaid-zoom-in",
-    "#mermaid-zoom-out",
+    // Universal icons.
     "#theme-toggle",
-    "#settings-toggle",
     "#new-file",
     "#clear-results",
     ".run-float",
@@ -1654,7 +1646,6 @@ function applyEnvironment(config) {
   state.environment = environment;
   const label = environment.label || config.endpoint || "";
   endpointButton.textContent = label;
-  setTip(endpointButton, label);
   endpointButton.dataset.kind = environment.kind || "local";
   if (environment.kind === "aws" || environment.kind === "local") {
     endpointButton.setAttribute("popovertarget", "env-pop");
@@ -1695,19 +1686,19 @@ async function loadDynamo({ open = false } = {}) {
   dynamoTimer = setTimeout(() => void loadDynamo(), DYNAMO_REFRESH_MS);
 }
 
+// No tooltip: the chip shows the endpoint, and its popover has the details. The dot's meaning is
+// in the accessible name for screen readers.
 function paintDynamoChip(info) {
   const label = state.environment?.label || endpointButton.textContent;
   if (!info || !info.local) {
     delete endpointButton.dataset.dynamo;
-    setTip(endpointButton, label);
+    endpointButton.removeAttribute("aria-label");
     return;
   }
-  const server = info.server;
   endpointButton.dataset.dynamo = info.answering ? "running" : "down";
-  const how = server ? ` (${server.kind}${server.owner === "other" ? ", not started by dqlrs" : ""})` : "";
-  setTip(
-    endpointButton,
-    info.answering ? `${label} · DynamoDB Local running${how}` : `${label} · DynamoDB Local is not answering`,
+  endpointButton.setAttribute(
+    "aria-label",
+    `${label}, DynamoDB Local ${info.answering ? "running" : "not answering"}`,
   );
 }
 
@@ -4746,7 +4737,7 @@ function resultCard(snapshot, tableId) {
   const capacity = formatCapacity(snapshot.readUnits, snapshot.writeUnits);
   if (capacity) title.append(statChip(capacity, "result-card-capacity", "Consumed capacity"));
   const elapsed = formatElapsed(snapshot.elapsedMs);
-  if (elapsed) title.append(statChip(elapsed, "result-card-time", "Elapsed time"));
+  if (elapsed) title.append(statChip(elapsed, "result-card-time"));
   head.append(title);
   const body = document.createElement("div");
   body.className = "result-card-body";
@@ -4758,11 +4749,12 @@ function resultCard(snapshot, tableId) {
   return card;
 }
 
-function statChip(text, testId, label) {
+/** A stat pill. `label` is a tooltip, only for a value that is not obvious from its text. */
+function statChip(text, testId, label = "") {
   const chip = document.createElement("span");
   chip.className = "result-card-stat";
   chip.dataset.testid = testId;
-  setTip(chip, label);
+  if (label) setTip(chip, label);
   chip.textContent = text;
   return chip;
 }
@@ -6375,11 +6367,11 @@ function paintRowStats(payload) {
   const chips = [];
   if (payload) {
     const count = (payload.items || []).length;
-    chips.push(statChip(count + (count === 1 ? " row" : " rows"), "table-query-count", "Rows on this page"));
+    chips.push(statChip(count + (count === 1 ? " row" : " rows"), "table-query-count"));
     const capacity = formatCapacity(payload.read_units, payload.write_units);
     if (capacity) chips.push(statChip(capacity, "table-query-capacity", "Consumed capacity"));
     const elapsed = formatElapsed(payload.elapsed_ms);
-    if (elapsed) chips.push(statChip(elapsed, "table-query-time", "Elapsed time"));
+    if (elapsed) chips.push(statChip(elapsed, "table-query-time"));
   }
   tableQueryStats.replaceChildren(...chips);
 }

@@ -124,7 +124,9 @@ One tooltip (`#lint-tip`) serves every `data-tip` and `title` in the page; `setT
 | --- | --- | --- | --- |
 | fast | 100 ms | The tip carries information the item does not show. | Lint messages in the gutter and on a line, run-dialog file errors, truncated sample values, the structure info icon, key icons, the table-match note, who else is connected |
 | medium | 200 ms | The default: an icon whose meaning is not obvious, or a status whose detail is only in the tip. | Collapse and expand folders, refresh tables, group tables, structure buttons, show query, row JSON, the right-pane toggle, diagram fit and full screen, run status marks, the lint status, the table-cache and describe-cache tips |
-| slow | 400 ms | The item already says what it is; the tip only repeats or adds a little. | Both Run buttons, Run file, Stop, the endpoint, the table search hint, stat pills, resize grips, Close buttons, zoom in and out, theme, settings, new file, clear results, the inline run button, the Running mark |
+| slow | 400 ms | The item already says what it is; the tip adds a little (a shortcut, a unit, a file type). | Both Run buttons (the action, beside a shortcut-only label), Stop (Esc), the table search hint, the capacity pill (RCU, WCU), theme, new file (.dql), clear results, the inline run button, the Running mark |
+
+**No tooltip** when it would only repeat what the item shows or what everyone reads the same way: the endpoint chip (its popover has the details), buttons with a visible label (Run file), Close (×) buttons, zoom in and out, settings (gear), resize grips, and the time and row-count pills. Give these an `aria-label` where the visible text is not the whole name.
 
 - `TIP_TIERS` in `app.js` lists the fast and slow selectors; anything else is medium. Put a new tip in a tier by the questions above, or set `data-tip-delay="fast|medium|slow"` on the element.
 - Moving straight from one tip to another (within 300 ms of the last one hiding) shows the next at once. Leaving before the delay shows nothing.
