@@ -11,6 +11,7 @@ latest commit of each pull request, stacked ones included, names that pull reque
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [ca36d32](https://github.com/jspreddy/dql/commit/ca36d3274ec64ce40e64d05362356ac9e5a63dce) docs(readme): shorten the examples and DynamoDB Local sections, after the screenshots ([#269](https://github.com/jspreddy/dql/pull/269))
 - [d971622](https://github.com/jspreddy/dql/commit/d97162295dbafe34d9bcb61479abe0b44a0e7e9d) feat(web): drop tooltips that only repeat what the item shows ([#266](https://github.com/jspreddy/dql/pull/266))
 - [8132b2c](https://github.com/jspreddy/dql/commit/8132b2c2aa0ec3fec3c787bd196344a95d23b44f) feat(web): label the table source input group Index ([#265](https://github.com/jspreddy/dql/pull/265))
 - [a7bbd5a](https://github.com/jspreddy/dql/commit/a7bbd5a29a49c082611d7b75ad7d1ce577cfee05) test(web): the source's border and radius belong to its input group
