@@ -71,7 +71,7 @@ The binary is `~/.local/bin/dqlrs`. Add that directory to your `PATH` if needed.
 | Mode | How |
 | --- | --- |
 | Live AWS | `dqlrs` (default when `-H` is unset; uses the AWS SDK credential chain) |
-| DynamoDB Local | `dqlrs -H localhost -p 8000` |
+| DynamoDB Local | `dqlrs -H localhost -p 8000` (start one with `dqlrs dynamo start`) |
 | In-memory (offline) | `DQL_BACKEND=memory dqlrs …` |
 
 Region defaults to `AWS_REGION`, else `us-west-1`. Override with `-r`.
@@ -104,8 +104,10 @@ dqlrs notebook           Start JupyterLab with a DQL (Rust) kernel (this binary)
                          before the server starts
     --init-examples      With web, after a confirm: git init an empty folder, copy the
                          examples in, and commit them
-    --dynamodb <MODE>    With web --init-examples, run DynamoDB Local with java or docker,
-                         or skip (else it asks; with --yes it skips)
+    --local              With web, start DynamoDB Local on --port (default 8000), or use
+                         the one already there, and connect to it
+    --dynamodb <MODE>    With web --init-examples or --local, run DynamoDB Local with java
+                         or docker (--init-examples: or skip; else it asks, with --yes it skips)
     --yes                With web --init-examples, skip the confirmation
     --version            Print the version and exit
     -h, --help           Print help
@@ -154,13 +156,56 @@ without a terminal `--yes` is required). Then it runs `git init`, copies
 `dqlrs-web/examples` (bundled into the binary without its ignored caches), and
 commits it as "Initialized dqlrs web examples".
 
-DynamoDB Local is not bundled. With Java, `--init-examples` downloads AWS's
-`dynamodb_local_latest.tar.gz` into `.dynamodb-local/` (ignored by git), checks
-it against AWS's published SHA-256, unpacks it, and starts it in the background
-with a log in `.dynamodb-local/dynamodb-local.log`. With Docker, it runs
-`docker compose up -d` with the examples' `docker-compose.yml`
-(`amazon/dynamodb-local`, data in a named volume). Either way it waits for
-`localhost:8000`, and when no `-H` was given the web UI serves against it.
+DynamoDB Local is not bundled. `--init-examples` starts it through
+[`dqlrs dynamo start`](#dynamodb-local-dqlrs-dynamo) on port 8000. With Java it
+downloads AWS's `dynamodb_local_latest.tar.gz` once into the shared folder,
+checks it against AWS's published SHA-256, unpacks it, and starts it in the
+background with this workspace's data in `.dynamodb-local/data` (ignored by
+git). With Docker, it runs `docker compose up -d` with the examples'
+`docker-compose.yml` (`amazon/dynamodb-local`, data in a named volume). Either
+way it waits for `localhost:8000`, and when no `-H` was given the web UI serves
+against it.
+
+## DynamoDB Local (`dqlrs dynamo`)
+
+```text
+dqlrs dynamo list [--json]
+dqlrs dynamo start [--java | --docker] [--port N|auto] [--dir DIR] [--data DIR]
+dqlrs dynamo stop  [PORT | --all]
+dqlrs dynamo clean [PORT | --all] [--purge] [--yes]
+dqlrs dynamo logs  [PORT]
+```
+
+- **`list`** shows every server `dqlrs` started or can see: port, runtime, status,
+  data, when it started, and who started it. Servers started some other way (a
+  `java … DynamoDBLocal.jar` process or an `amazon/dynamodb-local` container)
+  show as `other`.
+- **`start`** uses Java when it is installed (17 or newer), else Docker, on port
+  8000 unless `--port` says otherwise (`auto` takes the next free port). A
+  stopped server starts again with the same settings. Java data goes in
+  `DIR/.dynamodb-local/data`, or `--data`. Docker uses the workspace's
+  `docker-compose.yml` when it is the examples' file, else a compose file it
+  writes for that port.
+- **`stop`** stops a server and keeps its data. **`clean`** stops a server
+  `dqlrs` started and deletes its data (Java: the data folder; Docker:
+  `docker compose down -v`). It asks first; `--yes` skips the question.
+  `--purge` also removes the shared Java download or the Docker image.
+- **`logs`** prints the Java log, or `docker logs`.
+- A PORT can be left out when only one server is known. `--all` and `clean`
+  never touch servers `dqlrs` did not start.
+
+The shared folder is `~/.local/share/dqlrs/dynamodb-local` (`DQLRS_DYNAMO_HOME`
+overrides it): `install/` holds the Java download, `instances/` a record and a
+log per port, `compose/` the generated compose files.
+
+`dqlrs web --local` connects the web UI to DynamoDB Local on `--port` (default
+8000): it uses the server already answering there, or runs `dqlrs dynamo start`
+for that port with this workspace's data. `--dynamodb java|docker` picks the
+runtime; `-H` cannot be combined with it.
+
+In `dqlrs web`, the endpoint chip shows a green dot while a local endpoint's
+DynamoDB Local answers and a red one when it does not. Click it for the
+server's runtime, data, start time, and the `dqlrs dynamo` commands for it.
 
 From a checkout, `just web` builds `dqlrs`, starts DynamoDB Local when port 8000
 is down, and opens the UI on `dqlrs-web/examples`. Details:

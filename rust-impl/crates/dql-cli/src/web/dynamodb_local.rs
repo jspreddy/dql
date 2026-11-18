@@ -147,7 +147,7 @@ pub(crate) fn detect(progress: &Progress) -> Detected {
     }
 }
 
-fn detect_java() -> JavaState {
+pub(crate) fn detect_java() -> JavaState {
     let output = match Command::new("java").arg("-version").output() {
         Ok(output) if output.status.success() => output,
         _ => return JavaState::Missing,
@@ -179,7 +179,7 @@ pub(crate) fn parse_java_version(text: &str) -> Option<(String, u32)> {
     Some((version, major))
 }
 
-fn detect_docker() -> DockerState {
+pub(crate) fn detect_docker() -> DockerState {
     let version = match Command::new("docker").arg("--version").output() {
         Ok(output) if output.status.success() => {
             parse_docker_version(&String::from_utf8_lossy(&output.stdout))
@@ -242,7 +242,7 @@ pub(crate) fn answers_like_dynamodb(port: u16) -> bool {
     text.contains("x-amzn-requestid") || text.contains("missingauthenticationtoken")
 }
 
-fn port_open(port: u16) -> bool {
+pub(crate) fn port_open(port: u16) -> bool {
     TcpStream::connect_timeout(
         &SocketAddr::from(([127, 0, 0, 1], port)),
         Duration::from_millis(300),
@@ -319,7 +319,7 @@ fn name(runtime: Runtime) -> &'static str {
 fn describe(runtime: Runtime) -> String {
     match runtime {
         Runtime::Java => {
-            format!("Java: download DynamoDB Local from AWS into {INSTALL_DIR}/ and start it")
+            "Java: download DynamoDB Local from AWS (once, shared) and start it".to_string()
         }
         Runtime::Docker => "Docker: start it with docker compose (docker-compose.yml)".to_string(),
         Runtime::Skip => "Skip: set it up later".to_string(),
@@ -345,7 +345,7 @@ fn why_unavailable(detected: &Detected, runtime: Runtime) -> String {
 pub(crate) fn plan_line(runtime: Runtime) -> Option<String> {
     match runtime {
         Runtime::Java => Some(format!(
-            "Download DynamoDB Local from AWS into {INSTALL_DIR}/ and start it on {HOST}:{PORT}."
+            "Start DynamoDB Local with Java on {HOST}:{PORT} (data in {INSTALL_DIR}/data/; downloaded once, shared)."
         )),
         Runtime::Docker => Some(format!(
             "Start DynamoDB Local with docker compose on {HOST}:{PORT}."
@@ -384,9 +384,24 @@ pub(crate) fn set_up(
 }
 
 fn set_up_java(dir: &Path, progress: &Progress) -> color_eyre::Result<()> {
-    let install = dir.join(INSTALL_DIR);
-    std::fs::create_dir_all(install.join("data"))
-        .wrap_err_with(|| format!("create {}", install.display()))?;
+    let options = crate::dynamo::StartOptions {
+        kind: Some(crate::dynamo::Kind::Java),
+        port: Some(PORT),
+        dir: dir.to_path_buf(),
+        data: None,
+        use_workspace_compose: false,
+    };
+    crate::dynamo::start(&options, progress)?;
+    Ok(())
+}
+
+/// Download AWS's DynamoDB Local archive into `install`, check it against AWS's published
+/// SHA-256, and unpack it. Does nothing when `DynamoDBLocal.jar` is already there.
+pub(crate) fn install_java(install: &Path, progress: &Progress) -> color_eyre::Result<()> {
+    if install.join("DynamoDBLocal.jar").is_file() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(install).wrap_err_with(|| format!("create {}", install.display()))?;
     let archive = install.join(ARCHIVE_NAME);
     progress.step("Downloading DynamoDB Local", |detail| {
         let total = content_length(ARCHIVE_URL);
@@ -443,136 +458,68 @@ fn set_up_java(dir: &Path, progress: &Progress) -> color_eyre::Result<()> {
         let status = Command::new("tar")
             .arg("-xzf")
             .arg(ARCHIVE_NAME)
-            .current_dir(&install)
+            .current_dir(install)
             .status()
             .wrap_err("run tar")?;
         if !status.success() {
             bail!("tar could not unpack {ARCHIVE_NAME}");
         }
         let _ = std::fs::remove_file(&archive);
-        Ok(((), format!("Unpacked into {INSTALL_DIR}/")))
+        Ok(((), format!("Unpacked into {}", install.display())))
     })?;
-    let pid = progress.step("Starting DynamoDB Local", |detail| {
-        let log_path = install.join("dynamodb-local.log");
-        let log = std::fs::File::create(&log_path)
-            .wrap_err_with(|| format!("create {}", log_path.display()))?;
-        let mut command = java_command(&install);
-        command
-            .stdin(Stdio::null())
-            .stdout(log.try_clone()?)
-            .stderr(log);
-        detach(&mut command);
-        let mut child = command.spawn().wrap_err("start java")?;
-        let pid = child.id();
-        wait_until_up(detail, || match child.try_wait() {
-            Ok(Some(status)) => Err(eyre!("java exited ({status}); see {}", log_path.display())),
-            _ => Ok(()),
-        })?;
-        Ok((
-            pid,
-            format!("DynamoDB Local is running on {HOST}:{PORT} (pid {pid})"),
-        ))
-    })?;
-    progress.say(&format!(
-        "    Stop it with `kill {pid}`. Start it again from {INSTALL_DIR}/ with:"
-    ));
-    progress.say_code(
-        4,
-        "java -Djava.library.path=./DynamoDBLocal_lib -jar DynamoDBLocal.jar -sharedDb -dbPath ./data",
-    );
     Ok(())
-}
-
-fn java_command(install: &Path) -> Command {
-    let mut command = Command::new("java");
-    command
-        .args([
-            "-Djava.library.path=./DynamoDBLocal_lib",
-            "-jar",
-            "DynamoDBLocal.jar",
-            "-sharedDb",
-            "-dbPath",
-            "./data",
-        ])
-        .current_dir(install);
-    command
 }
 
 /// Keep DynamoDB Local running after `dqlrs` exits, and out of reach of the terminal's Ctrl+C.
 #[cfg(unix)]
-fn detach(command: &mut Command) {
+pub(crate) fn detach(command: &mut Command) {
     use std::os::unix::process::CommandExt;
     command.process_group(0);
 }
 
 #[cfg(windows)]
-fn detach(command: &mut Command) {
+pub(crate) fn detach(command: &mut Command) {
     use std::os::windows::process::CommandExt;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     command.creation_flags(CREATE_NEW_PROCESS_GROUP);
 }
 
-fn set_up_docker(dir: &Path, compose: Compose, progress: &Progress) -> color_eyre::Result<()> {
-    progress.step("Starting DynamoDB Local with docker compose", |detail| {
-        let mut command = match compose {
-            Compose::Plugin => {
-                let mut command = Command::new("docker");
-                command.arg("compose");
-                command
-            }
-            Compose::Standalone => Command::new("docker-compose"),
-        };
-        detail.set("pulling amazon/dynamodb-local");
-        let output = command
-            .args(["up", "-d"])
-            .current_dir(dir)
-            .stdin(Stdio::null())
-            .output()
-            .wrap_err("run docker compose")?;
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr);
-            let last = err
-                .lines()
-                .rev()
-                .find(|line| !line.trim().is_empty())
-                .unwrap_or("");
-            bail!("docker compose up failed: {last}");
-        }
-        detail.set("");
-        wait_until_up(detail, || Ok(()))?;
-        Ok((
-            (),
-            format!("DynamoDB Local is running on {HOST}:{PORT} (docker compose)"),
-        ))
-    })?;
-    progress
-        .say("    Stop it with `docker compose down`; start it again with `docker compose up -d`.");
+fn set_up_docker(dir: &Path, _compose: Compose, progress: &Progress) -> color_eyre::Result<()> {
+    let options = crate::dynamo::StartOptions {
+        kind: Some(crate::dynamo::Kind::Docker),
+        port: Some(PORT),
+        dir: dir.to_path_buf(),
+        data: None,
+        use_workspace_compose: true,
+    };
+    crate::dynamo::start(&options, progress)?;
     Ok(())
 }
 
-/// Wait for DynamoDB Local to answer, calling `still_ok` between tries so a crash stops the
-/// wait early.
-fn wait_until_up(
+/// Wait for DynamoDB Local to answer on `port`, calling `still_ok` between tries so a crash
+/// stops the wait early.
+pub(crate) fn wait_until_up(
+    port: u16,
     detail: &super::progress::Detail,
     mut still_ok: impl FnMut() -> color_eyre::Result<()>,
 ) -> color_eyre::Result<()> {
     let started = Instant::now();
     while started.elapsed() < START_TIMEOUT {
-        if answers_like_dynamodb(PORT) {
+        if answers_like_dynamodb(port) {
             return Ok(());
         }
         still_ok()?;
         detail.set(format!(
-            "waiting for {HOST}:{PORT} ({}s)",
+            "waiting for {HOST}:{port} ({}s)",
             started.elapsed().as_secs()
         ));
         std::thread::sleep(Duration::from_millis(250));
     }
-    if port_open(PORT) {
-        bail!("something answers on {HOST}:{PORT}, but it does not look like DynamoDB Local");
+    if port_open(port) {
+        bail!("something answers on {HOST}:{port}, but it does not look like DynamoDB Local");
     }
     bail!(
-        "DynamoDB Local did not answer on {HOST}:{PORT} within {}s",
+        "DynamoDB Local did not answer on {HOST}:{port} within {}s",
         START_TIMEOUT.as_secs()
     )
 }
@@ -609,7 +556,7 @@ fn sha256_file(path: &PathBuf) -> color_eyre::Result<String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn megabytes(bytes: u64) -> String {
+pub(crate) fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / 1_000_000.0)
 }
 

@@ -190,16 +190,32 @@ input, textarea, select { background: var(--paper); }
   line-height: 1.4;
 }
 
-.endpoint[data-kind="aws"] { cursor: pointer; }
+.endpoint[data-kind="aws"],
+.endpoint[data-kind="local"] { cursor: pointer; }
 
 .endpoint[data-kind="aws"]:hover,
-.endpoint[data-kind="aws"]:focus-visible {
+.endpoint[data-kind="aws"]:focus-visible,
+.endpoint[data-kind="local"]:hover,
+.endpoint[data-kind="local"]:focus-visible {
   border-color: var(--header-line-hover);
   outline: none;
 }
 
-.endpoint[data-kind="local"],
 .endpoint[data-kind="memory"] { cursor: default; }
+
+/* A local endpoint's DynamoDB Local: green while it answers, red when it does not. */
+.endpoint[data-dynamo]::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 999px;
+  vertical-align: 1px;
+  background: var(--ok-ink);
+}
+
+.endpoint[data-dynamo="down"]::before { background: var(--rose); }
 
 .header-tools {
   display: flex;
@@ -474,6 +490,25 @@ input, textarea, select { background: var(--paper); }
 }
 
 .env-pop-status.is-error { color: var(--rose); }
+
+.env-pop-commands {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 12px 12px;
+  font-size: 12px;
+}
+
+.env-pop-commands p { margin: 0 0 2px; color: var(--muted); }
+
+.env-pop-commands code {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--chip);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  user-select: all;
+}
 
 .body { flex: 1; display: flex; min-height: 0; }
 

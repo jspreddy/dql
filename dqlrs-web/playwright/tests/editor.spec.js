@@ -174,8 +174,15 @@ test("shows the endpoint and the editor shortcut", async ({ page }) => {
   const mac = mod === "Meta";
   await expect(page.locator("#endpoint")).toHaveText("localhost:8000");
   await expect(page.locator("#endpoint")).toHaveAttribute("data-kind", "local");
-  await expect(page.locator("#endpoint")).not.toHaveAttribute("aria-haspopup", "dialog");
+  // A local endpoint's chip shows whether DynamoDB Local answers, and opens its details.
+  await expect(page.locator("#endpoint")).toHaveAttribute("aria-haspopup", "dialog");
+  await expect(page.locator("#endpoint")).toHaveAttribute("data-dynamo", "running");
   await page.locator("#endpoint").click();
+  await expect(page.locator("#env-pop")).toBeVisible();
+  await expect(page.locator("#env-pop .env-pop-kicker")).toHaveText("DynamoDB Local");
+  await expect(page.locator('[data-testid="dynamo-facts"]')).toContainText("StatusRunning");
+  await expect(page.locator('[data-testid="dynamo-commands"]')).toContainText("dqlrs dynamo");
+  await page.keyboard.press("Escape");
   await expect(page.locator("#env-pop")).toBeHidden();
   await expect(page.locator("#run-shortcut")).toHaveText(mac ? "⌘ + Enter" : "Ctrl + Enter");
   await expect(page.locator("#run .run-play")).toBeVisible();
@@ -1755,3 +1762,57 @@ async function writeWorkspaceFile(page, path, text) {
   }, { path, text });
   if (error) throw new Error(error);
 }
+
+test("the endpoint chip shows DynamoDB Local's status and how to manage it", async ({ page }, testInfo) => {
+  const chip = page.locator("#endpoint");
+  // A server dqlrs started: runtime, data, and the commands for its port.
+  await page.route("**/api/dynamo", (route) => route.fulfill({
+    json: {
+      local: true,
+      host: "localhost",
+      port: 8000,
+      answering: true,
+      server: {
+        port: 8000,
+        kind: "docker",
+        status: "running",
+        owner: "dqlrs",
+        container: "dqlrs-dynamodb-local",
+        data: "Docker volume (/work/demo/docker-compose.yml)",
+        workspace: "/work/demo",
+        started_at: 1,
+        started: "2 hr ago",
+      },
+    },
+  }));
+  await page.reload();
+  await expect(chip).toHaveAttribute("data-dynamo", "running");
+  await chip.click();
+  const facts = page.locator('[data-testid="dynamo-facts"]');
+  await expect(facts).toContainText("RuntimeDocker (compose)");
+  await expect(facts).toContainText("Started2 hr ago");
+  await expect(facts).toContainText("Started bydqlrs dynamo");
+  await expect(page.locator('[data-testid="dynamo-commands"] code')).toHaveText([
+    "dqlrs dynamo stop 8000",
+    "dqlrs dynamo logs 8000",
+    "dqlrs dynamo clean 8000",
+  ]);
+  await page.screenshot({ path: playwrightArtifact(`endpoint-dynamo-running-${testInfo.project.name}.png`) });
+  await page.keyboard.press("Escape");
+
+  // Nothing answers: a red dot and how to start it.
+  await page.unroute("**/api/dynamo");
+  await page.route("**/api/dynamo", (route) => route.fulfill({
+    json: { local: true, host: "localhost", port: 8000, answering: false, server: null },
+  }));
+  await page.reload();
+  await expect(chip).toHaveAttribute("data-dynamo", "down");
+  await expect(chip).toHaveAttribute("data-tip", "localhost:8000 · DynamoDB Local is not answering");
+  await chip.click();
+  await expect(page.locator('[data-testid="dynamo-facts"]')).toHaveText("StatusNot answering");
+  await expect(page.locator('[data-testid="dynamo-commands"] code')).toHaveText([
+    "dqlrs dynamo start --port 8000",
+    "dqlrs dynamo list",
+  ]);
+  await page.screenshot({ path: playwrightArtifact(`endpoint-dynamo-down-${testInfo.project.name}.png`) });
+});

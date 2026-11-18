@@ -110,14 +110,34 @@ dqlrs web --init-examples
 It checks that the folder is empty and that git is properly installed and ready
 to commit. The examples run against DynamoDB Local, so it also looks for Java 17
 or newer and for Docker, and asks how to run DynamoDB Local: with Java, it
-downloads DynamoDB Local from AWS into `.dynamodb-local/`; with Docker, it uses
-the `docker-compose.yml` that comes with the examples. You can also skip that
+downloads DynamoDB Local from AWS once (shared by every workspace) and keeps this
+workspace's data in `.dynamodb-local/`; with Docker, it uses the
+`docker-compose.yml` that comes with the examples. You can also skip that
 step. It shows what it will do and asks before it changes anything. Then it runs
 `git init`, copies the examples (queries, data model walkthroughs, agent rules),
 commits them as "Initialized dqlrs web examples", starts DynamoDB Local, and
 serves the folder against it. Pass `--yes` to skip the questions, for example in
 a script; add `--dynamodb java` or `--dynamodb docker` to set up DynamoDB Local
 too.
+
+### Manage DynamoDB Local
+
+`dqlrs web --local` serves against DynamoDB Local: it uses the one already on
+`--port` (default 8000) or starts one there, with Java when it is installed,
+else Docker (`--dynamodb java|docker` picks). `dqlrs dynamo` lists, starts,
+stops, and cleans up those servers, the ones `--init-examples` started, and any
+others it finds:
+
+```bash
+dqlrs dynamo list                 # port, runtime, status, data, started, who started it
+dqlrs dynamo start --port auto    # Java or Docker; data in ./.dynamodb-local/data
+dqlrs dynamo stop 8000            # data stays
+dqlrs dynamo clean 8000           # stop and delete the data (asks first)
+```
+
+In the web UI, the endpoint chip shows a green dot while DynamoDB Local answers
+and a red one when it does not; click it for the server's details and these
+commands.
 
 ![dqlrs web UI query editor](screenshots/web/query.png)
 
