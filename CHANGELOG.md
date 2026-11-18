@@ -6,11 +6,16 @@ A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists. Each line is a commit; the
 latest commit of each pull request, stacked ones included, names that pull request.
 
-## Unreleased (2026-11-17)
+## Unreleased (2026-11-18)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [a2149da](https://github.com/jspreddy/dql/commit/a2149dac597362b123ada900f1f42566ad4636d9) feat(web): dqlrs web --local brings up DynamoDB Local and serves against it ([#257](https://github.com/jspreddy/dql/pull/257))
+- [517000f](https://github.com/jspreddy/dql/commit/517000f3904a7d550aa9de5489041ae63eaffa38) feat(cli): color dqlrs dynamo's output like the rest of the CLI
+- [d9ebf13](https://github.com/jspreddy/dql/commit/d9ebf1342f1dfc6d9a9393e13cc7c928ac8ec9d3) test(cli): expect the shared-download Java plan line for --init-examples
+- [07ce655](https://github.com/jspreddy/dql/commit/07ce6556cb5eadf0968452623f423842d1fc0043) docs: dqlrs dynamo in the README and rust-docs
+- [f247f4e](https://github.com/jspreddy/dql/commit/f247f4e87c584179a94cb1839b6f63dd1a377488) feat(cli): dqlrs dynamo to list, start, stop, clean, and read DynamoDB Local logs
 - [9325a89](https://github.com/jspreddy/dql/commit/9325a890d5efc158721a7255a2ab7b9b901f1eca) feat(changelog): one flat list of commits, PR numbers on each PR's latest commit ([#256](https://github.com/jspreddy/dql/pull/256))
 - [703e83f](https://github.com/jspreddy/dql/commit/703e83f36fc5db4727be24773fe5e7a4fd208d87) fix(changelog): list a pull request's commits newest first, like the rest
 - [d86c004](https://github.com/jspreddy/dql/commit/d86c004acc2325788f2303f82adebd3bf805483a) feat(changelog): list every commit a pull request brought in, grouped by stacked PR
