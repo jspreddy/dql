@@ -11,7 +11,7 @@ const groups = {
   keyword: [
     "SELECT", "SCAN", "INSERT", "UPDATE", "CREATE", "ALTER",
     "DUMP", "LOAD", "EXPLAIN", "ANALYZE", "SHOW", "LIKE", "DESCRIBE",
-    "FROM", "WHERE", "INTO", "VALUES", "SET", "ADD", "REMOVE", "USING",
+    "FROM", "WHERE", "JOIN", "ON", "WITH", "INTO", "VALUES", "SET", "ADD", "REMOVE", "USING",
     "LIMIT", "ORDER", "BY", "ASC", "DESC", "AS", "KEYS", "IN", "CONSISTENT",
     "THROTTLE", "RETURNS", "SAVE", "PARENTS",
     "TABLE", "DYNAMODB", "LOCALTABLE", "TEMPTABLE",

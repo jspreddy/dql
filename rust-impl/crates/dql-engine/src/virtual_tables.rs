@@ -829,4 +829,89 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    fn cell<'a>(row: &'a Item, key: &str) -> &'a str {
+        match row.get(key) {
+            Some(Value::String(text)) => text,
+            other => panic!("expected string {key}, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn with_clause_joins_each_side_once_from_memory() {
+        let mut engine = in_memory_engine();
+        engine
+            .execute("CREATE TABLE posts (id STRING HASH KEY, customer STRING)")
+            .unwrap();
+        engine
+            .execute("CREATE TABLE customers (id STRING HASH KEY, name STRING)")
+            .unwrap();
+        engine
+            .execute(
+                "INSERT INTO posts (id, customer) VALUES ('a', 'c1'), ('b', 'c1'), ('c', 'c9')",
+            )
+            .unwrap();
+        engine
+            .execute("INSERT INTO customers (id, name) VALUES ('c1', 'Ada'), ('c2', 'Grace')")
+            .unwrap();
+
+        let joined = items_of(
+            engine
+                .execute(
+                    "WITH orders AS (SCAN * FROM posts), people AS (SCAN * FROM customers) \
+                     SELECT * FROM orders JOIN people ON orders.customer = people.id",
+                )
+                .unwrap(),
+        );
+        assert_eq!(joined.len(), 2, "{joined:?}");
+        assert!(
+            joined.iter().all(|row| cell(row, "name") == "Ada"),
+            "{joined:?}"
+        );
+        assert!(
+            joined.iter().all(|row| cell(row, "people.id") == "c1"),
+            "{joined:?}"
+        );
+        let ids: Vec<&str> = joined.iter().map(|row| cell(row, "id")).collect();
+        assert_eq!(ids, vec!["a", "b"]);
+
+        assert!(
+            engine.execute("SCAN * FROM orders").is_err(),
+            "WITH names last only for that statement"
+        );
+
+        let filtered = items_of(
+            engine
+                .execute(
+                    "WITH orders AS (SCAN * FROM posts), people AS (SCAN * FROM customers) \
+                     SELECT name FROM orders JOIN people ON people.id = orders.customer WHERE id = 'b'",
+                )
+                .unwrap(),
+        );
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(
+            filtered[0].get("name"),
+            Some(&Value::String("Ada".to_string()))
+        );
+        assert!(filtered[0].get("id").is_none());
+
+        engine
+            .execute("CREATE TEMPTABLE orders AS (SCAN * FROM posts)")
+            .unwrap();
+        engine
+            .execute("CREATE TEMPTABLE people AS (SCAN * FROM customers)")
+            .unwrap();
+        let chained = items_of(
+            engine
+                .execute("SCAN name FROM orders JOIN people ON customer = id")
+                .unwrap(),
+        );
+        assert_eq!(chained.len(), 2);
+
+        let direct = engine
+            .execute("SELECT * FROM posts JOIN customers ON posts.customer = customers.id")
+            .unwrap_err()
+            .to_string();
+        assert!(direct.contains("Load it with CREATE TEMPTABLE"), "{direct}");
+    }
 }

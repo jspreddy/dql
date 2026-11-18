@@ -310,12 +310,23 @@ pub enum Statement {
         selection: Selection,
         condition: Option<Condition>,
         options: QueryOptions,
+        /// Inner equijoin against one other in-memory table.
+        join: Option<EquiJoin>,
     },
     Select {
         table: String,
         selection: Selection,
         condition: Option<Condition>,
         options: QueryOptions,
+        /// Inner equijoin against one other in-memory table.
+        join: Option<EquiJoin>,
+    },
+    /// `WITH name AS (SELECT|SCAN ...), ... SELECT|SCAN ...`
+    ///
+    /// Each query runs once into a temp table for this statement, then the body runs.
+    With {
+        ctes: Vec<Cte>,
+        body: Box<Statement>,
     },
     AlterTable {
         table: String,
@@ -351,6 +362,23 @@ pub enum Statement {
     },
     Explain(Box<Statement>),
     Analyze(Box<Statement>),
+}
+
+/// One `name AS (SELECT|SCAN ...)` in a `WITH` clause.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Cte {
+    pub name: String,
+    /// Source text of the `SELECT` or `SCAN` inside the parentheses.
+    pub query_text: String,
+    pub query: Box<Statement>,
+}
+
+/// `JOIN other ON left.column = right.column`. Either side of `=` may name either table.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EquiJoin {
+    pub table: String,
+    pub left_attr: String,
+    pub right_attr: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -656,6 +684,8 @@ impl<'a> Parser<'a> {
             self.parse_scan()
         } else if self.accept_keyword("SELECT") {
             self.parse_select()
+        } else if self.accept_keyword("WITH") {
+            self.parse_with()
         } else if self.accept_keyword("ALTER") {
             self.parse_alter()
         } else if self.accept_keyword("DUMP") {
@@ -732,13 +762,7 @@ impl<'a> Parser<'a> {
         self.expect_keyword("AS")?;
         self.expect_symbol('(')?;
         let query_start = self.pos;
-        let query = if self.accept_keyword("SELECT") {
-            self.parse_select()?
-        } else if self.accept_keyword("SCAN") {
-            self.parse_scan()?
-        } else {
-            return Err(self.error("expected SELECT or SCAN"));
-        };
+        let query = self.parse_with_query()?;
         let query_text = self.token_slice(query_start, self.pos);
         self.expect_symbol(')')?;
         Ok(Statement::CreateTempTable {
@@ -747,6 +771,42 @@ impl<'a> Parser<'a> {
             query_text,
             query: Box::new(query),
         })
+    }
+
+    fn parse_with(&mut self) -> Result<Statement, ParseError> {
+        let mut ctes = Vec::new();
+        loop {
+            let name = self.expect_ident()?;
+            self.expect_keyword("AS")?;
+            self.expect_symbol('(')?;
+            let query_start = self.pos;
+            let query = self.parse_with_query()?;
+            let query_text = self.token_slice(query_start, self.pos);
+            self.expect_symbol(')')?;
+            ctes.push(Cte {
+                name,
+                query_text,
+                query: Box::new(query),
+            });
+            if !self.accept_symbol(',') {
+                break;
+            }
+        }
+        let body = self.parse_with_query()?;
+        Ok(Statement::With {
+            ctes,
+            body: Box::new(body),
+        })
+    }
+
+    fn parse_with_query(&mut self) -> Result<Statement, ParseError> {
+        if self.accept_keyword("SELECT") {
+            self.parse_select()
+        } else if self.accept_keyword("SCAN") {
+            self.parse_scan()
+        } else {
+            Err(self.error("expected SELECT or SCAN"))
+        }
     }
 
     fn parse_if_not_exists(&mut self) -> Result<bool, ParseError> {
@@ -1063,6 +1123,7 @@ impl<'a> Parser<'a> {
         let selection = self.parse_selection_until(|parser| parser.peek_keyword("FROM"))?;
         self.expect_keyword("FROM")?;
         let table = self.expect_ident()?;
+        let join = self.parse_equijoin(&table)?;
         let (condition, tail_options) = self.parse_query_tail()?;
         options = merge_query_options(options, tail_options);
         reject_count_with_save(&selection, &options)?;
@@ -1071,6 +1132,7 @@ impl<'a> Parser<'a> {
             selection,
             condition,
             options,
+            join,
         })
     }
 
@@ -1082,6 +1144,7 @@ impl<'a> Parser<'a> {
         let selection = self.parse_selection_until(|parser| parser.peek_keyword("FROM"))?;
         self.expect_keyword("FROM")?;
         let table = self.expect_ident()?;
+        let join = self.parse_equijoin(&table)?;
         let (condition, tail_options) = self.parse_query_tail()?;
         options = merge_query_options(options, tail_options);
         reject_count_with_save(&selection, &options)?;
@@ -1090,7 +1153,63 @@ impl<'a> Parser<'a> {
             selection,
             condition,
             options,
+            join,
         })
+    }
+
+    /// `JOIN other ON left.column = right.column`, or nothing when the next word is not JOIN.
+    fn parse_equijoin(&mut self, left_table: &str) -> Result<Option<EquiJoin>, ParseError> {
+        if !self.accept_keyword("JOIN") {
+            return Ok(None);
+        }
+        let right_table = self.expect_ident()?;
+        if right_table.eq_ignore_ascii_case(left_table) {
+            return Err(self.error("JOIN needs a different table"));
+        }
+        self.expect_keyword("ON")?;
+        let (q1, a1) = self.parse_join_ref()?;
+        self.expect_symbol('=')?;
+        let (q2, a2) = self.parse_join_ref()?;
+        let (left_attr, right_attr) = match (q1.as_deref(), q2.as_deref()) {
+            (None, None) => (a1, a2),
+            (Some(qa), Some(qb)) => {
+                let a_left = qa.eq_ignore_ascii_case(left_table);
+                let a_right = qa.eq_ignore_ascii_case(&right_table);
+                let b_left = qb.eq_ignore_ascii_case(left_table);
+                let b_right = qb.eq_ignore_ascii_case(&right_table);
+                if a_left && b_right {
+                    (a1, a2)
+                } else if a_right && b_left {
+                    (a2, a1)
+                } else {
+                    return Err(self.error(format!(
+                        "ON must compare {left_table}.column and {right_table}.column"
+                    )));
+                }
+            }
+            _ => {
+                return Err(self.error("qualify both ON columns as table.column, or neither"));
+            }
+        };
+        Ok(Some(EquiJoin {
+            table: right_table,
+            left_attr,
+            right_attr,
+        }))
+    }
+
+    fn parse_join_ref(&mut self) -> Result<(Option<String>, String), ParseError> {
+        // `table.column` is one identifier. `.` is part of the name, as in WHERE paths.
+        let name = self.expect_ident()?;
+        match name.split_once('.') {
+            Some((qualifier, attr))
+                if !qualifier.is_empty() && !attr.is_empty() && !attr.contains('.') =>
+            {
+                Ok((Some(qualifier.to_string()), attr.to_string()))
+            }
+            Some(_) => Err(self.error("ON column is table.column")),
+            None => Ok((None, name)),
+        }
     }
 
     fn parse_query_tail(&mut self) -> Result<(Option<Condition>, QueryOptions), ParseError> {
@@ -2609,6 +2728,40 @@ mod tests {
             }
             other => panic!("unexpected statement: {other:?}"),
         }
+
+        let joined = parse_statement(
+            "WITH orders AS (SCAN * FROM posts), people AS (SELECT * FROM customers WHERE id = 'c1') SELECT name FROM orders JOIN people ON people.id = orders.customer WHERE id = 'a'",
+        )
+        .unwrap();
+        match joined {
+            Statement::With { ctes, body } => {
+                assert_eq!(ctes.len(), 2);
+                assert_eq!(ctes[0].name, "orders");
+                assert_eq!(ctes[0].query_text, "SCAN * FROM posts");
+                assert_eq!(
+                    ctes[1].query_text,
+                    "SELECT * FROM customers WHERE id = 'c1'"
+                );
+                match body.as_ref() {
+                    Statement::Select {
+                        table,
+                        join: Some(join),
+                        condition: Some(_),
+                        ..
+                    } => {
+                        assert_eq!(table, "orders");
+                        assert_eq!(join.table, "people");
+                        assert_eq!(join.left_attr, "customer");
+                        assert_eq!(join.right_attr, "id");
+                    }
+                    other => panic!("unexpected body: {other:?}"),
+                }
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+        assert!(
+            parse_statement("SELECT * FROM orders JOIN orders ON orders.id = orders.id").is_err()
+        );
 
         let drop_local = parse_statement("DROP LOCALTABLE IF EXISTS users").unwrap();
         assert!(matches!(

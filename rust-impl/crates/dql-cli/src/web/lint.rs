@@ -132,6 +132,21 @@ fn check_statement(statement: &Statement, cx: &mut Cx<'_>, apply_schema: bool) {
         Statement::Explain(inner) | Statement::Analyze(inner) => {
             check_statement(inner, cx, false);
         }
+        Statement::With { ctes, body } => {
+            let mut added = Vec::new();
+            for cte in ctes {
+                check_statement(&cte.query, cx, false);
+                if apply_schema && cx.schemas.created_virtual.insert(cte.name.clone()) {
+                    added.push(cte.name.clone());
+                }
+            }
+            check_statement(body, cx, false);
+            if apply_schema {
+                for name in added {
+                    cx.schemas.created_virtual.remove(&name);
+                }
+            }
+        }
         Statement::Insert { table, form, .. } => check_insert(cx, table, form),
         Statement::Select {
             table,

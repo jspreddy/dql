@@ -164,6 +164,17 @@ pub const SELECT: &str = r"
         [ ASC | DESC ]
         [ SAVE file.json [ CREATE PARENTS ] ]
 
+    JOIN other ON left.column = right.column
+
+    JOIN is an inner equijoin of two tables already in memory: a temp table,
+    a local table, or a name defined by WITH. Each WITH query runs once into
+    a temp table, and the join merges those rows. It does not fetch the right
+    side once per left row. WITH names exist only for that statement.
+    WHERE and LIMIT filter the left side before the merge.
+    Qualify both ON columns as table.column, or neither.
+    A column that exists on both sides keeps the left value. A different
+    right value is stored as righttable.column.
+
     Nested maps use dot paths such as a.b.c.d.
     a[0].b reads one list element, and a[].b returns the list of each b.
     AS label names the result column.
@@ -183,6 +194,7 @@ pub const SELECT: &str = r"
     Examples
     --------
     CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars WHERE id = 'a';
+    CREATE TABLE posts (id STRING HASH KEY, customer STRING); INSERT INTO posts (id, customer) VALUES ('a', 'c1'), ('b', 'c2'); CREATE TABLE customers (id STRING HASH KEY, name STRING); INSERT INTO customers (id, name) VALUES ('c1', 'Ada'); WITH orders AS (SCAN * FROM posts), people AS (SCAN * FROM customers) SELECT * FROM orders JOIN people ON orders.customer = people.id;
     CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars KEYS IN 'id1', 'id2';
     CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars KEYS IN id1, id2, id3;
     CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars WHERE id IN (id1, id2);

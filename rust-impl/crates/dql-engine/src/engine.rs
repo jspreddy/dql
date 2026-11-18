@@ -17,8 +17,8 @@ use dql_expr::{
 };
 use dql_models::{plan_read, Operation, PlanError, PlanInput, QueryPlan, ReadKind, TableMeta};
 use dql_parser::{
-    parse_script, CompareOp, Condition, ConditionOperand, InsertForm, OrderBy, QueryOptions,
-    Selection, Statement, ThrottleConfig, UpdateExpr, Value,
+    parse_script, CompareOp, Condition, ConditionOperand, Cte, EquiJoin, InsertForm, OrderBy,
+    QueryOptions, Selection, Statement, ThrottleConfig, UpdateExpr, Value,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -671,21 +671,30 @@ impl<B: DynamoBackend> Engine<B> {
                 selection,
                 condition,
                 options,
-                ..
+                join,
             } => {
                 self.apply_throttle_config(options.throttle.as_ref());
-                self.scan(table, selection, condition.as_ref(), options)
+                if let Some(join) = join {
+                    self.join_reads(table, selection, condition.as_ref(), options, join)
+                } else {
+                    self.scan(table, selection, condition.as_ref(), options)
+                }
             }
             Statement::Select {
                 table,
                 selection,
                 condition,
                 options,
-                ..
+                join,
             } => {
                 self.apply_throttle_config(options.throttle.as_ref());
-                self.select(table, selection, condition.as_ref(), options)
+                if let Some(join) = join {
+                    self.join_reads(table, selection, condition.as_ref(), options, join)
+                } else {
+                    self.select(table, selection, condition.as_ref(), options)
+                }
             }
+            Statement::With { ctes, body } => self.run_with(ctes, body),
             Statement::AlterTable { table, action } => self.alter_table(table, action),
             Statement::DumpSchema { tables } => self.dump_schema(tables.as_deref()),
             Statement::ShowTables { like } => self.show_tables(like.as_deref()),
@@ -792,6 +801,75 @@ impl<B: DynamoBackend> Engine<B> {
             taken,
         )?;
         Ok(StatementResult::Status(message))
+    }
+
+    /// Run each CTE once into a temp table, run the body, then drop those temps.
+    fn run_with(&mut self, ctes: &[Cte], body: &Statement) -> Result<StatementResult, EngineError> {
+        let mut created = Vec::new();
+        let result = (|| {
+            for cte in ctes {
+                if created.iter().any(|name: &String| name == &cte.name) {
+                    return Err(EngineError::Runtime(format!(
+                        "WITH name '{}' is used more than once",
+                        cte.name
+                    )));
+                }
+                self.create_temp_table(false, &cte.name, &cte.query_text, &cte.query)?;
+                created.push(cte.name.clone());
+            }
+            self.run(body)
+        })();
+        for name in created.iter().rev() {
+            let _ = self.drop_virtual(true, name, TableKind::Temp);
+        }
+        result
+    }
+
+    /// Inner equijoin of two tables already in memory. Each side is scanned once.
+    fn join_reads(
+        &mut self,
+        table: &str,
+        selection: &Selection,
+        condition: Option<&Condition>,
+        options: &QueryOptions,
+        join: &EquiJoin,
+    ) -> Result<StatementResult, EngineError> {
+        self.ensure_save_path(options)?;
+        if matches!(selection, Selection::CountAll) {
+            return Err(EngineError::Runtime(
+                "JOIN does not support COUNT(*)".to_string(),
+            ));
+        }
+        if options.keys_in.is_some() || options.using_index.is_some() {
+            return Err(EngineError::Runtime(
+                "JOIN reads in-memory rows and does not use KEYS IN or USING".to_string(),
+            ));
+        }
+        self.require_memory_table(table)?;
+        self.require_memory_table(&join.table)?;
+        let mut fetch_options = options.clone();
+        fetch_options.save_file = None;
+        fetch_options.save_create_parents = false;
+        let left = self.scan(table, &Selection::All, condition, &fetch_options)?;
+        let right = self.scan(&join.table, &Selection::All, None, &QueryOptions::default())?;
+        let mut merged = merge_equijoin(
+            statement_items(left)?,
+            statement_items(right)?,
+            &join.left_attr,
+            &join.right_attr,
+            &join.table,
+        );
+        apply_projection(&mut merged, selection);
+        self.maybe_save(options, StatementResult::Items(merged))
+    }
+
+    fn require_memory_table(&self, name: &str) -> Result<(), EngineError> {
+        match self.virtual_tables.kind(name) {
+            Some(TableKind::Temp) | Some(TableKind::Local) => Ok(()),
+            _ => Err(EngineError::Runtime(format!(
+                "JOIN reads '{name}' from memory. Load it with CREATE TEMPTABLE or a WITH clause first."
+            ))),
+        }
     }
 
     fn temp_source_columns(&mut self, query: &Statement) -> Result<Vec<LocalColumn>, EngineError> {
@@ -2183,6 +2261,63 @@ fn merge_read_results(results: Vec<StatementResult>) -> Result<StatementResult, 
     } else {
         StatementResult::Items(items)
     })
+}
+
+fn statement_items(result: StatementResult) -> Result<Vec<Item>, EngineError> {
+    match result {
+        StatementResult::Items(items) => Ok(items),
+        StatementResult::ItemsWithNote { items, .. } => Ok(items),
+        _ => Err(EngineError::Runtime(
+            "JOIN expected rows from each side".to_string(),
+        )),
+    }
+}
+
+fn join_value_key(value: &Value) -> String {
+    format!("{value:?}")
+}
+
+fn merge_equijoin(
+    left_rows: Vec<Item>,
+    right_rows: Vec<Item>,
+    left_attr: &str,
+    right_attr: &str,
+    right_table: &str,
+) -> Vec<Item> {
+    let mut buckets: HashMap<String, Vec<Item>> = HashMap::new();
+    for row in right_rows {
+        let Some(value) = row.get(right_attr) else {
+            continue;
+        };
+        buckets.entry(join_value_key(value)).or_default().push(row);
+    }
+    let mut merged = Vec::new();
+    for left in left_rows {
+        let Some(value) = left.get(left_attr) else {
+            continue;
+        };
+        let Some(matches) = buckets.get(&join_value_key(value)) else {
+            continue;
+        };
+        for right in matches {
+            merged.push(merge_join_row(left.clone(), right, right_table));
+        }
+    }
+    merged
+}
+
+fn merge_join_row(mut left: Item, right: &Item, right_table: &str) -> Item {
+    for (key, value) in right {
+        if !left.contains_key(key) {
+            left.insert(key.clone(), value.clone());
+            continue;
+        }
+        if left.get(key) == Some(value) {
+            continue;
+        }
+        left.insert(format!("{right_table}.{key}"), value.clone());
+    }
+    left
 }
 
 fn finalize_read_result(
