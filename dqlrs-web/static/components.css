@@ -64,7 +64,7 @@
 .btn-danger:focus-visible { outline-color: var(--danger-outline); }
 
 /* Input group: a leading label and one control in a single bordered box, read as one phrase:
-   <label class="input-group"><span class="input-group-text">On</span><select>…</select></label> */
+   <label class="input-group"><span class="input-group-text">Index</span><select>…</select></label> */
 .input-group {
   display: inline-flex;
   align-items: stretch;

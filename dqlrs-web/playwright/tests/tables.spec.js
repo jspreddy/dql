@@ -1213,10 +1213,10 @@ test("table browser scan and query pickers filter without typing DQL", async ({ 
   await expect(page.locator("#table-query-query")).toHaveAttribute("aria-pressed", "false");
   await expect(page.locator("#table-query-forward")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#table-query-source")).toHaveValue("");
-  // The source reads as one input group, "On [ Table ▾ ]", with no separate label above it.
+  // The source reads as one input group, "Index [ -- ▾ ]", with no separate label above it.
   const sourceGroup = page.locator("#table-query-source-wrap");
   await expect(sourceGroup).toHaveClass(/input-group/);
-  await expect(sourceGroup.locator(".input-group-text")).toHaveText("On");
+  await expect(sourceGroup.locator(".input-group-text")).toHaveText("Index");
   await expect(page.locator("#table-query")).not.toContainText("Source");
   const groupBox = await sourceGroup.boundingBox();
   const selectBox = await page.locator("#table-query-source").boundingBox();

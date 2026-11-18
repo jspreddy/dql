@@ -84,10 +84,10 @@ The action in a dialog or a form. 32px tall.
 
 ### Input group (`.input-group`)
 
-A leading label and one control in a single 24px bordered box, read as one phrase: `On [ Table ▾ ]` in the table browser. The label (`.input-group-text`) sits on the chip fill; the control has no border of its own. Focus rings the whole group.
+A leading label and one control in a single 24px bordered box, read as one phrase: `Index [ -- ▾ ]` in the table browser. The label (`.input-group-text`) sits on the chip fill; the control has no border of its own. Focus rings the whole group.
 
 ```html
-<label class="input-group"><span class="input-group-text">On</span><select aria-label="Table or index">…</select></label>
+<label class="input-group"><span class="input-group-text">Index</span><select aria-label="Table or index">…</select></label>
 ```
 
 Use it instead of a separate uppercase field label when the label is a word that leads into the value.
