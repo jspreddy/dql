@@ -920,27 +920,31 @@ pub(crate) fn server_json(server: &Server) -> Value {
 // --- `dqlrs dynamo …` -------------------------------------------------------------------------
 
 pub(crate) fn help_text() -> String {
+    // One line per entry, laid out like `dqlrs --help` so Style::help colors it the same way.
     [
         "List, start, stop, and clean up DynamoDB Local servers.",
         "",
         "Usage:",
-        "  dqlrs dynamo list [--json]",
-        "  dqlrs dynamo start [--java | --docker] [--port N|auto] [--dir DIR] [--data DIR]",
-        "  dqlrs dynamo stop  [PORT | --all]",
-        "  dqlrs dynamo clean [PORT | --all] [--purge] [--yes]",
-        "  dqlrs dynamo logs  [PORT]",
+        "  dqlrs dynamo list [--json]          Every server dqlrs started or can see",
+        "  dqlrs dynamo start [options]        Start a server (port 8000 unless --port)",
+        "  dqlrs dynamo stop [PORT | --all]    Stop a server; its data stays",
+        "  dqlrs dynamo clean [PORT | --all]   Stop a server dqlrs started and delete its data",
+        "  dqlrs dynamo logs [PORT]            Print a server's log",
         "",
-        "Commands:",
-        "  list    Every DynamoDB Local server dqlrs started or can see",
-        "  start   Start a server (default port 8000). Java data goes in DIR/.dynamodb-local/data",
-        "  stop    Stop a server; its data stays",
-        "  clean   Stop a server dqlrs started and delete its data (asks first)",
-        "  logs    Print a server's log",
+        "Start options:",
+        "  --java, --docker      How to run it (default: Java when installed, else Docker)",
+        "  --port <N|auto>       Port (default 8000; auto takes the next free one)",
+        "  --dir <DIR>           Workspace: Java data goes in DIR/.dynamodb-local/data",
+        "  --data <DIR>          A data folder instead of the workspace's",
         "",
-        "PORT can be left out when only one server is known. --all never touches servers that",
-        "dqlrs did not start. --purge also removes the shared Java download or the Docker image.",
+        "Clean options:",
+        "  --yes                 Do not ask before deleting data",
+        "  --purge               Also remove the shared Java download or the Docker image",
         "",
-        "The Java download is shared: ~/.local/share/dqlrs/dynamodb-local (DQLRS_DYNAMO_HOME).",
+        "Notes:",
+        "  PORT can be left out when only one server is known. --all and clean never touch",
+        "  servers that dqlrs did not start. The Java download is shared, in",
+        "  ~/.local/share/dqlrs/dynamodb-local (DQLRS_DYNAMO_HOME overrides it).",
         "",
     ]
     .join("\n")
@@ -1052,7 +1056,8 @@ fn targets(parsed: &Parsed, servers: &[Server]) -> Result<Vec<Server>, String> {
 
 fn table(servers: &[Server], style: Style) -> String {
     if servers.is_empty() {
-        return "No DynamoDB Local servers. Start one with `dqlrs dynamo start`.\n".to_string();
+        return style.rich("No DynamoDB Local servers. Start one with `dqlrs dynamo start`.")
+            + "\n";
     }
     let now = now();
     let rows: Vec<[String; 6]> = servers
@@ -1087,23 +1092,35 @@ fn table(servers: &[Server], style: Style) -> String {
                 .unwrap_or(0)
         })
         .collect();
-    let line = |cells: &[String]| {
+    // Pad first, then color, so the escape codes do not count toward the widths.
+    let line = |cells: &[String], paint: &dyn Fn(usize, &str) -> String| {
         cells
             .iter()
             .enumerate()
             .map(|(col, cell)| {
-                if col == cells.len() - 1 {
+                let padded = if col == cells.len() - 1 {
                     cell.clone()
                 } else {
                     format!("{cell:<width$}", width = widths[col])
-                }
+                };
+                paint(col, &padded)
             })
             .collect::<Vec<_>>()
             .join("  ")
     };
-    let mut out = style.heading(&line(&head.map(String::from))) + "\n";
+    let mut out = line(&head.map(String::from), &|_, cell| style.heading(cell)) + "\n";
     for row in rows {
-        out.push_str(&line(&row));
+        let paint = |col: usize, cell: &str| match col {
+            0 => style.prompt(cell),
+            1 => style.code(cell),
+            2 if row[2] == "running" => style.notice(cell),
+            2 => style.warn(cell),
+            3 => style.path(cell),
+            4 => style.dim(cell),
+            _ if row[5] == "other" => style.warn(cell),
+            _ => style.dim(cell),
+        };
+        out.push_str(&line(&row, &paint));
         out.push('\n');
     }
     out
@@ -1124,16 +1141,28 @@ fn confirm(question: &str, style: Style) -> io::Result<bool> {
 /// `dqlrs dynamo …`. `args` are the words after `dynamo`.
 pub fn run(args: &[String]) -> color_eyre::Result<()> {
     let style = Style::stdout();
-    let parsed = parse(args).map_err(|err| eyre!("{err}\n\n{}", help_text()))?;
+    let progress = Progress::stdout();
+    let parsed = match parse(args) {
+        Ok(parsed) => parsed,
+        Err(err) => {
+            let style = Style::stderr();
+            eprintln!(
+                "{}\n\n{}",
+                style.error(&err),
+                style.help(help_text().trim_end())
+            );
+            std::process::exit(2);
+        }
+    };
     match parsed.verb.as_str() {
         "help" | "-h" | "--help" => {
-            print!("{}", help_text());
+            println!("{}", style.help(help_text().trim_end()));
         }
         "list" | "ls" => {
             let servers = servers();
             if parsed.json {
                 let values: Vec<Value> = servers.iter().map(server_json).collect();
-                println!("{}", serde_json::to_string_pretty(&values)?);
+                println!("{}", style.json(&serde_json::to_string_pretty(&values)?));
             } else {
                 print!("{}", table(&servers, style));
             }
@@ -1154,28 +1183,28 @@ pub fn run(args: &[String]) -> color_eyre::Result<()> {
                 data: parsed.data.as_ref().map(PathBuf::from),
                 use_workspace_compose: true,
             };
-            start(&options, &Progress::stdout())?;
+            start(&options, &progress)?;
         }
         "stop" => {
             let servers = servers();
             for server in targets(&parsed, &servers).map_err(|err| eyre!(err))? {
                 if server.status == Status::Stopped {
-                    println!("Port {} is already stopped.", server.port);
+                    progress.note(&format!("Port {} is already stopped", server.port));
                     continue;
                 }
                 stop(&server)?;
-                println!(
-                    "Stopped DynamoDB Local on port {} ({}).",
+                progress.say_check(&format!(
+                    "Stopped DynamoDB Local on port {} ({}); its data stays",
                     server.port,
                     server.kind.name()
-                );
+                ));
             }
         }
         "clean" => {
             let servers = servers();
             let targets = targets(&parsed, &servers).map_err(|err| eyre!(err))?;
             if targets.is_empty() {
-                println!("No servers started by dqlrs to clean.");
+                progress.note("No servers started by dqlrs to clean");
             }
             for server in targets {
                 if server.owner == Owner::Other {
@@ -1198,14 +1227,14 @@ pub fn run(args: &[String]) -> color_eyre::Result<()> {
                         &format!("Stop port {} and delete {what}?", server.port),
                         style,
                     )? {
-                        println!("Left port {} alone.", server.port);
+                        progress.note(&format!("Left port {} alone", server.port));
                         continue;
                     }
                 }
                 for line in clean(&server, parsed.purge)? {
-                    println!("{line}");
+                    progress.say_check(&line);
                 }
-                println!("Cleaned port {}.", server.port);
+                progress.say_check(&format!("Cleaned port {}", server.port));
             }
         }
         "logs" => {
