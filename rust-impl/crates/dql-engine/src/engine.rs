@@ -388,7 +388,15 @@ impl<B: DynamoBackend> Engine<B> {
         if self.virtual_tables.contains(name) {
             return Ok(true);
         }
-        Ok(self.backend.describe_table(name)?.is_some())
+        // A WITH name or temp table never becomes a DynamoDB table. Describe still
+        // runs first, and DynamoDB rejects a name it could not store (shorter than
+        // 3 characters, or a character outside its set) instead of saying the table
+        // is absent. That name cannot be a DynamoDB table, so it is free.
+        match self.backend.describe_table(name) {
+            Ok(found) => Ok(found.is_some()),
+            Err(err) if dynamodb_rejects_table_name(&err) => Ok(false),
+            Err(err) => Err(err),
+        }
     }
 
     fn refresh_listed(&mut self, name: &str) {
@@ -2351,6 +2359,15 @@ fn merge_read_results(results: Vec<StatementResult>) -> Result<StatementResult, 
     })
 }
 
+/// DynamoDB's DescribeTable rejects a name it could never store. That is not a
+/// missing table and not a network failure.
+fn dynamodb_rejects_table_name(err: &EngineError) -> bool {
+    let EngineError::Runtime(message) = err else {
+        return false;
+    };
+    message.contains("Invalid table/index name")
+}
+
 fn statement_items(result: StatementResult) -> Result<Vec<Item>, EngineError> {
     match result {
         StatementResult::Items(items) => Ok(items),
@@ -2563,6 +2580,18 @@ fn compare_sort_values(left: Option<&Value>, right: Option<&Value>) -> std::cmp:
 mod tests {
     use super::*;
     use crate::memory::MemoryBackend;
+
+    #[test]
+    fn a_name_dynamodb_cannot_store_is_not_an_existing_table() {
+        let rejected = EngineError::Runtime(
+            "ValidationException: Invalid table/index name.  Table/index names must be between 3 and 255 characters long, and may contain only the characters a-z, A-Z, 0-9, '_', '-', and '.'".to_string(),
+        );
+        assert!(dynamodb_rejects_table_name(&rejected));
+        assert!(!dynamodb_rejects_table_name(&EngineError::Runtime(
+            "ResourceNotFoundException: Requested resource not found".to_string(),
+        )));
+        assert!(!dynamodb_rejects_table_name(&EngineError::Cancelled));
+    }
 
     #[test]
     fn executes_create_insert_scan_script() {
