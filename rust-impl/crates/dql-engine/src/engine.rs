@@ -405,6 +405,25 @@ impl<B: DynamoBackend> Engine<B> {
         self.row_kind(name).0.as_str()
     }
 
+    pub fn temp_table_granted(&self, name: &str) -> bool {
+        self.virtual_tables.is_granted(name)
+    }
+
+    pub fn granted_tables(&self) -> Vec<crate::virtual_tables::GrantInfo> {
+        self.virtual_tables.granted()
+    }
+
+    pub fn read_granted_table(
+        &self,
+        name: &str,
+        limit: usize,
+        offset: usize,
+        attributes: Option<&[String]>,
+    ) -> Result<crate::virtual_tables::GrantedPage, EngineError> {
+        self.virtual_tables
+            .read_granted(name, limit, offset, attributes)
+    }
+
     /// `CREATE LOCALTABLE … AS '…'` or `CREATE TEMPTABLE … AS (…)` for a local or temp
     /// table, and its kind (`local` or `temp`). `None` for a DynamoDB table.
     pub fn virtual_schema_line(&self, name: &str) -> Option<(&'static str, String)> {
@@ -698,6 +717,9 @@ impl<B: DynamoBackend> Engine<B> {
             Statement::AlterTable { table, action } => self.alter_table(table, action),
             Statement::DumpSchema { tables } => self.dump_schema(tables.as_deref()),
             Statement::ShowTables { like } => self.show_tables(like.as_deref()),
+            Statement::Grant { tables } => self.grant_mcp_read(tables),
+            Statement::Revoke { tables } => self.revoke_mcp_read(tables.as_deref()),
+            Statement::ShowMcpGrants => self.show_mcp_grants(),
             Statement::Describe { table } => self.describe_statement(table),
             Statement::Ls {
                 pattern,
@@ -1653,6 +1675,65 @@ impl<B: DynamoBackend> Engine<B> {
             .collect()
     }
 
+    fn grant_mcp_read(&mut self, tables: &[String]) -> Result<StatementResult, EngineError> {
+        let mut lines = Vec::new();
+        for name in tables {
+            match self.virtual_tables.kind(name) {
+                Some(TableKind::Temp) => lines.push(self.virtual_tables.grant(name)?),
+                Some(TableKind::Local) => {
+                    return Err(EngineError::Runtime(grant_kind_error(name, "local")));
+                }
+                Some(TableKind::DynamoDb) | None => {
+                    if self.backend.describe_table(name)?.is_some() {
+                        return Err(EngineError::Runtime(grant_kind_error(name, "DynamoDB")));
+                    }
+                    return Err(EngineError::Runtime(format!(
+                        "No temp table named '{name}'."
+                    )));
+                }
+            }
+        }
+        Ok(StatementResult::Status(lines.join("\n")))
+    }
+
+    fn revoke_mcp_read(
+        &mut self,
+        tables: Option<&[String]>,
+    ) -> Result<StatementResult, EngineError> {
+        let message = match tables {
+            None => self.virtual_tables.revoke_all(),
+            Some(tables) => tables
+                .iter()
+                .map(|name| self.virtual_tables.revoke(name))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        };
+        Ok(StatementResult::Status(message))
+    }
+
+    fn show_mcp_grants(&self) -> Result<StatementResult, EngineError> {
+        let grants = self.virtual_tables.granted();
+        if grants.is_empty() {
+            return Ok(StatementResult::ItemsWithNote {
+                items: Vec::new(),
+                note: "No MCP grants.".to_string(),
+            });
+        }
+        let items = grants
+            .into_iter()
+            .map(|grant| {
+                let mut item = Item::new();
+                item.insert("columns".to_string(), Value::String(grant.columns_text));
+                item.insert("granted_at".to_string(), Value::String(grant.granted_at));
+                item.insert("query".to_string(), Value::String(grant.query));
+                item.insert("rows".to_string(), Value::Number(grant.rows.to_string()));
+                item.insert("table".to_string(), Value::String(grant.name));
+                item
+            })
+            .collect();
+        Ok(StatementResult::Items(items))
+    }
+
     fn show_tables(&mut self, like: Option<&str>) -> Result<StatementResult, EngineError> {
         self.record("list_tables", like.unwrap_or("*"));
         // Running the statement reloads the list and definitions already saved.
@@ -2452,6 +2533,12 @@ fn sql_like(text: &str, pattern: &str) -> bool {
     matches(
         &text.chars().collect::<Vec<_>>(),
         &pattern.chars().collect::<Vec<_>>(),
+    )
+}
+
+fn grant_kind_error(name: &str, kind: &str) -> String {
+    format!(
+        "'{name}' is a {kind} table. Only temp tables can be granted: CREATE TEMPTABLE name AS (SELECT …), then GRANT MCP READ ON TEMPTABLE name."
     )
 }
 
@@ -3554,5 +3641,167 @@ mod tests {
             panic!("expected schema, got {fresh:?}");
         };
         assert!(text.contains("Hash Key: id"), "{text}");
+    }
+
+    #[test]
+    fn mcp_grants_follow_the_temp_table_not_the_name() {
+        let dir = std::env::temp_dir().join(format!("dqlrs-mcp-grants-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let csv = dir.join("users.csv");
+        std::fs::write(&csv, "id,name\na,Ada\n").unwrap();
+
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute(
+                "CREATE TABLE orders (id STRING HASH KEY, status STRING);
+                 INSERT INTO orders (id, status) VALUES ('1', 'late'), ('2', 'ok'), ('3', 'late');
+                 CREATE TEMPTABLE late_orders AS (SCAN * FROM orders WHERE status = 'late');
+                 CREATE TEMPTABLE all_orders AS (SCAN * FROM orders);",
+            )
+            .unwrap();
+        engine
+            .execute(&format!("CREATE LOCALTABLE users AS '{}'", csv.display()))
+            .unwrap();
+
+        let granted = status(
+            engine
+                .execute("GRANT MCP READ ON TEMPTABLE late_orders")
+                .unwrap(),
+        );
+        assert!(
+            granted.contains("Granted MCP read on temp table late_orders (2 rows)"),
+            "{granted}"
+        );
+        let again = status(
+            engine
+                .execute("GRANT MCP READ ON TEMPTABLE late_orders")
+                .unwrap(),
+        );
+        assert!(again.starts_with("Already granted MCP read"), "{again}");
+
+        match engine.execute("SHOW MCP GRANTS").unwrap() {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(
+                    items[0].get("table"),
+                    Some(&Value::String("late_orders".to_string()))
+                );
+                assert_eq!(items[0].get("rows"), Some(&Value::Number("2".to_string())));
+                let Value::String(columns) = items[0].get("columns").unwrap() else {
+                    panic!("columns");
+                };
+                assert!(columns.contains("id STRING hash"), "{columns}");
+                assert!(columns.contains("status STRING"), "{columns}");
+                let Value::String(at) = items[0].get("granted_at").unwrap() else {
+                    panic!("granted_at");
+                };
+                assert!(at.contains('T') && at.ends_with('Z'), "{at}");
+                let Value::String(query) = items[0].get("query").unwrap() else {
+                    panic!("query");
+                };
+                assert!(query.contains("status"), "{query}");
+            }
+            other => panic!("expected items, got {other:?}"),
+        }
+
+        let page = engine
+            .read_granted_table("late_orders", 1, 0, None)
+            .unwrap();
+        assert_eq!(page.total, 2);
+        assert_eq!(page.rows.len(), 1);
+        assert_eq!(page.offset, 0);
+        assert_eq!(page.next_offset, Some(1));
+        let next = engine
+            .read_granted_table("late_orders", 1, 1, None)
+            .unwrap();
+        assert_eq!(next.rows.len(), 1);
+        assert_eq!(next.next_offset, None);
+        let projected = engine
+            .read_granted_table("late_orders", 100, 0, Some(&["status".to_string()]))
+            .unwrap();
+        assert!(!projected.rows[0].contains_key("id"));
+        assert!(projected.rows[0].contains_key("status"));
+        let bounded = engine
+            .read_granted_table("late_orders", 1001, 0, None)
+            .unwrap_err();
+        assert!(bounded.to_string().contains("1 to 1000"), "{bounded}");
+
+        let dynamo = engine
+            .execute("GRANT MCP READ ON TEMPTABLE orders")
+            .unwrap_err();
+        assert!(
+            dynamo.to_string().contains("is a DynamoDB table"),
+            "{dynamo}"
+        );
+        let local = engine
+            .execute("GRANT MCP READ ON TEMPTABLE users")
+            .unwrap_err();
+        assert!(local.to_string().contains("is a local table"), "{local}");
+        let missing = engine
+            .execute("GRANT MCP READ ON TEMPTABLE missing")
+            .unwrap_err();
+        assert!(
+            missing
+                .to_string()
+                .contains("No temp table named 'missing'"),
+            "{missing}"
+        );
+
+        let revoked = status(
+            engine
+                .execute("REVOKE MCP READ ON TEMPTABLE late_orders")
+                .unwrap(),
+        );
+        assert_eq!(revoked, "Revoked MCP read on temp table late_orders.");
+        let absent = status(
+            engine
+                .execute("REVOKE MCP READ ON TEMPTABLE late_orders")
+                .unwrap(),
+        );
+        assert!(absent.contains("was not granted"), "{absent}");
+        let unread = engine
+            .read_granted_table("late_orders", 10, 0, None)
+            .unwrap_err();
+        assert!(unread.to_string().contains("is not granted"), "{unread}");
+
+        engine
+            .execute("GRANT MCP READ ON TEMPTABLE late_orders, all_orders")
+            .unwrap();
+        let all = status(engine.execute("REVOKE MCP READ ALL").unwrap());
+        assert_eq!(all, "Revoked MCP read on 2 temp tables.");
+        assert_eq!(
+            status(engine.execute("REVOKE MCP READ ALL").unwrap()),
+            "No MCP grants."
+        );
+        match engine.execute("SHOW MCP GRANTS").unwrap() {
+            StatementResult::ItemsWithNote { items, note } => {
+                assert!(items.is_empty());
+                assert_eq!(note, "No MCP grants.");
+            }
+            other => panic!("expected an empty note, got {other:?}"),
+        }
+
+        engine
+            .execute("GRANT MCP READ ON TEMPTABLE late_orders")
+            .unwrap();
+        engine.execute("DROP TEMPTABLE late_orders").unwrap();
+        assert!(!engine.temp_table_granted("late_orders"));
+        engine
+            .execute("CREATE TEMPTABLE late_orders AS (SCAN * FROM orders WHERE status = 'late')")
+            .unwrap();
+        assert!(!engine.temp_table_granted("late_orders"));
+        let dropped = engine
+            .read_granted_table("late_orders", 10, 0, None)
+            .unwrap_err();
+        assert!(dropped.to_string().contains("is not granted"), "{dropped}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn status(result: StatementResult) -> String {
+        match result {
+            StatementResult::Status(text) => text,
+            other => panic!("expected status, got {other:?}"),
+        }
     }
 }

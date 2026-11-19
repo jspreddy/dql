@@ -64,6 +64,10 @@ const GROUPS: &[HelpGroup] = &[
                 summary: "Show the DynamoDB API calls a query would make",
             },
             HelpCommand {
+                name: "grant",
+                summary: "Let an MCP agent read a temp table until this server stops",
+            },
+            HelpCommand {
                 name: "insert",
                 summary: "Insert items into a table",
             },
@@ -74,6 +78,10 @@ const GROUPS: &[HelpGroup] = &[
             HelpCommand {
                 name: "ls",
                 summary: "List tables or describe one table",
+            },
+            HelpCommand {
+                name: "revoke",
+                summary: "Stop an MCP agent from reading a temp table",
             },
             HelpCommand {
                 name: "scan",
@@ -245,8 +253,10 @@ pub fn topic_help(topic: &str) -> Option<&'static str> {
         "drop" => Some(DROP),
         "dump" => Some(DUMP),
         "explain" => Some(EXPLAIN),
+        "grant" => Some(GRANT),
         "insert" => Some(INSERT),
         "load" => Some(LOAD),
+        "revoke" => Some(REVOKE),
         "scan" => Some(SCAN),
         "select" => Some(SELECT),
         "show" | "st" => Some(SHOW),
@@ -651,6 +661,11 @@ fn is_highlight_keyword(word: &str) -> bool {
         "DUMP",
         "LOAD",
         "EXPLAIN",
+        "GRANT",
+        "REVOKE",
+        "MCP",
+        "READ",
+        "GRANTS",
         "ANALYZE",
         "SAVE",
         "SHOW",

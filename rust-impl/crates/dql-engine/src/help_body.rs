@@ -95,6 +95,41 @@ pub const DROP: &str = r"
     CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id) VALUES ('a'); CREATE TEMPTABLE hot AS (SELECT * FROM foobars WHERE id = 'a'); DROP TEMPTABLE hot;
 ";
 
+pub const GRANT: &str = r"
+    Let an MCP agent read a temp table until this server stops
+
+    GRANT MCP READ ON TEMPTABLE
+        tablename [, ...]
+
+    Only a temp table can be granted. Create one with CREATE TEMPTABLE, then
+    grant it. The agent lists and reads those rows with the MCP tools
+    list_granted_tables and read_granted_table. It still cannot run a query.
+    A grant is not saved. DROP TEMPTABLE removes it, and a new temp table of
+    the same name is not granted. SHOW MCP GRANTS lists what is granted.
+    Only `dqlrs web --mcp` lets an agent read the grant.
+
+    Examples
+    --------
+    CREATE TABLE foobars (id STRING HASH KEY); CREATE TEMPTABLE g AS (SCAN * FROM foobars); GRANT MCP READ ON TEMPTABLE g;
+    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id) VALUES ('a'), ('b'); CREATE TEMPTABLE g AS (SCAN * FROM foobars); GRANT MCP READ ON TEMPTABLE g; SHOW MCP GRANTS;
+";
+
+pub const REVOKE: &str = r"
+    Stop an MCP agent from reading a temp table
+
+    REVOKE MCP READ ON TEMPTABLE
+        tablename [, ...]
+    REVOKE MCP READ ALL
+
+    Revoking a table that was not granted is not an error. ALL clears every
+    grant. The temp table itself stays until you drop it.
+
+    Examples
+    --------
+    CREATE TABLE foobars (id STRING HASH KEY); CREATE TEMPTABLE g AS (SCAN * FROM foobars); GRANT MCP READ ON TEMPTABLE g; REVOKE MCP READ ON TEMPTABLE g;
+    CREATE TABLE foobars (id STRING HASH KEY); CREATE TEMPTABLE g AS (SCAN * FROM foobars); CREATE TEMPTABLE h AS (SCAN * FROM foobars); GRANT MCP READ ON TEMPTABLE g, h; REVOKE MCP READ ALL;
+";
+
 pub const DUMP: &str = r"
     Print the schema creation statements for your tables
 

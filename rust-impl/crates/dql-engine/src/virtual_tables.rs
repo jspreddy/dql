@@ -69,12 +69,52 @@ struct VirtualTable {
     path: Option<PathBuf>,
     query_text: Option<String>,
     columns: Vec<ColumnSpec>,
+    /// Identity of this temp table. A later `CREATE TEMPTABLE` of the same name
+    /// gets a new number, so an old grant does not apply.
+    generation: u64,
+}
+
+struct Grant {
+    generation: u64,
+    granted_at: String,
+}
+
+/// One column of a granted temp table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GrantColumn {
+    pub name: String,
+    pub data_type: String,
+    /// `hash`, `range`, or absent.
+    pub key: Option<String>,
+}
+
+/// A live MCP read grant. The rows stay in the temp table; this is only the label.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GrantInfo {
+    pub name: String,
+    pub rows: usize,
+    pub columns: Vec<GrantColumn>,
+    /// `name TYPE` and the key role, comma-separated.
+    pub columns_text: String,
+    pub granted_at: String,
+    pub query: String,
+}
+
+/// One page of a granted temp table, copied out of memory.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GrantedPage {
+    pub rows: Vec<Item>,
+    pub total: usize,
+    pub offset: usize,
+    pub next_offset: Option<usize>,
 }
 
 #[derive(Default)]
 pub struct VirtualCatalog {
     memory: crate::MemoryBackend,
     tables: HashMap<String, VirtualTable>,
+    grants: HashMap<String, Grant>,
+    next_generation: u64,
 }
 
 impl VirtualCatalog {
@@ -186,6 +226,7 @@ impl VirtualCatalog {
             TableKind::Local,
             Some(absolute),
             None,
+            0,
             columns,
             file.items,
         )?;
@@ -224,11 +265,14 @@ impl VirtualCatalog {
         } else {
             columns_for_items(&preferred, &items).map_err(EngineError::Runtime)?
         };
+        let generation = self.next_generation;
+        self.next_generation = self.next_generation.saturating_add(1);
         self.install(
             name,
             TableKind::Temp,
             None,
             Some(query_text.to_string()),
+            generation,
             columns,
             items,
         )?;
@@ -247,6 +291,7 @@ impl VirtualCatalog {
                     TableKind::Local,
                     Some(path),
                     None,
+                    0,
                     columns,
                     file.items,
                 )
@@ -264,6 +309,7 @@ impl VirtualCatalog {
                     TableKind::Local,
                     Some(path),
                     None,
+                    0,
                     columns,
                     Vec::new(),
                 )?;
@@ -285,6 +331,7 @@ impl VirtualCatalog {
             Some(found) if found == kind => {
                 self.memory.delete_table(name, true)?;
                 self.tables.remove(name);
+                self.grants.remove(name);
                 let noun = match kind {
                     TableKind::Local => "local table",
                     TableKind::Temp => "temp table",
@@ -320,9 +367,174 @@ impl VirtualCatalog {
             TableKind::Local,
             Some(path),
             None,
+            0,
             columns,
             file.items,
         )
+    }
+
+    /// Grant MCP read on a temp table that already exists. A second grant of the
+    /// same table keeps the original time and says it was already granted.
+    pub fn grant(&mut self, name: &str) -> Result<String, EngineError> {
+        let generation = self
+            .tables
+            .get(name)
+            .filter(|table| table.kind == TableKind::Temp)
+            .map(|table| table.generation)
+            .ok_or_else(|| EngineError::Runtime(format!("No temp table named '{name}'.")))?;
+        let rows = self.item_count(name);
+        let already = self
+            .grants
+            .get(name)
+            .is_some_and(|grant| grant.generation == generation);
+        if !already {
+            self.grants.insert(
+                name.to_string(),
+                Grant {
+                    generation,
+                    granted_at: rfc3339_now(),
+                },
+            );
+        }
+        let verb = if already {
+            "Already granted"
+        } else {
+            "Granted"
+        };
+        Ok(format!(
+            "{verb} MCP read on temp table {name} ({rows} {}) until this server stops.",
+            rows_word(rows)
+        ))
+    }
+
+    pub fn revoke(&mut self, name: &str) -> String {
+        if self.grant_live(name) {
+            self.grants.remove(name);
+            format!("Revoked MCP read on temp table {name}.")
+        } else {
+            format!("MCP read on temp table {name} was not granted.")
+        }
+    }
+
+    pub fn revoke_all(&mut self) -> String {
+        let count = self
+            .grants
+            .keys()
+            .filter(|name| self.grant_live(name))
+            .count();
+        self.grants.clear();
+        match count {
+            0 => "No MCP grants.".to_string(),
+            1 => "Revoked MCP read on 1 temp table.".to_string(),
+            _ => format!("Revoked MCP read on {count} temp tables."),
+        }
+    }
+
+    pub fn is_granted(&self, name: &str) -> bool {
+        self.grant_live(name)
+    }
+
+    pub fn granted(&self) -> Vec<GrantInfo> {
+        let mut names: Vec<_> = self
+            .grants
+            .keys()
+            .filter(|name| self.grant_live(name))
+            .cloned()
+            .collect();
+        names.sort();
+        names
+            .into_iter()
+            .filter_map(|name| self.grant_info(&name))
+            .collect()
+    }
+
+    /// Copy one page of a granted temp table. `limit` is 1 to 1000.
+    /// `attributes` keeps only those names; a missing one is left out of the row.
+    pub fn read_granted(
+        &self,
+        name: &str,
+        limit: usize,
+        offset: usize,
+        attributes: Option<&[String]>,
+    ) -> Result<GrantedPage, EngineError> {
+        if !(1..=1000).contains(&limit) {
+            return Err(EngineError::Runtime(
+                "limit must be from 1 to 1000".to_string(),
+            ));
+        }
+        if !self.grant_live(name) {
+            return Err(EngineError::Runtime(format!(
+                "'{name}' is not granted. Call list_granted_tables to see what is."
+            )));
+        }
+        let Some((mut rows, total)) = self.memory.table_page(name, offset, limit) else {
+            return Err(EngineError::Runtime(format!(
+                "'{name}' is not granted. Call list_granted_tables to see what is."
+            )));
+        };
+        if let Some(attributes) = attributes {
+            for row in &mut rows {
+                row.retain(|key, _| attributes.iter().any(|wanted| wanted == key));
+            }
+        }
+        let next = offset.saturating_add(rows.len());
+        Ok(GrantedPage {
+            rows,
+            total,
+            offset,
+            next_offset: (next < total).then_some(next),
+        })
+    }
+
+    fn grant_live(&self, name: &str) -> bool {
+        let Some(grant) = self.grants.get(name) else {
+            return false;
+        };
+        self.tables.get(name).is_some_and(|table| {
+            table.kind == TableKind::Temp && table.generation == grant.generation
+        })
+    }
+
+    fn grant_info(&self, name: &str) -> Option<GrantInfo> {
+        let granted_at = self.grants.get(name)?.granted_at.clone();
+        let table = self.tables.get(name)?;
+        let query = table
+            .query_text
+            .clone()
+            .unwrap_or_else(|| "SCAN * FROM unknown".to_string());
+        let columns = table
+            .columns
+            .iter()
+            .map(|column| {
+                let key = key_name(column.key.as_ref());
+                GrantColumn {
+                    name: column.name.clone(),
+                    data_type: type_name(&column.data_type).to_string(),
+                    key: if key.is_empty() {
+                        None
+                    } else {
+                        Some(key.to_string())
+                    },
+                }
+            })
+            .collect::<Vec<_>>();
+        let columns_text = columns
+            .iter()
+            .map(|column| match &column.key {
+                Some(key) => format!("{} {} {key}", column.name, column.data_type),
+                None => format!("{} {}", column.name, column.data_type),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let rows = self.item_count(name);
+        Some(GrantInfo {
+            name: name.to_string(),
+            rows,
+            columns,
+            columns_text,
+            granted_at,
+            query,
+        })
     }
 
     pub fn read(
@@ -408,12 +620,14 @@ impl VirtualCatalog {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn install(
         &mut self,
         name: &str,
         kind: TableKind,
         path: Option<PathBuf>,
         query_text: Option<String>,
+        generation: u64,
         columns: Vec<ColumnSpec>,
         items: Vec<Item>,
     ) -> Result<(), EngineError> {
@@ -432,6 +646,7 @@ impl VirtualCatalog {
                 path,
                 query_text,
                 columns,
+                generation,
             },
         );
         Ok(())
@@ -595,6 +810,45 @@ fn meta_from_columns(name: &str, columns: &[ColumnSpec]) -> Result<TableMeta, St
         status: TableStatus::Active,
         consumed_capacity: BTreeMap::new(),
     })
+}
+
+fn rows_word(rows: usize) -> &'static str {
+    if rows == 1 {
+        "row"
+    } else {
+        "rows"
+    }
+}
+
+fn rfc3339_now() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
+    let days = (secs / 86_400) as i64;
+    let tod = secs % 86_400;
+    let (year, month, day) = civil_from_days(days);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        tod / 3600,
+        (tod % 3600) / 60,
+        tod % 60
+    )
+}
+
+/// Howard Hinnant's `civil_from_days`. `days` is days since 1970-01-01.
+fn civil_from_days(days: i64) -> (i32, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let month = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
+    let year = (if month <= 2 { y + 1 } else { y }) as i32;
+    (year, month, day)
 }
 
 fn type_name(data_type: &AttributeType) -> &str {
