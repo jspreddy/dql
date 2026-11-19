@@ -203,8 +203,9 @@ pub const SELECT: &str = r"
 
     JOIN is an inner equijoin of tables already in memory: a temp table,
     a local table, or a name defined by WITH. Further JOIN clauses extend
-    the same rows. Each WITH query runs once into a temp table, and the join
-    merges those rows. It does not fetch the right side once per left row.
+    the same rows. Each WITH query runs once. Those rows stay in memory for
+    that statement only and are not a temp table. The join merges them.
+    It does not fetch the right side once per left row.
     WITH names exist only for that statement. A CREATE TEMPTABLE can store
     the join, including a WITH query inside the parentheses.
     WHERE and LIMIT filter the left side before the merge.

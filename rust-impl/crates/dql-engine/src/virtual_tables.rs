@@ -776,6 +776,30 @@ fn infer_type(name: &str, items: &[Item]) -> AttributeType {
     }
 }
 
+/// Schema for rows held only for the current query. This does not register a table.
+pub(crate) fn meta_for_saved_rows(
+    name: &str,
+    preferred: &[LocalColumn],
+    items: &[Item],
+) -> Result<TableMeta, EngineError> {
+    let preferred = columns_from_def(preferred);
+    let columns = if items.is_empty() {
+        if preferred.is_empty() {
+            return Err(EngineError::Runtime(
+                "query returned no rows and no columns".to_string(),
+            ));
+        }
+        let mut columns = preferred;
+        if let Some(first) = columns.first_mut() {
+            first.key = Some(KeyType::Hash);
+        }
+        columns
+    } else {
+        columns_for_items(&preferred, items).map_err(EngineError::Runtime)?
+    };
+    meta_from_columns(name, &columns).map_err(EngineError::Runtime)
+}
+
 fn meta_from_columns(name: &str, columns: &[ColumnSpec]) -> Result<TableMeta, String> {
     let hash = columns
         .iter()
