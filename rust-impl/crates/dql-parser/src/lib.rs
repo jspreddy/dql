@@ -356,6 +356,17 @@ pub enum Statement {
     Help {
         topic: Option<String>,
     },
+    /// `GRANT MCP READ ON TEMPTABLE name [, name …]`.
+    Grant {
+        tables: Vec<String>,
+    },
+    /// `REVOKE MCP READ ON TEMPTABLE name [, name …]`, or `REVOKE MCP READ ALL`
+    /// when `tables` is `None`.
+    Revoke {
+        tables: Option<Vec<String>>,
+    },
+    /// `SHOW MCP GRANTS`.
+    ShowMcpGrants,
     Load {
         file: String,
         table: String,
@@ -696,6 +707,10 @@ impl<'a> Parser<'a> {
             self.parse_load()
         } else if self.accept_keyword("SHOW") {
             self.parse_show()
+        } else if self.accept_keyword("GRANT") {
+            self.parse_grant()
+        } else if self.accept_keyword("REVOKE") {
+            self.parse_revoke()
         } else if self.accept_keyword("ST") {
             self.parse_st()
         } else if self.accept_keyword("DESCRIBE") {
@@ -1549,8 +1564,59 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_show(&mut self) -> Result<Statement, ParseError> {
+        if self.accept_keyword("MCP") {
+            if !self.accept_keyword("GRANTS") {
+                return Err(self.error("expected SHOW MCP GRANTS"));
+            }
+            return Ok(Statement::ShowMcpGrants);
+        }
         self.expect_keyword("TABLES")?;
         self.parse_show_tables_like()
+    }
+
+    fn parse_grant(&mut self) -> Result<Statement, ParseError> {
+        self.expect_mcp_read_temptable("GRANT MCP READ ON TEMPTABLE name")?;
+        Ok(Statement::Grant {
+            tables: self.parse_table_name_list()?,
+        })
+    }
+
+    fn parse_revoke(&mut self) -> Result<Statement, ParseError> {
+        if !self.accept_keyword("MCP") || !self.accept_keyword("READ") {
+            return Err(
+                self.error("expected REVOKE MCP READ ON TEMPTABLE name or REVOKE MCP READ ALL")
+            );
+        }
+        if self.accept_keyword("ALL") {
+            return Ok(Statement::Revoke { tables: None });
+        }
+        if !self.accept_keyword("ON") || !self.accept_keyword("TEMPTABLE") {
+            return Err(
+                self.error("expected REVOKE MCP READ ON TEMPTABLE name or REVOKE MCP READ ALL")
+            );
+        }
+        Ok(Statement::Revoke {
+            tables: Some(self.parse_table_name_list()?),
+        })
+    }
+
+    fn expect_mcp_read_temptable(&mut self, syntax: &str) -> Result<(), ParseError> {
+        if self.accept_keyword("MCP")
+            && self.accept_keyword("READ")
+            && self.accept_keyword("ON")
+            && self.accept_keyword("TEMPTABLE")
+        {
+            return Ok(());
+        }
+        Err(self.error(format!("expected {syntax}")))
+    }
+
+    fn parse_table_name_list(&mut self) -> Result<Vec<String>, ParseError> {
+        let mut names = vec![self.expect_ident()?];
+        while self.accept_symbol(',') {
+            names.push(self.expect_ident()?);
+        }
+        Ok(names)
     }
 
     /// The rest of `SHOW TABLES` (or `ST`): an optional `LIKE 'pattern'`.
@@ -3022,6 +3088,53 @@ mod tests {
         // SHOW TABLES itself still needs LIKE.
         assert!(parse_statement("SHOW TABLES 'posts'").is_err());
         assert!(parse_statement("SHOW TABLES posts").is_err());
+    }
+
+    #[test]
+    fn parses_mcp_grant_statements() {
+        assert_eq!(
+            parse_statement("GRANT MCP READ ON TEMPTABLE late_orders").unwrap(),
+            Statement::Grant {
+                tables: vec!["late_orders".to_string()]
+            }
+        );
+        assert_eq!(
+            parse_statement("grant mcp read on temptable a, b;").unwrap(),
+            Statement::Grant {
+                tables: vec!["a".to_string(), "b".to_string()]
+            }
+        );
+        assert_eq!(
+            parse_statement("REVOKE MCP READ ON TEMPTABLE late_orders").unwrap(),
+            Statement::Revoke {
+                tables: Some(vec!["late_orders".to_string()])
+            }
+        );
+        assert_eq!(
+            parse_statement("revoke mcp read all").unwrap(),
+            Statement::Revoke { tables: None }
+        );
+        assert_eq!(
+            parse_statement("SHOW MCP GRANTS").unwrap(),
+            Statement::ShowMcpGrants
+        );
+        assert_eq!(
+            parse_statement("SHOW TABLES").unwrap(),
+            Statement::ShowTables { like: None }
+        );
+        let missing = parse_statement("GRANT READ ON TEMPTABLE late_orders").unwrap_err();
+        assert!(
+            missing.to_string().contains("GRANT MCP READ ON TEMPTABLE"),
+            "{missing}"
+        );
+        let revoke = parse_statement("REVOKE MCP late_orders").unwrap_err();
+        assert!(
+            revoke.to_string().contains("REVOKE MCP READ ON TEMPTABLE"),
+            "{revoke}"
+        );
+        assert!(parse_statement("GRANT MCP READ ON TEMPTABLE").is_err());
+        assert!(parse_statement("SHOW MCP").is_err());
+        assert!(parse_statement("REVOKE MCP READ ON TABLE late_orders").is_err());
     }
 
     #[test]
