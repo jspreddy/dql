@@ -15,6 +15,7 @@ const groups = {
     "LIMIT", "ORDER", "BY", "ASC", "DESC", "AS", "KEYS", "IN", "CONSISTENT",
     "THROTTLE", "RETURNS", "SAVE", "PARENTS",
     "TABLE", "DYNAMODB", "LOCALTABLE", "TEMPTABLE",
+    "GRANT", "REVOKE", "MCP", "READ", "GRANTS",
     "INDEX", "GLOBAL", "HASH", "RANGE", "KEY", "THROUGHPUT", "TP",
     "IF", "NOT", "EXISTS", "INCLUDE", "ALL", "SCHEMA",
     "AND", "OR", "BETWEEN",

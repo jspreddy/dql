@@ -2767,6 +2767,11 @@ body.results-resizing * {
   color: var(--amber-ink);
 }
 
+.table-kind[data-kind="mcp"] {
+  background: var(--purple-bg);
+  color: var(--purple);
+}
+
 .table-group {
   margin: 14px 0 8px;
   padding: 6px 8px 8px;

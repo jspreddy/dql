@@ -93,6 +93,7 @@ const state = {
   table: "",
   tableDql: "",
   entries: [],
+  mcpReads: [],
   page: 0,
   hasMore: false,
   filePage: 0,
@@ -3531,7 +3532,8 @@ function setResultCount() {
     resultCount.textContent = total === 1 ? "1 issue" : total + " issues";
     return;
   }
-  const total = resultPane === "history" ? state.entries.length : (state.entries.length ? 1 : 0);
+  const historyCount = state.entries.length + state.mcpReads.length;
+  const total = resultPane === "history" ? historyCount : (state.entries.length ? 1 : 0);
   resultCount.textContent = total === 1 ? "1 result" : total + " results";
 }
 
@@ -3552,7 +3554,9 @@ function renderActivePane() {
     renderLint(resultBody);
     return;
   }
-  const visible = resultPane === "history" ? state.entries : state.entries.slice(-1);
+  const visible = resultPane === "history"
+    ? state.entries.concat(state.mcpReads)
+    : state.entries.slice(-1);
   if (!visible.length) return;
   const latestItems = state.entries.reduce((found, item, itemIndex) => (
     resultList(item.result).some((part) => part && part.ok && part.kind === "items" && !listedItemTables(part))
@@ -3676,7 +3680,35 @@ function handleEventFrame(frame) {
     renderPresence(payload.clients || []);
   } else if (event === "file") {
     void onFileEvent(payload);
+  } else if (event === "grants") {
+    loadTables().catch((error) => reportError(error));
+  } else if (event === "mcp-read") {
+    appendMcpRead(payload);
   }
+}
+
+function appendMcpRead(payload) {
+  const table = String(payload.table || "").trim();
+  if (!table) return;
+  const rows = Number(payload.rows) || 0;
+  const when = new Date().toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const text = `MCP read ${table}: ${rows} ${rows === 1 ? "row" : "rows"}`;
+  state.mcpReads.push({
+    query: text,
+    success: true,
+    mcp: true,
+    result: {
+      ok: true,
+      kind: "status",
+      message: `${text} · ${when}`,
+      statement: text,
+    },
+  });
+  if (resultPane === "history") renderActivePane();
 }
 
 async function catchUpFiles() {
@@ -6119,6 +6151,15 @@ function tableMarker(kind) {
   return mark;
 }
 
+function mcpMarker() {
+  const mark = document.createElement("span");
+  mark.className = "table-kind";
+  mark.dataset.kind = "mcp";
+  mark.textContent = "mcp";
+  setTip(mark, "An agent can read these rows until the server stops.");
+  return mark;
+}
+
 function tableButton(table) {
   const button = document.createElement("button");
   button.type = "button";
@@ -6131,6 +6172,7 @@ function tableButton(table) {
   title.append(name);
   const marker = tableMarker(tableKind(table));
   if (marker) title.append(marker);
+  if (table.granted) title.append(mcpMarker());
   button.append(title, tableKeyLine(table.keys));
   button.addEventListener("click", () => selectTable(table.name));
   return button;
