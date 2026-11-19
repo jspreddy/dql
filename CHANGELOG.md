@@ -6,11 +6,23 @@ A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists. Each line is a commit; the
 latest commit of each pull request, stacked ones included, names that pull request.
 
-## Unreleased (2026-11-18)
+## Unreleased (2026-11-19)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [f522ceb](https://github.com/jspreddy/dql/commit/f522ceb340cade67a8072c9102f0129c03aab58f) test(mcp): expect granted-table tools in the stdio smoke check ([#271](https://github.com/jspreddy/dql/pull/271))
+- [0dd2eb4](https://github.com/jspreddy/dql/commit/0dd2eb419e7de5bae1fdb70a8cd50b272279e84a) docs: describe MCP temp table grants and archive the plan
+- [9196540](https://github.com/jspreddy/dql/commit/91965402ec7c9ea46fb0c0cb2b729fb8c5e792f7) feat(web): mark granted temp tables and record MCP reads
+- [966ef93](https://github.com/jspreddy/dql/commit/966ef9361ee47d96e72c89e9e9ad0d2fffeb2813) feat(cli): list and read granted temp tables over MCP
+- [c302997](https://github.com/jspreddy/dql/commit/c302997c66f962a4d86e788ed9bea3412394962f) feat(engine): grant MCP read on a temp table generation
+- [3fd8d26](https://github.com/jspreddy/dql/commit/3fd8d26221db1d2f75ef84793d2cbd12a87e0185) feat(parser): parse GRANT and REVOKE for MCP temp tables
+- [23b168d](https://github.com/jspreddy/dql/commit/23b168dec9dbe1a3c24f7d96a3b84a3a85155e6b) docs(plan): make the MCP temp table grants plan a self-contained handoff
+- [348865a](https://github.com/jspreddy/dql/commit/348865a07d79788fdf5751da5d5cfd86a944381a) docs(plan): grant MCP read access to temp tables, in memory
+- [d28fd15](https://github.com/jspreddy/dql/commit/d28fd15c449f931abc46f5b227976a7f05ee495c) fix(web): keep query-result ids inside one connection ([#273](https://github.com/jspreddy/dql/pull/273))
+- [4e30e25](https://github.com/jspreddy/dql/commit/4e30e259c1a256ab43938afaac3fe60aebe5e94e) test(engine): cover chained joins and large in-memory equijoins ([#261](https://github.com/jspreddy/dql/pull/261))
+- [52ba8d6](https://github.com/jspreddy/dql/commit/52ba8d642c90d991a6c5f26345431c4b4064cb25) fix(engine): satisfy clippy in the in-memory join test
+- [635a2c4](https://github.com/jspreddy/dql/commit/635a2c4e33024869e56e4471b45b25df65d97fee) feat(engine): join rows loaded once by WITH or a temp table
 - [ca36d32](https://github.com/jspreddy/dql/commit/ca36d3274ec64ce40e64d05362356ac9e5a63dce) docs(readme): shorten the examples and DynamoDB Local sections, after the screenshots ([#269](https://github.com/jspreddy/dql/pull/269))
 - [d971622](https://github.com/jspreddy/dql/commit/d97162295dbafe34d9bcb61479abe0b44a0e7e9d) feat(web): drop tooltips that only repeat what the item shows ([#266](https://github.com/jspreddy/dql/pull/266))
 - [8132b2c](https://github.com/jspreddy/dql/commit/8132b2c2aa0ec3fec3c787bd196344a95d23b44f) feat(web): label the table source input group Index ([#265](https://github.com/jspreddy/dql/pull/265))
