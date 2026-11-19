@@ -86,6 +86,9 @@ pub struct ListedTable {
     pub keys: Vec<KeyRole>,
     /// `dynamodb`, `local`, or `temp`.
     pub kind: String,
+    /// True when an MCP agent may read this temp table.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub granted: bool,
     #[serde(default)]
     pub indexes: Vec<ListedIndex>,
     #[serde(default)]
@@ -434,6 +437,7 @@ fn load_table_catalog(
             name,
             keys,
             kind: "dynamodb".to_string(),
+            granted: false,
             indexes: Vec::new(),
             attributes: Vec::new(),
         });

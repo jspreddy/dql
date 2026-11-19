@@ -197,6 +197,7 @@ fn listed_table(meta: TableMeta, kind: &str) -> crate::web::shape::ListedTable {
     attributes.sort_by(|left, right| left.name.cmp(&right.name));
     crate::web::shape::ListedTable {
         kind: kind.to_string(),
+        granted: false,
         keys,
         indexes,
         attributes,
@@ -224,6 +225,10 @@ fn listed_tables(
     session: &Session,
     cache_text: String,
 ) -> crate::web::shape::TableList {
+    let mut tables = tables;
+    for table in &mut tables {
+        table.granted = session.engine.temp_table_granted(&table.name);
+    }
     crate::web::shape::TableList {
         tables,
         note,

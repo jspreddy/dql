@@ -366,6 +366,7 @@ impl App {
     fn new(mut session: Session, root: PathBuf, mcp: bool, token: String) -> Self {
         // The served folder is the workspace. lib.rs passes session.workspace, so this only
         // changes a session built some other way, such as in tests.
+        session.serves_mcp = mcp;
         if session.workspace != root {
             session.workspace = root.clone();
             if !session.engine.is_memory() {
@@ -826,13 +827,18 @@ fn dispatch_mcp(app: &App, request: &Incoming) -> Reply {
         app.hub.presence(&app.presence.snapshot());
     }
     let text = String::from_utf8_lossy(&request.body);
-    let mut state = lock_state(app);
-    let WebState {
-        session,
-        mcp_initialized,
-        ..
-    } = &mut *state;
-    match crate::mcp::exchange(mcp_initialized, session, &app.root, text.trim()) {
+    let text = text.trim();
+    let read = mcp_read_request(text);
+    let response = {
+        let mut state = lock_state(app);
+        let WebState {
+            session,
+            mcp_initialized,
+            ..
+        } = &mut *state;
+        crate::mcp::exchange(mcp_initialized, session, &app.root, text)
+    };
+    match response {
         Some(response) => {
             let value = serde_json::from_str(&response).unwrap_or_else(|_| {
                 json!({
@@ -841,6 +847,15 @@ fn dispatch_mcp(app: &App, request: &Incoming) -> Reply {
                     "error": { "code": -32603, "message": "bad response" }
                 })
             });
+            if let Some((table, offset)) = read {
+                if value["result"]["isError"] != true {
+                    let rows = value["result"]["structuredContent"]["rows"]
+                        .as_array()
+                        .map(|rows| rows.len())
+                        .unwrap_or(0);
+                    app.hub.mcp_read(&table, rows, offset);
+                }
+            }
             let status = if value["error"]["code"] == -32700 {
                 400
             } else {
@@ -850,6 +865,30 @@ fn dispatch_mcp(app: &App, request: &Incoming) -> Reply {
         }
         None => Reply::Bytes(202, "application/json", Vec::new()),
     }
+}
+
+/// `tools/call` of `read_granted_table`: the table name and the requested offset.
+fn mcp_read_request(text: &str) -> Option<(String, usize)> {
+    let value: Value = serde_json::from_str(text).ok()?;
+    if value.get("method").and_then(Value::as_str) != Some("tools/call") {
+        return None;
+    }
+    let params = value.get("params")?;
+    if params.get("name").and_then(Value::as_str) != Some("read_granted_table") {
+        return None;
+    }
+    let arguments = params.get("arguments")?;
+    let table = arguments.get("table").and_then(Value::as_str)?.to_string();
+    let offset = arguments.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
+    Some((table, offset))
+}
+
+fn changes_mcp_grants(statement: &str) -> bool {
+    let text = statement.trim().trim_end_matches(';').trim();
+    matches!(
+        parse_statement(text),
+        Ok(Statement::Grant { .. } | Statement::Revoke { .. })
+    )
 }
 
 fn loopback_origin(origin: &str) -> bool {
@@ -1119,6 +1158,10 @@ fn run_script(
                 }
                 state.table_catalog = None;
                 app.hub.tables(&names);
+            }
+            if changes_mcp_grants(statement) {
+                state.table_catalog = None;
+                app.hub.grants();
             }
         }
         let mut result = public_result(

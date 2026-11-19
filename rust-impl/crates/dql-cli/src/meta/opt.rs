@@ -181,6 +181,7 @@ mod tests {
             table_disk: None,
             workspace: std::env::temp_dir(),
             connection_key: "memory|us-west-1".to_string(),
+            serves_mcp: false,
         }
     }
 

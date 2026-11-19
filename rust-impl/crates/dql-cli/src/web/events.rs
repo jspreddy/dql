@@ -88,6 +88,22 @@ impl Hub {
         publish(&mut inner, frame("tree", &json!({})));
     }
 
+    /// A grant or revoke changed which temp tables an agent can read.
+    pub(crate) fn grants(&self) {
+        publish(&mut self.lock(), frame("grants", &json!({})));
+    }
+
+    /// An agent read a page of a granted temp table.
+    pub(crate) fn mcp_read(&self, table: &str, rows: usize, offset: usize) {
+        publish(
+            &mut self.lock(),
+            frame(
+                "mcp-read",
+                &json!({ "table": table, "rows": rows, "offset": offset }),
+            ),
+        );
+    }
+
     /// `names` are the tables a create, drop, or alter just changed.
     pub(crate) fn tables(&self, names: &[String]) {
         if names.is_empty() {
