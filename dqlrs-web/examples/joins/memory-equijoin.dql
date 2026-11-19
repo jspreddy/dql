@@ -1,0 +1,57 @@
+-- Load each side once, then merge the rows in memory.
+--
+-- A WITH name is a temp table for that statement only. Both sides are scanned
+-- once. The join does not fetch the right table once per left row.
+-- A column on both sides keeps the left value. A different right value is
+-- stored as righttable.column.
+-- WHERE and LIMIT filter the left scan before the merge.
+
+DROP TABLE IF EXISTS join_posts;
+DROP TABLE IF EXISTS join_customers;
+DROP TEMPTABLE IF EXISTS join_orders;
+DROP TEMPTABLE IF EXISTS join_people;
+
+CREATE TABLE join_posts (
+  id STRING HASH KEY,
+  customer STRING
+);
+
+CREATE TABLE join_customers (
+  id STRING HASH KEY,
+  name STRING
+);
+
+INSERT INTO join_posts (id, customer)
+VALUES ('a', 'c1'), ('b', 'c1'), ('c', 'c9');
+
+INSERT INTO join_customers (id, name)
+VALUES ('c1', 'Ada'), ('c2', 'Grace');
+
+-- Two rows. Post c has no matching customer. Both matches are Ada.
+-- id stays from the posts. The customer id is stored as join_people.id.
+WITH join_orders AS (SCAN * FROM join_posts),
+     join_people AS (SCAN * FROM join_customers)
+SELECT * FROM join_orders
+JOIN join_people ON join_orders.customer = join_people.id;
+
+-- The column list and WHERE apply to the left side, then the merge.
+WITH join_orders AS (SCAN * FROM join_posts),
+     join_people AS (SCAN * FROM join_customers)
+SELECT name FROM join_orders
+JOIN join_people ON join_people.id = join_orders.customer
+WHERE id = 'b';
+
+-- Keep both sides, then join them. Unqualified names are left column, then right.
+CREATE TEMPTABLE join_orders AS (SCAN * FROM join_posts);
+
+CREATE TEMPTABLE join_people AS (SCAN * FROM join_customers);
+
+SCAN name FROM join_orders
+JOIN join_people ON customer = id;
+
+-- WITH names from the statements above are already gone.
+-- SCAN * FROM join_orders would fail if those names had not been created again.
+--
+-- A DynamoDB table is refused until it is loaded:
+-- SELECT * FROM join_posts
+-- JOIN join_customers ON join_posts.customer = join_customers.id;

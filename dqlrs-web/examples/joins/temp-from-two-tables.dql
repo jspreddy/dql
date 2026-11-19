@@ -1,0 +1,37 @@
+-- Store the join of two DynamoDB tables in one temp table.
+--
+-- The WITH queries inside CREATE TEMPTABLE load each side once. The temp table
+-- keeps the merged rows. The WITH names disappear when the statement finishes.
+
+DROP TABLE IF EXISTS join_src_posts;
+DROP TABLE IF EXISTS join_src_customers;
+DROP TEMPTABLE IF EXISTS join_src_hot;
+
+CREATE TABLE join_src_posts (
+  id STRING HASH KEY,
+  customer STRING
+);
+
+CREATE TABLE join_src_customers (
+  id STRING HASH KEY,
+  name STRING
+);
+
+INSERT INTO join_src_posts (id, customer)
+VALUES ('a', 'c1'), ('b', 'c1'), ('c', 'c9');
+
+INSERT INTO join_src_customers (id, name)
+VALUES ('c1', 'Ada'), ('c2', 'Grace');
+
+CREATE TEMPTABLE join_src_hot AS (
+  WITH join_src_orders AS (SCAN * FROM join_src_posts),
+       join_src_people AS (SCAN * FROM join_src_customers)
+  SELECT * FROM join_src_orders
+  JOIN join_src_people ON join_src_orders.customer = join_src_people.id
+);
+
+SCAN * FROM join_src_hot;
+
+-- The source copies are gone. The saved join remains.
+-- SCAN * FROM join_src_orders;
+-- SCAN * FROM join_src_people;

@@ -1,0 +1,47 @@
+-- Four tables, joined left to right.
+--
+-- Each ON clause names one new table and one column already in the rows.
+-- nxt collides, so the later value is stored as wb.nxt or wc.nxt.
+-- The next JOIN reads that qualified name.
+
+DROP TABLE IF EXISTS join_a;
+DROP TABLE IF EXISTS join_b;
+DROP TABLE IF EXISTS join_c;
+DROP TABLE IF EXISTS join_d;
+
+CREATE TABLE join_a (
+  id STRING HASH KEY,
+  nxt STRING
+);
+
+CREATE TABLE join_b (
+  id STRING HASH KEY,
+  nxt STRING
+);
+
+CREATE TABLE join_c (
+  id STRING HASH KEY,
+  nxt STRING
+);
+
+CREATE TABLE join_d (
+  id STRING HASH KEY,
+  label STRING
+);
+
+INSERT INTO join_a (id, nxt) VALUES ('a', 'b');
+
+INSERT INTO join_b (id, nxt) VALUES ('b', 'c');
+
+INSERT INTO join_c (id, nxt) VALUES ('c', 'd');
+
+INSERT INTO join_d (id, label) VALUES ('d', 'end');
+
+WITH wa AS (SCAN * FROM join_a),
+     wb AS (SCAN * FROM join_b),
+     wc AS (SCAN * FROM join_c),
+     wd AS (SCAN * FROM join_d)
+SELECT * FROM wa
+JOIN wb ON wa.nxt = wb.id
+JOIN wc ON wb.nxt = wc.id
+JOIN wd ON wc.nxt = wd.id;

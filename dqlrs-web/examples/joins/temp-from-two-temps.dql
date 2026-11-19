@@ -1,0 +1,40 @@
+-- Store a join of two temp tables in a third temp table.
+--
+-- The two source temps stay. join_mem_hot is the merged rows.
+
+DROP TABLE IF EXISTS join_mem_posts;
+DROP TABLE IF EXISTS join_mem_customers;
+DROP TEMPTABLE IF EXISTS join_mem_orders;
+DROP TEMPTABLE IF EXISTS join_mem_people;
+DROP TEMPTABLE IF EXISTS join_mem_hot;
+
+CREATE TABLE join_mem_posts (
+  id STRING HASH KEY,
+  customer STRING
+);
+
+CREATE TABLE join_mem_customers (
+  id STRING HASH KEY,
+  name STRING
+);
+
+INSERT INTO join_mem_posts (id, customer)
+VALUES ('a', 'c1'), ('b', 'c1'), ('c', 'c9');
+
+INSERT INTO join_mem_customers (id, name)
+VALUES ('c1', 'Ada'), ('c2', 'Grace');
+
+CREATE TEMPTABLE join_mem_orders AS (SCAN * FROM join_mem_posts);
+
+CREATE TEMPTABLE join_mem_people AS (SCAN * FROM join_mem_customers);
+
+CREATE TEMPTABLE join_mem_hot AS (
+  SELECT * FROM join_mem_orders
+  JOIN join_mem_people ON join_mem_orders.customer = join_mem_people.id
+);
+
+SCAN * FROM join_mem_hot;
+
+SCAN * FROM join_mem_orders;
+
+SCAN * FROM join_mem_people;
