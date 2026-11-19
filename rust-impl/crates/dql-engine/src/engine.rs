@@ -17,8 +17,8 @@ use dql_expr::{
 };
 use dql_models::{plan_read, Operation, PlanError, PlanInput, QueryPlan, ReadKind, TableMeta};
 use dql_parser::{
-    parse_script, CompareOp, Condition, ConditionOperand, InsertForm, OrderBy, QueryOptions,
-    Selection, Statement, ThrottleConfig, UpdateExpr, Value,
+    parse_script, CompareOp, Condition, ConditionOperand, Cte, EquiJoin, InsertForm, OrderBy,
+    QueryOptions, Selection, Statement, ThrottleConfig, UpdateExpr, Value,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -405,6 +405,25 @@ impl<B: DynamoBackend> Engine<B> {
         self.row_kind(name).0.as_str()
     }
 
+    pub fn temp_table_granted(&self, name: &str) -> bool {
+        self.virtual_tables.is_granted(name)
+    }
+
+    pub fn granted_tables(&self) -> Vec<crate::virtual_tables::GrantInfo> {
+        self.virtual_tables.granted()
+    }
+
+    pub fn read_granted_table(
+        &self,
+        name: &str,
+        limit: usize,
+        offset: usize,
+        attributes: Option<&[String]>,
+    ) -> Result<crate::virtual_tables::GrantedPage, EngineError> {
+        self.virtual_tables
+            .read_granted(name, limit, offset, attributes)
+    }
+
     /// `CREATE LOCALTABLE … AS '…'` or `CREATE TEMPTABLE … AS (…)` for a local or temp
     /// table, and its kind (`local` or `temp`). `None` for a DynamoDB table.
     pub fn virtual_schema_line(&self, name: &str) -> Option<(&'static str, String)> {
@@ -671,24 +690,36 @@ impl<B: DynamoBackend> Engine<B> {
                 selection,
                 condition,
                 options,
-                ..
+                joins,
             } => {
                 self.apply_throttle_config(options.throttle.as_ref());
-                self.scan(table, selection, condition.as_ref(), options)
+                if joins.is_empty() {
+                    self.scan(table, selection, condition.as_ref(), options)
+                } else {
+                    self.join_reads(table, selection, condition.as_ref(), options, joins)
+                }
             }
             Statement::Select {
                 table,
                 selection,
                 condition,
                 options,
-                ..
+                joins,
             } => {
                 self.apply_throttle_config(options.throttle.as_ref());
-                self.select(table, selection, condition.as_ref(), options)
+                if joins.is_empty() {
+                    self.select(table, selection, condition.as_ref(), options)
+                } else {
+                    self.join_reads(table, selection, condition.as_ref(), options, joins)
+                }
             }
+            Statement::With { ctes, body } => self.run_with(ctes, body),
             Statement::AlterTable { table, action } => self.alter_table(table, action),
             Statement::DumpSchema { tables } => self.dump_schema(tables.as_deref()),
             Statement::ShowTables { like } => self.show_tables(like.as_deref()),
+            Statement::Grant { tables } => self.grant_mcp_read(tables),
+            Statement::Revoke { tables } => self.revoke_mcp_read(tables.as_deref()),
+            Statement::ShowMcpGrants => self.show_mcp_grants(),
             Statement::Describe { table } => self.describe_statement(table),
             Statement::Ls {
                 pattern,
@@ -794,6 +825,81 @@ impl<B: DynamoBackend> Engine<B> {
         Ok(StatementResult::Status(message))
     }
 
+    /// Run each CTE once into a temp table, run the body, then drop those temps.
+    fn run_with(&mut self, ctes: &[Cte], body: &Statement) -> Result<StatementResult, EngineError> {
+        let mut created = Vec::new();
+        let result = (|| {
+            for cte in ctes {
+                if created.iter().any(|name: &String| name == &cte.name) {
+                    return Err(EngineError::Runtime(format!(
+                        "WITH name '{}' is used more than once",
+                        cte.name
+                    )));
+                }
+                self.create_temp_table(false, &cte.name, &cte.query_text, &cte.query)?;
+                created.push(cte.name.clone());
+            }
+            self.run(body)
+        })();
+        for name in created.iter().rev() {
+            let _ = self.drop_virtual(true, name, TableKind::Temp);
+        }
+        result
+    }
+
+    /// Inner equijoins of tables already in memory. Each side is scanned once.
+    fn join_reads(
+        &mut self,
+        table: &str,
+        selection: &Selection,
+        condition: Option<&Condition>,
+        options: &QueryOptions,
+        joins: &[EquiJoin],
+    ) -> Result<StatementResult, EngineError> {
+        self.ensure_save_path(options)?;
+        if matches!(selection, Selection::CountAll) {
+            return Err(EngineError::Runtime(
+                "JOIN does not support COUNT(*)".to_string(),
+            ));
+        }
+        if options.keys_in.is_some() || options.using_index.is_some() {
+            return Err(EngineError::Runtime(
+                "JOIN reads in-memory rows and does not use KEYS IN or USING".to_string(),
+            ));
+        }
+        self.require_memory_table(table)?;
+        for join in joins {
+            self.require_memory_table(&join.table)?;
+        }
+        let mut fetch_options = options.clone();
+        fetch_options.save_file = None;
+        fetch_options.save_create_parents = false;
+        let left = self.scan(table, &Selection::All, condition, &fetch_options)?;
+        let mut merged = statement_items(left)?;
+        for join in joins {
+            let right = self.scan(&join.table, &Selection::All, None, &QueryOptions::default())?;
+            merged = merge_equijoin(
+                merged,
+                statement_items(right)?,
+                join.left_table.as_deref(),
+                &join.left_attr,
+                &join.right_attr,
+                &join.table,
+            );
+        }
+        apply_projection(&mut merged, selection);
+        self.maybe_save(options, StatementResult::Items(merged))
+    }
+
+    fn require_memory_table(&self, name: &str) -> Result<(), EngineError> {
+        match self.virtual_tables.kind(name) {
+            Some(TableKind::Temp) | Some(TableKind::Local) => Ok(()),
+            _ => Err(EngineError::Runtime(format!(
+                "JOIN reads '{name}' from memory. Load it with CREATE TEMPTABLE or a WITH clause first."
+            ))),
+        }
+    }
+
     fn temp_source_columns(&mut self, query: &Statement) -> Result<Vec<LocalColumn>, EngineError> {
         let (table, selection) = match query {
             Statement::Select {
@@ -801,7 +907,8 @@ impl<B: DynamoBackend> Engine<B> {
             }
             | Statement::Scan {
                 table, selection, ..
-            } => (table, selection),
+            } => (table.as_str(), selection),
+            Statement::With { body, .. } => return self.temp_source_columns(body),
             _ => {
                 return Err(EngineError::Runtime(
                     "CREATE TEMPTABLE requires SELECT or SCAN".to_string(),
@@ -1568,6 +1675,65 @@ impl<B: DynamoBackend> Engine<B> {
             .collect()
     }
 
+    fn grant_mcp_read(&mut self, tables: &[String]) -> Result<StatementResult, EngineError> {
+        let mut lines = Vec::new();
+        for name in tables {
+            match self.virtual_tables.kind(name) {
+                Some(TableKind::Temp) => lines.push(self.virtual_tables.grant(name)?),
+                Some(TableKind::Local) => {
+                    return Err(EngineError::Runtime(grant_kind_error(name, "local")));
+                }
+                Some(TableKind::DynamoDb) | None => {
+                    if self.backend.describe_table(name)?.is_some() {
+                        return Err(EngineError::Runtime(grant_kind_error(name, "DynamoDB")));
+                    }
+                    return Err(EngineError::Runtime(format!(
+                        "No temp table named '{name}'."
+                    )));
+                }
+            }
+        }
+        Ok(StatementResult::Status(lines.join("\n")))
+    }
+
+    fn revoke_mcp_read(
+        &mut self,
+        tables: Option<&[String]>,
+    ) -> Result<StatementResult, EngineError> {
+        let message = match tables {
+            None => self.virtual_tables.revoke_all(),
+            Some(tables) => tables
+                .iter()
+                .map(|name| self.virtual_tables.revoke(name))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        };
+        Ok(StatementResult::Status(message))
+    }
+
+    fn show_mcp_grants(&self) -> Result<StatementResult, EngineError> {
+        let grants = self.virtual_tables.granted();
+        if grants.is_empty() {
+            return Ok(StatementResult::ItemsWithNote {
+                items: Vec::new(),
+                note: "No MCP grants.".to_string(),
+            });
+        }
+        let items = grants
+            .into_iter()
+            .map(|grant| {
+                let mut item = Item::new();
+                item.insert("columns".to_string(), Value::String(grant.columns_text));
+                item.insert("granted_at".to_string(), Value::String(grant.granted_at));
+                item.insert("query".to_string(), Value::String(grant.query));
+                item.insert("rows".to_string(), Value::Number(grant.rows.to_string()));
+                item.insert("table".to_string(), Value::String(grant.name));
+                item
+            })
+            .collect();
+        Ok(StatementResult::Items(items))
+    }
+
     fn show_tables(&mut self, like: Option<&str>) -> Result<StatementResult, EngineError> {
         self.record("list_tables", like.unwrap_or("*"));
         // Running the statement reloads the list and definitions already saved.
@@ -2185,6 +2351,73 @@ fn merge_read_results(results: Vec<StatementResult>) -> Result<StatementResult, 
     })
 }
 
+fn statement_items(result: StatementResult) -> Result<Vec<Item>, EngineError> {
+    match result {
+        StatementResult::Items(items) => Ok(items),
+        StatementResult::ItemsWithNote { items, .. } => Ok(items),
+        _ => Err(EngineError::Runtime(
+            "JOIN expected rows from each side".to_string(),
+        )),
+    }
+}
+
+fn join_value_key(value: &Value) -> String {
+    format!("{value:?}")
+}
+
+fn row_join_value<'a>(row: &'a Item, table: Option<&str>, attr: &str) -> Option<&'a Value> {
+    if let Some(table) = table {
+        if let Some(value) = row.get(&format!("{table}.{attr}")) {
+            return Some(value);
+        }
+    }
+    row.get(attr)
+}
+
+fn merge_equijoin(
+    left_rows: Vec<Item>,
+    right_rows: Vec<Item>,
+    left_table: Option<&str>,
+    left_attr: &str,
+    right_attr: &str,
+    right_table: &str,
+) -> Vec<Item> {
+    let mut buckets: HashMap<String, Vec<Item>> = HashMap::new();
+    for row in right_rows {
+        let Some(value) = row.get(right_attr) else {
+            continue;
+        };
+        buckets.entry(join_value_key(value)).or_default().push(row);
+    }
+    let mut merged = Vec::new();
+    for left in left_rows {
+        let Some(value) = row_join_value(&left, left_table, left_attr) else {
+            continue;
+        };
+        let Some(matches) = buckets.get(&join_value_key(value)) else {
+            continue;
+        };
+        for right in matches {
+            merged.push(merge_join_row(left.clone(), right, right_table));
+        }
+    }
+    merged
+}
+
+fn merge_join_row(mut left: Item, right: &Item, right_table: &str) -> Item {
+    for (key, value) in right {
+        if !left.contains_key(key) {
+            left.insert(key.clone(), value.clone());
+            continue;
+        }
+        if left.get(key) == Some(value) {
+            continue;
+        }
+        left.insert(format!("{right_table}.{key}"), value.clone());
+    }
+    left
+}
+
 fn finalize_read_result(
     mut response: BackendResponse<Vec<Item>>,
     selection: &Selection,
@@ -2300,6 +2533,12 @@ fn sql_like(text: &str, pattern: &str) -> bool {
     matches(
         &text.chars().collect::<Vec<_>>(),
         &pattern.chars().collect::<Vec<_>>(),
+    )
+}
+
+fn grant_kind_error(name: &str, kind: &str) -> String {
+    format!(
+        "'{name}' is a {kind} table. Only temp tables can be granted: CREATE TEMPTABLE name AS (SELECT …), then GRANT MCP READ ON TEMPTABLE name."
     )
 }
 
@@ -3402,5 +3641,167 @@ mod tests {
             panic!("expected schema, got {fresh:?}");
         };
         assert!(text.contains("Hash Key: id"), "{text}");
+    }
+
+    #[test]
+    fn mcp_grants_follow_the_temp_table_not_the_name() {
+        let dir = std::env::temp_dir().join(format!("dqlrs-mcp-grants-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let csv = dir.join("users.csv");
+        std::fs::write(&csv, "id,name\na,Ada\n").unwrap();
+
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute(
+                "CREATE TABLE orders (id STRING HASH KEY, status STRING);
+                 INSERT INTO orders (id, status) VALUES ('1', 'late'), ('2', 'ok'), ('3', 'late');
+                 CREATE TEMPTABLE late_orders AS (SCAN * FROM orders WHERE status = 'late');
+                 CREATE TEMPTABLE all_orders AS (SCAN * FROM orders);",
+            )
+            .unwrap();
+        engine
+            .execute(&format!("CREATE LOCALTABLE users AS '{}'", csv.display()))
+            .unwrap();
+
+        let granted = status(
+            engine
+                .execute("GRANT MCP READ ON TEMPTABLE late_orders")
+                .unwrap(),
+        );
+        assert!(
+            granted.contains("Granted MCP read on temp table late_orders (2 rows)"),
+            "{granted}"
+        );
+        let again = status(
+            engine
+                .execute("GRANT MCP READ ON TEMPTABLE late_orders")
+                .unwrap(),
+        );
+        assert!(again.starts_with("Already granted MCP read"), "{again}");
+
+        match engine.execute("SHOW MCP GRANTS").unwrap() {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(
+                    items[0].get("table"),
+                    Some(&Value::String("late_orders".to_string()))
+                );
+                assert_eq!(items[0].get("rows"), Some(&Value::Number("2".to_string())));
+                let Value::String(columns) = items[0].get("columns").unwrap() else {
+                    panic!("columns");
+                };
+                assert!(columns.contains("id STRING hash"), "{columns}");
+                assert!(columns.contains("status STRING"), "{columns}");
+                let Value::String(at) = items[0].get("granted_at").unwrap() else {
+                    panic!("granted_at");
+                };
+                assert!(at.contains('T') && at.ends_with('Z'), "{at}");
+                let Value::String(query) = items[0].get("query").unwrap() else {
+                    panic!("query");
+                };
+                assert!(query.contains("status"), "{query}");
+            }
+            other => panic!("expected items, got {other:?}"),
+        }
+
+        let page = engine
+            .read_granted_table("late_orders", 1, 0, None)
+            .unwrap();
+        assert_eq!(page.total, 2);
+        assert_eq!(page.rows.len(), 1);
+        assert_eq!(page.offset, 0);
+        assert_eq!(page.next_offset, Some(1));
+        let next = engine
+            .read_granted_table("late_orders", 1, 1, None)
+            .unwrap();
+        assert_eq!(next.rows.len(), 1);
+        assert_eq!(next.next_offset, None);
+        let projected = engine
+            .read_granted_table("late_orders", 100, 0, Some(&["status".to_string()]))
+            .unwrap();
+        assert!(!projected.rows[0].contains_key("id"));
+        assert!(projected.rows[0].contains_key("status"));
+        let bounded = engine
+            .read_granted_table("late_orders", 1001, 0, None)
+            .unwrap_err();
+        assert!(bounded.to_string().contains("1 to 1000"), "{bounded}");
+
+        let dynamo = engine
+            .execute("GRANT MCP READ ON TEMPTABLE orders")
+            .unwrap_err();
+        assert!(
+            dynamo.to_string().contains("is a DynamoDB table"),
+            "{dynamo}"
+        );
+        let local = engine
+            .execute("GRANT MCP READ ON TEMPTABLE users")
+            .unwrap_err();
+        assert!(local.to_string().contains("is a local table"), "{local}");
+        let missing = engine
+            .execute("GRANT MCP READ ON TEMPTABLE missing")
+            .unwrap_err();
+        assert!(
+            missing
+                .to_string()
+                .contains("No temp table named 'missing'"),
+            "{missing}"
+        );
+
+        let revoked = status(
+            engine
+                .execute("REVOKE MCP READ ON TEMPTABLE late_orders")
+                .unwrap(),
+        );
+        assert_eq!(revoked, "Revoked MCP read on temp table late_orders.");
+        let absent = status(
+            engine
+                .execute("REVOKE MCP READ ON TEMPTABLE late_orders")
+                .unwrap(),
+        );
+        assert!(absent.contains("was not granted"), "{absent}");
+        let unread = engine
+            .read_granted_table("late_orders", 10, 0, None)
+            .unwrap_err();
+        assert!(unread.to_string().contains("is not granted"), "{unread}");
+
+        engine
+            .execute("GRANT MCP READ ON TEMPTABLE late_orders, all_orders")
+            .unwrap();
+        let all = status(engine.execute("REVOKE MCP READ ALL").unwrap());
+        assert_eq!(all, "Revoked MCP read on 2 temp tables.");
+        assert_eq!(
+            status(engine.execute("REVOKE MCP READ ALL").unwrap()),
+            "No MCP grants."
+        );
+        match engine.execute("SHOW MCP GRANTS").unwrap() {
+            StatementResult::ItemsWithNote { items, note } => {
+                assert!(items.is_empty());
+                assert_eq!(note, "No MCP grants.");
+            }
+            other => panic!("expected an empty note, got {other:?}"),
+        }
+
+        engine
+            .execute("GRANT MCP READ ON TEMPTABLE late_orders")
+            .unwrap();
+        engine.execute("DROP TEMPTABLE late_orders").unwrap();
+        assert!(!engine.temp_table_granted("late_orders"));
+        engine
+            .execute("CREATE TEMPTABLE late_orders AS (SCAN * FROM orders WHERE status = 'late')")
+            .unwrap();
+        assert!(!engine.temp_table_granted("late_orders"));
+        let dropped = engine
+            .read_granted_table("late_orders", 10, 0, None)
+            .unwrap_err();
+        assert!(dropped.to_string().contains("is not granted"), "{dropped}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn status(result: StatementResult) -> String {
+        match result {
+            StatementResult::Status(text) => text,
+            other => panic!("expected status, got {other:?}"),
+        }
     }
 }

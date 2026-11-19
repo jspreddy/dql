@@ -30,8 +30,8 @@ Keep these current when the code changes.
 ## Open: design debt (`todo/`)
 
 Phases 1–6 are implemented in `rust-impl/`. A SOLID / code-smell review of that
-tree produced most of these follow-ups; `installers.md` covers packaging. None
-are done yet.
+tree produced most of these follow-ups; `installers.md` covers packaging.
+None are done yet.
 
 | Todo | Priority | Focus |
 | --- | --- | --- |

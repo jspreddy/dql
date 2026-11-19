@@ -92,6 +92,37 @@ impl RuntimeEngine {
         matches!(self, Self::Remote(_))
     }
 
+    pub fn temp_table_granted(&self, name: &str) -> bool {
+        match self {
+            Self::Memory(engine) => engine.inner().temp_table_granted(name),
+            Self::Remote(engine) => engine.inner().temp_table_granted(name),
+        }
+    }
+
+    pub fn granted_tables(&self) -> Vec<dql_engine::GrantInfo> {
+        match self {
+            Self::Memory(engine) => engine.inner().granted_tables(),
+            Self::Remote(engine) => engine.inner().granted_tables(),
+        }
+    }
+
+    pub fn read_granted_table(
+        &self,
+        name: &str,
+        limit: usize,
+        offset: usize,
+        attributes: Option<&[String]>,
+    ) -> Result<dql_engine::GrantedPage, EngineError> {
+        match self {
+            Self::Memory(engine) => engine
+                .inner()
+                .read_granted_table(name, limit, offset, attributes),
+            Self::Remote(engine) => engine
+                .inner()
+                .read_granted_table(name, limit, offset, attributes),
+        }
+    }
+
     pub fn partial(&self) -> bool {
         match self {
             Self::Memory(engine) => engine.partial(),
@@ -477,6 +508,9 @@ pub struct Session {
     /// Region, endpoint, and caller identity of the current connection. Set by
     /// [`Session::attach_connection_storage`].
     pub connection_key: String,
+    /// True only for `dqlrs web --mcp`. Other processes can grant, but no agent
+    /// shares their temp tables.
+    pub serves_mcp: bool,
 }
 
 /// `--dir`, else the current directory, as an absolute path.
@@ -525,6 +559,7 @@ impl Session {
             table_disk: None,
             workspace: workspace_from_args(args),
             connection_key: String::new(),
+            serves_mcp: false,
         };
         session.attach_connection_storage();
         Ok(session)
@@ -660,7 +695,28 @@ impl Session {
             table_disk: None,
             workspace: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
             connection_key: format!("memory|{region}"),
+            serves_mcp: false,
         }
+    }
+
+    fn note_unserved_grant(&self, result: StatementResult) -> StatementResult {
+        if self.serves_mcp {
+            return result;
+        }
+        let StatementResult::Status(message) = result else {
+            return result;
+        };
+        let granted = message.lines().any(|line| {
+            let line = line.trim();
+            line.starts_with("Granted MCP read on temp table")
+                || line.starts_with("Already granted MCP read on temp table")
+        });
+        if !granted {
+            return StatementResult::Status(message);
+        }
+        StatementResult::Status(format!(
+            "{message}\nNo agent can read it here: only `dqlrs web --mcp` serves grants."
+        ))
     }
 
     pub fn run_command(&mut self, command: &str, use_json: bool) -> Result<(), EngineError> {
@@ -693,6 +749,7 @@ impl Session {
             let rich_context = self.engine.rich_context();
             if let Some(result) = self.engine.execute_fragment(trimmed)? {
                 let result = crate::meta::ls::annotate_table_list(self, result);
+                let result = self.note_unserved_grant(result);
                 render_result(
                     &result,
                     &output_config,
@@ -706,6 +763,7 @@ impl Session {
                 let rich_context = self.engine.rich_context();
                 if let Some(result) = self.engine.execute_fragment(";")? {
                     let result = crate::meta::ls::annotate_table_list(self, result);
+                    let result = self.note_unserved_grant(result);
                     render_result(
                         &result,
                         &output_config,
@@ -787,6 +845,7 @@ impl Session {
             return match dispatched {
                 Ok(Some(result)) => {
                     let result = crate::meta::ls::annotate_table_list(self, result);
+                    let result = self.note_unserved_grant(result);
                     envelope_from_result(result, self.engine.partial())
                 }
                 Ok(None) => {
@@ -812,6 +871,7 @@ impl Session {
         match self.engine.execute_fragment(trimmed) {
             Ok(Some(result)) => {
                 let result = crate::meta::ls::annotate_table_list(self, result);
+                let result = self.note_unserved_grant(result);
                 envelope_from_result(result, self.engine.partial())
             }
             Ok(None) if self.engine.partial() => {
@@ -821,6 +881,7 @@ impl Session {
                 match self.engine.execute_fragment(";") {
                     Ok(Some(result)) => {
                         let result = crate::meta::ls::annotate_table_list(self, result);
+                        let result = self.note_unserved_grant(result);
                         envelope_from_result(result, self.engine.partial())
                     }
                     Ok(None) => {

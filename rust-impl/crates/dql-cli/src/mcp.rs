@@ -117,7 +117,7 @@ fn mcp_instructions(root: &Path) -> String {
     let workspace = absolute_dir(root);
     let workspace = workspace.display();
     format!(
-        "The dqlrs workspace is {workspace}, the same folder dqlrs web uses. If that directory is locally in scope of the Cursor or Claude workspace, prefer local file edits for .dql files. If it is not in scope, prefer the MCP tools create_query_file, read_query_file, and update_query_file to create and edit .dql files. Call help before writing DQL you are unsure of. Omit topic for the command list, or pass a topic such as select. global_search finds table names, cached columns and indexes, and queries in files. lint_query checks a script, and lint_query_file checks a workspace .dql file, for parse errors and for queries the engine would reject, without running them or fetching a missing definition. list_tables and describe_tables use the shared table cache for this connection."
+        "The dqlrs workspace is {workspace}, the same folder dqlrs web uses. If that directory is locally in scope of the Cursor or Claude workspace, prefer local file edits for .dql files. If it is not in scope, prefer the MCP tools create_query_file, read_query_file, and update_query_file to create and edit .dql files. Call help before writing DQL you are unsure of. Omit topic for the command list, or pass a topic such as select. global_search finds table names, cached columns and indexes, and queries in files. lint_query checks a script, and lint_query_file checks a workspace .dql file, for parse errors and for queries the engine would reject, without running them or fetching a missing definition. list_tables and describe_tables use the shared table cache for this connection. list_granted_tables and read_granted_table read only temp tables the user granted with GRANT MCP READ ON TEMPTABLE in dqlrs web. You cannot run a query, grant a table, or read anything that was not granted."
     )
 }
 
@@ -137,6 +137,8 @@ fn call_tool(session: &mut Session, root: &Path, params: &Value) -> Result<Value
         "lint_query_file" => tool_value(lint_query_file(session, root, &arguments)),
         "list_tables" => tool_value(list_tables(session, &arguments)),
         "describe_tables" => tool_value(describe_tables(session, &arguments)),
+        "list_granted_tables" => tool_value(list_granted_tables(session)),
+        "read_granted_table" => tool_value(read_granted_table(session, &arguments)),
         "list_query_files" => tool_value(list_query_files(root)),
         "create_query_file" => tool_value(create_query_file(root, &arguments)),
         "read_query_file" => tool_value(read_query_file(root, &arguments)),
@@ -251,7 +253,7 @@ fn describe_one(session: &mut Session, name: &str, refresh: bool) -> Value {
                     })
                 }))
                 .collect::<Vec<_>>();
-            json!({
+            let mut described = json!({
                 "name": meta.name,
                 "schema": meta.schema_dql(),
                 "hashKey": meta.hash_key,
@@ -260,10 +262,111 @@ fn describe_one(session: &mut Session, name: &str, refresh: bool) -> Value {
                 "indexes": indexes,
                 "status": status_name(meta.status),
                 "fromCache": from_cache,
-            })
+            });
+            if session.engine.temp_table_granted(&meta.name) {
+                described["granted"] = json!(true);
+            }
+            described
         }
         Ok(None) => json!({ "name": name, "error": format!("table {name} not found") }),
         Err(err) => json!({ "name": name, "error": err.to_string() }),
+    }
+}
+
+fn list_granted_tables(session: &mut Session) -> Result<Value, ToolError> {
+    let tables = session
+        .engine
+        .granted_tables()
+        .into_iter()
+        .map(|grant| {
+            json!({
+                "name": grant.name,
+                "rows": grant.rows,
+                "columns": grant.columns.into_iter().map(|column| {
+                    let mut value = json!({
+                        "name": column.name,
+                        "type": column.data_type,
+                    });
+                    if let Some(key) = column.key {
+                        value["key"] = json!(key);
+                    }
+                    value
+                }).collect::<Vec<_>>(),
+                "granted_at": grant.granted_at,
+                "query": grant.query,
+            })
+        })
+        .collect::<Vec<_>>();
+    if tables.is_empty() {
+        Ok(json!({
+            "tables": [],
+            "hint": "Nothing is granted. Ask the user to run CREATE TEMPTABLE … AS (SELECT …) and GRANT MCP READ ON TEMPTABLE name in dqlrs web."
+        }))
+    } else {
+        Ok(json!({ "tables": tables }))
+    }
+}
+
+fn read_granted_table(session: &mut Session, arguments: &Value) -> Result<Value, ToolError> {
+    let table = required_str(arguments, "table")?;
+    let limit = optional_limit(arguments)?;
+    let offset = optional_offset(arguments)?;
+    let attributes = optional_attributes(arguments)?;
+    let page = session
+        .engine
+        .read_granted_table(table, limit, offset, attributes.as_deref())
+        .map_err(|err| ToolError::new(err.to_string()))?;
+    let rows = page
+        .rows
+        .iter()
+        .map(dql_engine::json_util::item_to_json_value)
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "table": table,
+        "rows": rows,
+        "total": page.total,
+        "offset": page.offset,
+        "next_offset": page.next_offset,
+    }))
+}
+
+fn optional_limit(arguments: &Value) -> Result<usize, ToolError> {
+    match arguments.get("limit") {
+        None | Some(Value::Null) => Ok(100),
+        Some(Value::Number(number)) => usize_arg(number, "limit"),
+        Some(_) => Err(ToolError::new("limit must be from 1 to 1000")),
+    }
+}
+
+fn optional_offset(arguments: &Value) -> Result<usize, ToolError> {
+    match arguments.get("offset") {
+        None | Some(Value::Null) => Ok(0),
+        Some(Value::Number(number)) => usize_arg(number, "offset"),
+        Some(_) => Err(ToolError::new("offset must be a non-negative integer")),
+    }
+}
+
+fn usize_arg(number: &serde_json::Number, name: &str) -> Result<usize, ToolError> {
+    let value = number
+        .as_u64()
+        .ok_or_else(|| ToolError::new(format!("{name} must be a non-negative integer")))?;
+    usize::try_from(value).map_err(|_| ToolError::new(format!("{name} is out of range")))
+}
+
+fn optional_attributes(arguments: &Value) -> Result<Option<Vec<String>>, ToolError> {
+    match arguments.get("attributes") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Array(values)) => {
+            let mut names = Vec::new();
+            for value in values {
+                let Some(name) = value.as_str() else {
+                    return Err(ToolError::new("attributes must be a list of strings"));
+                };
+                names.push(name.to_string());
+            }
+            Ok(Some(names))
+        }
+        Some(_) => Err(ToolError::new("attributes must be a list of strings")),
     }
 }
 
@@ -531,8 +634,36 @@ fn tool_definitions() -> Vec<Value> {
             }),
         ),
         tool(
+            "list_granted_tables",
+            "List temp tables the user granted with GRANT MCP READ ON TEMPTABLE. Returns nothing else. You cannot grant a table yourself.",
+            json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+        ),
+        tool(
+            "read_granted_table",
+            "Read rows from one temp table the user granted. Reads the in-memory copy only, never DynamoDB. limit is 1 to 1000 and defaults to 100. attributes keeps only those names.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "table": { "type": "string", "description": "Granted temp table name" },
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 1000, "description": "Rows to return. Default 100." },
+                    "offset": { "type": "integer", "minimum": 0, "description": "Rows to skip. Default 0." },
+                    "attributes": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Attribute names to keep. Omit for every attribute."
+                    }
+                },
+                "required": ["table"],
+                "additionalProperties": false
+            }),
+        ),
+        tool(
             "list_tables",
-            "List table names. Uses the saved list, and fetches it when none is saved. Does not describe every table.",
+            "List table names. Uses the saved list, and fetches it when none is saved. Does not describe every table. A granted temp table has granted set to true. To read rows, use read_granted_table.",
             json!({
                 "type": "object",
                 "properties": {
@@ -544,7 +675,7 @@ fn tool_definitions() -> Vec<Value> {
         ),
         tool(
             "describe_tables",
-            "Describe one or more tables. Uses a cached definition when one is saved. refresh=true asks the database again.",
+            "Describe one or more tables. Uses a cached definition when one is saved. refresh=true asks the database again. A granted temp table has granted set to true. This does not return rows.",
             json!({
                 "type": "object",
                 "properties": {
@@ -638,6 +769,7 @@ mod tests {
                 table_disk: None,
                 workspace: std::env::temp_dir(),
                 connection_key: "memory|us-west-1".to_string(),
+                serves_mcp: false,
             },
             root.to_path_buf(),
         )
@@ -730,6 +862,8 @@ mod tests {
                 "global_search",
                 "lint_query",
                 "lint_query_file",
+                "list_granted_tables",
+                "read_granted_table",
                 "list_tables",
                 "describe_tables",
                 "list_query_files",
@@ -1178,6 +1312,178 @@ DROP TABLE other;
         assert!(text.contains("\"8000\""));
         assert!(text.contains("\"us-west-1\""));
         assert!(!text.contains("DQL_BACKEND"));
+    }
+
+    #[test]
+    fn granted_temp_tables_can_be_listed_and_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut server = server(dir.path());
+        init(&mut server);
+        let empty = tool_body(&rpc(
+            &mut server,
+            2,
+            "tools/call",
+            json!({"name": "list_granted_tables", "arguments": {}}),
+        ));
+        assert_eq!(empty["tables"].as_array().unwrap().len(), 0);
+        assert!(empty["hint"].as_str().unwrap().contains("GRANT MCP READ"));
+
+        server
+            .session
+            .engine
+            .execute_script(
+                "CREATE TABLE orders (id STRING HASH KEY, status STRING);
+                 INSERT INTO orders (id, status) VALUES ('1', 'late'), ('2', 'ok'), ('3', 'late');
+                 CREATE TEMPTABLE late_orders AS (SCAN * FROM orders WHERE status = 'late');
+                 GRANT MCP READ ON TEMPTABLE late_orders;",
+            )
+            .unwrap();
+
+        let listed = tool_body(&rpc(
+            &mut server,
+            3,
+            "tools/call",
+            json!({"name": "list_granted_tables", "arguments": {}}),
+        ));
+        assert_eq!(listed["tables"][0]["name"], "late_orders");
+        assert_eq!(listed["tables"][0]["rows"], 2);
+        assert!(listed["tables"][0]["query"]
+            .as_str()
+            .unwrap()
+            .contains("status"));
+
+        let tables = tool_body(&rpc(
+            &mut server,
+            4,
+            "tools/call",
+            json!({"name": "list_tables", "arguments": {}}),
+        ));
+        let late = tables["tables"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|table| table["name"] == "late_orders")
+            .expect("late_orders");
+        assert_eq!(late["granted"], true);
+        let orders = tables["tables"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|table| table["name"] == "orders")
+            .expect("orders");
+        assert!(orders.get("granted").is_none());
+
+        let described = tool_body(&rpc(
+            &mut server,
+            5,
+            "tools/call",
+            json!({
+                "name": "describe_tables",
+                "arguments": { "table": "late_orders" }
+            }),
+        ));
+        assert_eq!(described["tables"][0]["granted"], true);
+
+        let page = tool_body(&rpc(
+            &mut server,
+            6,
+            "tools/call",
+            json!({
+                "name": "read_granted_table",
+                "arguments": { "table": "late_orders", "limit": 1, "offset": 0 }
+            }),
+        ));
+        assert_eq!(page["total"], 2);
+        assert_eq!(page["rows"].as_array().unwrap().len(), 1);
+        assert_eq!(page["next_offset"], 1);
+        let rest = tool_body(&rpc(
+            &mut server,
+            7,
+            "tools/call",
+            json!({
+                "name": "read_granted_table",
+                "arguments": { "table": "late_orders", "limit": 1, "offset": 1 }
+            }),
+        ));
+        assert!(rest["next_offset"].is_null());
+
+        let projected = tool_body(&rpc(
+            &mut server,
+            8,
+            "tools/call",
+            json!({
+                "name": "read_granted_table",
+                "arguments": {
+                    "table": "late_orders",
+                    "attributes": ["status"]
+                }
+            }),
+        ));
+        assert!(projected["rows"][0].get("id").is_none());
+        assert!(projected["rows"][0].get("status").is_some());
+
+        let bad_limit = rpc(
+            &mut server,
+            9,
+            "tools/call",
+            json!({
+                "name": "read_granted_table",
+                "arguments": { "table": "late_orders", "limit": 1001 }
+            }),
+        );
+        assert_eq!(bad_limit["result"]["isError"], true);
+        let bad_attrs = rpc(
+            &mut server,
+            10,
+            "tools/call",
+            json!({
+                "name": "read_granted_table",
+                "arguments": { "table": "late_orders", "attributes": "status" }
+            }),
+        );
+        assert_eq!(bad_attrs["result"]["isError"], true);
+
+        let ungranted = rpc(
+            &mut server,
+            11,
+            "tools/call",
+            json!({"name": "read_granted_table", "arguments": {"table": "orders"}}),
+        );
+        assert_eq!(ungranted["result"]["isError"], true);
+        assert!(ungranted["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("is not granted"));
+
+        server
+            .session
+            .engine
+            .execute_script("REVOKE MCP READ ON TEMPTABLE late_orders;")
+            .unwrap();
+        let revoked = rpc(
+            &mut server,
+            12,
+            "tools/call",
+            json!({"name": "read_granted_table", "arguments": {"table": "late_orders"}}),
+        );
+        assert_eq!(revoked["result"]["isError"], true);
+
+        server
+            .session
+            .engine
+            .execute_script(
+                "GRANT MCP READ ON TEMPTABLE late_orders;
+                 DROP TEMPTABLE late_orders;
+                 CREATE TEMPTABLE late_orders AS (SCAN * FROM orders WHERE status = 'late');",
+            )
+            .unwrap();
+        let recreated = rpc(
+            &mut server,
+            13,
+            "tools/call",
+            json!({"name": "read_granted_table", "arguments": {"table": "late_orders"}}),
+        );
+        assert_eq!(recreated["result"]["isError"], true);
     }
 
     #[test]

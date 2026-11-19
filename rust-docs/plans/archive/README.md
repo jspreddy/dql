@@ -67,6 +67,12 @@ shipped and the commits.
 | --- | --- |
 | [`cursor/segregate_python_rust_ae06315b.plan.md`](cursor/segregate_python_rust_ae06315b.plan.md) | Split the repo into sibling `py-*` and `rust-*` trees |
 
+## MCP grants
+
+| Plan | Focus |
+| --- | --- |
+| [`mcp_temp_table_grants.md`](mcp_temp_table_grants.md) | `GRANT MCP READ ON TEMPTABLE`: an agent can read chosen temp tables while `dqlrs web --mcp` runs |
+
 ## Original rewrite brief
 
 This was the top of `rust-plans/README.md` while the rewrite was in progress.

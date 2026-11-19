@@ -101,6 +101,8 @@ export const test = base.extend({
   isolateCwd: [false, { option: true }],
   // Folder copied into the temp workspace the server opens. README screenshots use dqlrs-web/examples.
   workspaceSource: [fixtureRoot, { option: true }],
+  // `dqlrs web --mcp` so /mcp shares the editor session.
+  mcp: [false, { option: true }],
   themeInit: [async ({ page }, use, testInfo) => {
     if (testInfo.project.name === "dark") {
       await page.addInitScript(() => {
@@ -115,7 +117,7 @@ export const test = base.extend({
     }
     await use();
   }, { auto: true }],
-  app: async ({ isolateCwd, workspaceSource }, use) => {
+  app: async ({ isolateCwd, workspaceSource, mcp }, use) => {
     // The server reports paths under its canonical root, and macOS links /var to /private/var.
     const workspace = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-web-")));
     fs.cpSync(workspaceSource, workspace, { recursive: true });
@@ -126,9 +128,11 @@ export const test = base.extend({
       throw new Error("dqlrs was not found. Build rust-impl or set DQLRS_BIN.");
     }
     const chunks = [];
+    const args = ["web", "--dir", workspace, "--listen", `127.0.0.1:${port}`, "-H", "localhost", "-p", "8000", "-r", "us-west-1"];
+    if (mcp) args.push("--mcp");
     const child = spawn(
       binary,
-      ["web", "--dir", workspace, "--listen", `127.0.0.1:${port}`, "-H", "localhost", "-p", "8000", "-r", "us-west-1"],
+      args,
       {
         cwd,
         env: {

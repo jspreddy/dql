@@ -41,6 +41,10 @@ pub struct StoredQuery {
 }
 
 /// A stored statement plus the id the structure API uses to read it back.
+///
+/// `id` is `<sha256 of the connection key>:<sha256 of the query path>:<unix ms>`.
+/// The connection prefix stops one connection from opening another's result when
+/// two saves share a path hash and a millisecond.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ListedQuery {
     pub id: String,
@@ -56,6 +60,7 @@ pub fn list(store: Store<'_>, relative: &str) -> Result<Vec<ListedQuery>, PathEr
         .and_then(|name| name.to_str())
         .unwrap_or("")
         .to_string();
+    let connection = connection_digest(store.connection_key);
     let mut files = result_files(&dir)?;
     files.sort_by_key(|(stamp, _)| *stamp);
     restrict_query_dirs(store, &dir);
@@ -65,7 +70,7 @@ pub fn list(store: Store<'_>, relative: &str) -> Result<Vec<ListedQuery>, PathEr
             continue;
         };
         stored.push(ListedQuery {
-            id: format!("{digest}:{stamp}"),
+            id: format!("{connection}:{digest}:{stamp}"),
             query: entry.query,
             result: entry.result,
             success: entry.success,
@@ -75,11 +80,20 @@ pub fn list(store: Store<'_>, relative: &str) -> Result<Vec<ListedQuery>, PathEr
 }
 
 /// Load one cached statement by the id returned from [`list`].
+///
+/// The id has to name this connection. A matching path hash and timestamp from
+/// another connection is not a result of this one.
 pub fn load_by_id(store: Store<'_>, id: &str) -> Result<ListedQuery, PathError> {
-    let (digest, stamp) = id
+    let (connection, rest) = id
         .split_once(':')
         .ok_or_else(|| PathError("query result is not loaded".to_string()))?;
-    if digest.len() != 64 || !digest.chars().all(|ch| ch.is_ascii_hexdigit()) {
+    let (digest, stamp) = rest
+        .split_once(':')
+        .ok_or_else(|| PathError("query result is not loaded".to_string()))?;
+    if !is_sha256_hex(connection)
+        || !is_sha256_hex(digest)
+        || connection != connection_digest(store.connection_key)
+    {
         return Err(PathError("query result is not loaded".to_string()));
     }
     let stamp = stamp
@@ -220,6 +234,14 @@ fn cache_dir(store: Store<'_>, relative: &str) -> Result<PathBuf, PathError> {
     let relative = files::normalized_dql(store.workspace, relative)?;
     let digest = Sha256::digest(relative.as_bytes());
     Ok(store.base().join(hex_encode(&digest)))
+}
+
+fn connection_digest(connection_key: &str) -> String {
+    hex_encode(&Sha256::digest(connection_key.as_bytes()))
+}
+
+fn is_sha256_hex(part: &str) -> bool {
+    part.len() == 64 && part.chars().all(|ch| ch.is_ascii_hexdigit())
 }
 
 fn result_files(dir: &Path) -> Result<Vec<(u128, PathBuf)>, PathError> {
@@ -535,8 +557,27 @@ mod tests {
         assert_eq!(from_aws, vec!["SCAN * FROM aws_only;".to_string()]);
 
         // An id from one connection does not read the other connection's result.
+        // Pin the aws file to the local stamp so a same-millisecond collision is
+        // what this checks, not whatever the clock happened to do.
         let id = list(local, "notes.dql").unwrap()[0].id.clone();
+        let local_conn = workspace_cache::connection_dir(root.path(), local.connection_key)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(id.starts_with(&format!("{local_conn}:")), "{id}");
+        let stamp = id.rsplit_once(':').unwrap().1;
+        let aws_dir = cache_dir(aws, "notes.dql").unwrap();
+        let aws_path = result_files(&aws_dir).unwrap().pop().unwrap().1;
+        let collided = aws_dir.join(format!("query_result_{stamp}.json"));
+        if aws_path != collided {
+            fs::rename(&aws_path, &collided).unwrap();
+        }
         assert!(load_by_id(aws, &id).is_err());
+        assert_eq!(
+            load_by_id(local, &id).unwrap().query,
+            "SCAN * FROM local_only;"
+        );
 
         clear_at(local, "notes.dql").unwrap();
         assert!(list(local, "notes.dql").unwrap().is_empty());

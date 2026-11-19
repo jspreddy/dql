@@ -25,6 +25,25 @@ impl MemoryBackend {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Copy one page of a table's stored rows. `None` when the table is absent.
+    pub fn table_page(
+        &self,
+        table: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Option<(Vec<Item>, usize)> {
+        let table = self.tables.get(table)?;
+        let total = table.items.len();
+        let rows = table
+            .items
+            .iter()
+            .skip(offset)
+            .take(limit)
+            .cloned()
+            .collect();
+        Some((rows, total))
+    }
 }
 
 impl DynamoBackend for MemoryBackend {

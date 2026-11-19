@@ -211,6 +211,31 @@ From a checkout, `just web` builds `dqlrs`, starts DynamoDB Local when port 8000
 is down, and opens the UI on `dqlrs-web/examples`. Details:
 [`dqlrs-web/README.md`](../dqlrs-web/README.md).
 
+## MCP (`dqlrs --mcp` and `dqlrs web --mcp`)
+
+`dqlrs --mcp` speaks MCP on stdio. `dqlrs web --mcp` serves the same tools at
+`/mcp` on the web host, using that process's session. An agent can search,
+lint, and edit `.dql` files. It cannot run a query.
+
+### MCP grants
+
+Grant read access to a temp table while this server runs:
+
+```sql
+CREATE TEMPTABLE late_orders AS (SELECT * FROM orders WHERE status = 'late');
+GRANT MCP READ ON TEMPTABLE late_orders;
+```
+
+`REVOKE MCP READ ON TEMPTABLE late_orders` takes one grant back.
+`REVOKE MCP READ ALL` clears every grant. `SHOW MCP GRANTS` lists them.
+Only temp tables can be granted. A grant is not saved. `DROP TEMPTABLE`
+removes it, and a new temp table of the same name is not granted.
+
+In `dqlrs web --mcp` the agent then calls `list_granted_tables` and
+`read_granted_table`. Those tools read the in-memory rows only. A read returns
+100 rows by default and 1000 at most. Anywhere else, `GRANT` still succeeds and
+adds: no agent can read it here, because only `dqlrs web --mcp` serves grants.
+
 ## Headless worker (`--serve`)
 
 `dqlrs --serve` keeps one `Session` and speaks **JSON-lines** (one JSON object

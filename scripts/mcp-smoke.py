@@ -117,6 +117,12 @@ def main() -> None:
                 "method": "tools/call",
                 "params": {"name": "help", "arguments": {"topic": "select"}},
             },
+            {
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "tools/call",
+                "params": {"name": "list_granted_tables", "arguments": {}},
+            },
         ]
         payload = "".join(json.dumps(request) + "\n" for request in requests)
         stdout, stderr = proc.communicate(payload, timeout=30)
@@ -135,6 +141,8 @@ def main() -> None:
             "global_search",
             "lint_query",
             "lint_query_file",
+            "list_granted_tables",
+            "read_granted_table",
             "list_tables",
             "describe_tables",
             "list_query_files",
@@ -176,6 +184,9 @@ def main() -> None:
         select = tool_json(by_id[11])
         if select.get("topic") != "select" or "SELECT" not in select.get("text", ""):
             raise SystemExit(f"help select {select}")
+        granted = tool_json(by_id[12])
+        if granted.get("tables") != [] or "Nothing is granted" not in granted.get("hint", ""):
+            raise SystemExit(f"grants {granted}")
         saved = Path(workspace, "queries", "smoke.dql").read_text(encoding="utf-8")
         if "status" not in saved:
             raise SystemExit("file on disk was not updated")

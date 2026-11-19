@@ -2,6 +2,39 @@ use crate::Item;
 use dql_parser::Value;
 use std::collections::BTreeMap;
 
+pub fn item_to_json_value(item: &Item) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    for (key, value) in item {
+        map.insert(key.clone(), value_to_json_value(value));
+    }
+    serde_json::Value::Object(map)
+}
+
+pub fn value_to_json_value(value: &Value) -> serde_json::Value {
+    match value {
+        Value::Null => serde_json::Value::Null,
+        Value::Bool(value) => serde_json::Value::Bool(*value),
+        Value::Number(value) => value
+            .parse::<serde_json::Number>()
+            .map(serde_json::Value::Number)
+            .unwrap_or_else(|_| serde_json::Value::String(value.clone())),
+        Value::String(value) => serde_json::Value::String(value.clone()),
+        Value::Binary(value) => serde_json::Value::String(base64(value)),
+        Value::Timestamp(value) => serde_json::Value::String(format!("{value:?}")),
+        Value::Interval(value) => serde_json::Value::String(value.clone()),
+        Value::List(values) | Value::Set(values) => {
+            serde_json::Value::Array(values.iter().map(value_to_json_value).collect())
+        }
+        Value::Map(values) => {
+            let mut item = Item::new();
+            for (key, value) in values {
+                item.insert(key.clone(), value.clone());
+            }
+            item_to_json_value(&item)
+        }
+    }
+}
+
 pub fn item_to_json(item: &Item, indent: usize) -> String {
     let mut output = String::from("{\n");
     let len = item.len();

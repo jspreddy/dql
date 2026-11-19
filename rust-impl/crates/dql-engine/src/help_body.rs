@@ -95,6 +95,41 @@ pub const DROP: &str = r"
     CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id) VALUES ('a'); CREATE TEMPTABLE hot AS (SELECT * FROM foobars WHERE id = 'a'); DROP TEMPTABLE hot;
 ";
 
+pub const GRANT: &str = r"
+    Let an MCP agent read a temp table until this server stops
+
+    GRANT MCP READ ON TEMPTABLE
+        tablename [, ...]
+
+    Only a temp table can be granted. Create one with CREATE TEMPTABLE, then
+    grant it. The agent lists and reads those rows with the MCP tools
+    list_granted_tables and read_granted_table. It still cannot run a query.
+    A grant is not saved. DROP TEMPTABLE removes it, and a new temp table of
+    the same name is not granted. SHOW MCP GRANTS lists what is granted.
+    Only `dqlrs web --mcp` lets an agent read the grant.
+
+    Examples
+    --------
+    CREATE TABLE foobars (id STRING HASH KEY); CREATE TEMPTABLE g AS (SCAN * FROM foobars); GRANT MCP READ ON TEMPTABLE g;
+    CREATE TABLE foobars (id STRING HASH KEY); INSERT INTO foobars (id) VALUES ('a'), ('b'); CREATE TEMPTABLE g AS (SCAN * FROM foobars); GRANT MCP READ ON TEMPTABLE g; SHOW MCP GRANTS;
+";
+
+pub const REVOKE: &str = r"
+    Stop an MCP agent from reading a temp table
+
+    REVOKE MCP READ ON TEMPTABLE
+        tablename [, ...]
+    REVOKE MCP READ ALL
+
+    Revoking a table that was not granted is not an error. ALL clears every
+    grant. The temp table itself stays until you drop it.
+
+    Examples
+    --------
+    CREATE TABLE foobars (id STRING HASH KEY); CREATE TEMPTABLE g AS (SCAN * FROM foobars); GRANT MCP READ ON TEMPTABLE g; REVOKE MCP READ ON TEMPTABLE g;
+    CREATE TABLE foobars (id STRING HASH KEY); CREATE TEMPTABLE g AS (SCAN * FROM foobars); CREATE TEMPTABLE h AS (SCAN * FROM foobars); GRANT MCP READ ON TEMPTABLE g, h; REVOKE MCP READ ALL;
+";
+
 pub const DUMP: &str = r"
     Print the schema creation statements for your tables
 
@@ -164,6 +199,19 @@ pub const SELECT: &str = r"
         [ ASC | DESC ]
         [ SAVE file.json [ CREATE PARENTS ] ]
 
+    JOIN other ON left.column = right.column
+
+    JOIN is an inner equijoin of tables already in memory: a temp table,
+    a local table, or a name defined by WITH. Further JOIN clauses extend
+    the same rows. Each WITH query runs once into a temp table, and the join
+    merges those rows. It does not fetch the right side once per left row.
+    WITH names exist only for that statement. A CREATE TEMPTABLE can store
+    the join, including a WITH query inside the parentheses.
+    WHERE and LIMIT filter the left side before the merge.
+    Qualify both ON columns as table.column, or neither.
+    A column that exists on both sides keeps the left value. A different
+    right value is stored as righttable.column.
+
     Nested maps use dot paths such as a.b.c.d.
     a[0].b reads one list element, and a[].b returns the list of each b.
     AS label names the result column.
@@ -183,6 +231,7 @@ pub const SELECT: &str = r"
     Examples
     --------
     CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars WHERE id = 'a';
+    CREATE TABLE posts (id STRING HASH KEY, customer STRING); INSERT INTO posts (id, customer) VALUES ('a', 'c1'), ('b', 'c2'); CREATE TABLE customers (id STRING HASH KEY, name STRING); INSERT INTO customers (id, name) VALUES ('c1', 'Ada'); WITH orders AS (SCAN * FROM posts), people AS (SCAN * FROM customers) SELECT * FROM orders JOIN people ON orders.customer = people.id;
     CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars KEYS IN 'id1', 'id2';
     CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars KEYS IN id1, id2, id3;
     CREATE TABLE foobars (id STRING HASH KEY); SELECT * FROM foobars WHERE id IN (id1, id2);

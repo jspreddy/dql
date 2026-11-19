@@ -310,12 +310,23 @@ pub enum Statement {
         selection: Selection,
         condition: Option<Condition>,
         options: QueryOptions,
+        /// Inner equijoins, applied left to right, against in-memory tables.
+        joins: Vec<EquiJoin>,
     },
     Select {
         table: String,
         selection: Selection,
         condition: Option<Condition>,
         options: QueryOptions,
+        /// Inner equijoins, applied left to right, against in-memory tables.
+        joins: Vec<EquiJoin>,
+    },
+    /// `WITH name AS (SELECT|SCAN ...), ... SELECT|SCAN ...`
+    ///
+    /// Each query runs once into a temp table for this statement, then the body runs.
+    With {
+        ctes: Vec<Cte>,
+        body: Box<Statement>,
     },
     AlterTable {
         table: String,
@@ -345,12 +356,42 @@ pub enum Statement {
     Help {
         topic: Option<String>,
     },
+    /// `GRANT MCP READ ON TEMPTABLE name [, name …]`.
+    Grant {
+        tables: Vec<String>,
+    },
+    /// `REVOKE MCP READ ON TEMPTABLE name [, name …]`, or `REVOKE MCP READ ALL`
+    /// when `tables` is `None`.
+    Revoke {
+        tables: Option<Vec<String>>,
+    },
+    /// `SHOW MCP GRANTS`.
+    ShowMcpGrants,
     Load {
         file: String,
         table: String,
     },
     Explain(Box<Statement>),
     Analyze(Box<Statement>),
+}
+
+/// One `name AS (SELECT|SCAN ...)` in a `WITH` clause.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Cte {
+    pub name: String,
+    /// Source text of the `SELECT` or `SCAN` inside the parentheses.
+    pub query_text: String,
+    pub query: Box<Statement>,
+}
+
+/// `JOIN other ON left.column = right.column`. Either side of `=` may name either table.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EquiJoin {
+    pub table: String,
+    pub left_attr: String,
+    pub right_attr: String,
+    /// Earlier table that owns `left_attr` when the `ON` clause qualifies it.
+    pub left_table: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -656,6 +697,8 @@ impl<'a> Parser<'a> {
             self.parse_scan()
         } else if self.accept_keyword("SELECT") {
             self.parse_select()
+        } else if self.accept_keyword("WITH") {
+            self.parse_with()
         } else if self.accept_keyword("ALTER") {
             self.parse_alter()
         } else if self.accept_keyword("DUMP") {
@@ -664,6 +707,10 @@ impl<'a> Parser<'a> {
             self.parse_load()
         } else if self.accept_keyword("SHOW") {
             self.parse_show()
+        } else if self.accept_keyword("GRANT") {
+            self.parse_grant()
+        } else if self.accept_keyword("REVOKE") {
+            self.parse_revoke()
         } else if self.accept_keyword("ST") {
             self.parse_st()
         } else if self.accept_keyword("DESCRIBE") {
@@ -732,13 +779,7 @@ impl<'a> Parser<'a> {
         self.expect_keyword("AS")?;
         self.expect_symbol('(')?;
         let query_start = self.pos;
-        let query = if self.accept_keyword("SELECT") {
-            self.parse_select()?
-        } else if self.accept_keyword("SCAN") {
-            self.parse_scan()?
-        } else {
-            return Err(self.error("expected SELECT or SCAN"));
-        };
+        let query = self.parse_with_query()?;
         let query_text = self.token_slice(query_start, self.pos);
         self.expect_symbol(')')?;
         Ok(Statement::CreateTempTable {
@@ -747,6 +788,44 @@ impl<'a> Parser<'a> {
             query_text,
             query: Box::new(query),
         })
+    }
+
+    fn parse_with(&mut self) -> Result<Statement, ParseError> {
+        let mut ctes = Vec::new();
+        loop {
+            let name = self.expect_ident()?;
+            self.expect_keyword("AS")?;
+            self.expect_symbol('(')?;
+            let query_start = self.pos;
+            let query = self.parse_with_query()?;
+            let query_text = self.token_slice(query_start, self.pos);
+            self.expect_symbol(')')?;
+            ctes.push(Cte {
+                name,
+                query_text,
+                query: Box::new(query),
+            });
+            if !self.accept_symbol(',') {
+                break;
+            }
+        }
+        let body = self.parse_with_query()?;
+        Ok(Statement::With {
+            ctes,
+            body: Box::new(body),
+        })
+    }
+
+    fn parse_with_query(&mut self) -> Result<Statement, ParseError> {
+        if self.accept_keyword("SELECT") {
+            self.parse_select()
+        } else if self.accept_keyword("SCAN") {
+            self.parse_scan()
+        } else if self.accept_keyword("WITH") {
+            self.parse_with()
+        } else {
+            Err(self.error("expected SELECT or SCAN"))
+        }
     }
 
     fn parse_if_not_exists(&mut self) -> Result<bool, ParseError> {
@@ -1063,6 +1142,7 @@ impl<'a> Parser<'a> {
         let selection = self.parse_selection_until(|parser| parser.peek_keyword("FROM"))?;
         self.expect_keyword("FROM")?;
         let table = self.expect_ident()?;
+        let joins = self.parse_joins(&table)?;
         let (condition, tail_options) = self.parse_query_tail()?;
         options = merge_query_options(options, tail_options);
         reject_count_with_save(&selection, &options)?;
@@ -1071,6 +1151,7 @@ impl<'a> Parser<'a> {
             selection,
             condition,
             options,
+            joins,
         })
     }
 
@@ -1082,6 +1163,7 @@ impl<'a> Parser<'a> {
         let selection = self.parse_selection_until(|parser| parser.peek_keyword("FROM"))?;
         self.expect_keyword("FROM")?;
         let table = self.expect_ident()?;
+        let joins = self.parse_joins(&table)?;
         let (condition, tail_options) = self.parse_query_tail()?;
         options = merge_query_options(options, tail_options);
         reject_count_with_save(&selection, &options)?;
@@ -1090,7 +1172,56 @@ impl<'a> Parser<'a> {
             selection,
             condition,
             options,
+            joins,
         })
+    }
+
+    /// Zero or more `JOIN other ON left.column = right.column` clauses.
+    fn parse_joins(&mut self, from_table: &str) -> Result<Vec<EquiJoin>, ParseError> {
+        let mut known = vec![from_table.to_string()];
+        let mut joins = Vec::new();
+        while self.accept_keyword("JOIN") {
+            let right_table = self.expect_ident()?;
+            if known
+                .iter()
+                .any(|name| name.eq_ignore_ascii_case(&right_table))
+            {
+                return Err(self.error("JOIN needs a different table"));
+            }
+            self.expect_keyword("ON")?;
+            let (q1, a1) = self.parse_join_ref()?;
+            self.expect_symbol('=')?;
+            let (q2, a2) = self.parse_join_ref()?;
+            let (left_table, left_attr, right_attr) =
+                assign_join_attrs(&known, &right_table, q1, a1, q2, a2).ok_or_else(|| {
+                    self.error(format!(
+                        "ON must compare one new table column with {}.column",
+                        known.join(" or ")
+                    ))
+                })?;
+            joins.push(EquiJoin {
+                table: right_table.clone(),
+                left_attr,
+                right_attr,
+                left_table,
+            });
+            known.push(right_table);
+        }
+        Ok(joins)
+    }
+
+    fn parse_join_ref(&mut self) -> Result<(Option<String>, String), ParseError> {
+        // `table.column` is one identifier. `.` is part of the name, as in WHERE paths.
+        let name = self.expect_ident()?;
+        match name.split_once('.') {
+            Some((qualifier, attr))
+                if !qualifier.is_empty() && !attr.is_empty() && !attr.contains('.') =>
+            {
+                Ok((Some(qualifier.to_string()), attr.to_string()))
+            }
+            Some(_) => Err(self.error("ON column is table.column")),
+            None => Ok((None, name)),
+        }
     }
 
     fn parse_query_tail(&mut self) -> Result<(Option<Condition>, QueryOptions), ParseError> {
@@ -1433,8 +1564,59 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_show(&mut self) -> Result<Statement, ParseError> {
+        if self.accept_keyword("MCP") {
+            if !self.accept_keyword("GRANTS") {
+                return Err(self.error("expected SHOW MCP GRANTS"));
+            }
+            return Ok(Statement::ShowMcpGrants);
+        }
         self.expect_keyword("TABLES")?;
         self.parse_show_tables_like()
+    }
+
+    fn parse_grant(&mut self) -> Result<Statement, ParseError> {
+        self.expect_mcp_read_temptable("GRANT MCP READ ON TEMPTABLE name")?;
+        Ok(Statement::Grant {
+            tables: self.parse_table_name_list()?,
+        })
+    }
+
+    fn parse_revoke(&mut self) -> Result<Statement, ParseError> {
+        if !self.accept_keyword("MCP") || !self.accept_keyword("READ") {
+            return Err(
+                self.error("expected REVOKE MCP READ ON TEMPTABLE name or REVOKE MCP READ ALL")
+            );
+        }
+        if self.accept_keyword("ALL") {
+            return Ok(Statement::Revoke { tables: None });
+        }
+        if !self.accept_keyword("ON") || !self.accept_keyword("TEMPTABLE") {
+            return Err(
+                self.error("expected REVOKE MCP READ ON TEMPTABLE name or REVOKE MCP READ ALL")
+            );
+        }
+        Ok(Statement::Revoke {
+            tables: Some(self.parse_table_name_list()?),
+        })
+    }
+
+    fn expect_mcp_read_temptable(&mut self, syntax: &str) -> Result<(), ParseError> {
+        if self.accept_keyword("MCP")
+            && self.accept_keyword("READ")
+            && self.accept_keyword("ON")
+            && self.accept_keyword("TEMPTABLE")
+        {
+            return Ok(());
+        }
+        Err(self.error(format!("expected {syntax}")))
+    }
+
+    fn parse_table_name_list(&mut self) -> Result<Vec<String>, ParseError> {
+        let mut names = vec![self.expect_ident()?];
+        while self.accept_symbol(',') {
+            names.push(self.expect_ident()?);
+        }
+        Ok(names)
     }
 
     /// The rest of `SHOW TABLES` (or `ST`): an optional `LIKE 'pattern'`.
@@ -2306,6 +2488,39 @@ impl<'a> Parser<'a> {
     }
 }
 
+fn assign_join_attrs(
+    known: &[String],
+    right_table: &str,
+    q1: Option<String>,
+    a1: String,
+    q2: Option<String>,
+    a2: String,
+) -> Option<(Option<String>, String, String)> {
+    fn known_name(known: &[String], name: &str) -> Option<String> {
+        known
+            .iter()
+            .find(|item| item.eq_ignore_ascii_case(name))
+            .cloned()
+    }
+    match (q1, q2) {
+        (None, None) => Some((None, a1, a2)),
+        (Some(qa), Some(qb)) => {
+            let a_left = known_name(known, &qa);
+            let b_left = known_name(known, &qb);
+            let a_right = qa.eq_ignore_ascii_case(right_table);
+            let b_right = qb.eq_ignore_ascii_case(right_table);
+            if a_left.is_some() && b_right {
+                Some((a_left, a1, a2))
+            } else if b_left.is_some() && a_right {
+                Some((b_left, a2, a1))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
 /// Prefix of every key-list shape error, so WHERE parsing reports them instead of backtracking.
 const KEY_FORMAT: &str = "key list: ";
 const KEY_PARTS_ERROR: &str = "key list: a key has at most two parts: (hash, range)";
@@ -2610,6 +2825,42 @@ mod tests {
             other => panic!("unexpected statement: {other:?}"),
         }
 
+        let joined = parse_statement(
+            "WITH orders AS (SCAN * FROM posts), people AS (SELECT * FROM customers WHERE id = 'c1') SELECT name FROM orders JOIN people ON people.id = orders.customer WHERE id = 'a'",
+        )
+        .unwrap();
+        match joined {
+            Statement::With { ctes, body } => {
+                assert_eq!(ctes.len(), 2);
+                assert_eq!(ctes[0].name, "orders");
+                assert_eq!(ctes[0].query_text, "SCAN * FROM posts");
+                assert_eq!(
+                    ctes[1].query_text,
+                    "SELECT * FROM customers WHERE id = 'c1'"
+                );
+                match body.as_ref() {
+                    Statement::Select {
+                        table,
+                        joins,
+                        condition: Some(_),
+                        ..
+                    } => {
+                        assert_eq!(table, "orders");
+                        assert_eq!(joins.len(), 1);
+                        assert_eq!(joins[0].table, "people");
+                        assert_eq!(joins[0].left_attr, "customer");
+                        assert_eq!(joins[0].right_attr, "id");
+                        assert_eq!(joins[0].left_table.as_deref(), Some("orders"));
+                    }
+                    other => panic!("unexpected body: {other:?}"),
+                }
+            }
+            other => panic!("unexpected statement: {other:?}"),
+        }
+        assert!(
+            parse_statement("SELECT * FROM orders JOIN orders ON orders.id = orders.id").is_err()
+        );
+
         let drop_local = parse_statement("DROP LOCALTABLE IF EXISTS users").unwrap();
         assert!(matches!(
             drop_local,
@@ -2837,6 +3088,53 @@ mod tests {
         // SHOW TABLES itself still needs LIKE.
         assert!(parse_statement("SHOW TABLES 'posts'").is_err());
         assert!(parse_statement("SHOW TABLES posts").is_err());
+    }
+
+    #[test]
+    fn parses_mcp_grant_statements() {
+        assert_eq!(
+            parse_statement("GRANT MCP READ ON TEMPTABLE late_orders").unwrap(),
+            Statement::Grant {
+                tables: vec!["late_orders".to_string()]
+            }
+        );
+        assert_eq!(
+            parse_statement("grant mcp read on temptable a, b;").unwrap(),
+            Statement::Grant {
+                tables: vec!["a".to_string(), "b".to_string()]
+            }
+        );
+        assert_eq!(
+            parse_statement("REVOKE MCP READ ON TEMPTABLE late_orders").unwrap(),
+            Statement::Revoke {
+                tables: Some(vec!["late_orders".to_string()])
+            }
+        );
+        assert_eq!(
+            parse_statement("revoke mcp read all").unwrap(),
+            Statement::Revoke { tables: None }
+        );
+        assert_eq!(
+            parse_statement("SHOW MCP GRANTS").unwrap(),
+            Statement::ShowMcpGrants
+        );
+        assert_eq!(
+            parse_statement("SHOW TABLES").unwrap(),
+            Statement::ShowTables { like: None }
+        );
+        let missing = parse_statement("GRANT READ ON TEMPTABLE late_orders").unwrap_err();
+        assert!(
+            missing.to_string().contains("GRANT MCP READ ON TEMPTABLE"),
+            "{missing}"
+        );
+        let revoke = parse_statement("REVOKE MCP late_orders").unwrap_err();
+        assert!(
+            revoke.to_string().contains("REVOKE MCP READ ON TEMPTABLE"),
+            "{revoke}"
+        );
+        assert!(parse_statement("GRANT MCP READ ON TEMPTABLE").is_err());
+        assert!(parse_statement("SHOW MCP").is_err());
+        assert!(parse_statement("REVOKE MCP READ ON TABLE late_orders").is_err());
     }
 
     #[test]

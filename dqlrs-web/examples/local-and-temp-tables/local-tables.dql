@@ -46,6 +46,10 @@ CREATE TEMPTABLE sample_temp_london AS (
 );
 
 SCAN * FROM sample_temp_london;
+
+-- Hand this snapshot to an agent on dqlrs web --mcp. The grant is not saved.
+GRANT MCP READ ON TEMPTABLE sample_temp_london;
+SHOW MCP GRANTS;
 scan * from sample_local_users;
 -- This row is visible to every tab of this server, and to no other process.
 INSERT INTO sample_temp_london (id, name, city) VALUES ('c', 'Lin', 'Oslo');
