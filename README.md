@@ -53,7 +53,9 @@ with `-H localhost -p 8000`. See [Credentials](#credentials).
 - **Three surfaces, one binary.** A rich terminal UI, a web editor with a file
   tree, lint, and a table browser, and a notebook kernel. Nothing else to run.
 - **MCP for agents.** `dqlrs web --mcp` lets an agent search tables, read
-  schemas, lint, and write `.dql` files. It cannot run queries.
+  schemas, lint, and write `.dql` files. It cannot run queries. You can hand it
+  specific temp tables with `GRANT MCP READ ON TEMPTABLE`. See
+  [MCP grants](rust-docs/README.md#mcp-grants).
 - **Secure by default.** Table and result caches are sealed with AES-256-GCM,
   with the key in your OS keychain. Servers listen on loopback only, and a
   per-user token guards the web API, MCP, and TCP `--serve`.

@@ -22,6 +22,8 @@ A temp table is the rows from a `SELECT` or `SCAN`. Every tab on this server see
 | `sample_temp_london` | London rows from `sample_local_users`. Later edits to the CSV do not change this snapshot. |
 | `sample_temp_notes` | The `id = 'a'` row from DynamoDB table `sample_source` |
 
+`GRANT MCP READ ON TEMPTABLE sample_temp_london` lets an agent read that snapshot through `dqlrs web --mcp` until the server stops. `REVOKE MCP READ ON TEMPTABLE sample_temp_london` takes it back. The grant is not saved.
+
 ## Diagram
 
 The files feed the local tables. The London temp table is a copy of the user file. The notes temp table is a copy of one DynamoDB row.

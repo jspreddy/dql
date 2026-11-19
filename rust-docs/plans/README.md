@@ -30,8 +30,8 @@ Keep these current when the code changes.
 ## Open: design debt (`todo/`)
 
 Phases 1–6 are implemented in `rust-impl/`. A SOLID / code-smell review of that
-tree produced most of these follow-ups; `installers.md` covers packaging, and
-`mcp_temp_table_grants.md` is a feature handed off to build. None are done yet.
+tree produced most of these follow-ups; `installers.md` covers packaging.
+None are done yet.
 
 | Todo | Priority | Focus |
 | --- | --- | --- |
@@ -44,7 +44,6 @@ tree produced most of these follow-ups; `installers.md` covers packaging, and
 | [`dedupe_cross_cutting.md`](todo/dedupe_cross_cutting.md) | Medium | Shared base64, AWS config, bool parse, display backends |
 | [`config_opt_registry.md`](todo/config_opt_registry.md) | Medium | Single `opt` / config registry; typed width/pagesize |
 | [`split_web_app_js.md`](todo/split_web_app_js.md) | Medium | Split the web app's 5,850-line `app.js` into modules, leaves first |
-| [`mcp_temp_table_grants.md`](todo/mcp_temp_table_grants.md) | Medium | `GRANT MCP READ ON TEMPTABLE`: let an agent read chosen temp tables while the server runs (handoff, ready to build) |
 
 ## Archive
 
