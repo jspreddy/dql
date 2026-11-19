@@ -2734,6 +2734,91 @@ mod tests {
     }
 
     #[test]
+    fn two_queries_can_reuse_the_same_with_names() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE posts (id STRING HASH KEY, customer STRING)")
+            .unwrap();
+        engine
+            .execute("CREATE TABLE customers (id STRING HASH KEY, name STRING)")
+            .unwrap();
+        engine
+            .execute("INSERT INTO posts (id, customer) VALUES ('a', 'c1'), ('b', 'c2')")
+            .unwrap();
+        engine
+            .execute("INSERT INTO customers (id, name) VALUES ('c1', 'Ada'), ('c2', 'Grace')")
+            .unwrap();
+        engine.explain = true;
+        engine.explain_log.clear();
+
+        let first = engine
+            .execute(
+                "WITH orders AS (SCAN * FROM posts WHERE id = 'a'), \
+                      people AS (SCAN * FROM customers WHERE id = 'c1') \
+                 SELECT name FROM orders \
+                 JOIN people ON orders.customer = people.id",
+            )
+            .unwrap();
+        assert_eq!(names_of(first), vec!["Ada".to_string()]);
+        assert!(engine.query_scopes.is_empty());
+        assert!(!engine.virtual_tables.contains("orders"));
+        assert!(!engine.virtual_tables.contains("people"));
+
+        let second = engine
+            .execute(
+                "WITH orders AS (SCAN * FROM posts WHERE id = 'b'), \
+                      people AS (SCAN * FROM customers WHERE id = 'c2') \
+                 SELECT name FROM orders \
+                 JOIN people ON orders.customer = people.id",
+            )
+            .unwrap();
+        assert_eq!(names_of(second), vec!["Grace".to_string()]);
+        assert!(engine.query_scopes.is_empty());
+        assert!(!engine.virtual_tables.contains("orders"));
+        assert!(!engine.virtual_tables.contains("people"));
+
+        let script = engine
+            .execute(
+                "WITH orders AS (SCAN * FROM posts WHERE id = 'a'), \
+                      people AS (SCAN * FROM customers WHERE id = 'c1') \
+                 SELECT name FROM orders JOIN people ON orders.customer = people.id; \
+                 WITH orders AS (SCAN * FROM posts WHERE id = 'b'), \
+                      people AS (SCAN * FROM customers WHERE id = 'c2') \
+                 SELECT name FROM orders JOIN people ON orders.customer = people.id",
+            )
+            .unwrap();
+        assert_eq!(
+            names_of(script),
+            vec!["Grace".to_string()],
+            "the second query keeps its own rows when the names match the first"
+        );
+
+        let log = engine.explain_log.join("\n");
+        assert!(
+            !log.contains("create_table"),
+            "reused WITH names must not register a temp table: {log}"
+        );
+        assert!(engine.query_scopes.is_empty());
+        assert!(!engine.virtual_tables.contains("orders"));
+        assert!(!engine.virtual_tables.contains("people"));
+        assert!(engine.execute("SCAN * FROM orders").is_err());
+        assert!(engine.execute("SCAN * FROM people").is_err());
+    }
+
+    fn names_of(result: StatementResult) -> Vec<String> {
+        match result {
+            StatementResult::Items(items) => items
+                .iter()
+                .map(|item| match item.get("name") {
+                    Some(Value::String(name)) => name.clone(),
+                    other => panic!("expected name, got {other:?}"),
+                })
+                .collect(),
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
+
+    #[test]
     fn executes_create_insert_scan_script() {
         let mut engine = Engine::new(MemoryBackend::new());
         let result = engine
