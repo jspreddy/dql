@@ -9,9 +9,11 @@ import os
 import re
 import secrets
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -307,7 +309,7 @@ def pad_svg(svg: str) -> str:
     )
     svg = re.sub(r'\bwidth="[^"]+"', f'width="{width:.2f}"', svg, count=1)
     svg = re.sub(r'\bheight="[^"]+"', f'height="{height:.2f}"', svg, count=1)
-    return color_head(paint_white(svg, min_x, min_y, width, height))
+    return color_head(paint_dark(svg, min_x, min_y, width, height))
 
 
 _HEAD_LABEL = re.compile(
@@ -328,15 +330,51 @@ def color_head(svg: str) -> str:
     return _HEAD_LABEL.sub(repl, svg, count=1)
 
 
-def paint_white(svg: str, min_x: float, min_y: float, width: float, height: float) -> str:
+# Near-black ground. git-graph paints CSS color names, and several of those
+# (green, purple) disappear on this ground, so they are lifted.
+_DARK_BG = "#0d1117"
+_DARK_TEXT = "#e6edf3"
+_DARK_CHIP = "#ffffff22"
+_DARK_BRANCH = {
+    "blue": "#79c0ff",
+    "orange": "#ffa657",
+    "green": "#3fb950",
+    "red": "#ff7b72",
+    "purple": "#d2a8ff",
+    "turquoise": "#56d4dd",
+    "gray": "#8b949e",
+    "grey": "#8b949e",
+    "magenta": "#ff7bdb",
+    "yellow": "#e3b341",
+    "cyan": "#56d4dd",
+    "brown": "#d4a276",
+    "black": "#e6edf3",
+}
+
+
+def paint_dark(svg: str, min_x: float, min_y: float, width: float, height: float) -> str:
+    """Dark ground, light text, and branch colors that stay visible on it."""
+    style = f"background:{_DARK_BG};fill:{_DARK_TEXT};"
     if 'style="' in svg:
-        svg = svg.replace('style="', 'style="background:#ffffff;', 1)
+        svg = svg.replace('style="', f'style="{style}', 1)
     else:
-        svg = svg.replace("<svg ", '<svg style="background:#ffffff" ', 1)
+        svg = svg.replace("<svg ", f'<svg style="{style}" ', 1)
     rect = (
-        f'<rect x="{min_x:.2f}" y="{min_y:.2f}" width="{width:.2f}" height="{height:.2f}" fill="#ffffff"/>'
+        f'<rect x="{min_x:.2f}" y="{min_y:.2f}" width="{width:.2f}" height="{height:.2f}" fill="{_DARK_BG}"/>'
     )
-    return svg.replace(">", f">{rect}", 1)
+    svg = svg.replace(">", f">{rect}", 1)
+    svg = svg.replace('fill="#00000030"', f'fill="{_DARK_CHIP}"')
+
+    def lift(match: re.Match[str]) -> str:
+        attr, name = match.group(1), match.group(2)
+        if attr == "fill" and name == "white":
+            return f'fill="{_DARK_BG}"'
+        color = _DARK_BRANCH.get(name)
+        if color is None:
+            return match.group(0)
+        return f'{attr}="{color}"'
+
+    return re.sub(r'\b(fill|stroke)="([A-Za-z]+)"', lift, svg)
 
 
 _CHROME_NAMES = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome")
@@ -384,14 +422,44 @@ def svg_to_png(svg_path: Path, svg: str) -> Path:
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         command.insert(1, "--no-sandbox")
     # Log to a file, not a pipe: Chrome helper processes can hold a pipe open after exit.
+    # Chrome writes the screenshot and then keeps running, so stop once the file is stable.
+    png_path.unlink(missing_ok=True)
     with tempfile.TemporaryFile(mode="w+") as log:
-        try:
-            proc = subprocess.run(command, check=False, stdout=log, stderr=log, timeout=120)
-        except subprocess.TimeoutExpired:
-            sys.exit("Chrome did not finish the PNG within 120 seconds")
+        proc = subprocess.Popen(
+            command,
+            stdout=log,
+            stderr=log,
+            start_new_session=True,
+        )
+        deadline = time.monotonic() + 30
+        last_size = -1
+        stable = 0
+        while time.monotonic() < deadline:
+            if png_path.is_file():
+                size = png_path.stat().st_size
+                if size > 0 and size == last_size:
+                    stable += 1
+                    if stable >= 3 or proc.poll() is not None:
+                        break
+                else:
+                    stable = 0
+                    last_size = size
+            elif proc.poll() is not None:
+                break
+            time.sleep(0.2)
+        if proc.poll() is None:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
         log.seek(0)
         output = log.read().strip()
-    if proc.returncode != 0 or not png_path.is_file():
+    if not png_path.is_file() or png_path.stat().st_size == 0:
         sys.exit(output[-2000:] or "Chrome did not write the PNG")
     return png_path
 
