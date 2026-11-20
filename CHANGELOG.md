@@ -11,6 +11,14 @@ latest commit of each pull request, stacked ones included, names that pull reque
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [9ca9138](https://github.com/jspreddy/dql/commit/9ca9138b55323213d009852be8648dc8356591af) fix(lint): treat a WITH name as separate from a dropped temp table ([#276](https://github.com/jspreddy/dql/pull/276))
+- [19f5514](https://github.com/jspreddy/dql/commit/19f55143deea34a19e9cee4bd63a78510adae141) test(web): count WITH history cards on the History pane
+- [a53ca8f](https://github.com/jspreddy/dql/commit/a53ca8f632dd52bf47db58248f383d4e638635bc) fix(engine): treat a short name as free before DescribeTable
+- [44c0d5e](https://github.com/jspreddy/dql/commit/44c0d5e3f58b15461df39125793d3d688137b88c) test(web): reuse the same WITH names in Playwright
+- [96776b2](https://github.com/jspreddy/dql/commit/96776b2d15d0f2842a2a90449bcb422b2ccc8b3f) test(engine): reuse the same WITH names in two queries
+- [59599c9](https://github.com/jspreddy/dql/commit/59599c974c3c33b4137c83dbb7189441b6ed411a) fix(engine): keep WITH rows out of the temp catalog
+- [98a1d66](https://github.com/jspreddy/dql/commit/98a1d66cab53c3042ed10c91a53191705c18686a) fix(engine): let a short WITH name stay in memory
+- [b924cf7](https://github.com/jspreddy/dql/commit/b924cf717ae9d1dcc2cfd4316ce8872bb0fe3a5e) docs(examples): add joins scripts for the in-memory equijoin cases
 - [5b2186f](https://github.com/jspreddy/dql/commit/5b2186f7d5ffd96c43c1670d9057a9bdfaebf5cb) fix(skills): mute commit subjects on the dark git graph ([#277](https://github.com/jspreddy/dql/pull/277))
 - [74cd3a2](https://github.com/jspreddy/dql/commit/74cd3a25ea96783ca076d23ccdeaf15099c4e6bc) feat(skills): render the git graph on a dark ground
 - [f522ceb](https://github.com/jspreddy/dql/commit/f522ceb340cade67a8072c9102f0129c03aab58f) test(mcp): expect granted-table tools in the stdio smoke check ([#271](https://github.com/jspreddy/dql/pull/271))
