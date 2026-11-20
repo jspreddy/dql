@@ -6,11 +6,13 @@ A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists. Each line is a commit; the
 latest commit of each pull request, stacked ones included, names that pull request.
 
-## Unreleased (2026-11-19)
+## Unreleased (2026-11-20)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [5b2186f](https://github.com/jspreddy/dql/commit/5b2186f7d5ffd96c43c1670d9057a9bdfaebf5cb) fix(skills): mute commit subjects on the dark git graph ([#277](https://github.com/jspreddy/dql/pull/277))
+- [74cd3a2](https://github.com/jspreddy/dql/commit/74cd3a25ea96783ca076d23ccdeaf15099c4e6bc) feat(skills): render the git graph on a dark ground
 - [f522ceb](https://github.com/jspreddy/dql/commit/f522ceb340cade67a8072c9102f0129c03aab58f) test(mcp): expect granted-table tools in the stdio smoke check ([#271](https://github.com/jspreddy/dql/pull/271))
 - [0dd2eb4](https://github.com/jspreddy/dql/commit/0dd2eb419e7de5bae1fdb70a8cd50b272279e84a) docs: describe MCP temp table grants and archive the plan
 - [9196540](https://github.com/jspreddy/dql/commit/91965402ec7c9ea46fb0c0cb2b729fb8c5e792f7) feat(web): mark granted temp tables and record MCP reads
