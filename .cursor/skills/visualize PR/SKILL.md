@@ -1,14 +1,14 @@
 ---
-name: pr-files
+name: PR viz
 description: Show the files changed in a pull request, grouped by area of the application. A folder with many changed files is one line with a count. A file that stands alone is listed by name. Use when the user asks what files a pull request changed, for a PR file list, or for changed files grouped by folder. Run only when asked.
 ---
 
-# Pull request files
+# PR viz
 
 From the repository, run:
 
 ```bash
-python3 .cursor/skills/pr-files/report.py PR
+python3 ".cursor/skills/visualize PR/report.py" PR
 ```
 
 `PR` is the pull request number the user named. With no number, the script uses the pull request for the current branch.
