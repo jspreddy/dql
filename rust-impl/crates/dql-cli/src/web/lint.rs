@@ -43,6 +43,9 @@ struct Schemas {
     /// or a query, so they have no definition yet, but they exist.
     created_virtual: HashSet<String>,
     dropped: HashSet<String>,
+    /// `WITH` names for the statement being checked. A CTE alias is not a temp table,
+    /// so a dropped temp table of the same name does not apply.
+    ctes: HashSet<String>,
 }
 
 pub fn lint_script(session: &mut Session, text: &str) -> LintReport {
@@ -52,6 +55,7 @@ pub fn lint_script(session: &mut Session, text: &str) -> LintReport {
         local: HashMap::new(),
         created_virtual: HashSet::new(),
         dropped: HashSet::new(),
+        ctes: HashSet::new(),
     };
     let mut issues = Vec::new();
     for span in &spans {
@@ -136,15 +140,13 @@ fn check_statement(statement: &Statement, cx: &mut Cx<'_>, apply_schema: bool) {
             let mut added = Vec::new();
             for cte in ctes {
                 check_statement(&cte.query, cx, false);
-                if apply_schema && cx.schemas.created_virtual.insert(cte.name.clone()) {
+                if cx.schemas.ctes.insert(cte.name.clone()) {
                     added.push(cte.name.clone());
                 }
             }
             check_statement(body, cx, false);
-            if apply_schema {
-                for name in added {
-                    cx.schemas.created_virtual.remove(&name);
-                }
+            for name in added {
+                cx.schemas.ctes.remove(&name);
             }
         }
         Statement::Insert { table, form, .. } => check_insert(cx, table, form),
@@ -339,6 +341,9 @@ fn keys_in_message(
 fn schema_for(cx: &mut Cx<'_>, table: &str) -> Option<TableMeta> {
     if let Some(meta) = cx.schemas.local.get(table) {
         return Some(meta.clone());
+    }
+    if cx.schemas.ctes.contains(table) {
+        return None;
     }
     if cx.schemas.dropped.contains(table) {
         cx.error(format!("table {table} was dropped earlier in this script"));
@@ -855,6 +860,43 @@ SCAN * FROM hot;
         assert!(
             text.contains("table hot was dropped earlier in this script"),
             "{text}"
+        );
+    }
+
+    #[test]
+    fn a_with_name_is_not_a_dropped_temp_table() {
+        let mut session = session(false);
+        let script = "\
+DROP TEMPTABLE IF EXISTS orders;
+DROP TEMPTABLE IF EXISTS people;
+CREATE TABLE posts (id STRING HASH KEY, customer STRING);
+CREATE TABLE customers (id STRING HASH KEY, name STRING);
+WITH orders AS (SCAN * FROM posts),
+     people AS (SCAN * FROM customers)
+SELECT name FROM orders
+JOIN people ON orders.customer = people.id;
+WITH orders AS (SCAN * FROM posts),
+     people AS (SCAN * FROM customers)
+SELECT name FROM orders
+JOIN people ON people.id = orders.customer
+WHERE id = 'b';
+CREATE TEMPTABLE orders AS (SCAN * FROM posts);
+SCAN name FROM orders;
+";
+        let report = lint_script(&mut session, script);
+        assert!(report.ok, "{:?}", report.issues);
+        assert!(report.issues.is_empty(), "{:?}", report.issues);
+
+        let still_dropped = lint_script(
+            &mut session,
+            "DROP TEMPTABLE IF EXISTS orders;\nSCAN * FROM orders;\n",
+        );
+        assert!(
+            messages(&still_dropped)
+                .join("\n")
+                .contains("table orders was dropped earlier in this script"),
+            "{:?}",
+            still_dropped.issues
         );
     }
 
