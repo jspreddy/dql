@@ -250,21 +250,7 @@ impl VirtualCatalog {
                 "Table '{name}' already exists"
             )));
         }
-        let preferred = columns_from_def(preferred);
-        let columns = if items.is_empty() {
-            if preferred.is_empty() {
-                return Err(EngineError::Runtime(
-                    "query returned no rows and no columns".to_string(),
-                ));
-            }
-            let mut columns = preferred;
-            if let Some(first) = columns.first_mut() {
-                first.key = Some(KeyType::Hash);
-            }
-            columns
-        } else {
-            columns_for_items(&preferred, &items).map_err(EngineError::Runtime)?
-        };
+        let columns = columns_for_saved_rows(preferred, &items)?;
         let generation = self.next_generation;
         self.next_generation = self.next_generation.saturating_add(1);
         self.install(
@@ -774,6 +760,38 @@ fn infer_type(name: &str, items: &[Item]) -> AttributeType {
     } else {
         AttributeType::String
     }
+}
+
+/// Schema for rows held only for the current query. This does not register a table.
+pub(crate) fn meta_for_saved_rows(
+    name: &str,
+    preferred: &[LocalColumn],
+    items: &[Item],
+) -> Result<TableMeta, EngineError> {
+    let columns = columns_for_saved_rows(preferred, items)?;
+    meta_from_columns(name, &columns).map_err(EngineError::Runtime)
+}
+
+/// Columns for a saved query result. An empty result keeps the preferred
+/// columns and uses the first as the hash key. Otherwise the rows decide.
+fn columns_for_saved_rows(
+    preferred: &[LocalColumn],
+    items: &[Item],
+) -> Result<Vec<ColumnSpec>, EngineError> {
+    let preferred = columns_from_def(preferred);
+    if items.is_empty() {
+        if preferred.is_empty() {
+            return Err(EngineError::Runtime(
+                "query returned no rows and no columns".to_string(),
+            ));
+        }
+        let mut columns = preferred;
+        if let Some(first) = columns.first_mut() {
+            first.key = Some(KeyType::Hash);
+        }
+        return Ok(columns);
+    }
+    columns_for_items(&preferred, items).map_err(EngineError::Runtime)
 }
 
 fn meta_from_columns(name: &str, columns: &[ColumnSpec]) -> Result<TableMeta, String> {

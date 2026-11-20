@@ -323,7 +323,8 @@ pub enum Statement {
     },
     /// `WITH name AS (SELECT|SCAN ...), ... SELECT|SCAN ...`
     ///
-    /// Each query runs once into a temp table for this statement, then the body runs.
+    /// Each query runs once. Its rows stay in memory for this statement only
+    /// and are not registered as a temp table.
     With {
         ctes: Vec<Cte>,
         body: Box<Statement>,

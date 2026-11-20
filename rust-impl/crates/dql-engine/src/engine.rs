@@ -2,11 +2,14 @@ use crate::cancel::CancelFlag;
 use crate::convert::keys_in_to_items;
 use crate::file_base::FileBase;
 use crate::file_io::{load_items as load_items_from_file, save_items, validate_save_path};
+use crate::memory::MemoryBackend;
 use crate::progress::ProgressSink;
 use crate::query_context::{query_context_from_read, LastQueryContext};
 use crate::table_cache::SharedTableCache;
 use crate::throttle::RateLimit;
-use crate::virtual_tables::{LocalColumn, LocalDefinitionStore, TableKind, VirtualCatalog};
+use crate::virtual_tables::{
+    meta_for_saved_rows, LocalColumn, LocalDefinitionStore, TableKind, VirtualCatalog,
+};
 use crate::{
     help_page, BackendResponse, CapacityRecord, DynamoBackend, EngineError, Item, ReadOperation,
     ReadRequest, StatementResult, WRITE_PROGRESS_CHUNK,
@@ -44,6 +47,9 @@ pub struct Engine<B: DynamoBackend> {
     progress: ProgressSink,
     cancel: CancelFlag,
     virtual_tables: VirtualCatalog,
+    /// Rows from `WITH` names. Each `WITH` pushes one backend and pops it when
+    /// that statement finishes. These names are not temp tables and are not listed.
+    query_scopes: Vec<MemoryBackend>,
     local_store: Option<Arc<dyn LocalDefinitionStore>>,
     file_base: FileBase,
 }
@@ -74,6 +80,7 @@ impl<B: DynamoBackend> Engine<B> {
             progress,
             cancel,
             virtual_tables: VirtualCatalog::default(),
+            query_scopes: Vec::new(),
             local_store: None,
             file_base: FileBase::default(),
         }
@@ -233,6 +240,10 @@ impl<B: DynamoBackend> Engine<B> {
         table: &str,
         refresh: bool,
     ) -> Result<Option<TableMeta>, EngineError> {
+        if let Some(meta) = self.query_meta(table) {
+            self.last_read_from_cache = false;
+            return Ok(Some(meta));
+        }
         if self.virtual_tables.contains(table) {
             self.virtual_tables.reload_local(table)?;
             self.last_read_from_cache = false;
@@ -243,6 +254,12 @@ impl<B: DynamoBackend> Engine<B> {
                 self.last_read_from_cache = true;
                 return Ok(Some(meta));
             }
+        }
+        // A name DynamoDB cannot store is not a table. Asking DescribeTable
+        // raises ValidationException, and Local and AWS word that differently.
+        if !dynamodb_name_allowed(table) {
+            self.last_read_from_cache = false;
+            return Ok(None);
         }
         let desc = self.backend.describe_table(table)?;
         if let Some(meta) = desc {
@@ -353,6 +370,9 @@ impl<B: DynamoBackend> Engine<B> {
     }
 
     pub fn table_item_count(&self, table: &str) -> usize {
+        if let Some(scope) = self.query_scope(table) {
+            return scope.table_item_count(table);
+        }
         if self.virtual_tables.contains(table) {
             return self.virtual_tables.item_count(table);
         }
@@ -376,6 +396,9 @@ impl<B: DynamoBackend> Engine<B> {
     }
 
     fn lookup_meta(&self, table: &str) -> Result<TableMeta, EngineError> {
+        if let Some(meta) = self.query_meta(table) {
+            return Ok(meta);
+        }
         if let Some(meta) = self.virtual_tables.meta(table) {
             return Ok(meta);
         }
@@ -388,7 +411,18 @@ impl<B: DynamoBackend> Engine<B> {
         if self.virtual_tables.contains(name) {
             return Ok(true);
         }
-        Ok(self.backend.describe_table(name)?.is_some())
+        // A WITH name or temp table never becomes a DynamoDB table. A name
+        // DynamoDB cannot store (shorter than 3 characters, longer than 255,
+        // or outside [A-Za-z0-9_.-]) is not an existing table. Check that
+        // before DescribeTable: Local and AWS reject it with different text.
+        if !dynamodb_name_allowed(name) {
+            return Ok(false);
+        }
+        match self.backend.describe_table(name) {
+            Ok(found) => Ok(found.is_some()),
+            Err(err) if dynamodb_rejects_table_name(&err) => Ok(false),
+            Err(err) => Err(err),
+        }
     }
 
     fn refresh_listed(&mut self, name: &str) {
@@ -825,26 +859,80 @@ impl<B: DynamoBackend> Engine<B> {
         Ok(StatementResult::Status(message))
     }
 
-    /// Run each CTE once into a temp table, run the body, then drop those temps.
+    /// Run each CTE once, keep the rows for this statement, then drop that memory.
+    ///
+    /// The names are not registered as temp tables, so they are not listed and
+    /// they do not publish a catalog change.
     fn run_with(&mut self, ctes: &[Cte], body: &Statement) -> Result<StatementResult, EngineError> {
-        let mut created = Vec::new();
+        self.query_scopes.push(MemoryBackend::new());
         let result = (|| {
             for cte in ctes {
-                if created.iter().any(|name: &String| name == &cte.name) {
+                if self
+                    .query_scopes
+                    .last()
+                    .is_some_and(|scope| scope_has(scope, &cte.name))
+                {
                     return Err(EngineError::Runtime(format!(
                         "WITH name '{}' is used more than once",
                         cte.name
                     )));
                 }
-                self.create_temp_table(false, &cte.name, &cte.query_text, &cte.query)?;
-                created.push(cte.name.clone());
+                if self
+                    .query_scopes
+                    .iter()
+                    .rev()
+                    .skip(1)
+                    .any(|scope| scope_has(scope, &cte.name))
+                    || self.table_exists(&cte.name)?
+                {
+                    return Err(EngineError::Runtime(format!(
+                        "Table '{}' already exists",
+                        cte.name
+                    )));
+                }
+                self.store_cte(&cte.name, &cte.query)?;
             }
             self.run(body)
         })();
-        for name in created.iter().rev() {
-            let _ = self.drop_virtual(true, name, TableKind::Temp);
-        }
+        self.query_scopes.pop();
         result
+    }
+
+    /// Save one CTE's rows in the current query scope. Does not register a table.
+    fn store_cte(&mut self, name: &str, query: &Statement) -> Result<(), EngineError> {
+        let preferred = self.temp_source_columns(query)?;
+        let result = self.run(query)?;
+        let items = match result {
+            StatementResult::Items(items) => items,
+            StatementResult::ItemsWithNote { items, .. } => items,
+            _ => {
+                return Err(EngineError::Runtime(
+                    "WITH requires a SELECT or SCAN that returns rows".to_string(),
+                ))
+            }
+        };
+        let meta = meta_for_saved_rows(name, &preferred, &items)?;
+        let scope = self
+            .query_scopes
+            .last_mut()
+            .expect("WITH scope is pushed before its queries run");
+        scope.create_table(meta, false)?;
+        if !items.is_empty() {
+            scope.batch_write(name, items)?;
+        }
+        Ok(())
+    }
+
+    fn query_scope(&self, table: &str) -> Option<&MemoryBackend> {
+        self.query_scopes
+            .iter()
+            .rev()
+            .find(|scope| scope_has(scope, table))
+    }
+
+    fn query_meta(&self, table: &str) -> Option<TableMeta> {
+        self.query_scope(table)
+            .and_then(|scope| scope.describe_table(table).ok().flatten())
     }
 
     /// Inner equijoins of tables already in memory. Each side is scanned once.
@@ -892,6 +980,9 @@ impl<B: DynamoBackend> Engine<B> {
     }
 
     fn require_memory_table(&self, name: &str) -> Result<(), EngineError> {
+        if self.query_meta(name).is_some() {
+            return Ok(());
+        }
         match self.virtual_tables.kind(name) {
             Some(TableKind::Temp) | Some(TableKind::Local) => Ok(()),
             _ => Err(EngineError::Runtime(format!(
@@ -908,7 +999,10 @@ impl<B: DynamoBackend> Engine<B> {
             | Statement::Scan {
                 table, selection, ..
             } => (table.as_str(), selection),
-            Statement::With { body, .. } => return self.temp_source_columns(body),
+            // The body names are WITH names, and they are not stored yet.
+            // Describing one asks DynamoDB, rejects a short name, or copies a
+            // cached table. The rows decide the columns after the query runs.
+            Statement::With { .. } => return Ok(Vec::new()),
             _ => {
                 return Err(EngineError::Runtime(
                     "CREATE TEMPTABLE requires SELECT or SCAN".to_string(),
@@ -1316,7 +1410,9 @@ impl<B: DynamoBackend> Engine<B> {
             table,
             &explain_kwargs_for_projection(selection, options),
         );
-        let response = if self.virtual_tables.contains(table) {
+        let response = if let Some(scope) = self.query_scope(table) {
+            scope.batch_get_keys(table, &keys, options.consistent)?
+        } else if self.virtual_tables.contains(table) {
             self.virtual_tables
                 .batch_get(table, &keys, options.consistent)?
         } else {
@@ -1417,7 +1513,9 @@ impl<B: DynamoBackend> Engine<B> {
             range_key,
             follow_up_batch_get: plan.follow_up_batch_get,
         };
-        let response = if self.virtual_tables.contains(table) {
+        let response = if let Some(scope) = self.query_scope(table) {
+            scope.execute_read(table, &request)?
+        } else if self.virtual_tables.contains(table) {
             self.virtual_tables.read(table, &request)?
         } else {
             self.backend.execute_read(table, &request)?
@@ -2351,6 +2449,32 @@ fn merge_read_results(results: Vec<StatementResult>) -> Result<StatementResult, 
     })
 }
 
+/// DynamoDB table names are 3 to 255 characters from `[A-Za-z0-9_.-]`.
+fn dynamodb_name_allowed(name: &str) -> bool {
+    let len = name.chars().count();
+    (3..=255).contains(&len)
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
+}
+
+/// DescribeTable rejects a name it could never store. Local says "Invalid
+/// table/index name". AWS says the `tableName` member failed a constraint.
+/// Either one means the table is absent, not that the call failed.
+fn dynamodb_rejects_table_name(err: &EngineError) -> bool {
+    let EngineError::Runtime(message) = err else {
+        return false;
+    };
+    if message.contains("Invalid table/index name") {
+        return true;
+    }
+    message.contains("ValidationException") && message.contains("tableName")
+}
+
+fn scope_has(scope: &MemoryBackend, name: &str) -> bool {
+    scope.describe_table(name).ok().flatten().is_some()
+}
+
 fn statement_items(result: StatementResult) -> Result<Vec<Item>, EngineError> {
     match result {
         StatementResult::Items(items) => Ok(items),
@@ -2563,6 +2687,216 @@ fn compare_sort_values(left: Option<&Value>, right: Option<&Value>) -> std::cmp:
 mod tests {
     use super::*;
     use crate::memory::MemoryBackend;
+
+    #[test]
+    fn a_name_dynamodb_cannot_store_is_not_an_existing_table() {
+        let local = EngineError::Runtime(
+            "ValidationException: Invalid table/index name.  Table/index names must be between 3 and 255 characters long, and may contain only the characters a-z, A-Z, 0-9, '_', '-', and '.'".to_string(),
+        );
+        let aws_length = EngineError::Runtime(
+            "ValidationException: 1 validation error detected: Value 'o' at 'tableName' failed to satisfy constraint: Member must have length greater than or equal to 3".to_string(),
+        );
+        let aws_pattern = EngineError::Runtime(
+            "ValidationException: 1 validation error detected: Value 'a b' at 'tableName' failed to satisfy constraint: Member must satisfy regular expression pattern: [a-zA-Z0-9_.-]+".to_string(),
+        );
+        assert!(dynamodb_rejects_table_name(&local));
+        assert!(dynamodb_rejects_table_name(&aws_length));
+        assert!(dynamodb_rejects_table_name(&aws_pattern));
+        assert!(!dynamodb_name_allowed("o"));
+        assert!(!dynamodb_name_allowed("ab"));
+        assert!(dynamodb_name_allowed("abc"));
+        assert!(dynamodb_name_allowed("a.b_c-1"));
+        assert!(!dynamodb_name_allowed("a b"));
+        assert!(!dynamodb_name_allowed(&"a".repeat(256)));
+        assert!(!dynamodb_rejects_table_name(&EngineError::Runtime(
+            "ResourceNotFoundException: Requested resource not found".to_string(),
+        )));
+        assert!(!dynamodb_rejects_table_name(&EngineError::Runtime(
+            "ValidationException: The request was missing a required parameter".to_string(),
+        )));
+        assert!(!dynamodb_rejects_table_name(&EngineError::Cancelled));
+    }
+
+    #[test]
+    fn with_keeps_rows_for_one_query_and_does_not_register_a_temp_table() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE posts (id STRING HASH KEY, customer STRING)")
+            .unwrap();
+        engine
+            .execute("INSERT INTO posts (id, customer) VALUES ('a', 'c1'), ('b', 'c2')")
+            .unwrap();
+        engine
+            .execute("CREATE TEMPTABLE kept AS (SCAN * FROM posts)")
+            .unwrap();
+        engine.explain = true;
+        engine.explain_log.clear();
+
+        let filtered = engine
+            .execute(
+                "WITH orders AS (SCAN * FROM posts) SELECT customer FROM orders WHERE id = 'b'",
+            )
+            .unwrap();
+        match filtered {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(
+                    items[0].get("customer"),
+                    Some(&Value::String("c2".to_string()))
+                );
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        let log = engine.explain_log.join("\n");
+        assert!(
+            !log.contains("create_table"),
+            "WITH must not record a table create: {log}"
+        );
+        assert!(!engine.virtual_tables.contains("orders"));
+        assert!(engine.query_scopes.is_empty());
+        assert!(engine.virtual_tables.contains("kept"));
+        assert!(engine.execute("SCAN * FROM orders").is_err());
+
+        let blocked = engine
+            .execute("WITH kept AS (SCAN * FROM posts) SELECT * FROM kept")
+            .unwrap_err()
+            .to_string();
+        assert!(blocked.contains("already exists"), "{blocked}");
+        assert_eq!(
+            engine.table_item_count("kept"),
+            2,
+            "a WITH name must not replace a temp table"
+        );
+
+        assert!(engine
+            .execute("WITH gone AS (SCAN * FROM missing) SELECT * FROM gone")
+            .is_err());
+        assert!(engine.query_scopes.is_empty());
+        assert!(!engine.virtual_tables.contains("gone"));
+    }
+
+    #[test]
+    fn a_short_with_name_stays_in_memory() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE posts (id STRING HASH KEY, customer STRING)")
+            .unwrap();
+        engine
+            .execute("INSERT INTO posts (id, customer) VALUES ('a', 'c1')")
+            .unwrap();
+        let joined = engine
+            .execute("WITH o AS (SCAN * FROM posts) SCAN customer FROM o")
+            .unwrap();
+        match joined {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(
+                    items[0].get("customer"),
+                    Some(&Value::String("c1".to_string()))
+                );
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        assert!(!engine.virtual_tables.contains("o"));
+
+        engine
+            .execute("CREATE TEMPTABLE kept AS (WITH o AS (SCAN * FROM posts) SCAN * FROM o)")
+            .unwrap();
+        let kept = engine.execute("SCAN * FROM kept").unwrap();
+        match kept {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("id"), Some(&Value::String("a".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        assert!(engine.execute("SCAN * FROM o").is_err());
+    }
+
+    #[test]
+    fn two_queries_can_reuse_the_same_with_names() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE posts (id STRING HASH KEY, customer STRING)")
+            .unwrap();
+        engine
+            .execute("CREATE TABLE customers (id STRING HASH KEY, name STRING)")
+            .unwrap();
+        engine
+            .execute("INSERT INTO posts (id, customer) VALUES ('a', 'c1'), ('b', 'c2')")
+            .unwrap();
+        engine
+            .execute("INSERT INTO customers (id, name) VALUES ('c1', 'Ada'), ('c2', 'Grace')")
+            .unwrap();
+        engine.explain = true;
+        engine.explain_log.clear();
+
+        let first = engine
+            .execute(
+                "WITH orders AS (SCAN * FROM posts WHERE id = 'a'), \
+                      people AS (SCAN * FROM customers WHERE id = 'c1') \
+                 SELECT name FROM orders \
+                 JOIN people ON orders.customer = people.id",
+            )
+            .unwrap();
+        assert_eq!(names_of(first), vec!["Ada".to_string()]);
+        assert!(engine.query_scopes.is_empty());
+        assert!(!engine.virtual_tables.contains("orders"));
+        assert!(!engine.virtual_tables.contains("people"));
+
+        let second = engine
+            .execute(
+                "WITH orders AS (SCAN * FROM posts WHERE id = 'b'), \
+                      people AS (SCAN * FROM customers WHERE id = 'c2') \
+                 SELECT name FROM orders \
+                 JOIN people ON orders.customer = people.id",
+            )
+            .unwrap();
+        assert_eq!(names_of(second), vec!["Grace".to_string()]);
+        assert!(engine.query_scopes.is_empty());
+        assert!(!engine.virtual_tables.contains("orders"));
+        assert!(!engine.virtual_tables.contains("people"));
+
+        let script = engine
+            .execute(
+                "WITH orders AS (SCAN * FROM posts WHERE id = 'a'), \
+                      people AS (SCAN * FROM customers WHERE id = 'c1') \
+                 SELECT name FROM orders JOIN people ON orders.customer = people.id; \
+                 WITH orders AS (SCAN * FROM posts WHERE id = 'b'), \
+                      people AS (SCAN * FROM customers WHERE id = 'c2') \
+                 SELECT name FROM orders JOIN people ON orders.customer = people.id",
+            )
+            .unwrap();
+        assert_eq!(
+            names_of(script),
+            vec!["Grace".to_string()],
+            "the second query keeps its own rows when the names match the first"
+        );
+
+        let log = engine.explain_log.join("\n");
+        assert!(
+            !log.contains("create_table"),
+            "reused WITH names must not register a temp table: {log}"
+        );
+        assert!(engine.query_scopes.is_empty());
+        assert!(!engine.virtual_tables.contains("orders"));
+        assert!(!engine.virtual_tables.contains("people"));
+        assert!(engine.execute("SCAN * FROM orders").is_err());
+        assert!(engine.execute("SCAN * FROM people").is_err());
+    }
+
+    fn names_of(result: StatementResult) -> Vec<String> {
+        match result {
+            StatementResult::Items(items) => items
+                .iter()
+                .map(|item| match item.get("name") {
+                    Some(Value::String(name)) => name.clone(),
+                    other => panic!("expected name, got {other:?}"),
+                })
+                .collect(),
+            other => panic!("unexpected result: {other:?}"),
+        }
+    }
 
     #[test]
     fn executes_create_insert_scan_script() {
