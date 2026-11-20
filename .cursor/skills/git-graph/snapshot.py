@@ -334,6 +334,7 @@ def color_head(svg: str) -> str:
 # (green, purple) disappear on this ground, so they are lifted.
 _DARK_BG = "#0d1117"
 _DARK_TEXT = "#e6edf3"
+_DARK_MESSAGE = "#8b949e"
 _DARK_CHIP = "#ffffff22"
 _DARK_BRANCH = {
     "blue": "#79c0ff",
@@ -374,7 +375,22 @@ def paint_dark(svg: str, min_x: float, min_y: float, width: float, height: float
             return match.group(0)
         return f'{attr}="{color}"'
 
-    return re.sub(r'\b(fill|stroke)="([A-Za-z]+)"', lift, svg)
+    svg = re.sub(r'\b(fill|stroke)="([A-Za-z]+)"', lift, svg)
+    return dim_commit_messages(svg)
+
+
+def dim_commit_messages(svg: str) -> str:
+    """Commit subjects sit quieter than the branch labels."""
+
+    def repl(match: re.Match[str]) -> str:
+        open_tag = match.group(1)
+        if re.search(r'\bfill="', open_tag):
+            open_tag = re.sub(r'\bfill="[^"]*"', f'fill="{_DARK_MESSAGE}"', open_tag)
+        else:
+            open_tag = open_tag[:-1] + f' fill="{_DARK_MESSAGE}">'
+        return f"{open_tag}{match.group(2)}{match.group(3)}{match.group(4)}{match.group(5)}"
+
+    return _SUMMARY_TEXT.sub(repl, svg)
 
 
 _CHROME_NAMES = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome")

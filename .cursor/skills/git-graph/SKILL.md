@@ -13,7 +13,7 @@ python3 .cursor/skills/git-graph/snapshot.py
 
 That will create a PNG file and print its path. Show the PNG in the chat window, always as the PNG, never the SVG: chat clients show PNG inline, while an SVG can arrive as a download. Do not think, do not read, just show the file.
 
-The picture is dark: a near-black ground, light text, and branch colors lifted so they stay visible on that ground.
+The picture is dark: a near-black ground, muted commit subjects, light branch labels, and branch colors lifted so they stay visible on that ground.
 
 The script also keeps the source SVG next to the PNG, with the same name. Do not show it.
 
