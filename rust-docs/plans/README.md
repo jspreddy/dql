@@ -46,6 +46,7 @@ None are done yet.
 | [`split_web_app_js.md`](todo/split_web_app_js.md) | Medium | Split the web app's 5,850-line `app.js` into modules, leaves first |
 | [`mcp_grant_events.md`](todo/mcp_grant_events.md) | Medium | Push grant and revoke events to MCP clients on a standing `/mcp` event stream |
 | [`mcp_grant_panel.md`](todo/mcp_grant_panel.md) | Medium | Click the `M1` chip to see grants and approve or deny an agent's request |
+| [`mcp_grant_sensitivity.md`](todo/mcp_grant_sensitivity.md) | Medium | Two classifiers on a pending grant: generic attribute names, and values, then recommend granting or not |
 
 ## Archive
 
