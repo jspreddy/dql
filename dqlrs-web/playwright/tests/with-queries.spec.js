@@ -59,7 +59,7 @@ test("two queries can reuse the same WITH names", async ({ page, app }, testInfo
     );
     await page.locator("#run").click();
     const response = await finished;
-    expect(response.ok(), await response.text()).toBe(true);
+    expect(response.ok(), `run returned ${response.status()}`).toBe(true);
     await expect(page.locator("#run")).toBeEnabled();
   }
 
@@ -123,6 +123,7 @@ test("two queries can reuse the same WITH names", async ({ page, app }, testInfo
   expect(await listed(people)).toEqual([]);
 
   const cards = page.locator(".query-result");
+  await openResultPane(page, "history");
   const beforeCards = await cards.count();
   await runEditor(`${query("a", "c1")}\n${query("b", "c2")}`);
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
