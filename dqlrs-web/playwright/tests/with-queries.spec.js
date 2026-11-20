@@ -54,7 +54,12 @@ test("two queries can reuse the same WITH names", async ({ page, app }, testInfo
     await replaceEditor(page, text);
     await expect(page.locator("#editor-content")).toContainText(text.split("\n")[0]);
     await pressMod(page, "A");
+    const finished = page.waitForResponse(
+      (response) => response.url().includes("/api/run") && response.request().method() === "POST",
+    );
     await page.locator("#run").click();
+    const response = await finished;
+    expect(response.ok(), await response.text()).toBe(true);
     await expect(page.locator("#run")).toBeEnabled();
   }
 
@@ -77,6 +82,7 @@ test("two queries can reuse the same WITH names", async ({ page, app }, testInfo
       const response = await fetch(`/api/tables?name=${encodeURIComponent(table)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!response.ok) throw new Error(`tables ${response.status}`);
       const body = await response.json();
       return body.tables || [];
     }, name);
@@ -116,13 +122,14 @@ test("two queries can reuse the same WITH names", async ({ page, app }, testInfo
   expect(await listed(orders)).toEqual([]);
   expect(await listed(people)).toEqual([]);
 
+  const cards = page.locator(".query-result");
+  const beforeCards = await cards.count();
   await runEditor(`${query("a", "c1")}\n${query("b", "c2")}`);
   await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
   await openResultPane(page, "history");
-  const cards = page.locator(".query-result");
-  const count = await cards.count();
-  const latest = cards.nth(count - 1);
-  const previous = cards.nth(count - 2);
+  await expect(cards).toHaveCount(beforeCards + 2);
+  const latest = cards.nth(beforeCards + 1);
+  const previous = cards.nth(beforeCards);
   await expect(latest).toContainText("Grace");
   await expect(latest).not.toContainText("Ada");
   await expect(previous).toContainText("Ada");

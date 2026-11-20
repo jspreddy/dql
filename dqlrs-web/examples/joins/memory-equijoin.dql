@@ -1,6 +1,7 @@
 -- Load each side once, then merge the rows in memory.
 --
--- A WITH name is a temp table for that statement only. Both sides are scanned
+-- A WITH name holds its rows in memory for that statement only and is not a
+-- temp table. Both sides are scanned
 -- once. The join does not fetch the right table once per left row.
 -- A column on both sides keeps the left value. A different right value is
 -- stored as righttable.column.

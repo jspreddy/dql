@@ -255,6 +255,12 @@ impl<B: DynamoBackend> Engine<B> {
                 return Ok(Some(meta));
             }
         }
+        // A name DynamoDB cannot store is not a table. Asking DescribeTable
+        // raises ValidationException, and Local and AWS word that differently.
+        if !dynamodb_name_allowed(table) {
+            self.last_read_from_cache = false;
+            return Ok(None);
+        }
         let desc = self.backend.describe_table(table)?;
         if let Some(meta) = desc {
             self.store_definition(&meta);
@@ -405,10 +411,13 @@ impl<B: DynamoBackend> Engine<B> {
         if self.virtual_tables.contains(name) {
             return Ok(true);
         }
-        // A WITH name or temp table never becomes a DynamoDB table. Describe still
-        // runs first, and DynamoDB rejects a name it could not store (shorter than
-        // 3 characters, or a character outside its set) instead of saying the table
-        // is absent. That name cannot be a DynamoDB table, so it is free.
+        // A WITH name or temp table never becomes a DynamoDB table. A name
+        // DynamoDB cannot store (shorter than 3 characters, longer than 255,
+        // or outside [A-Za-z0-9_.-]) is not an existing table. Check that
+        // before DescribeTable: Local and AWS reject it with different text.
+        if !dynamodb_name_allowed(name) {
+            return Ok(false);
+        }
         match self.backend.describe_table(name) {
             Ok(found) => Ok(found.is_some()),
             Err(err) if dynamodb_rejects_table_name(&err) => Ok(false),
@@ -990,7 +999,10 @@ impl<B: DynamoBackend> Engine<B> {
             | Statement::Scan {
                 table, selection, ..
             } => (table.as_str(), selection),
-            Statement::With { body, .. } => return self.temp_source_columns(body),
+            // The body names are WITH names, and they are not stored yet.
+            // Describing one asks DynamoDB, rejects a short name, or copies a
+            // cached table. The rows decide the columns after the query runs.
+            Statement::With { .. } => return Ok(Vec::new()),
             _ => {
                 return Err(EngineError::Runtime(
                     "CREATE TEMPTABLE requires SELECT or SCAN".to_string(),
@@ -2437,13 +2449,26 @@ fn merge_read_results(results: Vec<StatementResult>) -> Result<StatementResult, 
     })
 }
 
-/// DynamoDB's DescribeTable rejects a name it could never store. That is not a
-/// missing table and not a network failure.
+/// DynamoDB table names are 3 to 255 characters from `[A-Za-z0-9_.-]`.
+fn dynamodb_name_allowed(name: &str) -> bool {
+    let len = name.chars().count();
+    (3..=255).contains(&len)
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.'))
+}
+
+/// DescribeTable rejects a name it could never store. Local says "Invalid
+/// table/index name". AWS says the `tableName` member failed a constraint.
+/// Either one means the table is absent, not that the call failed.
 fn dynamodb_rejects_table_name(err: &EngineError) -> bool {
     let EngineError::Runtime(message) = err else {
         return false;
     };
-    message.contains("Invalid table/index name")
+    if message.contains("Invalid table/index name") {
+        return true;
+    }
+    message.contains("ValidationException") && message.contains("tableName")
 }
 
 fn scope_has(scope: &MemoryBackend, name: &str) -> bool {
@@ -2665,12 +2690,29 @@ mod tests {
 
     #[test]
     fn a_name_dynamodb_cannot_store_is_not_an_existing_table() {
-        let rejected = EngineError::Runtime(
+        let local = EngineError::Runtime(
             "ValidationException: Invalid table/index name.  Table/index names must be between 3 and 255 characters long, and may contain only the characters a-z, A-Z, 0-9, '_', '-', and '.'".to_string(),
         );
-        assert!(dynamodb_rejects_table_name(&rejected));
+        let aws_length = EngineError::Runtime(
+            "ValidationException: 1 validation error detected: Value 'o' at 'tableName' failed to satisfy constraint: Member must have length greater than or equal to 3".to_string(),
+        );
+        let aws_pattern = EngineError::Runtime(
+            "ValidationException: 1 validation error detected: Value 'a b' at 'tableName' failed to satisfy constraint: Member must satisfy regular expression pattern: [a-zA-Z0-9_.-]+".to_string(),
+        );
+        assert!(dynamodb_rejects_table_name(&local));
+        assert!(dynamodb_rejects_table_name(&aws_length));
+        assert!(dynamodb_rejects_table_name(&aws_pattern));
+        assert!(!dynamodb_name_allowed("o"));
+        assert!(!dynamodb_name_allowed("ab"));
+        assert!(dynamodb_name_allowed("abc"));
+        assert!(dynamodb_name_allowed("a.b_c-1"));
+        assert!(!dynamodb_name_allowed("a b"));
+        assert!(!dynamodb_name_allowed(&"a".repeat(256)));
         assert!(!dynamodb_rejects_table_name(&EngineError::Runtime(
             "ResourceNotFoundException: Requested resource not found".to_string(),
+        )));
+        assert!(!dynamodb_rejects_table_name(&EngineError::Runtime(
+            "ValidationException: The request was missing a required parameter".to_string(),
         )));
         assert!(!dynamodb_rejects_table_name(&EngineError::Cancelled));
     }
@@ -2731,6 +2773,44 @@ mod tests {
             .is_err());
         assert!(engine.query_scopes.is_empty());
         assert!(!engine.virtual_tables.contains("gone"));
+    }
+
+    #[test]
+    fn a_short_with_name_stays_in_memory() {
+        let mut engine = Engine::new(MemoryBackend::new());
+        engine
+            .execute("CREATE TABLE posts (id STRING HASH KEY, customer STRING)")
+            .unwrap();
+        engine
+            .execute("INSERT INTO posts (id, customer) VALUES ('a', 'c1')")
+            .unwrap();
+        let joined = engine
+            .execute("WITH o AS (SCAN * FROM posts) SCAN customer FROM o")
+            .unwrap();
+        match joined {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(
+                    items[0].get("customer"),
+                    Some(&Value::String("c1".to_string()))
+                );
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        assert!(!engine.virtual_tables.contains("o"));
+
+        engine
+            .execute("CREATE TEMPTABLE kept AS (WITH o AS (SCAN * FROM posts) SCAN * FROM o)")
+            .unwrap();
+        let kept = engine.execute("SCAN * FROM kept").unwrap();
+        match kept {
+            StatementResult::Items(items) => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].get("id"), Some(&Value::String("a".to_string())));
+            }
+            other => panic!("unexpected result: {other:?}"),
+        }
+        assert!(engine.execute("SCAN * FROM o").is_err());
     }
 
     #[test]
