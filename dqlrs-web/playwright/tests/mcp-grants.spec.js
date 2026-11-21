@@ -166,13 +166,15 @@ test("a request pings the mcp icon, and a click opens the grant panel", async ({
   const icon = page.locator(".presence-icon.is-ping");
   await expect(icon).toHaveCount(1);
   await expect(icon).toHaveCSS("animation-name", "presence-icon-ping");
-  await icon.click();
+  await expect(icon).toHaveCSS("animation-iteration-count", "infinite");
+  // The pulse scales the icon, so its box never settles.
+  await icon.click({ force: true });
   await expect(panel).toBeVisible();
   await expect(panel).toContainText(query);
   await page.locator("#grant-panel-close").click();
   await expect(panel).toBeHidden();
   await expect(icon).toHaveClass(/is-ping/);
-  await icon.click();
+  await icon.click({ force: true });
   await expect(panel).toBeVisible();
   await panel.getByRole("button", { name: "Deny" }).click();
   const deniedBody = await deniedPending;
