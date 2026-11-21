@@ -6,11 +6,15 @@ A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists. Each line is a commit; the
 latest commit of each pull request, stacked ones included, names that pull request.
 
-## Unreleased (2026-11-20)
+## Unreleased (2026-11-21)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [b69c867](https://github.com/jspreddy/dql/commit/b69c867acf28ba379c1e107d95f8ae827d36a5f7) Move the PR viz skill folder to pr-viz ([#280](https://github.com/jspreddy/dql/pull/280))
+- [ff39880](https://github.com/jspreddy/dql/commit/ff39880874547a68fe7d2e0c83b9e861add4f924) Rename the PR viz skill folder to visualize-pr
+- [d15456d](https://github.com/jspreddy/dql/commit/d15456da8bbb4e7be93c973639d54866cf9db331) feat(skills): name the pull request file list PR viz
+- [694eeb8](https://github.com/jspreddy/dql/commit/694eeb80d138c7f6a29c311147e99ffaa2533c30) feat(skills): scaffold a grouped pull request file list
 - [9ca9138](https://github.com/jspreddy/dql/commit/9ca9138b55323213d009852be8648dc8356591af) fix(lint): treat a WITH name as separate from a dropped temp table ([#276](https://github.com/jspreddy/dql/pull/276))
 - [19f5514](https://github.com/jspreddy/dql/commit/19f55143deea34a19e9cee4bd63a78510adae141) test(web): count WITH history cards on the History pane
 - [a53ca8f](https://github.com/jspreddy/dql/commit/a53ca8f632dd52bf47db58248f383d4e638635bc) fix(engine): treat a short name as free before DescribeTable
