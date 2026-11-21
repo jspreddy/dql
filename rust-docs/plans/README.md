@@ -44,6 +44,7 @@ None are done yet.
 | [`dedupe_cross_cutting.md`](todo/dedupe_cross_cutting.md) | Medium | Shared base64, AWS config, bool parse, display backends |
 | [`config_opt_registry.md`](todo/config_opt_registry.md) | Medium | Single `opt` / config registry; typed width/pagesize |
 | [`split_web_app_js.md`](todo/split_web_app_js.md) | Medium | Split the web app's 5,850-line `app.js` into modules, leaves first |
+| [`mcp_grant_flow.md`](todo/mcp_grant_flow.md) | Medium | Overall workflow: the agent requests a query, the user inspects and runs it, then grants or denies |
 | [`mcp_grant_events.md`](todo/mcp_grant_events.md) | Medium | After the user grants or revokes, push that fact to MCP clients on a standing `/mcp` stream |
 | [`mcp_grant_panel.md`](todo/mcp_grant_panel.md) | Medium | An agent's query pops up; the user inspects it, runs it, and grants or denies the result |
 | [`mcp_grant_sensitivity.md`](todo/mcp_grant_sensitivity.md) | Medium | On that result, name sensitive attributes and values before the user grants |

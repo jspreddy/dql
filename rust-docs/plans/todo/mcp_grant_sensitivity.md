@@ -2,9 +2,9 @@
 
 **Priority:** Medium  
 **Area:** `dql-engine` temp tables, `dqlrs-web` grant panel  
-**Status:** Not started. This is step 4 of the grant flow. Run and the
-decision are [`mcp_grant_panel.md`](mcp_grant_panel.md). The grant event is
-[`mcp_grant_events.md`](mcp_grant_events.md).
+**Status:** Not started. Step 4 of [`mcp_grant_flow.md`](mcp_grant_flow.md).
+Run and the decision are [`mcp_grant_panel.md`](mcp_grant_panel.md). The grant
+event is [`mcp_grant_events.md`](mcp_grant_events.md).
 
 ## Flow
 

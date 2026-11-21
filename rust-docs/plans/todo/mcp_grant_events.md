@@ -2,8 +2,8 @@
 
 **Priority:** Medium  
 **Area:** `dqlrs web --mcp`, Streamable HTTP  
-**Status:** Not started. This is step 5 of the grant flow, after the user
-decides in [`mcp_grant_panel.md`](mcp_grant_panel.md).
+**Status:** Not started. Step 5 of [`mcp_grant_flow.md`](mcp_grant_flow.md),
+after the user decides in [`mcp_grant_panel.md`](mcp_grant_panel.md).
 
 ## Flow
 

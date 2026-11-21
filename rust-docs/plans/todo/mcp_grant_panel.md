@@ -2,9 +2,10 @@
 
 **Priority:** Medium  
 **Area:** `dqlrs-web` header, `dqlrs web --mcp`  
-**Status:** Not started. This file owns request, inspect, run, and the
-grant decision. Classify is [`mcp_grant_sensitivity.md`](mcp_grant_sensitivity.md).
-Telling other MCP clients is [`mcp_grant_events.md`](mcp_grant_events.md).
+**Status:** Not started. Steps 1, 2, 3, and 5 of
+[`mcp_grant_flow.md`](mcp_grant_flow.md). Classify is
+[`mcp_grant_sensitivity.md`](mcp_grant_sensitivity.md). Telling other MCP
+clients is [`mcp_grant_events.md`](mcp_grant_events.md).
 
 ## Flow
 
