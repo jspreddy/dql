@@ -8,7 +8,7 @@ description: Show the files changed in a pull request, grouped by area of the ap
 From the repository, run:
 
 ```bash
-python3 ".cursor/skills/visualize PR/report.py" PR
+python3 .cursor/skills/visualize-pr/report.py PR
 ```
 
 `PR` is the pull request number the user named. With no number, the script uses the pull request for the current branch.
