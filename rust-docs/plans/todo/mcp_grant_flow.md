@@ -17,16 +17,34 @@ A later change of mind is visible to connected agents.
 
 ## Workflow
 
-1. **Request.** The agent writes a query and requests access. [`mcp_grant_panel.md`](mcp_grant_panel.md)
+1. **Request.** The agent writes a query and calls `request_access`. The server checks that it is one read and holds it as a pending request. [`mcp_grant_panel.md`](mcp_grant_panel.md)
 2. **Inspect.** The request pops up. The user reads the query. [`mcp_grant_panel.md`](mcp_grant_panel.md)
-3. **Run.** The user runs the query and sees the data. [`mcp_grant_panel.md`](mcp_grant_panel.md)
+3. **Run.** The user runs the query. The result becomes a new temp table, and the user sees its rows. [`mcp_grant_panel.md`](mcp_grant_panel.md)
 4. **Classify.** With that data, the user sees which attribute names matched and which values matched. [`mcp_grant_sensitivity.md`](mcp_grant_sensitivity.md)
-5. **Decide.** The user grants or denies. Grant sends that data back to the agent. Connected agents hear the grant, and a later revoke. [`mcp_grant_panel.md`](mcp_grant_panel.md), [`mcp_grant_events.md`](mcp_grant_events.md)
+5. **Decide.** The user grants or denies. Grant runs `GRANT MCP READ ON TEMPTABLE` on that temp table. The agent learns the answer from `request_access`, and connected agents hear the grant, and a later revoke, on the `/mcp` stream. [`mcp_grant_panel.md`](mcp_grant_panel.md), [`mcp_grant_events.md`](mcp_grant_events.md)
 
 ## Plans
 
 | Plan | What it owns |
 | --- | --- |
-| [`mcp_grant_panel.md`](mcp_grant_panel.md) | The request pops up. The user inspects the query, runs it, sees the data, and grants or denies |
+| [`mcp_grant_panel.md`](mcp_grant_panel.md) | The `request_access` tool, the pending request, the panel, Run, Grant, and Deny |
 | [`mcp_grant_sensitivity.md`](mcp_grant_sensitivity.md) | The classifier responses shown with that data before the decision |
-| [`mcp_grant_events.md`](mcp_grant_events.md) | After the decision, connected agents hear the grant and a later revoke |
+| [`mcp_grant_events.md`](mcp_grant_events.md) | After the decision, connected agents hear the grant, the denial, and a later revoke |
+
+Build in that order. The panel works without the other two: Grant stays off
+until classify exists, so ship sensitivity with it or right after. Events are
+an addition: without them, agents still get the answer from `request_access`.
+
+## What the code does today
+
+These facts shape all three plans. Each plan says where it depends on one.
+
+| Fact | Where | What it means for this flow |
+| --- | --- | --- |
+| Grants live in the `dqlrs web` process only | `virtual_tables.rs` `grants`, per engine | `dqlrs --mcp` on stdio has its own engine and never sees a grant made in the browser. The flow is HTTP only (`dqlrs web --mcp`) |
+| A grant is tied to the temp table's generation | `grant_live` in `virtual_tables.rs` | `CREATE TEMPTABLE` of a granted name, or `DROP TEMPTABLE`, ends the grant without any `REVOKE` |
+| The browser hears `grants` only after `GRANT` or `REVOKE` | `changes_mcp_grants` in `web/server.rs` | A drop or replace of a granted table does not refresh the browser today. The events plan fixes both streams the same way |
+| `/mcp` answers `POST` only, with one JSON reply | `dispatch_mcp` in `web/server.rs` | No standing stream yet. A tool call cannot stream progress |
+| The server never sends `Mcp-Session-Id` | `dispatch_mcp`, `presence.rs` | Clients that send none all share one presence id, so they all show as `M1`. Requests are keyed by request id, not by chip |
+| One thread per connection, one lock for the session | `accept`, `lock_state` in `web/server.rs` | A tool call may wait, but never while holding the session lock |
+| MCP clients time out a tool call | The TypeScript SDK's default request timeout is 60 seconds | `request_access` cannot wait for the user without a bound. It waits a short time and then returns `pending` |
