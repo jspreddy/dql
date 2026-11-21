@@ -3920,9 +3920,11 @@ function renderPresence(clients) {
     const icon = document.createElement("span");
     icon.className = "presence-icon" + (self ? " is-self" : "");
     icon.dataset.kind = client.kind;
+    icon.dataset.label = label;
     icon.role = "listitem";
     if (client.kind === "mcp") {
       icon.tabIndex = 0;
+      icon.style.setProperty("--ping", client.color || "var(--teal-ink)");
       icon.addEventListener("click", (event) => {
         event.stopPropagation();
         hidePresenceTip();
@@ -3946,6 +3948,7 @@ function renderPresence(clients) {
     }
   }
   host.setAttribute("aria-label", labels.length ? "Connected: " + labels.join(", ") : "Connected clients");
+  syncGrantPing(grantPingRequests);
   fillPresenceTip(clients, selfClient);
   if (selfClient && selfClient.label) {
     document.title = "dqlrs: " + selfClient.label;
@@ -3984,33 +3987,38 @@ document.querySelector("#grant-panel-close").addEventListener("click", () => {
   document.querySelector("#grant-panel").hidden = true;
 });
 
-const seenGrantRequests = new Set();
 let grantPanelGrants = [];
+let grantPingRequests = [];
 
-function rememberGrantRequests(requests) {
-  let fresh = false;
+function syncGrantPing(requests) {
+  const waiting = new Set();
   for (const request of requests) {
-    const id = request && request.id;
-    if (!id || seenGrantRequests.has(id)) continue;
-    seenGrantRequests.add(id);
-    fresh = true;
+    if (!request || request.status === "done") continue;
+    waiting.add(request.label || "M");
   }
-  return fresh;
+  for (const icon of document.querySelectorAll(".presence-icon[data-kind='mcp']")) {
+    const label = icon.dataset.label || icon.textContent || "M";
+    const ping = waiting.has(label);
+    icon.classList.toggle("is-ping", ping);
+    const base = label;
+    icon.setAttribute("aria-label", ping ? base + ", access requested" : base);
+  }
 }
 
 function onGrantRequest(payload) {
   const requests = Array.isArray(payload.requests) ? payload.requests : [];
-  const fresh = rememberGrantRequests(requests);
+  grantPingRequests = requests;
+  syncGrantPing(requests);
   const panel = document.querySelector("#grant-panel");
-  if (!fresh && panel.hidden) return;
+  if (panel.hidden) return;
   renderGrantPanel({ requests, grants: grantPanelGrants });
-  if (fresh) panel.hidden = false;
 }
 
 async function openGrantPanel() {
   const payload = await api("/api/mcp-access");
   const requests = Array.isArray(payload.requests) ? payload.requests : [];
-  rememberGrantRequests(requests);
+  grantPingRequests = requests;
+  syncGrantPing(requests);
   renderGrantPanel(payload);
   document.querySelector("#grant-panel").hidden = false;
 }
