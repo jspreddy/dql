@@ -373,14 +373,26 @@ fn is_phone_shape(text: &str) -> bool {
     {
         return false;
     }
-    let digits: String = text.chars().filter(|ch| ch.is_ascii_digit()).collect();
-    let national = digits
-        .strip_prefix('1')
-        .filter(|_| digits.len() == 11)
-        .unwrap_or(digits.as_str());
-    if national.len() != 10 || national.as_bytes()[0] == b'0' || national.as_bytes()[0] == b'1' {
+    let groups = digit_groups(text);
+    // US shapes only: 4155550134, 415-555-0134, 415 5550134, and the same with a leading 1.
+    // 2026-11-21 10 is ten digits too, but its groups are 4-2-2-2.
+    let allowed = matches!(
+        groups.as_slice(),
+        [10] | [3, 3, 4] | [3, 7] | [1, 10] | [1, 3, 3, 4] | [1, 3, 7]
+    );
+    if !allowed {
         return false;
     }
+    let digits: String = text.chars().filter(|ch| ch.is_ascii_digit()).collect();
+    let national = if groups.first() == Some(&1) && groups.len() > 1 {
+        &digits[1..]
+    } else {
+        digits.as_str()
+    };
+    national.len() == 10 && national.as_bytes()[0] != b'0' && national.as_bytes()[0] != b'1'
+}
+
+fn digit_groups(text: &str) -> Vec<usize> {
     let mut groups = Vec::new();
     let mut count = 0;
     for ch in text.chars() {
@@ -394,8 +406,7 @@ fn is_phone_shape(text: &str) -> bool {
     if count > 0 {
         groups.push(count);
     }
-    // A dotted version such as 1.2.3.4.5.6.7.8.9.0 is ten digits, not a phone.
-    !(groups.len() > 1 && groups.iter().all(|len| *len < 3))
+    groups
 }
 
 fn is_ssn(text: &str) -> bool {
@@ -536,6 +547,17 @@ mod tests {
         assert!(scattered.values.iter().all(|hit| hit.classifier != "phone"));
         let version = classify(&[row(&[("notes", "version 1.2.3.4.5.6.7.8.9.0")])], 1);
         assert!(version.values.iter().all(|hit| hit.classifier != "phone"));
+        for notes in [
+            "2026-11-21 10:00:00",
+            "shipped 2026-11-21 10:30",
+            "25 345 67890",
+        ] {
+            let found = classify(&[row(&[("notes", notes)])], 1);
+            assert!(
+                found.values.iter().all(|hit| hit.classifier != "phone"),
+                "{notes}"
+            );
+        }
     }
 
     #[test]
@@ -555,6 +577,16 @@ mod tests {
             .values
             .iter()
             .any(|hit| hit.classifier == "phone" && hit.value == "(415) 555-0134"));
+        let bare = classify(&[row(&[("notes", "4155550134")])], 1);
+        assert!(bare
+            .values
+            .iter()
+            .any(|hit| hit.classifier == "phone" && hit.value == "4155550134"));
+        let words = classify(&[row(&[("notes", "ids 212 555 1234 and more")])], 1);
+        assert!(words
+            .values
+            .iter()
+            .any(|hit| hit.classifier == "phone" && hit.value == "212 555 1234"));
     }
 
     #[test]
