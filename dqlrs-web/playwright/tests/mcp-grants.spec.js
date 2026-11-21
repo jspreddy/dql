@@ -106,7 +106,7 @@ test("grants a temp table, reads it over MCP, then revokes it", async ({ page, a
   expect(deniedBody.result.isError).toBe(true);
 });
 
-test("a request pops up, run shows classifiers, and grant or deny answers the agent", async ({ page, app }, testInfo) => {
+test("a request pings the mcp icon, and a click opens the grant panel", async ({ page, app }, testInfo) => {
   await openApp(page, app);
   const source = uniqueName();
   app.trackTable(source);
@@ -162,11 +162,19 @@ test("a request pops up, run shows classifiers, and grant or deny answers the ag
 
   const panel = page.locator("#grant-panel");
   const deniedPending = ask();
+  await expect(panel).toBeHidden();
+  const icon = page.locator(".presence-icon.is-ping");
+  await expect(icon).toHaveCount(1);
+  await expect(icon).toHaveCSS("animation-name", "presence-icon-ping");
+  await expect(icon).toHaveCSS("animation-iteration-count", "infinite");
+  // The pulse scales the icon, so its box never settles.
+  await icon.click({ force: true });
   await expect(panel).toBeVisible();
   await expect(panel).toContainText(query);
   await page.locator("#grant-panel-close").click();
   await expect(panel).toBeHidden();
-  await page.getByRole("listitem", { name: "M1" }).click();
+  await expect(icon).toHaveClass(/is-ping/);
+  await icon.click({ force: true });
   await expect(panel).toBeVisible();
   await panel.getByRole("button", { name: "Deny" }).click();
   const deniedBody = await deniedPending;
