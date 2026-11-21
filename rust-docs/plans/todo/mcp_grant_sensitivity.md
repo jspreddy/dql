@@ -1,34 +1,41 @@
-# Recommend for or against an MCP grant
+# Classify the result before the user grants it
 
 **Priority:** Medium  
 **Area:** `dql-engine` temp tables, `dqlrs-web` grant panel  
-**Status:** Not started. The pending row is the one in
-[`mcp_grant_panel.md`](mcp_grant_panel.md). This plan adds the recommendation
-on that row. It does not change Approve or Deny.
+**Status:** Not started. This is step 4 of the grant flow. Run and the
+decision are [`mcp_grant_panel.md`](mcp_grant_panel.md). The grant event is
+[`mcp_grant_events.md`](mcp_grant_events.md).
+
+## Flow
+
+1. **Request.** The agent submits one read query and waits. [`mcp_grant_panel.md`](mcp_grant_panel.md)
+2. **Inspect.** The user reads that query.
+3. **Run.** The user runs it. The result is a temp table, `mcp_<id>`.
+4. **Classify.** This file. Attribute name classifiers and value classifiers run on that temp table. The panel shows the rows from Run together with both match lists.
+5. **Grant.** The user grants or denies that same temp table. A match recommends not granting. The user decides. This file does not grant.
 
 ## Why
 
-A pending `request_grant` names a temp table and waits. The panel shows the
-name, the access (`MCP read`), and who asked. It does not say whether the
-columns or the cells look sensitive. Two classifiers run before the user
-grants. The request row names the attributes and the values that might be
-sensitive, and recommends not granting when either classifier matches.
+Run has produced rows and the user is about to hand them to the agent. The
+panel can show the rows and still not say which column names or which values
+look sensitive. Classify runs on the temp table the user just produced, and
+the recommendation sits with those rows before Grant is offered.
 
 ## Decisions
 
 | Question | Decision |
 | --- | --- |
-| Classifiers | Exactly two. Attribute name classifiers, and value classifiers. Both feed the same recommendation |
+| Classifiers | Exactly two. Attribute name classifiers, and value classifiers. Both are shown, and both feed one recommendation |
 | Attribute name classifiers | Patterns on column names. Generic: the same patterns for every temp table, including datasets that do not exist yet. Not taken from one table's schema |
-| Value classifiers | Run on the values. They do not have to be generic. A value classifier may be specific to the data in the table being requested |
-| When | Once, as the server records `request_grant`, before the row is shown. Again if that temp table is replaced (`CREATE TEMPTABLE` of the same name, new generation) while the request is still pending |
-| What is scanned | The temp table's rows already in memory (`MemoryBackend::table_page`). The query is not run again, and DynamoDB is not called |
-| How much | The first 1000 rows. The reason names how many were scanned and how many the table has |
+| Value classifiers | Run on the values. They do not have to be generic. A value classifier may be specific to the data in this result |
+| When | As part of Run, on `mcp_<id>`, before Grant is enabled. Run again classifies the replacement table. Nothing is classified at request time, because the query has not run |
+| What is scanned | That temp table's rows in memory (`MemoryBackend::table_page`). The query is not run a second time |
+| How much | The first 1000 rows. The lines name how many were scanned and how many the table has |
 | Which values | Every attribute of those rows. Strings, numbers rendered as text, and the leaves of lists and maps. Nulls are skipped |
-| What the user is shown | The attribute names that matched, and the values that matched, each with its classifier. A long list names the first few distinct values, then a count of the rest |
-| Recommendation | Any match from either classifier: recommend not granting. No matches: recommend granting. The user still Approves or Denies. The server does not grant or deny from the scan |
-| Missing table | No recommendation. The row keeps the error from the panel plan, and `GRANT` still fails until the temp table exists |
-| Who sees it | The web panel, on that pending request. The MCP client gets success or denied only, the same as the panel plan. The grant event stream is unchanged |
+| What the user is shown | Next to the result rows: the attribute names that matched, and the values that matched, each with its classifier. A long list names the first few distinct values, then a count of the rest |
+| Recommendation | Any match from either classifier: recommend not granting. No matches: recommend granting. Grant stays the user's choice in the panel |
+| Stale result | If that temp table is dropped before Grant, the matches are dropped with it and Grant stays off until the user runs again |
+| Who sees it | The panel, beside the rows. The MCP client gets the table name or the denial only. The grant event carries no matches |
 
 ## Attribute name classifiers
 
@@ -65,62 +72,40 @@ match, so the named values are the ones inside that window.
 
 ## Recommendation
 
-Computed on the server and stored on the pending request. Both classifier
-results are in the line.
+Returned with the Run result and stored on the pending request.
 
-| Findings | Line on the request |
+| Findings | Shown with the rows |
 | --- | --- |
 | Attribute names, values, or both | Recommend not granting. Attributes: `user_email` (`email`). Values: `ada@example.com` in `notes` (`email`) |
 | None, table smaller than the cap | Recommend granting — no sensitive attributes or values in 40 rows |
 | None, table larger than the cap | Recommend granting — no sensitive attributes or values in the first 1000 of 8000 rows |
 
-A scan that cannot read the table shows "No recommendation" and leaves
-Approve and Deny as they are.
-
-## Where it shows
-
-On the pending row from `mcp_grant_panel.md`, beside Approve and Deny:
-
-| Agent | Table | Access | Asked | Recommendation |
-| --- | --- | --- | --- | --- |
-| `M1` | `late_orders` | MCP read | the request time | Recommend not granting. Attributes: `user_email` (`email`). Values: `ada@example.com` in `notes` (`email`) |
-
-`GET /api/mcp-access` and the `grant-request` browser event carry that line
-with the request, so the panel does not scan and does not poll. Granted rows
-stay as the panel plan describes them. Revoke stays a statement.
+If the scan cannot read the table, Run shows that error and the panel leaves
+Grant off.
 
 ## Where it hooks
 
-- Read pages from `MemoryBackend::table_page` in `memory.rs`. Temp-table rows
-  live on the catalog's memory backend in `virtual_tables.rs`.
-- Attach both classifier results to the pending `request_grant` in the web
-  server, next to the request the panel plan stores.
-- Render the line in the grant panel. Approve still runs
-  `GRANT MCP READ ON TEMPTABLE`.
+- Read pages from `MemoryBackend::table_page` in `memory.rs`. The temp table
+  is the one Run just created in `virtual_tables.rs`.
+- The panel calls this at the end of Run and renders both lists beside the
+  rows. Grant still runs `GRANT MCP READ ON TEMPTABLE mcp_<id>`.
 
 ## Out of scope
 
-- Granting or denying without the user.
-- Sending findings, or the recommendation, to the MCP client.
-- Scanning a DynamoDB table or a local table.
+- Granting or denying. That decision is the panel.
+- Sending matches to the MCP client or on `grant_changed`.
+- Classifying at request time, or classifying a table Run did not just create.
 - A third classifier, a model, or a network call.
-- Building the attribute name list from the temp table's schema.
+- Building the attribute name list from the result's schema.
 - Requiring value classifiers to apply to every future dataset.
-- A recommendation on a grant that was already made.
 
 ## Steps
 
 1. Attribute name classifiers: one generic pattern list, applied to every
-   column of any temp table. Tests: `user_email` matches, `order_id` does not,
-   and a second table with the same column name uses the same list.
+   column of the Run result. Tests: `user_email` matches, `order_id` does not,
+   and a second result with the same column name uses the same list.
 2. Value classifiers: every attribute value in the first 1000 rows, including
    numbers and nested leaves. Tests: an email value is named, a Luhn card is
-   named, a clean table recommends granting, and a value classifier is not
-   required to be reused on a different dataset.
-3. Store both results on `request_grant`, including after a generation change.
-   The line names the attributes and the values, and recommends not granting
-   when either side matches.
-4. Show it on the pending row. A Playwright test: the row names `user_email`
-   and `ada@example.com` and says recommend not granting, a table of order ids
-   says recommend granting, and Approve still grants after a
-   recommend-not-granting line.
+   named, a clean result recommends granting.
+3. The panel shows those lines with the rows, and Grant stays off until they
+   are present. The end-to-end check is the Playwright test in the panel plan.

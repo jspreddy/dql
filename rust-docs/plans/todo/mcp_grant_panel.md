@@ -2,79 +2,87 @@
 
 **Priority:** Medium  
 **Area:** `dqlrs-web` header, `dqlrs web --mcp`  
-**Status:** Not started. Depends on the grant stream in
-[`mcp_grant_events.md`](mcp_grant_events.md) only for telling other MCP clients.
-This panel uses the browser event stream.
+**Status:** Not started. This file owns request, inspect, run, and the
+grant decision. Classify is [`mcp_grant_sensitivity.md`](mcp_grant_sensitivity.md).
+Telling other MCP clients is [`mcp_grant_events.md`](mcp_grant_events.md).
+
+## Flow
+
+1. **Request.** The agent calls `request_access` with one read query and waits. A browser event opens this panel on the `M1` chip. The call stays open until Grant, Deny, or the client disconnects.
+2. **Inspect.** The panel shows that query. The user reads it before anything runs.
+3. **Run.** The user runs it. The server accepts only one `SELECT` or `SCAN`, stores the result as a new temp table, and hands that table to the classifiers.
+4. **Classify.** The panel shows the result rows and the attribute name matches and value matches from [`mcp_grant_sensitivity.md`](mcp_grant_sensitivity.md).
+5. **Grant.** The user grants or denies. Grant runs `GRANT MCP READ ON TEMPTABLE` on the table from the last Run. The waiting call returns. [`mcp_grant_events.md`](mcp_grant_events.md) emits `grant_changed` from that `GRANT`.
 
 ## Why
 
-The header shows a colored `M1` chip while an agent is connected. Hovering it
-lists clients. It does not say which temp tables that agent can read, or that
-it is asking for one. The person who can grant is in this web app. Clicking
-the chip should open that list and the yes/no for a new request.
+An agent that needs data can submit a query, and today nothing in the header
+asks the user about it. The person who can grant is in this web app. The
+request pops up with the query. The user runs it, sees the rows and the
+classifier matches, and only then sends that result back to the agent.
 
 ## Decisions
 
 | Question | Decision |
 | --- | --- |
-| What opens it | A click on an MCP presence chip (`M1`, `M2`, …). Hover still shows the short client tip. Other chips do not open this panel |
-| Granted rows | Temp tables the user already granted: name, access (`MCP read`), and when. One access level exists today |
-| Pending rows | Requests an agent has made and the user has not answered. Each row has Approve and Deny |
-| How a request arrives | The agent calls a new tool, `request_grant`, with a temp table name. The server keeps that call open until Approve, Deny, or the MCP client disconnects. This is the grant-request flow. It is not `elicitation/create`: that prompt would show in the agent host, and the person who can grant is here |
-| Approve | The server runs `GRANT MCP READ ON TEMPTABLE name`, the same statement as the editor. The tool call then returns success. If the temp table does not exist, `GRANT` fails as it does today, the error shows on the row, and the request stays pending |
-| Deny | No `GRANT`. The tool call returns that the user denied it, and the row goes away |
-| Who can request | Only an MCP client. The tool cannot grant. Approving does not run `CREATE TEMPTABLE` and does not take a query from the agent |
-| Several agents | Each pending row names the chip (`M1`) that asked. Approving grants the table, not that one client |
+| What opens it | The panel pops open when a request arrives. A click on the MCP chip (`M1`, `M2`, …) opens the same panel. Hover still shows the short client tip |
+| The tool | `request_access`, with the query text. The server does not run it. The tool cannot grant. This is not `elicitation/create`: that prompt would show in the agent host |
+| Inspect | The query is shown as submitted. The user does not edit it here |
+| Run | One `SELECT` or `SCAN`. The server parses it and runs `CREATE TEMPTABLE mcp_<id> AS ( … )` through the existing run path. Anything else is refused, and Grant stays off. Run again replaces that temp table |
+| What Run shows | The result rows, in the same result table the editor uses, plus the classifier lines from the sensitivity plan. Both come back from the one Run |
+| Grant | Enabled only after that Run succeeded and classify finished for that result. It runs `GRANT MCP READ ON TEMPTABLE mcp_<id>`, the same statement as the editor. It does not run the query again. The tool returns the table name |
+| Deny | No `GRANT`. Drop the temp table this request created. The tool returns that the user denied it |
+| Disconnect | Same as Deny for a request that was not granted |
+| Several agents | Each request has its own query, its own temp table, and its own Grant. Granting one does not grant the others |
+| Already granted | The panel still lists grants the user made: name, `MCP read`, and when |
 
 ## What the panel shows
 
-Granted, from the engine's grant list (`SHOW MCP GRANTS` shape):
+A pending request:
+
+| Agent | Query | Result |
+| --- | --- | --- |
+| `M1` | the query text | Run, then the rows, the attribute matches, the value matches, Grant, Deny |
+
+Granted, from `SHOW MCP GRANTS`:
 
 | Table | Access | Granted |
 | --- | --- | --- |
-| `late_orders` | MCP read | the `granted_at` time |
+| `mcp_1` | MCP read | the `granted_at` time |
 
-Pending:
-
-| Agent | Table | Access | Asked | |
-| --- | --- | --- | --- | --- |
-| `M1` | `late_orders` | MCP read | the request time | Approve, Deny |
-
-An empty half says so. The panel does not show rows.
+An empty half says so.
 
 ## Sync
 
 Opening the panel loads `GET /api/mcp-access`: current grants and pending
-requests. While it is open, the browser event stream updates it. A `grants`
-event refreshes the granted list (editor `GRANT` / `REVOKE` / `DROP`, or
-Approve). A `grant-request` event adds, updates, or removes a pending row.
-The panel does not poll.
+requests, including the query and, once Run has finished, the classifier
+lines. While it is open, the browser event stream updates it. `grant-request`
+adds or removes a request and is what pops the panel open. `grants` refreshes
+the granted list after Grant, editor `GRANT` / `REVOKE` / `DROP`. The panel
+does not poll, and it does not read the MCP stream.
 
-Approve and a `GRANT` typed in the editor share one path, so the `mcp` marker
-on the table and the granted list change together. A grant that lands for a
-table with a pending request completes that request as approved. Revoking or
-dropping a granted table takes it off the granted list and does not invent a
-pending request.
-
-`request_grant` returning is what the agent waits on. The standing MCP event
-stream from `mcp_grant_events.md` still tells other clients that the grant
-changed. This panel does not read that stream.
+Grant and a `GRANT` typed in the editor share one path, so the `mcp` marker
+and the granted list change together. A `GRANT` of this request's temp table
+from the editor completes the waiting call as granted. Revoke stays a statement.
 
 ## Auth
 
-`GET /api/mcp-access` and the approve and deny posts use the same bearer token
-as the rest of `/api`. The page already sends it. No new token.
+`GET /api/mcp-access`, Run, Grant, and Deny use the same bearer token as the
+rest of `/api`. The page already sends it. No new token.
 
 ## Out of scope
 
-- Granting a DynamoDB or local table.
-- Letting the agent supply the `CREATE TEMPTABLE` query.
+- Granting a DynamoDB or local table. The granted object is the temp table Run created.
+- Letting the agent run the query, name the temp table, or grant it.
+- A query that is not one `SELECT` or `SCAN`.
 - `elicitation/create` inside the agent host.
-- Editing a grant from the panel beyond Approve and Deny. Revoke stays a statement.
+- Classifier rules. Those are [`mcp_grant_sensitivity.md`](mcp_grant_sensitivity.md).
+- The MCP event stream. That is [`mcp_grant_events.md`](mcp_grant_events.md).
 
 ## Steps
 
-1. Remember pending `request_grant` calls, keyed by agent chip and table.
-2. `GET /api/mcp-access`, plus approve and deny. Approve runs `GRANT`.
-3. Push `grant-request` on the browser event stream. Reuse `grants` for the granted list.
-4. Click handler on the MCP chip and the panel. A Playwright test: chip opens, a granted table is listed, a `request_grant` appears, Approve grants it, Deny does not.
+1. Remember pending `request_access` calls: agent chip, query, and the temp table once Run has created one.
+2. Pop the panel on `grant-request`. Show the query.
+3. Run parses one read, creates `mcp_<id>`, then classifies that table. Show the rows and both match lists. Grant stays off until that returns.
+4. Grant runs `GRANT`. Deny and disconnect drop the ungranted temp table. The tool returns either way.
+5. A Playwright test walks the path: the request pops up, Run shows rows and both classifier lists, Grant grants that table, Deny does not.
