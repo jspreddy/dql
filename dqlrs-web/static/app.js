@@ -4108,33 +4108,10 @@ function renderGrantRequest(request) {
 
 function renderGrantRows(rows, total) {
   const wrap = document.createElement("div");
-  const keys = [];
-  for (const row of rows) {
-    if (!row || typeof row !== "object") continue;
-    for (const key of Object.keys(row)) {
-      if (!keys.includes(key)) keys.push(key);
-    }
-  }
-  const table = document.createElement("table");
-  table.className = "grant-rows";
-  const head = document.createElement("tr");
-  for (const key of keys) {
-    const cell = document.createElement("th");
-    cell.textContent = key;
-    head.append(cell);
-  }
-  table.append(head);
-  for (const row of rows) {
-    const line = document.createElement("tr");
-    for (const key of keys) {
-      const cell = document.createElement("td");
-      const value = row && row[key];
-      cell.textContent = value == null ? "" : typeof value === "object" ? JSON.stringify(value) : String(value);
-      line.append(cell);
-    }
-    table.append(line);
-  }
-  wrap.append(table);
+  const frame = document.createElement("div");
+  frame.className = "grant-rows result-body";
+  frame.append(dataTable(rows));
+  wrap.append(frame);
   if (typeof total === "number" && total > rows.length) {
     const more = document.createElement("p");
     more.className = "grant-meta";
