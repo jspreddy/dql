@@ -4053,16 +4053,12 @@ function renderGrantRequest(request) {
   who.className = "grant-meta";
   const gone = request.connected ? "" : " · no longer connected";
   who.textContent = `${request.label || "M"} · ${request.id}${gone}`;
-  const query = document.createElement("pre");
-  query.className = "grant-query";
-  query.textContent = request.query || "";
+  const query = highlightedQuery(request.query || "", "grant-query");
+  query.dataset.testid = "grant-query";
   block.append(who, query);
   if (request.classification && request.classification.line) {
-    const line = document.createElement("p");
     const clear = String(request.classification.line).startsWith("No sensitive");
-    line.className = "grant-line" + (clear ? " is-clear" : "");
-    line.textContent = request.classification.line;
-    block.append(line);
+    block.append(noteCard(request.classification.line, clear ? "info" : "alert"));
   }
   const rows = Array.isArray(request.rows) ? request.rows : [];
   if (rows.length) {

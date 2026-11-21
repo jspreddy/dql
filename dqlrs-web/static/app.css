@@ -328,16 +328,32 @@ input, textarea, select { background: var(--paper); }
 
 .grant-query {
   margin: 0 0 8px;
+  padding: 8px 10px;
+  background: var(--paper-2);
+  border: 1px solid var(--line-mid);
+  border-radius: 8px;
+  color: var(--text-secondary);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
   white-space: pre-wrap;
+  overflow-x: auto;
 }
 
+.grant-query .tok-keyword { color: var(--teal-ink); font-weight: 650; }
+.grant-query .tok-deleted { color: var(--danger-bright); font-weight: 700; }
+.grant-query .tok-typeName { color: var(--blue-ink); }
+.grant-query .tok-variableName-function { color: var(--purple); }
+.grant-query .tok-bool,
+.grant-query .tok-null { color: var(--sky); font-weight: 650; }
+.grant-query .tok-string { color: var(--rose); }
+.grant-query .tok-number { color: var(--amber); }
+.grant-query .tok-comment { color: var(--comment); font-style: italic; }
+.grant-query .tok-operator { color: var(--text-secondary); }
+
+.grant-panel .note-card { margin: 0 0 8px; }
+
 .grant-meta { color: var(--muted); }
-
-.grant-line { color: var(--amber); }
-
-.grant-line.is-clear { color: var(--muted); }
 
 .grant-actions {
   display: flex;
