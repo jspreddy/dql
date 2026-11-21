@@ -117,7 +117,7 @@ fn mcp_instructions(root: &Path) -> String {
     let workspace = absolute_dir(root);
     let workspace = workspace.display();
     format!(
-        "The dqlrs workspace is {workspace}, the same folder dqlrs web uses. If that directory is locally in scope of the Cursor or Claude workspace, prefer local file edits for .dql files. If it is not in scope, prefer the MCP tools create_query_file, read_query_file, and update_query_file to create and edit .dql files. Call help before writing DQL you are unsure of. Omit topic for the command list, or pass a topic such as select. global_search finds table names, cached columns and indexes, and queries in files. lint_query checks a script, and lint_query_file checks a workspace .dql file, for parse errors and for queries the engine would reject, without running them or fetching a missing definition. list_tables and describe_tables use the shared table cache for this connection. list_granted_tables and read_granted_table read only temp tables the user granted with GRANT MCP READ ON TEMPTABLE in dqlrs web. You cannot run a query, grant a table, or read anything that was not granted."
+        "The dqlrs workspace is {workspace}, the same folder dqlrs web uses. If that directory is locally in scope of the Cursor or Claude workspace, prefer local file edits for .dql files. If it is not in scope, prefer the MCP tools create_query_file, read_query_file, and update_query_file to create and edit .dql files. Call help before writing DQL you are unsure of. Omit topic for the command list, or pass a topic such as select. global_search finds table names, cached columns and indexes, and queries in files. lint_query checks a script, and lint_query_file checks a workspace .dql file, for parse errors and for queries the engine would reject, without running them or fetching a missing definition. list_tables and describe_tables use the shared table cache for this connection. list_granted_tables and read_granted_table read only temp tables the user granted with GRANT MCP READ ON TEMPTABLE in dqlrs web. You cannot run a query, grant a table, or read anything that was not granted. To ask for rows, call request_access with one SELECT or SCAN. The user runs that query and decides whether to grant the result. request_access works only on dqlrs web --mcp."
     )
 }
 
@@ -138,6 +138,9 @@ fn call_tool(session: &mut Session, root: &Path, params: &Value) -> Result<Value
         "list_tables" => tool_value(list_tables(session, &arguments)),
         "describe_tables" => tool_value(describe_tables(session, &arguments)),
         "list_granted_tables" => tool_value(list_granted_tables(session)),
+        "request_access" => tool_value(Err(ToolError::new(
+            "request_access is only available on dqlrs web --mcp",
+        ))),
         "read_granted_table" => tool_value(read_granted_table(session, &arguments)),
         "list_query_files" => tool_value(list_query_files(root)),
         "create_query_file" => tool_value(create_query_file(root, &arguments)),
@@ -509,6 +512,14 @@ fn tool_value(result: Result<Value, ToolError>) -> Result<Value, (i32, String)> 
     }
 }
 
+pub fn tool_ok(value: Value) -> Value {
+    tool_content(value, false)
+}
+
+pub fn tool_err(message: impl Into<String>) -> Value {
+    tool_content(json!({ "error": message.into() }), true)
+}
+
 fn tool_content(value: Value, is_error: bool) -> Value {
     let text = serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string());
     json!({
@@ -630,6 +641,18 @@ fn tool_definitions() -> Vec<Value> {
                     "path": { "type": "string", "description": "Workspace .dql file to check" }
                 },
                 "required": ["path"],
+                "additionalProperties": false
+            }),
+        ),
+        tool(
+            "request_access",
+            "Ask the user to run one SELECT or SCAN and decide whether to grant the result. Pass query for a new request, or request with an id to wait on one already made. Returns pending, granted, or denied. This works only on dqlrs web --mcp.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "One SELECT or SCAN. Omit when waiting on request." },
+                    "request": { "type": "string", "description": "Id returned with a pending request." }
+                },
                 "additionalProperties": false
             }),
         ),
@@ -841,6 +864,25 @@ mod tests {
     }
 
     #[test]
+    fn request_access_is_a_tool_error_on_stdio() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut server = server(dir.path());
+        init(&mut server);
+        let response = rpc(
+            &mut server,
+            2,
+            "tools/call",
+            json!({
+                "name": "request_access",
+                "arguments": { "query": "SCAN * FROM people" }
+            }),
+        );
+        assert_eq!(response["result"]["isError"], true, "{response}");
+        let text = response["result"]["content"][0]["text"].as_str().unwrap();
+        assert!(text.contains("dqlrs web --mcp"), "{text}");
+    }
+
+    #[test]
     fn initialize_lists_the_web_tools() {
         let dir = tempfile::tempdir().unwrap();
         let mut server = server(dir.path());
@@ -862,6 +904,7 @@ mod tests {
                 "global_search",
                 "lint_query",
                 "lint_query_file",
+                "request_access",
                 "list_granted_tables",
                 "read_granted_table",
                 "list_tables",

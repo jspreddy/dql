@@ -3673,6 +3673,11 @@ function handleEventFrame(frame) {
     void onFileEvent(payload);
   } else if (event === "grants") {
     loadTables().catch((error) => reportError(error));
+    if (!document.querySelector("#grant-panel").hidden) {
+      openGrantPanel().catch((error) => reportError(error));
+    }
+  } else if (event === "grant-request") {
+    onGrantRequest(payload);
   } else if (event === "mcp-read") {
     appendMcpRead(payload);
   }
@@ -3914,7 +3919,21 @@ function renderPresence(clients) {
     labels.push(label);
     const icon = document.createElement("span");
     icon.className = "presence-icon" + (self ? " is-self" : "");
+    icon.dataset.kind = client.kind;
     icon.role = "listitem";
+    if (client.kind === "mcp") {
+      icon.tabIndex = 0;
+      icon.addEventListener("click", (event) => {
+        event.stopPropagation();
+        hidePresenceTip();
+        openGrantPanel().catch((error) => reportError(error));
+      });
+      icon.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        openGrantPanel().catch((error) => reportError(error));
+      });
+    }
     icon.setAttribute("aria-label", name);
     icon.setAttribute("aria-describedby", "presence-tip");
     icon.style.background = client.color || "#64748b";
@@ -3959,6 +3978,151 @@ function fillPresenceTip(clients, selfClient) {
     line.textContent = name + ": " + group.map((client) => client.label || name[0]).join(", ");
     tip.append(line);
   }
+}
+
+document.querySelector("#grant-panel-close").addEventListener("click", () => {
+  document.querySelector("#grant-panel").hidden = true;
+});
+
+const seenGrantRequests = new Set();
+let grantPanelGrants = [];
+
+function rememberGrantRequests(requests) {
+  let fresh = false;
+  for (const request of requests) {
+    const id = request && request.id;
+    if (!id || seenGrantRequests.has(id)) continue;
+    seenGrantRequests.add(id);
+    fresh = true;
+  }
+  return fresh;
+}
+
+function onGrantRequest(payload) {
+  const requests = Array.isArray(payload.requests) ? payload.requests : [];
+  const fresh = rememberGrantRequests(requests);
+  const panel = document.querySelector("#grant-panel");
+  if (!fresh && panel.hidden) return;
+  renderGrantPanel({ requests, grants: grantPanelGrants });
+  if (fresh) panel.hidden = false;
+}
+
+async function openGrantPanel() {
+  const payload = await api("/api/mcp-access");
+  const requests = Array.isArray(payload.requests) ? payload.requests : [];
+  rememberGrantRequests(requests);
+  renderGrantPanel(payload);
+  document.querySelector("#grant-panel").hidden = false;
+}
+
+function renderGrantPanel(payload) {
+  const body = document.querySelector("#grant-panel-body");
+  body.replaceChildren();
+  const requests = Array.isArray(payload.requests) ? payload.requests : [];
+  if (Array.isArray(payload.grants)) grantPanelGrants = payload.grants;
+  const grants = grantPanelGrants;
+  if (!requests.length) {
+    const empty = document.createElement("p");
+    empty.className = "grant-meta";
+    empty.textContent = "No pending requests.";
+    body.append(empty);
+  }
+  for (const request of requests) {
+    body.append(renderGrantRequest(request));
+  }
+  const grantedHead = document.createElement("p");
+  grantedHead.className = "grant-section";
+  grantedHead.textContent = "Granted";
+  body.append(grantedHead);
+  if (!grants.length) {
+    const empty = document.createElement("p");
+    empty.className = "grant-meta";
+    empty.textContent = "No grants yet.";
+    body.append(empty);
+  }
+  for (const grant of grants) {
+    const row = document.createElement("div");
+    row.className = "grant-granted";
+    const text = document.createElement("p");
+    text.textContent = `${grant.table} · MCP read · ${grant.granted}`;
+    row.append(text);
+    body.append(row);
+  }
+}
+
+function renderGrantRequest(request) {
+  const block = document.createElement("div");
+  block.className = "grant-request";
+  const who = document.createElement("p");
+  who.className = "grant-meta";
+  const gone = request.connected ? "" : " · no longer connected";
+  who.textContent = `${request.label || "M"} · ${request.id}${gone}`;
+  const query = highlightedQuery(request.query || "", "grant-query");
+  query.dataset.testid = "grant-query";
+  block.append(who, query);
+  if (request.classification && request.classification.line) {
+    const clear = String(request.classification.line).startsWith("No sensitive");
+    block.append(noteCard(request.classification.line, clear ? "info" : "alert"));
+  }
+  const rows = Array.isArray(request.rows) ? request.rows : [];
+  if (rows.length) {
+    block.append(renderGrantRows(rows, request.total));
+  }
+  const actions = document.createElement("div");
+  actions.className = "grant-actions";
+  const run = document.createElement("button");
+  run.type = "button";
+  run.className = "btn";
+  run.textContent = request.status === "ran" ? "Run again" : "Run";
+  run.addEventListener("click", () => {
+    run.disabled = true;
+    api("/api/mcp-access/run", { method: "POST", body: { request: request.id } })
+      .then((payload) => renderGrantPanel(payload))
+      .catch((error) => reportError(error))
+      .finally(() => {
+        run.disabled = false;
+      });
+  });
+  actions.append(run);
+  if (request.status === "ran") {
+    const grant = document.createElement("button");
+    grant.type = "button";
+    grant.className = "btn btn-primary";
+    grant.textContent = "Grant";
+    grant.addEventListener("click", () => {
+      api("/api/mcp-access/grant", { method: "POST", body: { request: request.id } })
+        .then((payload) => renderGrantPanel(payload))
+        .catch((error) => reportError(error));
+    });
+    actions.append(grant);
+  }
+  const deny = document.createElement("button");
+  deny.type = "button";
+  deny.className = "btn";
+  deny.textContent = "Deny";
+  deny.addEventListener("click", () => {
+    api("/api/mcp-access/deny", { method: "POST", body: { request: request.id } })
+      .then((payload) => renderGrantPanel(payload))
+      .catch((error) => reportError(error));
+  });
+  actions.append(deny);
+  block.append(actions);
+  return block;
+}
+
+function renderGrantRows(rows, total) {
+  const wrap = document.createElement("div");
+  const frame = document.createElement("div");
+  frame.className = "grant-rows result-body result-table";
+  frame.append(dataTable(rows));
+  wrap.append(frame);
+  if (typeof total === "number" && total > rows.length) {
+    const more = document.createElement("p");
+    more.className = "grant-meta";
+    more.textContent = `Showing ${rows.length} of ${total} rows`;
+    wrap.append(more);
+  }
+  return wrap;
 }
 
 function hidePresenceTip() {
@@ -5412,7 +5576,7 @@ function helpCard(page, fallback) {
 
 function highlightedQuery(text, className) {
   const pre = document.createElement("pre");
-  pre.className = className || "describe-query";
+  pre.className = (className || "describe-query") + " dql-code";
   pre.dataset.testid = className ? "schema-query" : "describe-query";
   for (const part of highlightParts(text)) {
     if (!part.style) {
