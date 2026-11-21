@@ -4030,6 +4030,10 @@ function renderGrantPanel(payload) {
   for (const request of requests) {
     body.append(renderGrantRequest(request));
   }
+  const grantedHead = document.createElement("p");
+  grantedHead.className = "grant-section";
+  grantedHead.textContent = "Granted";
+  body.append(grantedHead);
   if (!grants.length) {
     const empty = document.createElement("p");
     empty.className = "grant-meta";
@@ -4069,7 +4073,7 @@ function renderGrantRequest(request) {
   const run = document.createElement("button");
   run.type = "button";
   run.className = "btn";
-  run.textContent = "Run";
+  run.textContent = request.status === "ran" ? "Run again" : "Run";
   run.addEventListener("click", () => {
     run.disabled = true;
     api("/api/mcp-access/run", { method: "POST", body: { request: request.id } })
@@ -4109,7 +4113,7 @@ function renderGrantRequest(request) {
 function renderGrantRows(rows, total) {
   const wrap = document.createElement("div");
   const frame = document.createElement("div");
-  frame.className = "grant-rows result-body";
+  frame.className = "grant-rows result-body result-table";
   frame.append(dataTable(rows));
   wrap.append(frame);
   if (typeof total === "number" && total > rows.length) {
@@ -5572,7 +5576,7 @@ function helpCard(page, fallback) {
 
 function highlightedQuery(text, className) {
   const pre = document.createElement("pre");
-  pre.className = className || "describe-query";
+  pre.className = (className || "describe-query") + " dql-code";
   pre.dataset.testid = className ? "schema-query" : "describe-query";
   for (const part of highlightParts(text)) {
     if (!part.style) {

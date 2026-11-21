@@ -180,6 +180,8 @@ test("a request pops up, run shows classifiers, and grant or deny answers the ag
   await expect(panel).toContainText("Recommend not granting");
   await expect(panel).toContainText("ada@example.com");
   await expect(panel).toContainText("email");
+  await expect(panel.getByRole("button", { name: "Run again", exact: true })).toBeVisible();
+  await expect(panel.getByText("Granted", { exact: true })).toBeVisible();
   await panel.screenshot({
     path: playwrightArtifact(`mcp-access-panel-${testInfo.project.name}.png`),
   });
