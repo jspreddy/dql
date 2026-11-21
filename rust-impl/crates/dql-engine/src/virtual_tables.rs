@@ -472,6 +472,15 @@ impl VirtualCatalog {
         })
     }
 
+    /// One page of a temp table, granted or not. `None` when it is not a temp table.
+    pub fn page_temp(&self, name: &str, offset: usize, limit: usize) -> Option<(Vec<Item>, usize)> {
+        let table = self.tables.get(name)?;
+        if table.kind != TableKind::Temp {
+            return None;
+        }
+        self.memory.table_page(name, offset, limit)
+    }
+
     fn grant_live(&self, name: &str) -> bool {
         let Some(grant) = self.grants.get(name) else {
             return false;

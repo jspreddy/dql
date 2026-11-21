@@ -4,12 +4,15 @@
 //! A checkout of that directory is preferred at runtime so UI edits show up
 //! without a rebuild. The installed binary falls back to the embedded copy.
 
+mod access;
+mod classify;
 pub(crate) mod dynamodb_local;
 mod environment;
 mod events;
 pub(crate) mod files;
 pub(crate) mod init;
 pub(crate) mod lint;
+mod mcp_stream;
 mod presence;
 pub(crate) mod progress;
 mod query_cache;

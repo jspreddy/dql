@@ -69,6 +69,8 @@ pub(crate) struct App {
     identity: Mutex<Option<dql_engine::CallerIdentity>>,
     presence: presence::Book,
     pub(crate) hub: super::events::Hub,
+    access: super::access::Store,
+    mcp_hub: super::mcp_stream::Hub,
     mcp: bool,
     token: String,
 }
@@ -80,6 +82,7 @@ struct Incoming {
     body: Vec<u8>,
     origin: Option<String>,
     mcp_session: Option<String>,
+    accept: Option<String>,
     authorization: Option<String>,
     keep_alive: bool,
     overflow: bool,
@@ -87,9 +90,12 @@ struct Incoming {
 
 enum Reply {
     Json(u16, Value),
+    /// JSON with an optional `Mcp-Session-Id` response header.
+    McpJson(u16, Value, Option<String>),
     Bytes(u16, &'static str, Vec<u8>),
     Ndjson(Arc<App>, Vec<String>, dql_engine::FileBase),
     Events(Arc<App>, String),
+    McpEvents(Arc<App>, String),
 }
 
 pub fn serve(
@@ -394,6 +400,8 @@ impl App {
             identity: Mutex::new(None),
             presence: presence::Book::new(),
             hub: super::events::Hub::new(),
+            access: super::access::Store::new(),
+            mcp_hub: super::mcp_stream::Hub::new(),
             mcp,
             token,
         }
@@ -420,6 +428,7 @@ fn handle_connection(app: Arc<App>, stream: TcpStream) -> io::Result<()> {
                 "application/json; charset=utf-8",
                 br#"{"ok":false,"error":"body too large"}"#,
                 false,
+                None,
             )?;
             return Ok(());
         }
@@ -473,6 +482,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
     let mut connection = String::new();
     let mut origin = None;
     let mut mcp_session = None;
+    let mut accept = None;
     let mut authorization = None;
     let mut length_invalid = false;
     for line in lines {
@@ -493,6 +503,8 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
             origin = Some(value.trim().to_string());
         } else if name.eq_ignore_ascii_case("mcp-session-id") {
             mcp_session = Some(value.trim().to_string());
+        } else if name.eq_ignore_ascii_case("accept") {
+            accept = Some(value.trim().to_string());
         } else if name.eq_ignore_ascii_case("authorization") {
             authorization = Some(value.trim().to_string());
         }
@@ -512,6 +524,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
             body: Vec::new(),
             origin,
             mcp_session,
+            accept,
             authorization: authorization.clone(),
             keep_alive: false,
             overflow: true,
@@ -526,6 +539,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
             body: Vec::new(),
             origin,
             mcp_session,
+            accept,
             authorization: authorization.clone(),
             keep_alive: false,
             overflow: true,
@@ -542,6 +556,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> io::Result<Option<Incoming
         body,
         origin,
         mcp_session,
+        accept,
         authorization,
         keep_alive,
         overflow: false,
@@ -698,6 +713,7 @@ fn unauthorized_reply(mcp: bool) -> Reply {
 fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
     match path {
         "/api/config" => Reply::Json(200, config_payload(app)),
+        "/api/mcp-access" => Reply::Json(200, mcp_access_payload(app)),
         "/api/identity" => Reply::Json(200, identity_reply(app)),
         "/api/dynamo" => Reply::Json(200, dynamo_reply(app)),
         "/api/tree" => match files::tree(&app.root) {
@@ -795,7 +811,7 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
     }
 }
 
-fn dispatch_mcp(app: &App, request: &Incoming) -> Reply {
+fn dispatch_mcp(app: &Arc<App>, request: &Incoming) -> Reply {
     if let Some(origin) = &request.origin {
         if !loopback_origin(origin) {
             return Reply::Json(
@@ -808,6 +824,15 @@ fn dispatch_mcp(app: &App, request: &Incoming) -> Reply {
             );
         }
     }
+    let wants_stream = request.method == "GET"
+        && request
+            .accept
+            .as_deref()
+            .is_some_and(|accept| accept.to_ascii_lowercase().contains("text/event-stream"));
+    if wants_stream {
+        let mcp_id = mcp_client_id(request);
+        return Reply::McpEvents(Arc::clone(app), mcp_id);
+    }
     if request.method != "POST" {
         return Reply::Json(
             405,
@@ -818,16 +843,23 @@ fn dispatch_mcp(app: &App, request: &Incoming) -> Reply {
             }),
         );
     }
-    let mcp_id = request
+    let text = String::from_utf8_lossy(&request.body);
+    let text = text.trim();
+    let assigning = request
         .mcp_session
         .as_deref()
         .and_then(presence::valid_mcp_id)
-        .unwrap_or("mcp");
-    if app.presence.touch(mcp_id, Kind::Mcp) {
+        .is_none()
+        && mcp_method(text).as_deref() == Some("initialize");
+    let mcp_id = mcp_client_id(request);
+    if !assigning && app.presence.touch(&mcp_id, Kind::Mcp) {
         app.hub.presence(&app.presence.snapshot());
     }
-    let text = String::from_utf8_lossy(&request.body);
-    let text = text.trim();
+    if mcp_method(text).as_deref() == Some("tools/call")
+        && mcp_tool_name(text).as_deref() == Some("request_access")
+    {
+        return request_access(app, &mcp_id, text);
+    }
     let read = mcp_read_request(text);
     let response = {
         let mut state = lock_state(app);
@@ -861,10 +893,53 @@ fn dispatch_mcp(app: &App, request: &Incoming) -> Reply {
             } else {
                 200
             };
-            Reply::Json(status, value)
+            if assigning && value.get("result").is_some() {
+                let session_id = new_mcp_session();
+                if app.presence.touch(&session_id, Kind::Mcp) {
+                    app.hub.presence(&app.presence.snapshot());
+                }
+                Reply::McpJson(status, value, Some(session_id))
+            } else {
+                Reply::Json(status, value)
+            }
         }
         None => Reply::Bytes(202, "application/json", Vec::new()),
     }
+}
+
+fn mcp_client_id(request: &Incoming) -> String {
+    request
+        .mcp_session
+        .as_deref()
+        .and_then(presence::valid_mcp_id)
+        .unwrap_or("mcp")
+        .to_string()
+}
+
+fn mcp_method(text: &str) -> Option<String> {
+    serde_json::from_str::<Value>(text)
+        .ok()?
+        .get("method")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn mcp_tool_name(text: &str) -> Option<String> {
+    serde_json::from_str::<Value>(text)
+        .ok()?
+        .pointer("/params/name")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn new_mcp_session() -> String {
+    let mut bytes = [0u8; 8];
+    let _ = getrandom::getrandom(&mut bytes);
+    let mut id = String::from("mcp");
+    for byte in bytes {
+        id.push_str(&format!("{byte:02x}"));
+    }
+    id
 }
 
 /// `tools/call` of `read_granted_table`: the table name and the requested offset.
@@ -883,12 +958,141 @@ fn mcp_read_request(text: &str) -> Option<(String, usize)> {
     Some((table, offset))
 }
 
-fn changes_mcp_grants(statement: &str) -> bool {
-    let text = statement.trim().trim_end_matches(';').trim();
-    matches!(
-        parse_statement(text),
-        Ok(Statement::Grant { .. } | Statement::Revoke { .. })
-    )
+fn request_access(app: &App, agent: &str, text: &str) -> Reply {
+    let value: Value = match serde_json::from_str(text) {
+        Ok(value) => value,
+        Err(_) => {
+            return Reply::Json(
+                400,
+                json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32700, "message": "parse error"}}),
+            );
+        }
+    };
+    let id = value.get("id").cloned().unwrap_or(Value::Null);
+    {
+        let state = lock_state(app);
+        if !state.mcp_initialized {
+            return Reply::Json(
+                200,
+                json!({"jsonrpc": "2.0", "id": id, "error": {"code": -32002, "message": "server not initialized"}}),
+            );
+        }
+    }
+    let arguments = value
+        .pointer("/params/arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let request_id = arguments
+        .get("request")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or("");
+    let result = if request_id.is_empty() {
+        let query = arguments.get("query").and_then(Value::as_str).unwrap_or("");
+        match app.access.open(query, agent) {
+            Ok(new_id) => {
+                publish_requests(app);
+                app.access.wait(&new_id, super::access::WAIT)
+            }
+            Err(message) => Err(message),
+        }
+    } else {
+        app.access.wait(request_id, super::access::WAIT)
+    };
+    let body = match result {
+        Ok(answer) => crate::mcp::tool_ok(answer),
+        Err(message) => crate::mcp::tool_err(message),
+    };
+    Reply::Json(200, json!({"jsonrpc": "2.0", "id": id, "result": body}))
+}
+
+fn publish_requests(app: &App) {
+    let requests = app
+        .access
+        .list(|id| agent_connected(app, id), |id| agent_label(app, id));
+    app.hub.grant_request(&requests);
+}
+
+fn agent_connected(app: &App, id: &str) -> bool {
+    app.presence.snapshot()["clients"]
+        .as_array()
+        .is_some_and(|clients| clients.iter().any(|client| client["id"] == id))
+}
+
+fn agent_label(app: &App, id: &str) -> String {
+    app.presence.snapshot()["clients"]
+        .as_array()
+        .and_then(|clients| {
+            clients
+                .iter()
+                .find(|client| client["id"] == id)
+                .and_then(|client| client["label"].as_str().map(str::to_string))
+        })
+        .unwrap_or_else(|| "M".to_string())
+}
+
+fn execute_watched(app: &App, state: &mut WebState, statement: &str) -> ServeEnvelope {
+    let before = state.session.engine.granted_tables();
+    let envelope = state.session.execute_for_serve(statement);
+    if envelope.ok {
+        let after = state.session.engine.granted_tables();
+        if before
+            .iter()
+            .map(|info| info.name.as_str())
+            .collect::<Vec<_>>()
+            != after
+                .iter()
+                .map(|info| info.name.as_str())
+                .collect::<Vec<_>>()
+        {
+            state.table_catalog = None;
+        }
+        publish_grant_changes(app, &before, &after);
+        for info in &after {
+            if !before.iter().any(|prior| prior.name == info.name) {
+                app.access.note_granted(&info.name);
+            }
+        }
+        app.access
+            .note_missing(|name| state.session.engine.is_temp_table(name));
+    }
+    envelope
+}
+
+fn publish_grant_changes(
+    app: &App,
+    before: &[dql_engine::GrantInfo],
+    after: &[dql_engine::GrantInfo],
+) {
+    let now = super::mcp_stream::rfc3339_now();
+    let mut changed = false;
+    for info in after {
+        if before.iter().any(|prior| prior.name == info.name) {
+            continue;
+        }
+        changed = true;
+        let request = app.access.request_for_table(&info.name);
+        app.mcp_hub.publish(&super::mcp_stream::granted(
+            &info.name,
+            request.as_deref(),
+            &info.granted_at,
+        ));
+    }
+    for info in before {
+        if after.iter().any(|next| next.name == info.name) {
+            continue;
+        }
+        changed = true;
+        let request = app.access.request_for_table(&info.name);
+        app.mcp_hub.publish(&super::mcp_stream::revoked(
+            &info.name,
+            request.as_deref(),
+            &now,
+        ));
+    }
+    if changed {
+        app.hub.grants();
+    }
 }
 
 fn loopback_origin(origin: &str) -> bool {
@@ -908,6 +1112,15 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
     if path == "/api/stop" {
         app.cancel.request();
         return Reply::Json(200, json!({"ok": true}));
+    }
+    if path == "/api/mcp-access/run" {
+        return run_access(app, &parse_json(body));
+    }
+    if path == "/api/mcp-access/grant" {
+        return grant_access(app, &parse_json(body));
+    }
+    if path == "/api/mcp-access/deny" {
+        return deny_access(app, &parse_json(body));
     }
     if path == "/api/run" {
         let parsed = parse_json(body);
@@ -1067,6 +1280,150 @@ fn save_query_result(store: query_cache::Store<'_>, body: &Value) -> Reply {
     }
 }
 
+fn mcp_access_payload(app: &App) -> Value {
+    let requests = app
+        .access
+        .list(|id| agent_connected(app, id), |id| agent_label(app, id));
+    let grants = {
+        let state = lock_state(app);
+        state
+            .session
+            .engine
+            .granted_tables()
+            .into_iter()
+            .map(|info| {
+                json!({
+                    "table": info.name,
+                    "access": "MCP read",
+                    "granted": info.granted_at,
+                })
+            })
+            .collect::<Vec<_>>()
+    };
+    json!({ "requests": requests, "grants": grants })
+}
+
+fn envelope_error(envelope: &ServeEnvelope) -> String {
+    envelope
+        .error
+        .as_ref()
+        .map(|error| error.message.clone())
+        .or_else(|| envelope.message.clone())
+        .unwrap_or_else(|| "run failed".to_string())
+}
+
+fn run_access(app: &Arc<App>, body: &Value) -> Reply {
+    let id = body
+        .get("request")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    if id.is_empty() {
+        return Reply::Json(400, json!({"ok": false, "error": "missing request"}));
+    }
+    app.cancel.clear();
+    let drop_first = match app.access.can_run(id) {
+        Ok(drop_first) => drop_first,
+        Err(message) => return Reply::Json(409, json!({"ok": false, "error": message})),
+    };
+    let query = match app.access.query(id) {
+        Ok(query) => query,
+        Err(message) => return Reply::Json(404, json!({"ok": false, "error": message})),
+    };
+    let table = super::access::Store::table_name(id);
+    let mut state = lock_state(app);
+    if !drop_first && state.session.engine.is_temp_table(&table) {
+        return Reply::Json(
+            409,
+            json!({"ok": false, "error": format!("Table '{table}' already exists")}),
+        );
+    }
+    if drop_first {
+        let drop = format!("DROP TEMPTABLE IF EXISTS {table}");
+        let envelope = execute_watched(app, &mut state, &drop);
+        if !envelope.ok {
+            return Reply::Json(
+                502,
+                json!({"ok": false, "error": envelope_error(&envelope)}),
+            );
+        }
+    }
+    let create = format!("CREATE TEMPTABLE {table} AS ({query})");
+    let envelope = execute_watched(app, &mut state, &create);
+    if !envelope.ok {
+        return Reply::Json(
+            502,
+            json!({"ok": false, "error": envelope_error(&envelope)}),
+        );
+    }
+    let (page, total) = state
+        .session
+        .engine
+        .temp_table_page(&table, 0, 1000)
+        .unwrap_or_else(|| (Vec::new(), 0));
+    let found = super::classify::classify(&page, total);
+    let rows = page
+        .iter()
+        .take(20)
+        .map(dql_engine::json_util::item_to_json_value)
+        .collect::<Vec<_>>();
+    let classification = super::classify::to_json(&found);
+    if let Err(message) = app.access.ran(id, classification, json!(rows), total) {
+        return Reply::Json(409, json!({"ok": false, "error": message}));
+    }
+    drop(state);
+    publish_requests(app);
+    Reply::Json(200, mcp_access_payload(app))
+}
+
+fn grant_access(app: &Arc<App>, body: &Value) -> Reply {
+    let id = body
+        .get("request")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    let table = match app.access.grant(id) {
+        Ok(table) => table,
+        Err(message) => return Reply::Json(409, json!({"ok": false, "error": message})),
+    };
+    let statement = format!("GRANT MCP READ ON TEMPTABLE {table}");
+    let mut state = lock_state(app);
+    let envelope = execute_watched(app, &mut state, &statement);
+    if !envelope.ok {
+        return Reply::Json(
+            502,
+            json!({"ok": false, "error": envelope_error(&envelope)}),
+        );
+    }
+    app.access.finish_grant(id);
+    drop(state);
+    publish_requests(app);
+    Reply::Json(200, mcp_access_payload(app))
+}
+
+fn deny_access(app: &Arc<App>, body: &Value) -> Reply {
+    let id = body
+        .get("request")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
+    let table = match app.access.deny(id) {
+        Ok(table) => table,
+        Err(message) => return Reply::Json(409, json!({"ok": false, "error": message})),
+    };
+    if let Some(table) = table {
+        let statement = format!("DROP TEMPTABLE IF EXISTS {table}");
+        let mut state = lock_state(app);
+        let _ = execute_watched(app, &mut state, &statement);
+    }
+    app.mcp_hub.publish(&super::mcp_stream::denied(
+        id,
+        &super::mcp_stream::rfc3339_now(),
+    ));
+    publish_requests(app);
+    Reply::Json(200, mcp_access_payload(app))
+}
+
 fn handle_run(app: Arc<App>, dql: String, script: &str) -> Reply {
     let statements = split_statements(&dql);
     if statements.is_empty() {
@@ -1137,7 +1494,7 @@ fn run_script(
             );
         })));
         let started = std::time::Instant::now();
-        let envelope = state.session.execute_for_serve(statement);
+        let envelope = execute_watched(app.as_ref(), &mut state, statement);
         let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         let (read_units, write_units) = state.session.engine.statement_capacity();
         state.session.progress().clear();
@@ -1158,10 +1515,6 @@ fn run_script(
                 }
                 state.table_catalog = None;
                 app.hub.tables(&names);
-            }
-            if changes_mcp_grants(statement) {
-                state.table_catalog = None;
-                app.hub.grants();
             }
         }
         let mut result = public_result(
@@ -1733,11 +2086,24 @@ fn write_reply(stream: &mut TcpStream, reply: Reply, keep_alive: bool) -> io::Re
                 "application/json; charset=utf-8",
                 &bytes,
                 keep_alive,
+                None,
+            )?;
+            Ok(keep_alive)
+        }
+        Reply::McpJson(status, value, session) => {
+            let bytes = serde_json::to_vec(&value).unwrap_or_else(|_| b"{}".to_vec());
+            write_bytes(
+                stream,
+                status,
+                "application/json; charset=utf-8",
+                &bytes,
+                keep_alive,
+                session.as_deref(),
             )?;
             Ok(keep_alive)
         }
         Reply::Bytes(status, content_type, bytes) => {
-            write_bytes(stream, status, content_type, &bytes, keep_alive)?;
+            write_bytes(stream, status, content_type, &bytes, keep_alive, None)?;
             Ok(keep_alive)
         }
         Reply::Ndjson(app, statements, file_base) => {
@@ -1746,6 +2112,10 @@ fn write_reply(stream: &mut TcpStream, reply: Reply, keep_alive: bool) -> io::Re
         }
         Reply::Events(app, client_id) => {
             write_events(stream, app, &client_id)?;
+            Ok(false)
+        }
+        Reply::McpEvents(app, client_id) => {
+            write_mcp_events(stream, app, &client_id)?;
             Ok(false)
         }
     }
@@ -1794,6 +2164,37 @@ impl Drop for EndStream {
             self.app.hub.presence(&self.app.presence.snapshot());
         }
     }
+}
+
+fn write_mcp_events(stream: &mut TcpStream, app: Arc<App>, client_id: &str) -> io::Result<()> {
+    let header = "\
+HTTP/1.1 200 OK\r\n\
+Content-Type: text/event-stream; charset=utf-8\r\n\
+Cache-Control: no-store\r\n\
+Transfer-Encoding: chunked\r\n\
+Connection: close\r\n\
+\r\n";
+    stream.write_all(header.as_bytes())?;
+    stream.flush()?;
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(60)));
+    if app.presence.touch(client_id, Kind::Mcp) {
+        app.hub.presence(&app.presence.snapshot());
+    }
+    let current = {
+        let state = lock_state(&app);
+        state
+            .session
+            .engine
+            .granted_tables()
+            .into_iter()
+            .map(|info| {
+                let request = app.access.request_for_table(&info.name);
+                super::mcp_stream::granted(&info.name, request.as_deref(), &info.granted_at)
+            })
+            .collect::<Vec<_>>()
+    };
+    let rx = app.mcp_hub.subscribe(&current);
+    stream_events(stream, &app, rx)
 }
 
 fn stream_events(
@@ -1857,10 +2258,14 @@ fn write_bytes(
     content_type: &str,
     body: &[u8],
     keep_alive: bool,
+    mcp_session: Option<&str>,
 ) -> io::Result<()> {
     let connection = if keep_alive { "keep-alive" } else { "close" };
+    let session = mcp_session
+        .map(|id| format!("Mcp-Session-Id: {id}\r\n"))
+        .unwrap_or_default();
     let header = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {len}\r\nCache-Control: no-store\r\nConnection: {connection}\r\n\r\n",
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\nContent-Length: {len}\r\nCache-Control: no-store\r\n{session}Connection: {connection}\r\n\r\n",
         reason = reason(status),
         len = body.len(),
     );
@@ -2201,6 +2606,249 @@ mod tests {
             "http://evil.example",
         );
         assert!(foreign.contains("403"), "{foreign}");
+        drop(guard);
+    }
+
+    #[test]
+    fn request_access_runs_classifies_and_grants() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server_mcp(root.path().to_path_buf(), true);
+        let init = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}"#,
+        );
+        assert!(init.contains("Mcp-Session-Id:"), "{init}");
+
+        let setup = "CREATE TABLE people (id STRING HASH KEY, email STRING); INSERT INTO people (id, email) VALUES ('1', 'ada@example.com');";
+        let setup_body = format!("{{\"dql\":{}}}", serde_json::to_string(setup).unwrap());
+        let created = http_body(addr, "POST", "/api/run", &setup_body);
+        assert!(created.contains("\"ok\":true"), "{created}");
+
+        let addr_wait = addr;
+        let waiting = thread::spawn(move || {
+            http(
+                addr_wait,
+                "POST",
+                "/mcp",
+                r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"request_access","arguments":{"query":"SCAN * FROM people"}}}"#,
+            )
+        });
+        let started = Instant::now();
+        let listed = loop {
+            let body = http(addr, "GET", "/api/mcp-access", "");
+            if body.contains("\"id\":\"r1\"") {
+                break body;
+            }
+            if started.elapsed() > Duration::from_secs(2) {
+                panic!("{body}");
+            }
+            thread::sleep(Duration::from_millis(20));
+        };
+        assert!(listed.contains("SCAN * FROM people"), "{listed}");
+
+        let ran = http(addr, "POST", "/api/mcp-access/run", r#"{"request":"r1"}"#);
+        assert!(ran.contains("Recommend not granting"), "{ran}");
+        assert!(ran.contains("ada@example.com"), "{ran}");
+        assert!(ran.contains("email"), "{ran}");
+
+        let granted = http(addr, "POST", "/api/mcp-access/grant", r#"{"request":"r1"}"#);
+        assert!(granted.contains("mcp_r1"), "{granted}");
+        let answer = waiting.join().unwrap();
+        assert!(
+            answer.contains("\\\"status\\\": \\\"granted\\\""),
+            "{answer}"
+        );
+        assert!(answer.contains("mcp_r1"), "{answer}");
+        let again = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"request_access","arguments":{"request":"r1"}}}"#,
+        );
+        assert!(again.contains("\\\"status\\\": \\\"granted\\\""), "{again}");
+
+        let denied = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"request_access","arguments":{"query":"INSERT INTO people (id) VALUES ('2')"}}}"#,
+        );
+        assert!(denied.contains("\"isError\":true"), "{denied}");
+        drop(guard);
+    }
+
+    #[test]
+    fn mcp_grant_stream_replays_changes_and_rejects_a_bare_get() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server_mcp(root.path().to_path_buf(), true);
+        let init = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}"#,
+        );
+        assert!(init.contains("2025-06-18"), "{init}");
+
+        let bare = http(addr, "GET", "/mcp", "");
+        assert!(bare.contains("405"), "{bare}");
+        let anon = http_anon(addr, "GET", "/mcp", "");
+        assert!(anon.contains("401"), "{anon}");
+        let foreign = http_origin(addr, "GET", "/mcp", "", "http://evil.example");
+        assert!(foreign.contains("403"), "{foreign}");
+
+        let setup = "\
+CREATE TABLE people (id STRING HASH KEY, email STRING);
+INSERT INTO people (id, email) VALUES ('1', 'ada@example.com');
+CREATE TEMPTABLE mail AS (SCAN * FROM people);
+GRANT MCP READ ON TEMPTABLE mail;";
+        let setup_body = format!("{{\"dql\":{}}}", serde_json::to_string(setup).unwrap());
+        let created = http_body(addr, "POST", "/api/run", &setup_body);
+        assert!(created.contains("\"ok\":true"), "{created}");
+
+        let token = server_token(addr);
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .unwrap();
+        write!(
+            stream,
+            "GET /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nAccept: text/event-stream\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut buf = String::new();
+        let mut bytes = [0u8; 2048];
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.contains("\"change\":\"granted\"") && text.contains("\"table\":\"mail\"")
+        });
+        assert!(buf.contains("notifications/dqlrs/grant_changed"), "{buf}");
+        assert!(buf.contains("\"change\":\"granted\""), "{buf}");
+        assert!(buf.contains("\"table\":\"mail\""), "{buf}");
+
+        let revoked = http_body(
+            addr,
+            "POST",
+            "/api/run",
+            r#"{"dql":"REVOKE MCP READ ON TEMPTABLE mail;"}"#,
+        );
+        assert!(revoked.contains("\"ok\":true"), "{revoked}");
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.contains("\"change\":\"revoked\"") && text.contains("\"table\":\"mail\"")
+        });
+        assert!(buf.contains("\"change\":\"revoked\""), "{buf}");
+
+        let granted = http_body(
+            addr,
+            "POST",
+            "/api/run",
+            r#"{"dql":"GRANT MCP READ ON TEMPTABLE mail;"}"#,
+        );
+        assert!(granted.contains("\"ok\":true"), "{granted}");
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.matches("\"change\":\"granted\"").count() >= 2
+        });
+        let before_second = buf.matches("\"change\":\"granted\"").count();
+        let again = http_body(
+            addr,
+            "POST",
+            "/api/run",
+            r#"{"dql":"GRANT MCP READ ON TEMPTABLE mail;"}"#,
+        );
+        assert!(again.contains("\"ok\":true"), "{again}");
+        thread::sleep(Duration::from_millis(300));
+        if let Ok(n) = stream.read(&mut bytes) {
+            if n > 0 {
+                buf.push_str(&String::from_utf8_lossy(&bytes[..n]));
+            }
+        }
+        assert_eq!(
+            buf.matches("\"change\":\"granted\"").count(),
+            before_second,
+            "{buf}"
+        );
+
+        let all = http_body(
+            addr,
+            "POST",
+            "/api/run",
+            r#"{"dql":"REVOKE MCP READ ALL;"}"#,
+        );
+        assert!(all.contains("\"ok\":true"), "{all}");
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.matches("\"change\":\"revoked\"").count() >= 2
+        });
+
+        let replaced = http_body(
+            addr,
+            "POST",
+            "/api/run",
+            r#"{"dql":"GRANT MCP READ ON TEMPTABLE mail; DROP TEMPTABLE mail; CREATE TEMPTABLE mail AS (SCAN * FROM people);"}"#,
+        );
+        assert!(replaced.contains("\"ok\":true"), "{replaced}");
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.matches("\"change\":\"revoked\"").count() >= 3
+        });
+        let granted_after_replace = buf.matches("\"change\":\"granted\"").count();
+        thread::sleep(Duration::from_millis(200));
+        if let Ok(n) = stream.read(&mut bytes) {
+            if n > 0 {
+                buf.push_str(&String::from_utf8_lossy(&bytes[..n]));
+            }
+        }
+        assert_eq!(
+            buf.matches("\"change\":\"granted\"").count(),
+            granted_after_replace,
+            "{buf}"
+        );
+
+        let addr_wait = addr;
+        let waiting = thread::spawn(move || {
+            http(
+                addr_wait,
+                "POST",
+                "/mcp",
+                r#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"request_access","arguments":{"query":"SCAN * FROM people"}}}"#,
+            )
+        });
+        let started = Instant::now();
+        loop {
+            let body = http(addr, "GET", "/api/mcp-access", "");
+            if body.contains("\"id\":\"r1\"") {
+                break;
+            }
+            if started.elapsed() > Duration::from_secs(2) {
+                panic!("{body}");
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        let quiet = buf.matches("grant_changed").count();
+        let ran = http(addr, "POST", "/api/mcp-access/run", r#"{"request":"r1"}"#);
+        assert!(ran.contains("Recommend not granting"), "{ran}");
+        thread::sleep(Duration::from_millis(200));
+        if let Ok(n) = stream.read(&mut bytes) {
+            if n > 0 {
+                buf.push_str(&String::from_utf8_lossy(&bytes[..n]));
+            }
+        }
+        assert_eq!(buf.matches("grant_changed").count(), quiet, "{buf}");
+
+        let denied = http(addr, "POST", "/api/mcp-access/deny", r#"{"request":"r1"}"#);
+        assert!(
+            denied.contains("\"ok\":true") || denied.contains("\"requests\""),
+            "{denied}"
+        );
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.contains("\"change\":\"denied\"") && text.contains("\"request\":\"r1\"")
+        });
+        assert!(buf.contains("\"change\":\"denied\""), "{buf}");
+        assert!(!buf.contains("\"table\":\"mcp_r1\""), "{buf}");
+        let answer = waiting.join().unwrap();
+        assert!(
+            answer.contains("\\\"status\\\": \\\"denied\\\""),
+            "{answer}"
+        );
+        drop(stream);
         drop(guard);
     }
 

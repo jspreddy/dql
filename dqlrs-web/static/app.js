@@ -3673,6 +3673,11 @@ function handleEventFrame(frame) {
     void onFileEvent(payload);
   } else if (event === "grants") {
     loadTables().catch((error) => reportError(error));
+    if (!document.querySelector("#grant-panel").hidden) {
+      openGrantPanel().catch((error) => reportError(error));
+    }
+  } else if (event === "grant-request") {
+    openGrantPanel().catch((error) => reportError(error));
   } else if (event === "mcp-read") {
     appendMcpRead(payload);
   }
@@ -3914,7 +3919,21 @@ function renderPresence(clients) {
     labels.push(label);
     const icon = document.createElement("span");
     icon.className = "presence-icon" + (self ? " is-self" : "");
+    icon.dataset.kind = client.kind;
     icon.role = "listitem";
+    if (client.kind === "mcp") {
+      icon.tabIndex = 0;
+      icon.addEventListener("click", (event) => {
+        event.stopPropagation();
+        hidePresenceTip();
+        openGrantPanel().catch((error) => reportError(error));
+      });
+      icon.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        openGrantPanel().catch((error) => reportError(error));
+      });
+    }
     icon.setAttribute("aria-label", name);
     icon.setAttribute("aria-describedby", "presence-tip");
     icon.style.background = client.color || "#64748b";
@@ -3959,6 +3978,148 @@ function fillPresenceTip(clients, selfClient) {
     line.textContent = name + ": " + group.map((client) => client.label || name[0]).join(", ");
     tip.append(line);
   }
+}
+
+document.querySelector("#grant-panel-close").addEventListener("click", () => {
+  document.querySelector("#grant-panel").hidden = true;
+});
+
+async function openGrantPanel() {
+  const payload = await api("/api/mcp-access");
+  renderGrantPanel(payload);
+  document.querySelector("#grant-panel").hidden = false;
+}
+
+function renderGrantPanel(payload) {
+  const body = document.querySelector("#grant-panel-body");
+  body.replaceChildren();
+  const requests = Array.isArray(payload.requests) ? payload.requests : [];
+  const grants = Array.isArray(payload.grants) ? payload.grants : [];
+  if (!requests.length) {
+    const empty = document.createElement("p");
+    empty.className = "grant-meta";
+    empty.textContent = "No pending requests.";
+    body.append(empty);
+  }
+  for (const request of requests) {
+    body.append(renderGrantRequest(request));
+  }
+  if (!grants.length) {
+    const empty = document.createElement("p");
+    empty.className = "grant-meta";
+    empty.textContent = "No grants yet.";
+    body.append(empty);
+  }
+  for (const grant of grants) {
+    const row = document.createElement("div");
+    row.className = "grant-granted";
+    const text = document.createElement("p");
+    text.textContent = `${grant.table} · MCP read · ${grant.granted}`;
+    row.append(text);
+    body.append(row);
+  }
+}
+
+function renderGrantRequest(request) {
+  const block = document.createElement("div");
+  block.className = "grant-request";
+  const who = document.createElement("p");
+  who.className = "grant-meta";
+  const gone = request.connected ? "" : " · no longer connected";
+  who.textContent = `${request.label || "M"} · ${request.id}${gone}`;
+  const query = document.createElement("pre");
+  query.className = "grant-query";
+  query.textContent = request.query || "";
+  block.append(who, query);
+  if (request.classification && request.classification.line) {
+    const line = document.createElement("p");
+    const clear = String(request.classification.line).startsWith("No sensitive");
+    line.className = "grant-line" + (clear ? " is-clear" : "");
+    line.textContent = request.classification.line;
+    block.append(line);
+  }
+  const rows = Array.isArray(request.rows) ? request.rows : [];
+  if (rows.length) {
+    block.append(renderGrantRows(rows, request.total));
+  }
+  const actions = document.createElement("div");
+  actions.className = "grant-actions";
+  const run = document.createElement("button");
+  run.type = "button";
+  run.className = "btn";
+  run.textContent = "Run";
+  run.addEventListener("click", () => {
+    run.disabled = true;
+    api("/api/mcp-access/run", { method: "POST", body: { request: request.id } })
+      .then((payload) => renderGrantPanel(payload))
+      .catch((error) => reportError(error))
+      .finally(() => {
+        run.disabled = false;
+      });
+  });
+  actions.append(run);
+  if (request.status === "ran") {
+    const grant = document.createElement("button");
+    grant.type = "button";
+    grant.className = "btn btn-primary";
+    grant.textContent = "Grant";
+    grant.addEventListener("click", () => {
+      api("/api/mcp-access/grant", { method: "POST", body: { request: request.id } })
+        .then((payload) => renderGrantPanel(payload))
+        .catch((error) => reportError(error));
+    });
+    actions.append(grant);
+  }
+  const deny = document.createElement("button");
+  deny.type = "button";
+  deny.className = "btn";
+  deny.textContent = "Deny";
+  deny.addEventListener("click", () => {
+    api("/api/mcp-access/deny", { method: "POST", body: { request: request.id } })
+      .then((payload) => renderGrantPanel(payload))
+      .catch((error) => reportError(error));
+  });
+  actions.append(deny);
+  block.append(actions);
+  return block;
+}
+
+function renderGrantRows(rows, total) {
+  const wrap = document.createElement("div");
+  const keys = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    for (const key of Object.keys(row)) {
+      if (!keys.includes(key)) keys.push(key);
+    }
+  }
+  const table = document.createElement("table");
+  table.className = "grant-rows";
+  const head = document.createElement("tr");
+  for (const key of keys) {
+    const cell = document.createElement("th");
+    cell.textContent = key;
+    head.append(cell);
+  }
+  table.append(head);
+  for (const row of rows) {
+    const line = document.createElement("tr");
+    for (const key of keys) {
+      const cell = document.createElement("td");
+      const value = row && row[key];
+      cell.textContent = value == null ? "" : typeof value === "object" ? JSON.stringify(value) : String(value);
+      line.append(cell);
+    }
+    table.append(line);
+  }
+  wrap.append(table);
+  if (typeof total === "number" && total > rows.length) {
+    const more = document.createElement("p");
+    more.className = "grant-meta";
+    more.textContent = `Showing ${rows.length} of ${total} rows`;
+    wrap.append(more);
+  }
+  return wrap;
 }
 
 function hidePresenceTip() {
