@@ -292,7 +292,8 @@ fn value_matches(text: &str) -> Vec<(&'static str, String)> {
         return Vec::new();
     }
     let mut hits = Vec::new();
-    // The whole value still covers a phone or card that contains spaces.
+    // The whole value still covers a card that contains spaces. A phone is a
+    // contiguous phone-shaped span, so ten digits scattered through a sentence do not match.
     push_value_hit(&mut hits, trimmed);
     for piece in trimmed.split(|ch: char| {
         ch.is_whitespace() || matches!(ch, ',' | ';' | '(' | ')' | '<' | '>' | '"' | '\'')
@@ -303,15 +304,15 @@ fn value_matches(text: &str) -> Vec<(&'static str, String)> {
         }
         push_value_hit(&mut hits, piece);
     }
+    for phone in phone_spans(trimmed) {
+        hits.push(("phone", phone));
+    }
     hits
 }
 
 fn push_value_hit(hits: &mut Vec<(&'static str, String)>, text: &str) {
     if is_email(text) {
         hits.push(("email", text.to_string()));
-    }
-    if is_phone(text) {
-        hits.push(("phone", text.to_string()));
     }
     if is_ssn(text) {
         hits.push(("ssn", text.to_string()));
@@ -338,13 +339,63 @@ fn is_email(text: &str) -> bool {
         })
 }
 
-fn is_phone(text: &str) -> bool {
+fn phone_spans(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut found = Vec::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if !is_phone_char(chars[index]) {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        while index < chars.len() && is_phone_char(chars[index]) {
+            index += 1;
+        }
+        let raw: String = chars[start..index].iter().collect();
+        let candidate = raw.trim_matches(|ch: char| matches!(ch, ' ' | '.' | '-'));
+        if is_phone_shape(candidate) {
+            found.push(candidate.to_string());
+        }
+    }
+    found
+}
+
+fn is_phone_char(ch: char) -> bool {
+    ch.is_ascii_digit() || matches!(ch, '+' | '-' | '.' | '(' | ')' | ' ')
+}
+
+fn is_phone_shape(text: &str) -> bool {
+    if text.is_empty()
+        || text.chars().any(|ch| !is_phone_char(ch))
+        || text.matches('+').count() > 1
+        || (text.contains('+') && !text.starts_with('+'))
+    {
+        return false;
+    }
     let digits: String = text.chars().filter(|ch| ch.is_ascii_digit()).collect();
     let national = digits
         .strip_prefix('1')
         .filter(|_| digits.len() == 11)
         .unwrap_or(digits.as_str());
-    national.len() == 10 && national.as_bytes()[0] != b'0' && national.as_bytes()[0] != b'1'
+    if national.len() != 10 || national.as_bytes()[0] == b'0' || national.as_bytes()[0] == b'1' {
+        return false;
+    }
+    let mut groups = Vec::new();
+    let mut count = 0;
+    for ch in text.chars() {
+        if ch.is_ascii_digit() {
+            count += 1;
+        } else if count > 0 {
+            groups.push(count);
+            count = 0;
+        }
+    }
+    if count > 0 {
+        groups.push(count);
+    }
+    // A dotted version such as 1.2.3.4.5.6.7.8.9.0 is ten digits, not a phone.
+    !(groups.len() > 1 && groups.iter().all(|len| *len < 3))
 }
 
 fn is_ssn(text: &str) -> bool {
@@ -477,6 +528,33 @@ mod tests {
                 && hit.value == "AKIAIOSFODNN7EXAMPLE"
         }));
         assert!(line(&found).contains("ada@example.com"));
+    }
+
+    #[test]
+    fn a_sentence_of_ten_digits_is_not_a_phone() {
+        let scattered = classify(&[row(&[("notes", "order 12345 shipped to room 67890")])], 1);
+        assert!(scattered.values.iter().all(|hit| hit.classifier != "phone"));
+        let version = classify(&[row(&[("notes", "version 1.2.3.4.5.6.7.8.9.0")])], 1);
+        assert!(version.values.iter().all(|hit| hit.classifier != "phone"));
+    }
+
+    #[test]
+    fn a_phone_shape_is_named_on_its_own_and_inside_a_sentence() {
+        let plain = classify(&[row(&[("notes", "415-555-0134")])], 1);
+        assert!(plain
+            .values
+            .iter()
+            .any(|hit| hit.classifier == "phone" && hit.value == "415-555-0134"));
+        let spaced = classify(&[row(&[("notes", "+1 (415) 555-0134")])], 1);
+        assert!(spaced
+            .values
+            .iter()
+            .any(|hit| hit.classifier == "phone" && hit.value == "+1 (415) 555-0134"));
+        let sentence = classify(&[row(&[("notes", "call (415) 555-0134 today")])], 1);
+        assert!(sentence
+            .values
+            .iter()
+            .any(|hit| hit.classifier == "phone" && hit.value == "(415) 555-0134"));
     }
 
     #[test]
