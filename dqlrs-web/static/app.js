@@ -3677,7 +3677,7 @@ function handleEventFrame(frame) {
       openGrantPanel().catch((error) => reportError(error));
     }
   } else if (event === "grant-request") {
-    openGrantPanel().catch((error) => reportError(error));
+    onGrantRequest(payload);
   } else if (event === "mcp-read") {
     appendMcpRead(payload);
   }
@@ -3984,8 +3984,33 @@ document.querySelector("#grant-panel-close").addEventListener("click", () => {
   document.querySelector("#grant-panel").hidden = true;
 });
 
+const seenGrantRequests = new Set();
+let grantPanelGrants = [];
+
+function rememberGrantRequests(requests) {
+  let fresh = false;
+  for (const request of requests) {
+    const id = request && request.id;
+    if (!id || seenGrantRequests.has(id)) continue;
+    seenGrantRequests.add(id);
+    fresh = true;
+  }
+  return fresh;
+}
+
+function onGrantRequest(payload) {
+  const requests = Array.isArray(payload.requests) ? payload.requests : [];
+  const fresh = rememberGrantRequests(requests);
+  const panel = document.querySelector("#grant-panel");
+  if (!fresh && panel.hidden) return;
+  renderGrantPanel({ requests, grants: grantPanelGrants });
+  if (fresh) panel.hidden = false;
+}
+
 async function openGrantPanel() {
   const payload = await api("/api/mcp-access");
+  const requests = Array.isArray(payload.requests) ? payload.requests : [];
+  rememberGrantRequests(requests);
   renderGrantPanel(payload);
   document.querySelector("#grant-panel").hidden = false;
 }
@@ -3994,7 +4019,8 @@ function renderGrantPanel(payload) {
   const body = document.querySelector("#grant-panel-body");
   body.replaceChildren();
   const requests = Array.isArray(payload.requests) ? payload.requests : [];
-  const grants = Array.isArray(payload.grants) ? payload.grants : [];
+  if (Array.isArray(payload.grants)) grantPanelGrants = payload.grants;
+  const grants = grantPanelGrants;
   if (!requests.length) {
     const empty = document.createElement("p");
     empty.className = "grant-meta";

@@ -847,7 +847,7 @@ fn rows_word(rows: usize) -> &'static str {
     }
 }
 
-fn rfc3339_now() -> String {
+pub fn rfc3339_now() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs())

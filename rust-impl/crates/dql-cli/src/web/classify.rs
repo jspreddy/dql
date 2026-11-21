@@ -292,25 +292,39 @@ fn value_matches(text: &str) -> Vec<(&'static str, String)> {
         return Vec::new();
     }
     let mut hits = Vec::new();
-    if is_email(trimmed) {
-        hits.push(("email", trimmed.to_string()));
-    }
-    if is_phone(trimmed) {
-        hits.push(("phone", trimmed.to_string()));
-    }
-    if is_ssn(trimmed) {
-        hits.push(("ssn", trimmed.to_string()));
-    }
-    if is_card(trimmed) {
-        hits.push(("card", trimmed.to_string()));
-    }
-    if is_aws_key(trimmed) {
-        hits.push(("aws-key", trimmed.to_string()));
-    }
-    if is_token(trimmed) {
-        hits.push(("token", trimmed.to_string()));
+    // The whole value still covers a phone or card that contains spaces.
+    push_value_hit(&mut hits, trimmed);
+    for piece in trimmed.split(|ch: char| {
+        ch.is_whitespace() || matches!(ch, ',' | ';' | '(' | ')' | '<' | '>' | '"' | '\'')
+    }) {
+        let piece = piece.trim_matches(|ch: char| ch == '.' || ch == ':' || ch == '!' || ch == '?');
+        if piece.is_empty() || piece == trimmed {
+            continue;
+        }
+        push_value_hit(&mut hits, piece);
     }
     hits
+}
+
+fn push_value_hit(hits: &mut Vec<(&'static str, String)>, text: &str) {
+    if is_email(text) {
+        hits.push(("email", text.to_string()));
+    }
+    if is_phone(text) {
+        hits.push(("phone", text.to_string()));
+    }
+    if is_ssn(text) {
+        hits.push(("ssn", text.to_string()));
+    }
+    if is_card(text) {
+        hits.push(("card", text.to_string()));
+    }
+    if is_aws_key(text) {
+        hits.push(("aws-key", text.to_string()));
+    }
+    if is_token(text) {
+        hits.push(("token", text.to_string()));
+    }
 }
 
 fn is_email(text: &str) -> bool {
@@ -443,6 +457,26 @@ mod tests {
             .iter()
             .any(|hit| hit.classifier == "card" && hit.attribute == "card"));
         assert!(line(&found).starts_with("Recommend not granting."));
+    }
+
+    #[test]
+    fn an_email_inside_a_sentence_is_named() {
+        let found = classify(
+            &[row(&[(
+                "notes",
+                "contact ada@example.com or key AKIAIOSFODNN7EXAMPLE leaked",
+            )])],
+            1,
+        );
+        assert!(found.values.iter().any(|hit| {
+            hit.attribute == "notes" && hit.classifier == "email" && hit.value == "ada@example.com"
+        }));
+        assert!(found.values.iter().any(|hit| {
+            hit.attribute == "notes"
+                && hit.classifier == "aws-key"
+                && hit.value == "AKIAIOSFODNN7EXAMPLE"
+        }));
+        assert!(line(&found).contains("ada@example.com"));
     }
 
     #[test]

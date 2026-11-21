@@ -5,7 +5,6 @@
 
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
@@ -25,8 +24,10 @@ impl Hub {
     }
 
     /// Replay `granted` for each live table, then keep the subscriber.
+    /// The channel fits the replay plus later live events, so a long grant
+    /// list is not truncated on connect.
     pub fn subscribe(&self, current: &[Value]) -> Receiver<String> {
-        let (tx, rx) = mpsc::sync_channel(64);
+        let (tx, rx) = mpsc::sync_channel(current.len().saturating_add(64));
         for event in current {
             let _ = tx.try_send(frame(event));
         }
@@ -74,36 +75,6 @@ fn change(kind: &str, table: Option<&str>, request: Option<&str>, at: &str) -> V
 
 fn frame(event: &Value) -> String {
     format!("event: message\ndata: {event}\n\n")
-}
-
-pub fn rfc3339_now() -> String {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0);
-    let days = (secs / 86_400) as i64;
-    let tod = secs % 86_400;
-    let (year, month, day) = civil_from_days(days);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
-        tod / 3600,
-        (tod % 3600) / 60,
-        tod % 60
-    )
-}
-
-fn civil_from_days(days: i64) -> (i32, u32, u32) {
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let month = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
-    let year = (if month <= 2 { y + 1 } else { y }) as i32;
-    (year, month, day)
 }
 
 impl Hub {

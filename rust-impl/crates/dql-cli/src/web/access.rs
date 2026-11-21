@@ -233,7 +233,8 @@ impl Store {
     }
 
     /// A `GRANT` typed in the editor completes the matching request.
-    pub fn note_granted(&self, table: &str) {
+    /// `true` when a request moved to granted.
+    pub fn note_granted(&self, table: &str) -> bool {
         let mut inner = self.lock();
         let mut changed = false;
         for request in inner.requests.values_mut() {
@@ -249,10 +250,12 @@ impl Store {
         if changed {
             self.changed.notify_all();
         }
+        changed
     }
 
     /// The temp table is gone, so Grant stays off until Run again.
-    pub fn note_missing(&self, exists: impl Fn(&str) -> bool) {
+    /// `true` when a run result was cleared.
+    pub fn note_missing(&self, exists: impl Fn(&str) -> bool) -> bool {
         let mut inner = self.lock();
         let mut changed = false;
         for request in inner.requests.values_mut() {
@@ -267,6 +270,7 @@ impl Store {
         if changed {
             self.changed.notify_all();
         }
+        changed
     }
 
     pub fn list(&self, connected: impl Fn(&str) -> bool, label: impl Fn(&str) -> String) -> Value {

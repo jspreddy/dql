@@ -1000,10 +1000,30 @@ fn request_access(app: &App, agent: &str, text: &str) -> Reply {
         app.access.wait(request_id, super::access::WAIT)
     };
     let body = match result {
-        Ok(answer) => crate::mcp::tool_ok(answer),
+        Ok(answer) => crate::mcp::tool_ok(live_answer(app, answer)),
         Err(message) => crate::mcp::tool_err(message),
     };
     Reply::Json(200, json!({"jsonrpc": "2.0", "id": id, "result": body}))
+}
+
+/// A grant that a later revoke or drop ended is no longer readable.
+fn live_answer(app: &App, mut answer: Value) -> Value {
+    if answer.get("status").and_then(Value::as_str) != Some("granted") {
+        return answer;
+    }
+    let table = answer
+        .get("table")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let live = {
+        let state = lock_state(app);
+        state.session.engine.temp_table_granted(&table)
+    };
+    if !live {
+        answer["status"] = json!("revoked");
+    }
+    answer
 }
 
 fn publish_requests(app: &App) {
@@ -1048,13 +1068,18 @@ fn execute_watched(app: &App, state: &mut WebState, statement: &str) -> ServeEnv
             state.table_catalog = None;
         }
         publish_grant_changes(app, &before, &after);
+        let mut requests_changed = false;
         for info in &after {
             if !before.iter().any(|prior| prior.name == info.name) {
-                app.access.note_granted(&info.name);
+                requests_changed |= app.access.note_granted(&info.name);
             }
         }
-        app.access
+        requests_changed |= app
+            .access
             .note_missing(|name| state.session.engine.is_temp_table(name));
+        if requests_changed {
+            publish_requests(app);
+        }
     }
     envelope
 }
@@ -1064,7 +1089,7 @@ fn publish_grant_changes(
     before: &[dql_engine::GrantInfo],
     after: &[dql_engine::GrantInfo],
 ) {
-    let now = super::mcp_stream::rfc3339_now();
+    let now = dql_engine::rfc3339_now();
     let mut changed = false;
     for info in after {
         if before.iter().any(|prior| prior.name == info.name) {
@@ -1416,10 +1441,8 @@ fn deny_access(app: &Arc<App>, body: &Value) -> Reply {
         let mut state = lock_state(app);
         let _ = execute_watched(app, &mut state, &statement);
     }
-    app.mcp_hub.publish(&super::mcp_stream::denied(
-        id,
-        &super::mcp_stream::rfc3339_now(),
-    ));
+    app.mcp_hub
+        .publish(&super::mcp_stream::denied(id, &dql_engine::rfc3339_now()));
     publish_requests(app);
     Reply::Json(200, mcp_access_payload(app))
 }
@@ -2676,6 +2699,84 @@ mod tests {
             r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"request_access","arguments":{"query":"INSERT INTO people (id) VALUES ('2')"}}}"#,
         );
         assert!(denied.contains("\"isError\":true"), "{denied}");
+        drop(guard);
+    }
+
+    #[test]
+    fn an_editor_drop_clears_the_run_and_a_revoke_answers_revoked() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server_mcp(root.path().to_path_buf(), true);
+        let init = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}"#,
+        );
+        assert!(init.contains("2025-06-18"), "{init}");
+        let setup = "CREATE TABLE people (id STRING HASH KEY, email STRING); INSERT INTO people (id, email) VALUES ('1', 'ada@example.com');";
+        let setup_body = format!("{{\"dql\":{}}}", serde_json::to_string(setup).unwrap());
+        let created = http_body(addr, "POST", "/api/run", &setup_body);
+        assert!(created.contains("\"ok\":true"), "{created}");
+
+        let addr_wait = addr;
+        let waiting = thread::spawn(move || {
+            http(
+                addr_wait,
+                "POST",
+                "/mcp",
+                r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"request_access","arguments":{"query":"SCAN * FROM people"}}}"#,
+            )
+        });
+        let started = Instant::now();
+        loop {
+            let body = http(addr, "GET", "/api/mcp-access", "");
+            if body.contains("\"id\":\"r1\"") {
+                break;
+            }
+            if started.elapsed() > Duration::from_secs(2) {
+                panic!("{body}");
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        let ran = http(addr, "POST", "/api/mcp-access/run", r#"{"request":"r1"}"#);
+        assert!(ran.contains("\"status\":\"ran\""), "{ran}");
+
+        let dropped = http_body(
+            addr,
+            "POST",
+            "/api/run",
+            r#"{"dql":"DROP TEMPTABLE mcp_r1;"}"#,
+        );
+        assert!(dropped.contains("\"ok\":true"), "{dropped}");
+        let cleared = http(addr, "GET", "/api/mcp-access", "");
+        assert!(cleared.contains("\"status\":\"open\""), "{cleared}");
+        assert!(!cleared.contains("Recommend not granting"), "{cleared}");
+
+        let ran_again = http(addr, "POST", "/api/mcp-access/run", r#"{"request":"r1"}"#);
+        assert!(ran_again.contains("\"status\":\"ran\""), "{ran_again}");
+        let granted = http(addr, "POST", "/api/mcp-access/grant", r#"{"request":"r1"}"#);
+        assert!(granted.contains("mcp_r1"), "{granted}");
+        let answer = waiting.join().unwrap();
+        assert!(
+            answer.contains("\\\"status\\\": \\\"granted\\\""),
+            "{answer}"
+        );
+
+        let revoked = http_body(
+            addr,
+            "POST",
+            "/api/run",
+            r#"{"dql":"REVOKE MCP READ ON TEMPTABLE mcp_r1;"}"#,
+        );
+        assert!(revoked.contains("\"ok\":true"), "{revoked}");
+        let later = http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"request_access","arguments":{"request":"r1"}}}"#,
+        );
+        assert!(later.contains("\\\"status\\\": \\\"revoked\\\""), "{later}");
+        assert!(later.contains("mcp_r1"), "{later}");
         drop(guard);
     }
 
