@@ -374,17 +374,18 @@ fn is_phone_shape(text: &str) -> bool {
         return false;
     }
     let groups = digit_groups(text);
-    // US shapes only: 4155550134, 415-555-0134, 415 5550134, and the same with a leading 1.
+    // US shapes only: 4155550134, 415-555-0134, 415 5550134, a leading 1, and E.164 14155550134.
     // 2026-11-21 10 is ten digits too, but its groups are 4-2-2-2.
     let allowed = matches!(
         groups.as_slice(),
-        [10] | [3, 3, 4] | [3, 7] | [1, 10] | [1, 3, 3, 4] | [1, 3, 7]
+        [10] | [11] | [3, 3, 4] | [3, 7] | [1, 10] | [1, 3, 3, 4] | [1, 3, 7]
     );
     if !allowed {
         return false;
     }
     let digits: String = text.chars().filter(|ch| ch.is_ascii_digit()).collect();
-    let national = if groups.first() == Some(&1) && groups.len() > 1 {
+    let country = matches!(groups.as_slice(), [11] | [1, 10] | [1, 3, 3, 4] | [1, 3, 7]);
+    let national = if country && digits.starts_with('1') {
         &digits[1..]
     } else {
         digits.as_str()
@@ -551,6 +552,7 @@ mod tests {
             "2026-11-21 10:00:00",
             "shipped 2026-11-21 10:30",
             "25 345 67890",
+            "24155550134",
         ] {
             let found = classify(&[row(&[("notes", notes)])], 1);
             assert!(
@@ -587,6 +589,16 @@ mod tests {
             .values
             .iter()
             .any(|hit| hit.classifier == "phone" && hit.value == "212 555 1234"));
+        let e164 = classify(&[row(&[("notes", "call +14155550134 today")])], 1);
+        assert!(e164
+            .values
+            .iter()
+            .any(|hit| hit.classifier == "phone" && hit.value == "+14155550134"));
+        let compact = classify(&[row(&[("notes", "14155550134")])], 1);
+        assert!(compact
+            .values
+            .iter()
+            .any(|hit| hit.classifier == "phone" && hit.value == "14155550134"));
     }
 
     #[test]
