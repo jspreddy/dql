@@ -6,11 +6,33 @@ A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists. Each line is a commit; the
 latest commit of each pull request, stacked ones included, names that pull request.
 
-## Unreleased (2026-11-21)
+## Unreleased (2026-11-22)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [61e1055](https://github.com/jspreddy/dql/commit/61e10556a21e1f15c845f13cae9df2c8b6d3f7da) docs(examples): describe the library join in the README diagram ([#288](https://github.com/jspreddy/dql/pull/288))
+- [92bed1b](https://github.com/jspreddy/dql/commit/92bed1b4720a6a2156dc6a42cbfb2d772028a70a) docs(examples): join a library hold to its shelf and desk
+- [b361436](https://github.com/jspreddy/dql/commit/b36143612dd599a6d7ae6fe83a034df2006ca981) docs(examples): use everyday stories in the join scripts
+- [30b4434](https://github.com/jspreddy/dql/commit/30b443465afcbd2367802a6866ed24d3f5585ec9) test(mcp): expect request_access in the smoke tool list ([#287](https://github.com/jspreddy/dql/pull/287))
+- [2d9b6a0](https://github.com/jspreddy/dql/commit/2d9b6a0564053f470dd7646f4cf7a1f01cdee12c) fix(web): snap the MCP pulse and wait longer between pings
+- [d9daf19](https://github.com/jspreddy/dql/commit/d9daf192d75254ba94dd42bcf6a90d5d70c04ef5) fix(web): pulse the MCP icon while a request waits
+- [64a54dc](https://github.com/jspreddy/dql/commit/64a54dc7157f4bbfacca81d3c17fcf6b90b7f715) fix(web): ping the MCP icon instead of opening the panel
+- [c21c2dd](https://github.com/jspreddy/dql/commit/c21c2dd29942987ec48ce962fda4f61c5dc776db) fix(web): match an 11-digit E.164 phone ([#286](https://github.com/jspreddy/dql/pull/286))
+- [3cd50ca](https://github.com/jspreddy/dql/commit/3cd50cae74535db315359c85284329eacf846db0) fix(web): accept only US phone groupings
+- [2c5c1db](https://github.com/jspreddy/dql/commit/2c5c1db4e7482ce8720fa408b46040d23a4b7494) fix(web): share query colors and label the grant panel
+- [e86b585](https://github.com/jspreddy/dql/commit/e86b5856d18026137ab957e9eac5f63a406abe6a) fix(web): match a phone only as its own span
+- [b6372bf](https://github.com/jspreddy/dql/commit/b6372bf6ac3893a2ccbbed5120be47a46606bdbb) fix(web): show access rows in the result table
+- [917ce9d](https://github.com/jspreddy/dql/commit/917ce9d03eda8a936db5ca339527343e5ca2226e) fix(web): highlight the requested query and use the alert card
+- [36eadbf](https://github.com/jspreddy/dql/commit/36eadbf1e921e8ac8f5d2b07eef31fb65434bbe7) fix(web): title the grant panel Access requested via MCP
+- [ab1b323](https://github.com/jspreddy/dql/commit/ab1b323d22d8be534b11ffa0a7e75af1762c3351) fix(web): keep the grant panel in step with drops and later events
+- [c1b071f](https://github.com/jspreddy/dql/commit/c1b071f149e67d7cfc219e32eb27f8b21d3db10a) feat(web): let an agent request a query and the user grant the result
+- [35bfe96](https://github.com/jspreddy/dql/commit/35bfe9686ccc99e854dbd3cef8b6eb0054738846) docs: align the MCP grant plans with the server code ([#283](https://github.com/jspreddy/dql/pull/283))
+- [9bedd7c](https://github.com/jspreddy/dql/commit/9bedd7c5c0f3eccb4722d02dffb28b78eff8dc60) docs(plans): add the MCP grant workflow above the three plans ([#281](https://github.com/jspreddy/dql/pull/281))
+- [75f3d41](https://github.com/jspreddy/dql/commit/75f3d416401df7ac338ce3dfbf7b12983359309f) docs(plans): join the MCP grant plans into one flow
+- [ae729d8](https://github.com/jspreddy/dql/commit/ae729d80a695316fcc727b8ccd5eaac291da970e) docs(plans): plan sensitive-data recommendations on grant requests
+- [7d1ee13](https://github.com/jspreddy/dql/commit/7d1ee1330524c65122564700f98cb19f0dbb686e) docs(plans): plan the MCP grant panel on the header chip
+- [169e597](https://github.com/jspreddy/dql/commit/169e5970d0dee2788b363e50f7a93a2edcd709b4) docs(plans): plan MCP grant and revoke events
 - [4946059](https://github.com/jspreddy/dql/commit/4946059609ce5f10206db28d81c62e759f00da93) fix(lint): report the engine's errors for a WITH name that clashes ([#285](https://github.com/jspreddy/dql/pull/285))
 - [b69c867](https://github.com/jspreddy/dql/commit/b69c867acf28ba379c1e107d95f8ae827d36a5f7) Move the PR viz skill folder to pr-viz ([#280](https://github.com/jspreddy/dql/pull/280))
 - [ff39880](https://github.com/jspreddy/dql/commit/ff39880874547a68fe7d2e0c83b9e861add4f924) Rename the PR viz skill folder to visualize-pr
