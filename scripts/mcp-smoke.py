@@ -141,6 +141,7 @@ def main() -> None:
             "global_search",
             "lint_query",
             "lint_query_file",
+            "request_access",
             "list_granted_tables",
             "read_granted_table",
             "list_tables",
