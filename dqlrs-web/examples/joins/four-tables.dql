@@ -1,47 +1,47 @@
--- Four tables, joined left to right.
+-- Follow one library hold from the request to the person who picked it up.
 --
 -- Each ON clause names one new table and one column already in the rows.
--- nxt collides, so the later value is stored as wb.nxt or wc.nxt.
--- The next JOIN reads that qualified name.
+-- next_stop collides, so the later value is stored as shelves.next_stop
+-- or desks.next_stop. The next JOIN reads that qualified name.
 
-DROP TABLE IF EXISTS join_a;
-DROP TABLE IF EXISTS join_b;
-DROP TABLE IF EXISTS join_c;
-DROP TABLE IF EXISTS join_d;
+DROP TABLE IF EXISTS library_requests;
+DROP TABLE IF EXISTS library_shelves;
+DROP TABLE IF EXISTS library_desks;
+DROP TABLE IF EXISTS library_patrons;
 
-CREATE TABLE join_a (
+CREATE TABLE library_requests (
   id STRING HASH KEY,
-  nxt STRING
+  next_stop STRING
 );
 
-CREATE TABLE join_b (
+CREATE TABLE library_shelves (
   id STRING HASH KEY,
-  nxt STRING
+  next_stop STRING
 );
 
-CREATE TABLE join_c (
+CREATE TABLE library_desks (
   id STRING HASH KEY,
-  nxt STRING
+  next_stop STRING
 );
 
-CREATE TABLE join_d (
+CREATE TABLE library_patrons (
   id STRING HASH KEY,
-  label STRING
+  title STRING
 );
 
-INSERT INTO join_a (id, nxt) VALUES ('a', 'b');
+INSERT INTO library_requests (id, next_stop) VALUES ('req-8821', 'shelf-fiction');
 
-INSERT INTO join_b (id, nxt) VALUES ('b', 'c');
+INSERT INTO library_shelves (id, next_stop) VALUES ('shelf-fiction', 'desk-main');
 
-INSERT INTO join_c (id, nxt) VALUES ('c', 'd');
+INSERT INTO library_desks (id, next_stop) VALUES ('desk-main', 'ada-okonkwo');
 
-INSERT INTO join_d (id, label) VALUES ('d', 'end');
+INSERT INTO library_patrons (id, title) VALUES ('ada-okonkwo', 'The Left Hand of Darkness');
 
-WITH wa AS (SCAN * FROM join_a),
-     wb AS (SCAN * FROM join_b),
-     wc AS (SCAN * FROM join_c),
-     wd AS (SCAN * FROM join_d)
-SELECT * FROM wa
-JOIN wb ON wa.nxt = wb.id
-JOIN wc ON wb.nxt = wc.id
-JOIN wd ON wc.nxt = wd.id;
+WITH requests AS (SCAN * FROM library_requests),
+     shelves AS (SCAN * FROM library_shelves),
+     desks AS (SCAN * FROM library_desks),
+     patrons AS (SCAN * FROM library_patrons)
+SELECT * FROM requests
+JOIN shelves ON requests.next_stop = shelves.id
+JOIN desks ON shelves.next_stop = desks.id
+JOIN patrons ON desks.next_stop = patrons.id;

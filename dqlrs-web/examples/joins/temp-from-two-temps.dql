@@ -1,40 +1,47 @@
--- Store a join of two temp tables in a third temp table.
+-- Join two saved lists into a third: the orders, the accounts, and the
+-- orders that matched an account.
 --
--- The two source temps stay. join_mem_hot is the merged rows.
+-- The two source temps stay. bakery_known_orders is the merged rows.
 
-DROP TABLE IF EXISTS join_mem_posts;
-DROP TABLE IF EXISTS join_mem_customers;
-DROP TEMPTABLE IF EXISTS join_mem_orders;
-DROP TEMPTABLE IF EXISTS join_mem_people;
-DROP TEMPTABLE IF EXISTS join_mem_hot;
+DROP TABLE IF EXISTS bakery_mem_orders;
+DROP TABLE IF EXISTS bakery_mem_customers;
+DROP TEMPTABLE IF EXISTS bakery_open_orders;
+DROP TEMPTABLE IF EXISTS bakery_account_list;
+DROP TEMPTABLE IF EXISTS bakery_known_orders;
 
-CREATE TABLE join_mem_posts (
+CREATE TABLE bakery_mem_orders (
   id STRING HASH KEY,
-  customer STRING
+  customer STRING,
+  item STRING
 );
 
-CREATE TABLE join_mem_customers (
+CREATE TABLE bakery_mem_customers (
   id STRING HASH KEY,
   name STRING
 );
 
-INSERT INTO join_mem_posts (id, customer)
-VALUES ('a', 'c1'), ('b', 'c1'), ('c', 'c9');
+INSERT INTO bakery_mem_orders (id, customer, item)
+VALUES
+  ('ord-1042', 'ada-okonkwo', 'sourdough loaf'),
+  ('ord-1043', 'ada-okonkwo', 'cinnamon rolls'),
+  ('ord-1044', 'walk-in', 'drip coffee');
 
-INSERT INTO join_mem_customers (id, name)
-VALUES ('c1', 'Ada'), ('c2', 'Grace');
+INSERT INTO bakery_mem_customers (id, name)
+VALUES
+  ('ada-okonkwo', 'Ada Okonkwo'),
+  ('kenji-sato', 'Kenji Sato');
 
-CREATE TEMPTABLE join_mem_orders AS (SCAN * FROM join_mem_posts);
+CREATE TEMPTABLE bakery_open_orders AS (SCAN * FROM bakery_mem_orders);
 
-CREATE TEMPTABLE join_mem_people AS (SCAN * FROM join_mem_customers);
+CREATE TEMPTABLE bakery_account_list AS (SCAN * FROM bakery_mem_customers);
 
-CREATE TEMPTABLE join_mem_hot AS (
-  SELECT * FROM join_mem_orders
-  JOIN join_mem_people ON join_mem_orders.customer = join_mem_people.id
+CREATE TEMPTABLE bakery_known_orders AS (
+  SELECT * FROM bakery_open_orders
+  JOIN bakery_account_list ON bakery_open_orders.customer = bakery_account_list.id
 );
 
-SCAN * FROM join_mem_hot;
+SCAN * FROM bakery_known_orders;
 
-SCAN * FROM join_mem_orders;
+SCAN * FROM bakery_open_orders;
 
-SCAN * FROM join_mem_people;
+SCAN * FROM bakery_account_list;

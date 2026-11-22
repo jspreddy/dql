@@ -1,24 +1,26 @@
--- 1000 rows joined to 10 buckets.
+-- 1000 grocery receipts joined to 10 store departments.
 --
--- bucket is id modulo 10. Each bucket name matches 100 rows.
--- When the left id and the right id differ, the right id is stored as
--- join_ten_right.id. Rows 0 through 9 use the same number for both, so that
--- column is left off. The last statement reads row 15: bucket 5, name n5.
+-- The department number is the receipt number modulo 10. Each department
+-- matches 100 receipts.
+-- When the receipt number and the department number differ, the department
+-- number is stored as departments.id. Receipts 0 through 9 use the same
+-- number for both, so that column is left off. The last statement reads
+-- receipt 15: department 5, Pantry.
 
-DROP TABLE IF EXISTS join_ten_rows;
-DROP TABLE IF EXISTS join_ten_names;
+DROP TABLE IF EXISTS grocery_receipts;
+DROP TABLE IF EXISTS grocery_departments;
 
-CREATE TABLE join_ten_rows (
+CREATE TABLE grocery_receipts (
   id STRING HASH KEY,
-  bucket STRING
+  department STRING
 );
 
-CREATE TABLE join_ten_names (
+CREATE TABLE grocery_departments (
   id STRING HASH KEY,
   name STRING
 );
 
-INSERT INTO join_ten_rows (id, bucket)
+INSERT INTO grocery_receipts (id, department)
 VALUES
   ('0', '0'),
   ('1', '1'),
@@ -1021,27 +1023,27 @@ VALUES
   ('998', '8'),
   ('999', '9');
 
-INSERT INTO join_ten_names (id, name)
+INSERT INTO grocery_departments (id, name)
 VALUES
-  ('0', 'n0'),
-  ('1', 'n1'),
-  ('2', 'n2'),
-  ('3', 'n3'),
-  ('4', 'n4'),
-  ('5', 'n5'),
-  ('6', 'n6'),
-  ('7', 'n7'),
-  ('8', 'n8'),
-  ('9', 'n9');
+  ('0', 'Bakery'),
+  ('1', 'Produce'),
+  ('2', 'Dairy'),
+  ('3', 'Meat'),
+  ('4', 'Frozen'),
+  ('5', 'Pantry'),
+  ('6', 'Household'),
+  ('7', 'Pharmacy'),
+  ('8', 'Floral'),
+  ('9', 'Checkout');
 
-WITH join_ten_left AS (SCAN * FROM join_ten_rows),
-     join_ten_right AS (SCAN * FROM join_ten_names)
-SELECT * FROM join_ten_left
-JOIN join_ten_right ON join_ten_left.bucket = join_ten_right.id;
+WITH receipts AS (SCAN * FROM grocery_receipts),
+     departments AS (SCAN * FROM grocery_departments)
+SELECT * FROM receipts
+JOIN departments ON receipts.department = departments.id;
 
--- Row 15 is one of the 100 rows in bucket 5.
-WITH join_ten_left AS (SCAN * FROM join_ten_rows),
-     join_ten_right AS (SCAN * FROM join_ten_names)
-SELECT * FROM join_ten_left
-JOIN join_ten_right ON join_ten_left.bucket = join_ten_right.id
+-- Receipt 15 is one of the 100 receipts in Pantry.
+WITH receipts AS (SCAN * FROM grocery_receipts),
+     departments AS (SCAN * FROM grocery_departments)
+SELECT * FROM receipts
+JOIN departments ON receipts.department = departments.id
 WHERE id = '15';
