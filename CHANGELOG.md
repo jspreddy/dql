@@ -11,6 +11,7 @@ latest commit of each pull request, stacked ones included, names that pull reque
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [4946059](https://github.com/jspreddy/dql/commit/4946059609ce5f10206db28d81c62e759f00da93) fix(lint): report the engine's errors for a WITH name that clashes ([#285](https://github.com/jspreddy/dql/pull/285))
 - [b69c867](https://github.com/jspreddy/dql/commit/b69c867acf28ba379c1e107d95f8ae827d36a5f7) Move the PR viz skill folder to pr-viz ([#280](https://github.com/jspreddy/dql/pull/280))
 - [ff39880](https://github.com/jspreddy/dql/commit/ff39880874547a68fe7d2e0c83b9e861add4f924) Rename the PR viz skill folder to visualize-pr
 - [d15456d](https://github.com/jspreddy/dql/commit/d15456da8bbb4e7be93c973639d54866cf9db331) feat(skills): name the pull request file list PR viz
