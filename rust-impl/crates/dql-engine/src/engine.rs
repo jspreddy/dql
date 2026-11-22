@@ -472,6 +472,11 @@ impl<B: DynamoBackend> Engine<B> {
         self.virtual_tables.kind(name) == Some(crate::virtual_tables::TableKind::Temp)
     }
 
+    /// Names of the local and temp tables held in this process. Does not call the backend.
+    pub fn virtual_table_names(&self) -> Vec<String> {
+        self.virtual_tables.names()
+    }
+
     /// `CREATE LOCALTABLE … AS '…'` or `CREATE TEMPTABLE … AS (…)` for a local or temp
     /// table, and its kind (`local` or `temp`). `None` for a DynamoDB table.
     pub fn virtual_schema_line(&self, name: &str) -> Option<(&'static str, String)> {
