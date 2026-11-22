@@ -11,6 +11,7 @@ latest commit of each pull request, stacked ones included, names that pull reque
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [3aed061](https://github.com/jspreddy/dql/commit/3aed06162aaf111bf82b0d08ecbc73d0a4dfb35e) chore(just): add a flake recipe that repeats a test recipe on fewer cores ([#292](https://github.com/jspreddy/dql/pull/292))
 - [61e1055](https://github.com/jspreddy/dql/commit/61e10556a21e1f15c845f13cae9df2c8b6d3f7da) docs(examples): describe the library join in the README diagram ([#288](https://github.com/jspreddy/dql/pull/288))
 - [92bed1b](https://github.com/jspreddy/dql/commit/92bed1b4720a6a2156dc6a42cbfb2d772028a70a) docs(examples): join a library hold to its shelf and desk
 - [b361436](https://github.com/jspreddy/dql/commit/b36143612dd599a6d7ae6fe83a034df2006ca981) docs(examples): use everyday stories in the join scripts
