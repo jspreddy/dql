@@ -93,6 +93,14 @@ impl Hub {
         publish(&mut self.lock(), frame("grants", &json!({})));
     }
 
+    /// An agent asked to run a query, or that request changed.
+    pub(crate) fn grant_request(&self, requests: &Value) {
+        publish(
+            &mut self.lock(),
+            frame("grant-request", &json!({ "requests": requests })),
+        );
+    }
+
     /// An agent read a page of a granted temp table.
     pub(crate) fn mcp_read(&self, table: &str, rows: usize, offset: usize) {
         publish(

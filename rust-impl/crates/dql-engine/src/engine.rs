@@ -458,6 +458,20 @@ impl<B: DynamoBackend> Engine<B> {
             .read_granted(name, limit, offset, attributes)
     }
 
+    /// One page of a temp table that has not been granted yet.
+    pub fn temp_table_page(
+        &self,
+        name: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Option<(Vec<Item>, usize)> {
+        self.virtual_tables.page_temp(name, offset, limit)
+    }
+
+    pub fn is_temp_table(&self, name: &str) -> bool {
+        self.virtual_tables.kind(name) == Some(crate::virtual_tables::TableKind::Temp)
+    }
+
     /// `CREATE LOCALTABLE … AS '…'` or `CREATE TEMPTABLE … AS (…)` for a local or temp
     /// table, and its kind (`local` or `temp`). `None` for a DynamoDB table.
     pub fn virtual_schema_line(&self, name: &str) -> Option<(&'static str, String)> {

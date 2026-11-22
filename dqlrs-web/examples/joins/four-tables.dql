@@ -1,47 +1,108 @@
--- Four tables, joined left to right.
+-- Where is Ada Okonkwo's book, and which desk should she pick it up from?
 --
--- Each ON clause names one new table and one column already in the rows.
--- nxt collides, so the later value is stored as wb.nxt or wc.nxt.
--- The next JOIN reads that qualified name.
+-- The request names the patron and the shelf the book is on. The shelf's
+-- floor names the desk that handles that floor. Each JOIN adds one of those
+-- lookups. WHERE keeps Ada's request before the merge.
 
-DROP TABLE IF EXISTS join_a;
-DROP TABLE IF EXISTS join_b;
-DROP TABLE IF EXISTS join_c;
-DROP TABLE IF EXISTS join_d;
+DROP TABLE IF EXISTS library_requests;
+DROP TABLE IF EXISTS library_shelves;
+DROP TABLE IF EXISTS library_desks;
+DROP TABLE IF EXISTS library_patrons;
 
-CREATE TABLE join_a (
+CREATE TABLE library_requests (
   id STRING HASH KEY,
-  nxt STRING
+  patron_id STRING,
+  title STRING,
+  status STRING,
+  shelf_id STRING
 );
 
-CREATE TABLE join_b (
+CREATE TABLE library_shelves (
   id STRING HASH KEY,
-  nxt STRING
+  section STRING,
+  floor NUMBER,
+  capacity NUMBER
 );
 
-CREATE TABLE join_c (
+CREATE TABLE library_desks (
   id STRING HASH KEY,
-  nxt STRING
+  place STRING,
+  staff STRING,
+  floor NUMBER
 );
 
-CREATE TABLE join_d (
+CREATE TABLE library_patrons (
   id STRING HASH KEY,
-  label STRING
+  name STRING,
+  email STRING,
+  member_since STRING
 );
 
-INSERT INTO join_a (id, nxt) VALUES ('a', 'b');
+INSERT INTO library_patrons (
+  id='ada-okonkwo',
+  name='Ada Okonkwo',
+  email='ada.okonkwo@example.com',
+  member_since='2019-04-12'
+);
 
-INSERT INTO join_b (id, nxt) VALUES ('b', 'c');
+INSERT INTO library_patrons (
+  id='kenji-sato',
+  name='Kenji Sato',
+  email='kenji.sato@example.com',
+  member_since='2022-11-03'
+);
 
-INSERT INTO join_c (id, nxt) VALUES ('c', 'd');
+INSERT INTO library_shelves (
+  id='shelf-fiction',
+  section='Fiction',
+  floor=2,
+  capacity=2400
+);
 
-INSERT INTO join_d (id, label) VALUES ('d', 'end');
+INSERT INTO library_shelves (
+  id='shelf-children',
+  section='Children',
+  floor=1,
+  capacity=800
+);
 
-WITH wa AS (SCAN * FROM join_a),
-     wb AS (SCAN * FROM join_b),
-     wc AS (SCAN * FROM join_c),
-     wd AS (SCAN * FROM join_d)
-SELECT * FROM wa
-JOIN wb ON wa.nxt = wb.id
-JOIN wc ON wb.nxt = wc.id
-JOIN wd ON wc.nxt = wd.id;
+INSERT INTO library_desks (
+  id='desk-2f',
+  place='second floor, by the elevators',
+  staff='Priya Shah',
+  floor=2
+);
+
+INSERT INTO library_desks (
+  id='desk-lobby',
+  place='lobby',
+  staff='Luis Ortega',
+  floor=1
+);
+
+INSERT INTO library_requests (
+  id='req-8821',
+  patron_id='ada-okonkwo',
+  title='The Left Hand of Darkness',
+  status='ready for pickup',
+  shelf_id='shelf-fiction'
+);
+
+INSERT INTO library_requests (
+  id='req-9044',
+  patron_id='kenji-sato',
+  title='The Housekeeper and the Professor',
+  status='waiting',
+  shelf_id='shelf-children'
+);
+
+WITH requests AS (SCAN * FROM library_requests),
+     patrons AS (SCAN * FROM library_patrons),
+     shelves AS (SCAN * FROM library_shelves),
+     desks AS (SCAN * FROM library_desks)
+SELECT name, title, status, section, floor, place, staff
+FROM requests
+JOIN patrons ON requests.patron_id = patrons.id
+JOIN shelves ON requests.shelf_id = shelves.id
+JOIN desks ON shelves.floor = desks.floor
+WHERE patron_id = 'ada-okonkwo';

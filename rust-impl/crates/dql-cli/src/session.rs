@@ -92,6 +92,25 @@ impl RuntimeEngine {
         matches!(self, Self::Remote(_))
     }
 
+    pub fn is_temp_table(&self, name: &str) -> bool {
+        match self {
+            Self::Memory(engine) => engine.inner().is_temp_table(name),
+            Self::Remote(engine) => engine.inner().is_temp_table(name),
+        }
+    }
+
+    pub fn temp_table_page(
+        &self,
+        name: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Option<(Vec<dql_engine::Item>, usize)> {
+        match self {
+            Self::Memory(engine) => engine.inner().temp_table_page(name, offset, limit),
+            Self::Remote(engine) => engine.inner().temp_table_page(name, offset, limit),
+        }
+    }
+
     pub fn temp_table_granted(&self, name: &str) -> bool {
         match self {
             Self::Memory(engine) => engine.inner().temp_table_granted(name),

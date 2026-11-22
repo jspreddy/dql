@@ -1,37 +1,43 @@
--- Store the join of two DynamoDB tables in one temp table.
+-- Save the bakery orders that belong to a known account.
 --
 -- The WITH queries inside CREATE TEMPTABLE load each side once. The temp table
 -- keeps the merged rows. The WITH names disappear when the statement finishes.
 
-DROP TABLE IF EXISTS join_src_posts;
-DROP TABLE IF EXISTS join_src_customers;
-DROP TEMPTABLE IF EXISTS join_src_hot;
+DROP TABLE IF EXISTS bakery_src_orders;
+DROP TABLE IF EXISTS bakery_src_customers;
+DROP TEMPTABLE IF EXISTS bakery_known_orders;
 
-CREATE TABLE join_src_posts (
+CREATE TABLE bakery_src_orders (
   id STRING HASH KEY,
-  customer STRING
+  customer STRING,
+  item STRING
 );
 
-CREATE TABLE join_src_customers (
+CREATE TABLE bakery_src_customers (
   id STRING HASH KEY,
   name STRING
 );
 
-INSERT INTO join_src_posts (id, customer)
-VALUES ('a', 'c1'), ('b', 'c1'), ('c', 'c9');
+INSERT INTO bakery_src_orders (id, customer, item)
+VALUES
+  ('ord-1042', 'ada-okonkwo', 'sourdough loaf'),
+  ('ord-1043', 'ada-okonkwo', 'cinnamon rolls'),
+  ('ord-1044', 'walk-in', 'drip coffee');
 
-INSERT INTO join_src_customers (id, name)
-VALUES ('c1', 'Ada'), ('c2', 'Grace');
+INSERT INTO bakery_src_customers (id, name)
+VALUES
+  ('ada-okonkwo', 'Ada Okonkwo'),
+  ('kenji-sato', 'Kenji Sato');
 
-CREATE TEMPTABLE join_src_hot AS (
-  WITH join_src_orders AS (SCAN * FROM join_src_posts),
-       join_src_people AS (SCAN * FROM join_src_customers)
-  SELECT * FROM join_src_orders
-  JOIN join_src_people ON join_src_orders.customer = join_src_people.id
+CREATE TEMPTABLE bakery_known_orders AS (
+  WITH orders AS (SCAN * FROM bakery_src_orders),
+       accounts AS (SCAN * FROM bakery_src_customers)
+  SELECT * FROM orders
+  JOIN accounts ON orders.customer = accounts.id
 );
 
-SCAN * FROM join_src_hot;
+SCAN * FROM bakery_known_orders;
 
--- The source copies are gone. The saved join remains.
--- SCAN * FROM join_src_orders;
--- SCAN * FROM join_src_people;
+-- The copies used to build the join are gone. The saved orders remain.
+-- SCAN * FROM orders;
+-- SCAN * FROM accounts;

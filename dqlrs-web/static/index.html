@@ -97,6 +97,13 @@
     </div>
     <div id="env-pop" class="env-pop" popover="auto" aria-labelledby="env-pop-title"></div>
   </header>
+  <section id="grant-panel" class="grant-panel" hidden aria-label="Access requested via MCP">
+    <div class="grant-panel-head">
+      <h2 class="grant-panel-title">Access requested via MCP</h2>
+      <button type="button" id="grant-panel-close" class="btn">Close</button>
+    </div>
+    <div id="grant-panel-body"></div>
+  </section>
   <div class="body">
     <aside class="side" id="side">
       <div class="side-head">
@@ -297,7 +304,7 @@
                 </label>
               </div>
               <div class="table-query-side-body">
-                <pre id="table-query-dql" class="table-query-dql" data-testid="table-query-dql" role="tabpanel" aria-labelledby="table-query-tab-dql"></pre>
+                <pre id="table-query-dql" class="table-query-dql dql-code" data-testid="table-query-dql" role="tabpanel" aria-labelledby="table-query-tab-dql"></pre>
                 <div id="table-query-explain" class="table-query-explain" data-testid="table-query-explain" role="tabpanel" aria-labelledby="table-query-tab-explain" hidden></div>
               </div>
             </section>
