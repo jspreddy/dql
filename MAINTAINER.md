@@ -40,7 +40,7 @@ cargo install --path crates/dql-cli --locked --root ~/.local
 ## Verification
 
 [`VERIFICATION.md`](VERIFICATION.md). From the repo root,
-[`just`](https://just.systems/) lists tasks; `just verify` runs the full check. `just changelog` regenerates [CHANGELOG.md](CHANGELOG.md) from `Bump version` commits on `v-rust` (`scripts/changelog.py`).
+[`just`](https://just.systems/) lists tasks; `just verify` runs the full check. `just flake web-test 10 2 -- lint` builds once and repeats a test recipe on fewer cores to find flaky tests, with a log per run. `just changelog` regenerates [CHANGELOG.md](CHANGELOG.md) from `Bump version` commits on `v-rust` (`scripts/changelog.py`).
 
 Notebook from a checkout: `./notebook/start.sh --local --start-local`.
 Details: [`notebook/README.md`](notebook/README.md).

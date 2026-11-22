@@ -463,5 +463,93 @@ test: (_title "test") dynamo py-sync rust-build web-unit py-test rust-test rust-
 # Static analysis, package builds, and every test suite. Does not call `test`.
 verify: (_title "verify") dynamo web-unit py rust black-box notebook-test web-test mcp-test
 
+# Repeat a test recipe on fewer CPU cores to find flaky tests: just flake web-test 5 2 -- lint
+flake recipe="" runs="5" cores="2" *args: (_title "flake")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Builds once, then runs the recipe `runs` times pinned to `cores` cores (0: no limit), with
+    # a log per run. Leave the recipe out to pick from a list. Recipe flags go after `--`.
+    root="{{justfile_directory()}}"
+    cd "$root"
+    choices=(web-test web-unit rust-test rust-local rust-smoke mcp-test mcp-smoke py-test black-box notebook-test)
+    recipe="{{recipe}}"
+    if [[ -z "$recipe" ]]; then
+        PS3="Test recipe to repeat: "
+        select recipe in "${choices[@]}"; do
+            [[ -n "$recipe" ]] && break
+        done
+    fi
+    if ! just --summary | tr ' ' '\n' | grep -qx -- "$recipe"; then
+        echo "error: no recipe named '$recipe'. Try one of: ${choices[*]}" >&2
+        exit 2
+    fi
+    runs="{{runs}}"
+    cores="{{cores}}"
+    if ! [[ "$runs" =~ ^[1-9][0-9]*$ ]]; then
+        echo "error: runs must be a whole number of at least 1, not '$runs'" >&2
+        exit 2
+    fi
+    if ! [[ "$cores" =~ ^[0-9]+$ ]]; then
+        echo "error: cores must be a whole number (0: no limit), not '$cores'" >&2
+        exit 2
+    fi
+    # `just recipe -- --flag` includes the separator in the variadic args.
+    args=({{args}})
+    if [[ ${#args[@]} -gt 0 && "${args[0]}" == "--" ]]; then
+        args=("${args[@]:1}")
+    fi
+    pin=()
+    if [[ "$cores" -gt 0 ]]; then
+        available=$(nproc)
+        if [[ "$cores" -gt "$available" ]]; then
+            echo "error: cores is $cores, but this machine has $available" >&2
+            exit 2
+        fi
+        if command -v taskset >/dev/null; then
+            pin=(taskset -c "0-$((cores - 1))")
+        else
+            echo "warning: taskset is not installed, so runs use every core" >&2
+        fi
+    fi
+
+    # Build and start services once, on every core, so the runs time only the tests.
+    just dynamo
+    (cd rust-impl && cargo build -p dql-cli && cargo test --workspace --no-run -q)
+    case "$recipe" in
+        rust-smoke|black-box) (cd rust-impl && cargo build --release -p dql-cli) ;;
+        py-*) just py-sync ;;
+    esac
+
+    logs="${TMPDIR:-/tmp}/dql-flake/$recipe-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$logs"
+    if [[ "$cores" -gt 0 ]]; then where="$cores core(s)"; else where="every core"; fi
+    echo "Running '$recipe' $runs time(s) on $where. Logs: $logs"
+    failed=()
+    for ((run = 1; run <= runs; run++)); do
+        log="$logs/run-$run.log"
+        started=$(date +%s)
+        if NO_COLOR=1 "${pin[@]}" just "$recipe" "${args[@]}" >"$log" 2>&1; then
+            echo "run $run/$runs: passed in $(($(date +%s) - started))s"
+        else
+            echo "run $run/$runs: FAILED in $(($(date +%s) - started))s, $log"
+            failed+=("$run")
+            # Playwright marks a failed test with ✘; cargo with "... FAILED"; pytest with FAILED.
+            # Without one of those, show how the log ends.
+            names=$(grep -E '✘|^test .* FAILED$|^FAILED ' "$log" | head -20 || true)
+            if [[ -n "$names" ]]; then
+                sed 's/^/    /' <<<"$names"
+            else
+                tail -n 3 "$log" | sed 's/^/    /'
+            fi
+        fi
+    done
+    echo
+    if [[ ${#failed[@]} -eq 0 ]]; then
+        echo "flake: '$recipe' passed all $runs run(s). Logs: $logs"
+    else
+        echo "flake: '$recipe' failed ${#failed[@]} of $runs run(s) (run ${failed[*]}). Logs: $logs"
+        exit 1
+    fi
+
 # Install dql and dqlrs onto ~/.local/bin
 install: (_title "install") py rust py-install rust-install
