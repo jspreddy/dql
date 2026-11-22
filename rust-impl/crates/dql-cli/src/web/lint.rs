@@ -137,14 +137,27 @@ fn check_statement(statement: &Statement, cx: &mut Cx<'_>, apply_schema: bool) {
             check_statement(inner, cx, false);
         }
         Statement::With { ctes, body } => {
-            let mut added = Vec::new();
+            // The same checks as the engine's `run_with`, in the same order: it stops at the
+            // first name that clashes, before that query or the body runs.
+            let mut added: Vec<String> = Vec::new();
+            let mut clash = None;
             for cte in ctes {
-                check_statement(&cte.query, cx, false);
-                if cx.schemas.ctes.insert(cte.name.clone()) {
-                    added.push(cte.name.clone());
+                if added.contains(&cte.name) {
+                    clash = Some(format!("WITH name '{}' is used more than once", cte.name));
+                    break;
                 }
+                if cx.schemas.ctes.contains(&cte.name) || table_exists(cx, &cte.name) {
+                    clash = Some(format!("Table '{}' already exists", cte.name));
+                    break;
+                }
+                check_statement(&cte.query, cx, false);
+                cx.schemas.ctes.insert(cte.name.clone());
+                added.push(cte.name.clone());
             }
-            check_statement(body, cx, false);
+            match clash {
+                Some(message) => cx.error(message),
+                None => check_statement(body, cx, false),
+            }
             for name in added {
                 cx.schemas.ctes.remove(&name);
             }
@@ -338,12 +351,23 @@ fn keys_in_message(
     None
 }
 
-fn schema_for(cx: &mut Cx<'_>, table: &str) -> Option<TableMeta> {
-    if let Some(meta) = cx.schemas.local.get(table) {
-        return Some(meta.clone());
+/// Whether `name` is a table the engine would find, as far as the script and the cached
+/// definitions tell. A DynamoDB table that was never described is not known here.
+fn table_exists(cx: &mut Cx<'_>, name: &str) -> bool {
+    if cx.schemas.dropped.contains(name) {
+        return false;
     }
+    cx.schemas.local.contains_key(name)
+        || cx.schemas.created_virtual.contains(name)
+        || cx.session.engine.cached_definition(name).is_some()
+}
+
+fn schema_for(cx: &mut Cx<'_>, table: &str) -> Option<TableMeta> {
     if cx.schemas.ctes.contains(table) {
         return None;
+    }
+    if let Some(meta) = cx.schemas.local.get(table) {
+        return Some(meta.clone());
     }
     if cx.schemas.dropped.contains(table) {
         cx.error(format!("table {table} was dropped earlier in this script"));
@@ -861,6 +885,68 @@ SCAN * FROM hot;
             text.contains("table hot was dropped earlier in this script"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn a_with_name_that_clashes_is_the_engine_error() {
+        let mut session = session(false);
+        let cases = [
+            (
+                "CREATE TABLE posts (id STRING HASH KEY);\n\
+                 WITH posts AS (SCAN * FROM posts) SCAN * FROM posts;\n",
+                "Table 'posts' already exists",
+            ),
+            (
+                "CREATE TABLE posts (id STRING HASH KEY);\n\
+                 CREATE TEMPTABLE hot AS (SCAN * FROM posts);\n\
+                 WITH hot AS (SCAN * FROM posts) SCAN * FROM hot;\n",
+                "Table 'hot' already exists",
+            ),
+            (
+                "CREATE TABLE posts (id STRING HASH KEY);\n\
+                 WITH a AS (SCAN * FROM posts), a AS (SCAN * FROM posts) SCAN * FROM a;\n",
+                "WITH name 'a' is used more than once",
+            ),
+            (
+                "CREATE TABLE posts (id STRING HASH KEY);\n\
+                 WITH a AS (SCAN * FROM posts), \
+                 b AS (WITH a AS (SCAN * FROM posts) SCAN * FROM a) SCAN * FROM b;\n",
+                "Table 'a' already exists",
+            ),
+        ];
+        for (script, expected) in cases {
+            // The engine gives the same error when the script runs.
+            let ran = self::session(false).engine.execute_script(script);
+            let ran = format!("{ran:?}");
+            assert!(ran.contains(expected), "{script}\n{ran}");
+            let report = lint_script(&mut session, script);
+            assert!(!report.ok, "{script}");
+            let text = messages(&report).join("\n");
+            assert!(text.contains(expected), "{script}\n{text}");
+        }
+
+        session
+            .engine
+            .execute_script("CREATE TABLE stored (id STRING HASH KEY)")
+            .unwrap();
+        let cached = lint_script(
+            &mut session,
+            "WITH stored AS (SCAN * FROM stored) SCAN * FROM stored;\n",
+        );
+        assert!(
+            messages(&cached)
+                .join("\n")
+                .contains("Table 'stored' already exists"),
+            "{:?}",
+            cached.issues
+        );
+
+        let dropped = lint_script(
+            &mut session,
+            "DROP TABLE stored;\nCREATE TABLE posts (id STRING HASH KEY);\n\
+             WITH stored AS (SCAN * FROM posts) SCAN * FROM stored;\n",
+        );
+        assert!(dropped.ok, "{:?}", dropped.issues);
     }
 
     #[test]
