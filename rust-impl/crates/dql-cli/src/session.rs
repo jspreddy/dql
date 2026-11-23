@@ -322,6 +322,13 @@ impl RuntimeEngine {
         }
     }
 
+    pub fn virtual_table_names(&self) -> Vec<String> {
+        match self {
+            Self::Memory(engine) => engine.inner().virtual_table_names(),
+            Self::Remote(engine) => engine.inner().virtual_table_names(),
+        }
+    }
+
     pub fn virtual_schema_line(&self, name: &str) -> Option<(&'static str, String)> {
         match self {
             Self::Memory(engine) => engine.inner().virtual_schema_line(name),

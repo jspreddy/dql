@@ -1,4 +1,5 @@
 import { test as base, expect } from "@playwright/test";
+import { skipArtifactShot } from "./artifacts.js";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
@@ -95,6 +96,42 @@ function stopChild(child) {
   });
 }
 
+const screenshotGate = Symbol("screenshotGate");
+
+// Review shots go through Page and Locator screenshot. Skip the ones aimed at
+// .playwright-artifacts unless PLAYWRIGHT_SCREENSHOTS=1. Failure shots use another path.
+function installScreenshotGate(page) {
+  const prototypes = [Object.getPrototypeOf(page), Object.getPrototypeOf(page.locator("body"))];
+  const restore = [];
+  for (const proto of prototypes) {
+    if (!proto || typeof proto.screenshot !== "function" || proto.screenshot[screenshotGate]) continue;
+    const original = proto.screenshot;
+    function gatedScreenshot(options, ...rest) {
+      if (skipArtifactShot(options)) return Buffer.alloc(0);
+      return original.call(this, options, ...rest);
+    }
+    gatedScreenshot[screenshotGate] = true;
+    proto.screenshot = gatedScreenshot;
+    restore.push([proto, original]);
+  }
+  return () => {
+    for (const [proto, original] of restore) proto.screenshot = original;
+  };
+}
+
+// A local `dqlrs web` session writes `.dqlrs-cache` into the source folder. That
+// catalog is the saved table list, so Tables mode would show it instead of the
+// tables this run just created.
+function copyWorkspace(source, destination) {
+  fs.cpSync(source, destination, {
+    recursive: true,
+    filter(src) {
+      const relative = path.relative(source, src);
+      return relative !== ".dqlrs-cache" && !relative.startsWith(`.dqlrs-cache${path.sep}`);
+    },
+  });
+}
+
 export const test = base.extend({
   // SAVE and LOAD resolve relative paths from the dqlrs process directory.
   // Tests that opt in get a temp directory so those files stay out of the repo.
@@ -103,6 +140,14 @@ export const test = base.extend({
   workspaceSource: [fixtureRoot, { option: true }],
   // `dqlrs web --mcp` so /mcp shares the editor session.
   mcp: [false, { option: true }],
+  artifactShots: [async ({ page }, use) => {
+    const restore = installScreenshotGate(page);
+    try {
+      await use();
+    } finally {
+      restore();
+    }
+  }, { auto: true }],
   themeInit: [async ({ page }, use, testInfo) => {
     if (testInfo.project.name === "dark") {
       await page.addInitScript(() => {
@@ -120,7 +165,7 @@ export const test = base.extend({
   app: async ({ isolateCwd, workspaceSource, mcp }, use) => {
     // The server reports paths under its canonical root, and macOS links /var to /private/var.
     const workspace = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-web-")));
-    fs.cpSync(workspaceSource, workspace, { recursive: true });
+    copyWorkspace(workspaceSource, workspace);
     const cwd = isolateCwd ? fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-web-cwd-")) : webRoot;
     const port = await freePort();
     const binary = dqlrsBinary();

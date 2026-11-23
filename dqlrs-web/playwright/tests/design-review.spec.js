@@ -4,7 +4,9 @@ import { examples, openQueries, runStatement, seedCosmos, settle } from "../supp
 import { node, reveal } from "../support/helpers.js";
 
 // One screenshot of each main screen, in light and dark, for design review (dqlrs-web/DESIGN.md).
+// Seeding Cosmos and the 1440×900 shots need more than the default 90s on WSL.
 
+test.setTimeout(180_000);
 test.use({ workspaceSource: examples, viewport: { width: 1440, height: 900 } });
 
 test("design review shots of every main screen", async ({ page, app }, testInfo) => {

@@ -12,7 +12,7 @@ The web UI is part of the `dqlrs` binary (`dqlrs web`). Its server is Rust. The 
 
 Do not launch sub-agents. Do not use computer use.
 
-When the work touches the web UI, or you need to see what the web UI shows, add or extend a Playwright test under `dqlrs-web/playwright/tests/` and run `just web-test`. Save screenshots with `playwrightArtifact`, as in the Playwright screenshots rule. Use those screenshots as the evidence of what the page showed.
+When the work touches the web UI, or you need to see what the web UI shows, add or extend a Playwright test under `dqlrs-web/playwright/tests/` and run `just web-test`. Save screenshots with `playwrightArtifact`, as in the Playwright screenshots rule. Those shots are written only for `just web-test -- --with-screenshots`. Use them as the evidence of what the page showed.
 
 ## Pointers for new agents
 

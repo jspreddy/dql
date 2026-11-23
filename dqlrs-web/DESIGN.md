@@ -165,8 +165,8 @@ Follow the Material icons rule (`.cursor/rules/material-icons.rule.mdc`): one ou
 ## Checking a change
 
 1. Add or extend a Playwright spec under `playwright/tests/` (a component spec for a component).
-2. Run `just web-test`. It runs every spec in light and dark.
-3. Look at the screenshots in `.playwright-artifacts/`. `design-review.spec.js` writes `design-<screen>-<theme>.png` for every main screen.
+2. Run `just web-test`. It runs every spec in light and dark. Review shots are off unless you pass `--with-screenshots`.
+3. Look at the screenshots in `.playwright-artifacts/` after `just web-test -- --with-screenshots`. `design-review.spec.js` writes `design-<screen>-<theme>.png` for every main screen.
 
 ## Design review, November 2026
 

@@ -118,8 +118,9 @@ test("does not underline the comments above a statement", async ({ page }, testI
   await expect(status).toHaveText("1 warning");
   const marks = page.locator(".cm-lint-warning");
   await expect(marks.first()).toBeVisible();
+  // The warning points at the missing table, so nothing in the comments is marked.
   const underlined = (await marks.allTextContents()).join("");
-  expect(underlined).toBe(UNKNOWN);
+  expect(underlined).toBe("lint_missing_shelf");
   const gutter = page.locator("[data-testid='lint-gutter-warning']");
   await expect(gutter).toHaveCount(1);
   const statementLine = await lineBox(page, "lint_missing_shelf");
@@ -218,4 +219,28 @@ test("a thrown lint update is logged and the edit still applies", async ({ page 
   });
   expect(result.doc).toBe("SCAN * FROM x");
   expect(result.logs.join("\n")).toContain("Position 30 is out of range");
+});
+
+test("points a join error at the misspelled WITH name and suggests the right one", async ({ page }, testInfo) => {
+  const script = [
+    "CREATE TEMPTABLE lint_orders AS (SCAN id, customer FROM lint_missing_src);",
+    "WITH recent AS (SCAN * FROM lint_orders)",
+    "SCAN * FROM recnt JOIN lint_orders ON recnt.id = lint_orders.id;",
+  ].join("\n");
+  await replaceEditor(page, script);
+  const error = page.locator(".cm-lint-error");
+  await expect(error).toHaveCount(1);
+  await expect(error).toHaveText("recnt");
+  await expect(error).toHaveAttribute("data-tip", /not a WITH name, temp table, or local table/);
+  await expect(error).toHaveAttribute("data-tip", /Did you mean 'recent'\?/);
+  const warnings = page.locator(".cm-lint-warning");
+  const warned = await warnings.allTextContents();
+  expect(warned).toContain("recent");
+  expect(warned).toContain("lint_missing_src");
+  await page.locator("#lint-status").click();
+  await expect(page.locator("#result-tab-lint")).toHaveAttribute("aria-selected", "true");
+  const rows = page.locator("[data-testid='lint-row']");
+  await expect(rows.filter({ hasText: "Did you mean 'recent'?" })).toHaveCount(1);
+  await expect(rows.filter({ hasText: "WITH name 'recent' is never read" })).toHaveCount(1);
+  await page.screenshot({ path: playwrightArtifact(`lint-join-with-name-${testInfo.project.name}.png`) });
 });

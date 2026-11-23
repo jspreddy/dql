@@ -3,7 +3,9 @@ import { playwrightArtifact } from "../support/artifacts.js";
 import { examples, openQueries, runStatement, seedCosmos, settle } from "../support/cosmos.js";
 
 // Copy them over as described in screenshots/README.md (drop the readme-web- prefix).
+// Seeding Cosmos and the 1440×900 shots need more than the default 90s on WSL.
 
+test.setTimeout(180_000);
 test.use({
   workspaceSource: examples,
   viewport: { width: 1440, height: 900 },

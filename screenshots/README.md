@@ -34,7 +34,7 @@ seeds the table itself and writes three 1440×900 shots per theme to
 from the `dark` project); the light ones are there if you need them:
 
 ```bash
-just web-test -- tests/readme-screenshots.spec.js --project dark
+just web-test -- --with-screenshots tests/readme-screenshots.spec.js --project dark
 for n in query explain tables; do cp .playwright-artifacts/readme-web-$n-dark.png screenshots/web/$n.png; done
 cp .playwright-artifacts/readme-web-query-dark.png screenshots/banner/web.png
 ```
