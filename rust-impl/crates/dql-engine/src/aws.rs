@@ -1339,21 +1339,6 @@ fn dial_host(host: &str) -> &str {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::dial_host;
-
-    #[test]
-    fn local_hosts_dial_ipv4() {
-        assert_eq!(dial_host("localhost"), "127.0.0.1");
-        assert_eq!(dial_host(" LocalHost "), "127.0.0.1");
-        assert_eq!(dial_host("::1"), "127.0.0.1");
-        assert_eq!(dial_host("[::1]"), "127.0.0.1");
-        assert_eq!(dial_host("127.0.0.1"), "127.0.0.1");
-        assert_eq!(dial_host("dynamodb.example"), "dynamodb.example");
-    }
-}
-
 fn resolve_alter_throughput(
     throughput: &dql_parser::Throughput,
     meta: &TableMeta,
@@ -1501,5 +1486,20 @@ fn merge_values(
         Ok(None)
     } else {
         expression_values_to_attributes(&merged).map(Some)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dial_host;
+
+    #[test]
+    fn local_hosts_dial_ipv4() {
+        assert_eq!(dial_host("localhost"), "127.0.0.1");
+        assert_eq!(dial_host(" LocalHost "), "127.0.0.1");
+        assert_eq!(dial_host("::1"), "127.0.0.1");
+        assert_eq!(dial_host("[::1]"), "127.0.0.1");
+        assert_eq!(dial_host("127.0.0.1"), "127.0.0.1");
+        assert_eq!(dial_host("dynamodb.example"), "dynamodb.example");
     }
 }
