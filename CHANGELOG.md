@@ -6,11 +6,12 @@ A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists. Each line is a commit; the
 latest commit of each pull request, stacked ones included, names that pull request.
 
-## Unreleased (2026-11-22)
+## Unreleased (2026-11-23)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [5e8e924](https://github.com/jspreddy/dql/commit/5e8e924fd24c48ccc664cf769652f3cf0aca25a5) fix(web): open Run folder while a view-only file is open ([#295](https://github.com/jspreddy/dql/pull/295))
 - [e4c45d6](https://github.com/jspreddy/dql/commit/e4c45d673ca93b6f996478b8476b97bc6f8bab5e) chore(playwright): refine screenshot cleanup logic in global setup ([#289](https://github.com/jspreddy/dql/pull/289))
 - [cb79f31](https://github.com/jspreddy/dql/commit/cb79f31f3a1ccc528bc5c2916ce912a043e2f1b1) chore(playwright): enhance screenshot handling in tests
 - [831b015](https://github.com/jspreddy/dql/commit/831b0152386cc4fdc2d9a59f2ae0a400b8e09533) chore(playwright):  exclude `.dqlrs-cache` from test workspace copies
