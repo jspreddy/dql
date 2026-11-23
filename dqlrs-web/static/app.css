@@ -1846,6 +1846,15 @@ body.results-resizing * {
   box-shadow: 0 1px 2px var(--shadow);
 }
 
+/* The capacity pill after a result line's text. It stays inline, so it follows the text
+   when the line also holds the query toggle. */
+#result-body .note-stats {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 10px;
+  vertical-align: middle;
+}
+
 #result-body .note.ok {
   background: var(--ok-bg);
   border-color: var(--ok-border);

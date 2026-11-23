@@ -1655,7 +1655,8 @@ test("names insert, update, delete, count, and drop results", async ({ page, app
   await expect(notes.filter({ hasText: "2 rows inserted" })).toHaveCount(1);
   await expect(notes.filter({ hasText: "one row updated" })).toHaveCount(1);
   await expect(notes.filter({ hasText: "one row deleted" })).toHaveCount(1);
-  await expect(notes.filter({ hasText: /^one row$/ })).toHaveCount(1);
+  // count(*) scans, so its line also has a capacity pill; match the text apart from it.
+  await expect(notes.filter({ has: page.locator('[data-testid="result-note-label"]', { hasText: /^one row$/ }) })).toHaveCount(1);
   await expect(notes.filter({ hasText: "one table dropped" })).toHaveCount(1);
   await expect(notes.filter({ hasText: "did not exist" })).toHaveCount(1);
 });

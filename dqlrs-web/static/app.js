@@ -4892,6 +4892,7 @@ function renderResults(results, host, markTable = !host, resultId = "") {
     otherNotes += 1;
     const row = note(resultLabel(item), !item.ok);
     if (item.ok && item.kind === "affected") row.classList.add("ok");
+    appendCapacity(row, item.read_units, item.write_units);
     target.append(row);
   }
   if (itemCards > 1) return itemCards + " results";
@@ -4951,6 +4952,22 @@ function resultCard(snapshot, tableId) {
   face.append(head, body);
   card.append(face);
   return card;
+}
+
+/** The capacity pill after a result line, such as "2 rows inserted", when it used any units. */
+function appendCapacity(row, readUnits, writeUnits) {
+  const capacity = formatCapacity(readUnits, writeUnits);
+  if (!capacity) return;
+  // The text keeps its own element, so it reads (and copies) apart from the pill.
+  const label = document.createElement("span");
+  label.className = "note-label";
+  label.dataset.testid = "result-note-label";
+  label.append(...row.childNodes);
+  row.append(label);
+  const stats = document.createElement("span");
+  stats.className = "note-stats";
+  stats.append(statChip(capacity, "result-note-capacity", "Consumed capacity"));
+  row.append(stats);
 }
 
 /** A stat pill. `label` is a tooltip, only for a value that is not obvious from its text. */
