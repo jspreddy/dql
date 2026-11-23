@@ -4531,9 +4531,11 @@ async function runTargetDocuments(path, kind) {
   return [{ text, path, base: path === state.path ? 0 : null }];
 }
 
-/** Open the run dialog for a file or folder from the tree menu. */
+/** Open the run dialog for a file or folder from the tree menu.
+ * A view-only file disables the editor Run button. That must not block Run file
+ * or Run folder, which run other .dql files. A run already in progress still does. */
 async function openRunDialog(path, kind) {
-  if (runButton.disabled || !stopButton.classList.contains("hidden") || !path) return;
+  if (!stopButton.classList.contains("hidden") || !path) return;
   await flushSave();
   let documents;
   try {

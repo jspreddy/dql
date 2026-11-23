@@ -908,6 +908,24 @@ test("runs the selected file from the context menu", async ({ page, app }, testI
   await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(4);
 });
 
+test("opens Run folder while a markdown, csv, or json file is open", async ({ page, app }) => {
+  fs.writeFileSync(path.join(app.workspace, "notes.md"), "# Notes\n");
+  fs.writeFileSync(path.join(app.workspace, "users.csv"), "id,name\na,ada\n");
+  fs.writeFileSync(path.join(app.workspace, "cities.json"), "{\"id\":\"a\"}\n");
+  await page.reload();
+  await showTypes(page, ["md", "csv", "json"]);
+  for (const file of ["notes.md", "users.csv", "cities.json"]) {
+    await node(page, file).click();
+    await node(page, "queries").click({ button: "right" });
+    await expect(page.locator("#menu-run-folder")).toBeVisible();
+    await page.locator("#menu-run-folder").click();
+    await expect(page.locator("#run-pop")).toBeVisible();
+    await expect(page.locator("#run-pop-kicker")).toHaveText("Run folder");
+    await page.locator("#run-pop-cancel").click();
+    await expect(page.locator("#run-pop")).toBeHidden();
+  }
+});
+
 test("runs an empty folder from the context menu", async ({ page }) => {
   await node(page, "empty").click({ button: "right" });
   await expect(page.locator("#menu-run-folder")).toBeVisible();
