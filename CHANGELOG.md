@@ -11,6 +11,9 @@ latest commit of each pull request, stacked ones included, names that pull reque
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [a5a3962](https://github.com/jspreddy/dql/commit/a5a3962aaf492da770d1039fa330291d175847e3) feat(web): show the capacity pill on write result lines ([#300](https://github.com/jspreddy/dql/pull/300))
+- [65c52e4](https://github.com/jspreddy/dql/commit/65c52e4c644e2e394a4451dc65637fb49c07804b) fix(engine): count the scan behind UPDATE and DELETE WHERE as read units ([#297](https://github.com/jspreddy/dql/pull/297))
+- [53cdb33](https://github.com/jspreddy/dql/commit/53cdb3389b57d1753822324a11c468b41a669914) fix(engine): count write calls' consumed capacity as write units ([#296](https://github.com/jspreddy/dql/pull/296))
 - [5e8e924](https://github.com/jspreddy/dql/commit/5e8e924fd24c48ccc664cf769652f3cf0aca25a5) fix(web): open Run folder while a view-only file is open ([#295](https://github.com/jspreddy/dql/pull/295))
 - [e4c45d6](https://github.com/jspreddy/dql/commit/e4c45d673ca93b6f996478b8476b97bc6f8bab5e) chore(playwright): refine screenshot cleanup logic in global setup ([#289](https://github.com/jspreddy/dql/pull/289))
 - [cb79f31](https://github.com/jspreddy/dql/commit/cb79f31f3a1ccc528bc5c2916ce912a043e2f1b1) chore(playwright): enhance screenshot handling in tests
