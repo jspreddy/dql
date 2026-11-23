@@ -180,7 +180,10 @@ fn writes_report_write_units_not_read_units_against_local() {
             write > 0.0,
             "{statement}: write units {write}, read units {read}"
         );
-        assert_eq!(read, 0.0, "{statement}: a write call reported read units");
+        // WHERE also scans to find the rows; that read is checked in the test below.
+        if !statement.contains(" WHERE ") {
+            assert_eq!(read, 0.0, "{statement}: a write call reported read units");
+        }
     }
     harness
         .query(&format!("INSERT INTO {table} (id, score) VALUES ('c', 5);"))
@@ -191,6 +194,45 @@ fn writes_report_write_units_not_read_units_against_local() {
     let (read, write) = units(&harness);
     assert!(read > 0.0, "a read reports read units, got {read}");
     assert_eq!(write, 0.0, "a read reported write units");
+    harness
+        .query(&format!("DROP TABLE {table};"))
+        .expect("drop");
+}
+
+#[test]
+fn update_and_delete_with_where_count_their_scan_as_read_units_against_local() {
+    if skip_if_no_local() {
+        return;
+    }
+    let Some(mut harness) = LocalHarness::try_new() else {
+        return;
+    };
+    let table = LocalHarness::unique_table_name("dql_scan_units");
+    harness
+        .query(&format!(
+            "CREATE TABLE {table} (id STRING HASH KEY, score NUMBER);
+             INSERT INTO {table} (id, score) VALUES ('a', 1), ('b', 2), ('c', 3);"
+        ))
+        .expect("seed");
+    // WHERE on a non-key attribute scans the table to find the rows, then writes each one.
+    for statement in [
+        format!("UPDATE {table} SET score = 10 WHERE score = 1;"),
+        format!("DELETE FROM {table} WHERE score = 2;"),
+    ] {
+        harness.query(&statement).expect(&statement);
+        let (read, write) = units(&harness);
+        assert!(read > 0.0, "{statement}: the scan reported no read units");
+        assert!(write > 0.0, "{statement}: write units {write}");
+    }
+    // KEYS IN writes by key and reads nothing.
+    harness
+        .query(&format!("DELETE FROM {table} KEYS IN 'c';"))
+        .expect("delete by key");
+    assert_eq!(
+        units(&harness).0,
+        0.0,
+        "a delete by key reported read units"
+    );
     harness
         .query(&format!("DROP TABLE {table};"))
         .expect("drop");

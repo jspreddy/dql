@@ -536,11 +536,12 @@ impl DynamoBackend for SdkBackend {
         _plan: Option<&dql_models::QueryPlan>,
         _options: &QueryOptions,
     ) -> Result<BackendResponse<usize>, EngineError> {
-        let keys = self.keys_for_condition(table, condition)?;
+        // The scan that finds the rows is part of the statement, so its units count too.
+        let (keys, scan_units) = self.keys_for_condition(table, condition)?;
         let total = keys.len();
         self.report_progress(0, Some(total), "write");
         let mut deleted = 0usize;
-        let mut read_units = 0.0;
+        let mut read_units = scan_units;
         let mut write_units = 0.0;
         for key in keys {
             self.cancel.check()?;
@@ -586,11 +587,12 @@ impl DynamoBackend for SdkBackend {
             .map(render_condition)
             .transpose()
             .map_err(|err| EngineError::Runtime(err.to_string()))?;
-        let keys = self.keys_for_condition(table, condition)?;
+        // The scan that finds the rows is part of the statement, so its units count too.
+        let (keys, scan_units) = self.keys_for_condition(table, condition)?;
         let total = keys.len();
         self.report_progress(0, Some(total), "write");
         let mut updated = 0usize;
-        let mut read_units = 0.0;
+        let mut read_units = scan_units;
         let mut write_units = 0.0;
         let mut updated_items = Vec::new();
         for key in keys {
@@ -1003,11 +1005,18 @@ impl SdkBackend {
             .map_err(Self::aws_error)
     }
 
+    /// Keys of the rows that match `condition`, from a scan, and the scan's read units.
     fn keys_for_condition(
         &self,
         table: &str,
         condition: Option<&Condition>,
-    ) -> Result<Vec<HashMap<String, aws_sdk_dynamodb::types::AttributeValue>>, EngineError> {
+    ) -> Result<
+        (
+            Vec<HashMap<String, aws_sdk_dynamodb::types::AttributeValue>>,
+            f64,
+        ),
+        EngineError,
+    > {
         let request = ReadRequest {
             operation: ReadOperation::Scan,
             index_name: None,
@@ -1022,11 +1031,17 @@ impl SdkBackend {
             range_key: None,
             follow_up_batch_get: false,
         };
-        let items = self.execute_read(table, &request)?.output;
-        items
+        let response = self.execute_read(table, &request)?;
+        let read_units = response
+            .capacity
+            .as_ref()
+            .map_or(0.0, |capacity| capacity.read_units);
+        let keys = response
+            .output
             .iter()
             .map(|item| primary_key_attributes(table, item, self))
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok((keys, read_units))
     }
 
     fn query_items(
