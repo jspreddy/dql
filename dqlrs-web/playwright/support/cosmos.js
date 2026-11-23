@@ -13,29 +13,31 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 export const examples = path.resolve(here, "../../examples");
 
 export function seedCosmos(binary) {
-  // `file` reads one path per call. Passing the DQL to -c does not work: it starts with a `--` comment.
+  // One process for both scripts. A second `dqlrs` start on WSL, plus `localhost` trying ::1
+  // before 127.0.0.1, used up the whole test. `file` reads one path, so the scripts are joined.
   // dqlrs keeps its cache in <cwd>/.dqlrs-cache, so run it from a temp folder, not the repository.
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dqlrs-seed-"));
   try {
-    for (const name of ["00-table.dql", "10-bodies.dql"]) {
-      const result = spawnSync(
-        binary,
-        ["-H", "localhost", "-p", "8000", "-c", `file ${path.join(examples, "cosmos", name)}`],
-        {
-          cwd,
-          encoding: "utf8",
-          timeout: 60_000,
-          env: {
-            ...process.env,
-            AWS_ACCESS_KEY_ID: "fakeid",
-            AWS_SECRET_ACCESS_KEY: "fakekey",
-            AWS_REGION: "us-west-1",
-            AWS_EC2_METADATA_DISABLED: "true",
-          },
-        },
-      );
-      expect(result.status, result.stderr || result.stdout).toBe(0);
-    }
+    const script = path.join(cwd, "seed.dql");
+    const text = ["00-table.dql", "10-bodies.dql"]
+      .map((name) => fs.readFileSync(path.join(examples, "cosmos", name), "utf8"))
+      .join("\n");
+    fs.writeFileSync(script, text);
+    const result = spawnSync(binary, ["-H", "127.0.0.1", "-p", "8000", "-c", `file ${script}`], {
+      cwd,
+      encoding: "utf8",
+      timeout: 60_000,
+      killSignal: "SIGKILL",
+      env: {
+        ...process.env,
+        AWS_ACCESS_KEY_ID: "fakeid",
+        AWS_SECRET_ACCESS_KEY: "fakekey",
+        AWS_REGION: "us-west-1",
+        AWS_EC2_METADATA_DISABLED: "true",
+      },
+    });
+    const detail = result.stderr || result.stdout || result.error?.message || "";
+    expect(result.status, detail).toBe(0);
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }

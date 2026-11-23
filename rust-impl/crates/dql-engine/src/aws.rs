@@ -1313,11 +1313,45 @@ async fn build_client(config: SdkConfig) -> Result<Client, String> {
     }
     let shared = loader.load().await;
     let mut builder = aws_sdk_dynamodb::config::Builder::from(&shared);
-    if let Some(host) = config.host {
+    if let Some(host) = config.host.as_deref() {
         let port = config.port.unwrap_or(8000);
-        builder = builder.endpoint_url(format!("http://{host}:{port}"));
+        // `localhost` resolves to ::1 first. On WSL that address can sit until the caller
+        // gives up, so DynamoDB Local is dialed on IPv4 with a short connect timeout.
+        builder = builder
+            .endpoint_url(format!("http://{}:{port}", dial_host(host)))
+            .timeout_config(
+                aws_sdk_dynamodb::config::timeout::TimeoutConfig::builder()
+                    .connect_timeout(Duration::from_secs(5))
+                    .build(),
+            );
     }
     Ok(Client::from_conf(builder.build()))
+}
+
+/// Address the HTTP client dials for a configured host.
+fn dial_host(host: &str) -> &str {
+    let trimmed = host.trim();
+    let bare = trimmed.trim_matches(|ch: char| ch == '[' || ch == ']');
+    if bare.eq_ignore_ascii_case("localhost") || bare == "::1" {
+        "127.0.0.1"
+    } else {
+        trimmed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dial_host;
+
+    #[test]
+    fn local_hosts_dial_ipv4() {
+        assert_eq!(dial_host("localhost"), "127.0.0.1");
+        assert_eq!(dial_host(" LocalHost "), "127.0.0.1");
+        assert_eq!(dial_host("::1"), "127.0.0.1");
+        assert_eq!(dial_host("[::1]"), "127.0.0.1");
+        assert_eq!(dial_host("127.0.0.1"), "127.0.0.1");
+        assert_eq!(dial_host("dynamodb.example"), "dynamodb.example");
+    }
 }
 
 fn resolve_alter_throughput(
