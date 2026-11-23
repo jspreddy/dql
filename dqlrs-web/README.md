@@ -19,4 +19,4 @@ In the editor, `DESCRIBE posts;` prints that table's description, the same text 
 
 Design guidelines, the shared components (`static/components.css`), and the latest design review are in [DESIGN.md](DESIGN.md).
 
-Playwright coverage lives in `playwright/`. `just web-test` runs the suite in system Chrome against a temporary copy of `playwright/fixtures` and DynamoDB Local. Pass Playwright arguments after `--`, for example `just web-test -- tests/editor.spec.js`. From `playwright/`, `npm test` is the same suite.
+Playwright coverage lives in `playwright/`. `just web-test` runs the suite in system Chrome against a temporary copy of `playwright/fixtures` and DynamoDB Local. Pass Playwright arguments after `--`, for example `just web-test -- tests/editor.spec.js`. Review screenshots are off unless you pass `--with-screenshots` (`just web-test -- --with-screenshots`). From `playwright/`, `npm test` is the same suite, and `PLAYWRIGHT_SCREENSHOTS=1` turns the shots on.

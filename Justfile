@@ -320,6 +320,7 @@ web-unit: (_title "web-unit")
     node --test "{{justfile_directory()}}"/dqlrs-web/tests/*.mjs
 
 # Playwright tests for DQLRS Web. Flags need a `--` separator: just web-test -- --headed tests/editor.spec.js
+# Saved review shots stay off unless `--with-screenshots` is set: just web-test -- --with-screenshots
 [group('web')]
 web-test *args: (_title "web-test") dynamo
     #!/usr/bin/env bash
@@ -342,8 +343,19 @@ web-test *args: (_title "web-test") dynamo
     if [[ ${#args[@]} -gt 0 && "${args[0]}" == "--" ]]; then
         args=("${args[@]:1}")
     fi
+    # Playwright does not know this flag. It only turns the review shots back on.
+    forwarded=()
     if [[ ${#args[@]} -gt 0 ]]; then
-        ./node_modules/.bin/playwright test "${args[@]}"
+        for arg in "${args[@]}"; do
+            if [[ "$arg" == "--with-screenshots" ]]; then
+                export PLAYWRIGHT_SCREENSHOTS=1
+            else
+                forwarded+=("$arg")
+            fi
+        done
+    fi
+    if [[ ${#forwarded[@]} -gt 0 ]]; then
+        ./node_modules/.bin/playwright test "${forwarded[@]}"
     else
         ./node_modules/.bin/playwright test
     fi
@@ -462,6 +474,9 @@ test: (_title "test") dynamo py-sync rust-build web-unit py-test rust-test rust-
 
 # Static analysis, package builds, and every test suite. Does not call `test`.
 verify: (_title "verify") dynamo web-unit py rust black-box notebook-test web-test mcp-test
+
+# Same as verify, and the web tests write review screenshots under .playwright-artifacts.
+verify-with-screenshots: (_title "verify-with-screenshots") dynamo web-unit py rust black-box notebook-test (web-test "--with-screenshots") mcp-test
 
 # Repeat a test recipe on fewer CPU cores to find flaky tests: just flake web-test 5 2 -- lint
 flake recipe="" runs="5" cores="2" *args: (_title "flake")
