@@ -217,6 +217,42 @@ input, textarea, select { background: var(--paper); }
 
 .endpoint[data-dynamo="down"]::before { background: var(--rose); }
 
+/* MCP pill: the same pill and dot as the endpoint. Green while /mcp answers, grey when off. */
+.mcp-toggle {
+  appearance: none;
+  flex: none;
+  border: 1px solid var(--header-line);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  padding: 1px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mcp-toggle:hover,
+.mcp-toggle:focus-visible {
+  border-color: var(--header-line-hover);
+  outline: none;
+}
+
+.mcp-toggle:disabled { cursor: progress; }
+
+.mcp-toggle::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 999px;
+  vertical-align: 1px;
+  background: var(--muted);
+}
+
+.mcp-toggle[data-state="on"]::before { background: var(--ok-ink); }
+
 .header-tools {
   display: flex;
   align-items: center;

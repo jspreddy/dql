@@ -1626,6 +1626,7 @@ async function boot() {
   try {
     const config = await api("/api/config");
     applyEnvironment(config);
+    paintMcpToggle(Boolean(config.mcp?.enabled));
     void loadDynamo();
     startEvents();
     await refreshTree();
@@ -1660,6 +1661,37 @@ function applyEnvironment(config) {
     endpointButton.removeAttribute("aria-expanded");
   }
 }
+
+// MCP pill next to the endpoint: a dot for on or off, and a click to switch. Every tab hears
+// the change through the event stream, so they all show the same state.
+const mcpToggle = document.querySelector("#mcp-toggle");
+
+function paintMcpToggle(enabled) {
+  mcpToggle.hidden = false;
+  mcpToggle.dataset.state = enabled ? "on" : "off";
+  mcpToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
+  mcpToggle.textContent = enabled ? "MCP on" : "MCP off";
+  const url = new URL("/mcp", location.href).href;
+  setTip(
+    mcpToggle,
+    enabled
+      ? `Agents can connect at ${url}. Click to turn MCP off.`
+      : "Agents cannot connect. Click to turn MCP on.",
+  );
+}
+
+mcpToggle.addEventListener("click", async () => {
+  const enabled = mcpToggle.dataset.state !== "on";
+  mcpToggle.disabled = true;
+  try {
+    const reply = await api("/api/mcp", { method: "POST", body: { enabled } });
+    paintMcpToggle(Boolean(reply.enabled));
+  } catch (error) {
+    reportError(error);
+  } finally {
+    mcpToggle.disabled = false;
+  }
+});
 
 // The local endpoint's DynamoDB Local server: a dot on the chip (running or not answering) and,
 // in the chip's popover, what `dqlrs dynamo` knows about it and the commands to manage it.
@@ -3678,6 +3710,8 @@ function handleEventFrame(frame) {
     }
   } else if (event === "grant-request") {
     onGrantRequest(payload);
+  } else if (event === "mcp") {
+    paintMcpToggle(Boolean(payload.enabled));
   } else if (event === "mcp-read") {
     appendMcpRead(payload);
   }

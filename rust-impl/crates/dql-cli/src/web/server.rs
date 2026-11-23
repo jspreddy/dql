@@ -71,7 +71,8 @@ pub(crate) struct App {
     pub(crate) hub: super::events::Hub,
     access: super::access::Store,
     mcp_hub: super::mcp_stream::Hub,
-    mcp: bool,
+    /// Whether `/mcp` answers. `--mcp` sets it at start; the header's MCP pill turns it on and off.
+    mcp: AtomicBool,
     token: String,
 }
 
@@ -402,7 +403,7 @@ impl App {
             hub: super::events::Hub::new(),
             access: super::access::Store::new(),
             mcp_hub: super::mcp_stream::Hub::new(),
-            mcp,
+            mcp: AtomicBool::new(mcp),
             token,
         }
     }
@@ -583,7 +584,46 @@ fn config_payload(app: &App) -> Value {
         "root": app.root.display().to_string(),
         "page_size": PAGE_SIZE,
         "environment": environment,
+        "mcp": { "enabled": app.mcp_enabled(), "path": "/mcp" },
     })
+}
+
+impl App {
+    fn mcp_enabled(&self) -> bool {
+        self.mcp.load(Ordering::SeqCst)
+    }
+
+    /// Turn `/mcp` on or off. Off closes the agents' event streams; their next call gets 404.
+    /// Grants and pending requests stay, so turning it back on picks up where it was.
+    fn set_mcp(&self, enabled: bool) {
+        let was = self.mcp.swap(enabled, Ordering::SeqCst);
+        lock_state(self).session.serves_mcp = enabled;
+        if was == enabled {
+            return;
+        }
+        if !enabled {
+            self.mcp_hub.close_all();
+        }
+        self.hub.mcp(enabled);
+        let style = crate::style::Style::stdout();
+        let state = if enabled { "on" } else { "off" };
+        println!(
+            "{}",
+            style.row("MCP", 11, &format!("turned {state} in the web app"))
+        );
+        let _ = io::stdout().flush();
+    }
+}
+
+fn mcp_reply(app: &App, body: &Value) -> Reply {
+    let Some(enabled) = body.get("enabled").and_then(Value::as_bool) else {
+        return Reply::Json(
+            400,
+            json!({"ok": false, "error": "enabled must be true or false"}),
+        );
+    };
+    app.set_mcp(enabled);
+    Reply::Json(200, json!({"ok": true, "enabled": app.mcp_enabled()}))
 }
 
 /// The DynamoDB Local server behind the endpoint, for the endpoint chip: whether the endpoint is
@@ -646,7 +686,7 @@ fn identity_reply(app: &App) -> Value {
 
 fn dispatch(app: &Arc<App>, request: &Incoming) -> Reply {
     if request.path == "/mcp" || request.path == "/mcp/" {
-        if !app.mcp {
+        if !app.mcp_enabled() {
             return Reply::Json(404, json!({"ok": false, "error": "not found"}));
         }
         if !authorized(app, request) {
@@ -1137,6 +1177,9 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
     if path == "/api/stop" {
         app.cancel.request();
         return Reply::Json(200, json!({"ok": true}));
+    }
+    if path == "/api/mcp" {
+        return mcp_reply(app, &parse_json(body));
     }
     if path == "/api/mcp-access/run" {
         return run_access(app, &parse_json(body));
@@ -2777,6 +2820,97 @@ mod tests {
         );
         assert!(later.contains("\\\"status\\\": \\\"revoked\\\""), "{later}");
         assert!(later.contains("mcp_r1"), "{later}");
+        drop(guard);
+    }
+
+    #[test]
+    fn mcp_turns_on_and_off_from_the_web_app() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server_mcp(root.path().to_path_buf(), false);
+        let init = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}"#;
+        let off = http(addr, "POST", "/mcp", init);
+        assert!(off.contains("404"), "{off}");
+        let config = http(addr, "GET", "/api/config", "");
+        assert!(
+            config.contains(r#""mcp":{"enabled":false,"path":"/mcp"}"#),
+            "{config}"
+        );
+
+        // A browser tab hears the change on its event stream.
+        let token = server_token(addr);
+        let mut events = TcpStream::connect(addr).unwrap();
+        events
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .unwrap();
+        write!(
+            events,
+            "GET /api/events?id=web-mcp-pill HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut seen = String::new();
+        let mut bytes = [0u8; 2048];
+        read_until(&mut events, &mut seen, &mut bytes, |text| {
+            text.contains("event: presence")
+        });
+
+        let bad = http(addr, "POST", "/api/mcp", r#"{"enabled":"yes"}"#);
+        assert!(bad.contains("400"), "{bad}");
+        let on = http(addr, "POST", "/api/mcp", r#"{"enabled":true}"#);
+        assert!(on.contains(r#""enabled":true"#), "{on}");
+        read_until(&mut events, &mut seen, &mut bytes, |text| {
+            text.contains("event: mcp") && text.contains(r#""enabled":true"#)
+        });
+        assert!(seen.contains(r#"{"enabled":true}"#), "{seen}");
+        let config = http(addr, "GET", "/api/config", "");
+        assert!(config.contains(r#""mcp":{"enabled":true"#), "{config}");
+        let answered = http(addr, "POST", "/mcp", init);
+        assert!(answered.contains("2025-06-18"), "{answered}");
+
+        // An agent's open stream ends when MCP is turned off, and /mcp stops answering.
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .unwrap();
+        write!(
+            stream,
+            "GET /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nAccept: text/event-stream\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut buf = String::new();
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.contains("200 OK")
+        });
+        assert!(buf.contains("text/event-stream"), "{buf}");
+        let turned_off = http(addr, "POST", "/api/mcp", r#"{"enabled":false}"#);
+        assert!(turned_off.contains(r#""enabled":false"#), "{turned_off}");
+        let deadline = Instant::now() + Duration::from_secs(4);
+        let mut closed = false;
+        while Instant::now() < deadline {
+            match stream.read(&mut bytes) {
+                Ok(0) => {
+                    closed = true;
+                    break;
+                }
+                Ok(_) => {}
+                Err(err)
+                    if err.kind() == std::io::ErrorKind::WouldBlock
+                        || err.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(_) => {
+                    closed = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            closed,
+            "the agent stream stayed open after MCP was turned off"
+        );
+        let after = http(addr, "POST", "/mcp", init);
+        assert!(after.contains("404"), "{after}");
+        read_until(&mut events, &mut seen, &mut bytes, |text| {
+            text.contains(r#"{"enabled":false}"#)
+        });
+        assert!(seen.contains(r#"{"enabled":false}"#), "{seen}");
         drop(guard);
     }
 

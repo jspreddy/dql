@@ -35,6 +35,11 @@ impl Hub {
         rx
     }
 
+    /// Drop every subscriber, so each stream ends. Used when MCP is turned off.
+    pub fn close_all(&self) {
+        self.lock().subs.clear();
+    }
+
     pub fn publish(&self, event: &Value) {
         let frame = frame(event);
         self.lock()

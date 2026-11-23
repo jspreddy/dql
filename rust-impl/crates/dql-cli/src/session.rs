@@ -741,7 +741,7 @@ impl Session {
             return StatementResult::Status(message);
         }
         StatementResult::Status(format!(
-            "{message}\nNo agent can read it here: only `dqlrs web --mcp` serves grants."
+            "{message}\nNo agent can read it here: only `dqlrs web` with MCP on serves grants."
         ))
     }
 
