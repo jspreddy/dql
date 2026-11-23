@@ -6,11 +6,12 @@ A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists. Each line is a commit; the
 latest commit of each pull request, stacked ones included, names that pull request.
 
-## Unreleased (2026-11-23)
+## dqlrs 0.7.12-alpha.1 (2026-11-23)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [872b0c6](https://github.com/jspreddy/dql/commit/872b0c604d70b9e9f6d0d5b26309ba4dd8458ab1) Bump version: 0.7.11 → 0.7.12-alpha.1 ([#302](https://github.com/jspreddy/dql/pull/302))
 - [a5a3962](https://github.com/jspreddy/dql/commit/a5a3962aaf492da770d1039fa330291d175847e3) feat(web): show the capacity pill on write result lines ([#300](https://github.com/jspreddy/dql/pull/300))
 - [65c52e4](https://github.com/jspreddy/dql/commit/65c52e4c644e2e394a4451dc65637fb49c07804b) fix(engine): count the scan behind UPDATE and DELETE WHERE as read units ([#297](https://github.com/jspreddy/dql/pull/297))
 - [53cdb33](https://github.com/jspreddy/dql/commit/53cdb3389b57d1753822324a11c468b41a669914) fix(engine): count write calls' consumed capacity as write units ([#296](https://github.com/jspreddy/dql/pull/296))
