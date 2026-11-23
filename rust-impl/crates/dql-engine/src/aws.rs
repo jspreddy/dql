@@ -447,8 +447,9 @@ impl DynamoBackend for SdkBackend {
                     })
                     .map_err(Self::aws_error)?;
                 if let Some(capacity) = response.consumed_capacity().first() {
-                    read_units += capacity.capacity_units().unwrap_or(0.0);
-                    write_units += capacity.write_capacity_units().unwrap_or(0.0);
+                    let (read, write) = write_call_units(capacity);
+                    read_units += read;
+                    write_units += write;
                 }
                 pending = response.unprocessed_items().cloned().unwrap_or_default();
                 if !pending.is_empty() {
@@ -555,8 +556,9 @@ impl DynamoBackend for SdkBackend {
                 })
                 .map_err(Self::aws_error)?;
             if let Some(capacity) = response.consumed_capacity() {
-                read_units += capacity.capacity_units().unwrap_or(0.0);
-                write_units += capacity.write_capacity_units().unwrap_or(0.0);
+                let (read, write) = write_call_units(capacity);
+                read_units += read;
+                write_units += write;
             }
             deleted += 1;
             self.report_progress(deleted, Some(total), "write");
@@ -601,8 +603,9 @@ impl DynamoBackend for SdkBackend {
                 return_items,
             )?;
             if let Some(capacity) = response.consumed_capacity() {
-                read_units += capacity.capacity_units().unwrap_or(0.0);
-                write_units += capacity.write_capacity_units().unwrap_or(0.0);
+                let (read, write) = write_call_units(capacity);
+                read_units += read;
+                write_units += write;
             }
             if return_items {
                 if let Some(attributes) = response.attributes() {
@@ -676,8 +679,9 @@ impl DynamoBackend for SdkBackend {
                 .block_on(async { request.send().await })
                 .map_err(Self::aws_error)?;
             if let Some(capacity) = response.consumed_capacity() {
-                read_units += capacity.capacity_units().unwrap_or(0.0);
-                write_units += capacity.write_capacity_units().unwrap_or(0.0);
+                let (read, write) = write_call_units(capacity);
+                read_units += read;
+                write_units += write;
             }
             deleted += 1;
             self.report_progress(deleted, Some(keys.len()), "write");
@@ -724,8 +728,9 @@ impl DynamoBackend for SdkBackend {
                 return_items,
             )?;
             if let Some(capacity) = response.consumed_capacity() {
-                read_units += capacity.capacity_units().unwrap_or(0.0);
-                write_units += capacity.write_capacity_units().unwrap_or(0.0);
+                let (read, write) = write_call_units(capacity);
+                read_units += read;
+                write_units += write;
             }
             if return_items {
                 if let Some(attributes) = response.attributes() {
@@ -931,6 +936,20 @@ impl DynamoBackend for SdkBackend {
 struct ReadFetch {
     items: Vec<Item>,
     read_units: f64,
+}
+
+/// Read and write units of a write call (PutItem, BatchWriteItem, UpdateItem, DeleteItem).
+///
+/// With `ReturnConsumedCapacity::Total`, DynamoDB reports only `CapacityUnits`, which for a
+/// write call are write units. A response that splits read and write units is used as given.
+fn write_call_units(capacity: &aws_sdk_dynamodb::types::ConsumedCapacity) -> (f64, f64) {
+    match (
+        capacity.read_capacity_units(),
+        capacity.write_capacity_units(),
+    ) {
+        (None, None) => (0.0, capacity.capacity_units().unwrap_or(0.0)),
+        (read, write) => (read.unwrap_or(0.0), write.unwrap_or(0.0)),
+    }
 }
 
 fn consumed_units(capacity: Option<&aws_sdk_dynamodb::types::ConsumedCapacity>) -> f64 {
@@ -1491,7 +1510,24 @@ fn merge_values(
 
 #[cfg(test)]
 mod tests {
-    use super::dial_host;
+    use super::{dial_host, write_call_units};
+    use aws_sdk_dynamodb::types::ConsumedCapacity;
+
+    #[test]
+    fn a_write_total_counts_as_write_units() {
+        let total = ConsumedCapacity::builder().capacity_units(2.0).build();
+        assert_eq!(write_call_units(&total), (0.0, 2.0));
+        let split = ConsumedCapacity::builder()
+            .capacity_units(3.0)
+            .read_capacity_units(1.0)
+            .write_capacity_units(2.0)
+            .build();
+        assert_eq!(write_call_units(&split), (1.0, 2.0));
+        assert_eq!(
+            write_call_units(&ConsumedCapacity::builder().build()),
+            (0.0, 0.0)
+        );
+    }
 
     #[test]
     fn local_hosts_dial_ipv4() {

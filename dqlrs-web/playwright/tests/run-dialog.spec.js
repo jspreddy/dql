@@ -90,6 +90,8 @@ test("runs a folder from a confirmed tree and totals the queries", async ({ page
   await expect(total(page, "failure")).toHaveText("0");
   await expect(total(page, "read-units")).toHaveText(/^\d+(\.\d+)?$/);
   await expect(total(page, "write-units")).toHaveText(/^\d+(\.\d+)?$/);
+  // The INSERT writes two rows. Its units are write units, not read units.
+  expect(Number(await total(page, "write-units").textContent())).toBeGreaterThan(0);
   await expect(page.locator("#run-pop-status")).toHaveText("Ran 2 files.");
   expect(fs.existsSync(path.join(app.workspace, folder, "nested", "out.json"))).toBe(true);
   await page.screenshot({ path: playwrightArtifact(`run-dialog-done-${testInfo.project.name}.png`) });
