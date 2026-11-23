@@ -447,8 +447,9 @@ impl DynamoBackend for SdkBackend {
                     })
                     .map_err(Self::aws_error)?;
                 if let Some(capacity) = response.consumed_capacity().first() {
-                    read_units += capacity.capacity_units().unwrap_or(0.0);
-                    write_units += capacity.write_capacity_units().unwrap_or(0.0);
+                    let (read, write) = write_call_units(capacity);
+                    read_units += read;
+                    write_units += write;
                 }
                 pending = response.unprocessed_items().cloned().unwrap_or_default();
                 if !pending.is_empty() {
@@ -535,11 +536,12 @@ impl DynamoBackend for SdkBackend {
         _plan: Option<&dql_models::QueryPlan>,
         _options: &QueryOptions,
     ) -> Result<BackendResponse<usize>, EngineError> {
-        let keys = self.keys_for_condition(table, condition)?;
+        // The scan that finds the rows is part of the statement, so its units count too.
+        let (keys, scan_units) = self.keys_for_condition(table, condition)?;
         let total = keys.len();
         self.report_progress(0, Some(total), "write");
         let mut deleted = 0usize;
-        let mut read_units = 0.0;
+        let mut read_units = scan_units;
         let mut write_units = 0.0;
         for key in keys {
             self.cancel.check()?;
@@ -555,8 +557,9 @@ impl DynamoBackend for SdkBackend {
                 })
                 .map_err(Self::aws_error)?;
             if let Some(capacity) = response.consumed_capacity() {
-                read_units += capacity.capacity_units().unwrap_or(0.0);
-                write_units += capacity.write_capacity_units().unwrap_or(0.0);
+                let (read, write) = write_call_units(capacity);
+                read_units += read;
+                write_units += write;
             }
             deleted += 1;
             self.report_progress(deleted, Some(total), "write");
@@ -584,11 +587,12 @@ impl DynamoBackend for SdkBackend {
             .map(render_condition)
             .transpose()
             .map_err(|err| EngineError::Runtime(err.to_string()))?;
-        let keys = self.keys_for_condition(table, condition)?;
+        // The scan that finds the rows is part of the statement, so its units count too.
+        let (keys, scan_units) = self.keys_for_condition(table, condition)?;
         let total = keys.len();
         self.report_progress(0, Some(total), "write");
         let mut updated = 0usize;
-        let mut read_units = 0.0;
+        let mut read_units = scan_units;
         let mut write_units = 0.0;
         let mut updated_items = Vec::new();
         for key in keys {
@@ -601,8 +605,9 @@ impl DynamoBackend for SdkBackend {
                 return_items,
             )?;
             if let Some(capacity) = response.consumed_capacity() {
-                read_units += capacity.capacity_units().unwrap_or(0.0);
-                write_units += capacity.write_capacity_units().unwrap_or(0.0);
+                let (read, write) = write_call_units(capacity);
+                read_units += read;
+                write_units += write;
             }
             if return_items {
                 if let Some(attributes) = response.attributes() {
@@ -676,8 +681,9 @@ impl DynamoBackend for SdkBackend {
                 .block_on(async { request.send().await })
                 .map_err(Self::aws_error)?;
             if let Some(capacity) = response.consumed_capacity() {
-                read_units += capacity.capacity_units().unwrap_or(0.0);
-                write_units += capacity.write_capacity_units().unwrap_or(0.0);
+                let (read, write) = write_call_units(capacity);
+                read_units += read;
+                write_units += write;
             }
             deleted += 1;
             self.report_progress(deleted, Some(keys.len()), "write");
@@ -724,8 +730,9 @@ impl DynamoBackend for SdkBackend {
                 return_items,
             )?;
             if let Some(capacity) = response.consumed_capacity() {
-                read_units += capacity.capacity_units().unwrap_or(0.0);
-                write_units += capacity.write_capacity_units().unwrap_or(0.0);
+                let (read, write) = write_call_units(capacity);
+                read_units += read;
+                write_units += write;
             }
             if return_items {
                 if let Some(attributes) = response.attributes() {
@@ -933,6 +940,20 @@ struct ReadFetch {
     read_units: f64,
 }
 
+/// Read and write units of a write call (PutItem, BatchWriteItem, UpdateItem, DeleteItem).
+///
+/// With `ReturnConsumedCapacity::Total`, DynamoDB reports only `CapacityUnits`, which for a
+/// write call are write units. A response that splits read and write units is used as given.
+fn write_call_units(capacity: &aws_sdk_dynamodb::types::ConsumedCapacity) -> (f64, f64) {
+    match (
+        capacity.read_capacity_units(),
+        capacity.write_capacity_units(),
+    ) {
+        (None, None) => (0.0, capacity.capacity_units().unwrap_or(0.0)),
+        (read, write) => (read.unwrap_or(0.0), write.unwrap_or(0.0)),
+    }
+}
+
 fn consumed_units(capacity: Option<&aws_sdk_dynamodb::types::ConsumedCapacity>) -> f64 {
     capacity
         .and_then(|capacity| capacity.capacity_units())
@@ -984,11 +1005,18 @@ impl SdkBackend {
             .map_err(Self::aws_error)
     }
 
+    /// Keys of the rows that match `condition`, from a scan, and the scan's read units.
     fn keys_for_condition(
         &self,
         table: &str,
         condition: Option<&Condition>,
-    ) -> Result<Vec<HashMap<String, aws_sdk_dynamodb::types::AttributeValue>>, EngineError> {
+    ) -> Result<
+        (
+            Vec<HashMap<String, aws_sdk_dynamodb::types::AttributeValue>>,
+            f64,
+        ),
+        EngineError,
+    > {
         let request = ReadRequest {
             operation: ReadOperation::Scan,
             index_name: None,
@@ -1003,11 +1031,17 @@ impl SdkBackend {
             range_key: None,
             follow_up_batch_get: false,
         };
-        let items = self.execute_read(table, &request)?.output;
-        items
+        let response = self.execute_read(table, &request)?;
+        let read_units = response
+            .capacity
+            .as_ref()
+            .map_or(0.0, |capacity| capacity.read_units);
+        let keys = response
+            .output
             .iter()
             .map(|item| primary_key_attributes(table, item, self))
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok((keys, read_units))
     }
 
     fn query_items(
@@ -1491,7 +1525,24 @@ fn merge_values(
 
 #[cfg(test)]
 mod tests {
-    use super::dial_host;
+    use super::{dial_host, write_call_units};
+    use aws_sdk_dynamodb::types::ConsumedCapacity;
+
+    #[test]
+    fn a_write_total_counts_as_write_units() {
+        let total = ConsumedCapacity::builder().capacity_units(2.0).build();
+        assert_eq!(write_call_units(&total), (0.0, 2.0));
+        let split = ConsumedCapacity::builder()
+            .capacity_units(3.0)
+            .read_capacity_units(1.0)
+            .write_capacity_units(2.0)
+            .build();
+        assert_eq!(write_call_units(&split), (1.0, 2.0));
+        assert_eq!(
+            write_call_units(&ConsumedCapacity::builder().build()),
+            (0.0, 0.0)
+        );
+    }
 
     #[test]
     fn local_hosts_dial_ipv4() {

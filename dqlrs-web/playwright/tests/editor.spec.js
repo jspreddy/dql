@@ -1818,3 +1818,49 @@ test("the endpoint chip shows DynamoDB Local's status and how to manage it", asy
   ]);
   await page.screenshot({ path: playwrightArtifact(`endpoint-dynamo-down-${testInfo.project.name}.png`) });
 });
+
+test("write results show their capacity, and a scan behind WHERE adds read units", async ({ page, app }, testInfo) => {
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, score NUMBER);`,
+      `INSERT INTO ${name} (id, score) VALUES ('a', 1), ('b', 2);`,
+      `UPDATE ${name} SET score = 10 WHERE score = 1;`,
+      `DELETE FROM ${name} KEYS IN 'b';`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"].error')).toHaveCount(0);
+  // A run of several statements lists each result in History.
+  await openResultPane(page, "history");
+  // DROP and CREATE use no units, so only the three writes have a pill. Each written row is
+  // one write unit. The UPDATE also scans the table to find its row.
+  const pills = page.locator('[data-testid="result-note-capacity"]');
+  await expect(pills).toHaveText(["2 WCU", /^[\d.]+ RCU · 1 WCU$/, "1 WCU"]);
+  await expect(pills.nth(1)).toHaveAttribute("data-tip", "Consumed capacity");
+  // Each pill follows its line's text, which keeps its own label.
+  const written = page
+    .locator('[data-testid="result-note"]')
+    .filter({ has: page.locator('[data-testid="result-note-capacity"]') });
+  await expect(written.locator('[data-testid="result-note-label"]')).toHaveText([
+    "2 rows inserted",
+    "one row updated",
+    "one row deleted",
+  ]);
+  // The pill sits on the same line as the text.
+  const noteBox = await written.first().boundingBox();
+  const pillBox = await pills.first().boundingBox();
+  expect(pillBox.height).toBeLessThan(noteBox.height);
+  expect(pillBox.y).toBeGreaterThanOrEqual(noteBox.y);
+  expect(pillBox.y + pillBox.height).toBeLessThanOrEqual(noteBox.y + noteBox.height);
+  // History pins the newest result at the top; scroll back so every write line shows.
+  await page.locator("#result-body").evaluate((body) => body.scrollTo(0, 0));
+  await expect(written.first()).toBeInViewport();
+  await page.locator("#results").screenshot({
+    path: playwrightArtifact(`write-result-capacity-${testInfo.project.name}.png`),
+  });
+});
