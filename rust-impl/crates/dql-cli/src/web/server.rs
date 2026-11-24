@@ -156,12 +156,11 @@ pub fn serve(
         );
     } else {
         println!(
-            "{}{}{}{}{}",
+            "{}{}",
             style.label(&format!("{:<WIDTH$}", "MCP")),
-            style.dim("off. Pass "),
-            style.code("--mcp"),
-            style.dim(" to serve "),
-            style.url(&format!("http://{bound}/mcp"))
+            style.rich(&crate::mcp::web_mcp_off_detail(&format!(
+                "http://{bound}/mcp"
+            )))
         );
         println!(
             "{}",
