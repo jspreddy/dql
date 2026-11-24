@@ -10,7 +10,7 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, TryLockError};
 use std::thread;
 use std::time::Duration;
 
@@ -599,16 +599,20 @@ impl App {
 
     /// Turn `/mcp` on or off. Off closes the agents' event streams; their next call gets 404.
     /// Grants and pending requests stay, so turning it back on picks up where it was.
-    fn set_mcp(&self, enabled: bool) {
-        let was = self.mcp.swap(enabled, Ordering::SeqCst);
-        lock_state(self).session.serves_mcp = enabled;
+    ///
+    /// Streams close and tabs hear the change before the `/mcp` gate flips, and none of
+    /// that waits on the session lock. A running query holds that lock for the whole script.
+    fn set_mcp(app: &Arc<Self>, enabled: bool) {
+        let was = app.mcp.load(Ordering::SeqCst);
         if was == enabled {
             return;
         }
         if !enabled {
-            self.mcp_hub.close_all();
+            app.mcp_hub.close_all();
         }
-        self.hub.mcp(enabled);
+        app.hub.mcp(enabled);
+        app.mcp.store(enabled, Ordering::SeqCst);
+        note_serves_mcp(app);
         let style = crate::style::Style::stdout();
         let state = if enabled { "on" } else { "off" };
         println!(
@@ -616,6 +620,25 @@ impl App {
             style.row("MCP", 11, &format!("turned {state} in the web app"))
         );
         let _ = io::stdout().flush();
+    }
+}
+
+/// `serves_mcp` lives on the session. Set it immediately when the lock is free.
+/// A query holding the lock must not delay the toggle: a background thread copies
+/// the gate once the query drops the lock, so a later toggle is not overwritten.
+fn note_serves_mcp(app: &Arc<App>) {
+    match app.state.try_lock() {
+        Ok(mut state) => state.session.serves_mcp = app.mcp.load(Ordering::SeqCst),
+        Err(TryLockError::WouldBlock) => {
+            let app = Arc::clone(app);
+            thread::spawn(move || {
+                let mut state = lock_state(&app);
+                state.session.serves_mcp = app.mcp.load(Ordering::SeqCst);
+            });
+        }
+        Err(TryLockError::Poisoned(guard)) => {
+            guard.into_inner().session.serves_mcp = app.mcp.load(Ordering::SeqCst);
+        }
     }
 }
 
@@ -635,14 +658,14 @@ fn mcp_info(app: &App) -> Value {
     })
 }
 
-fn mcp_reply(app: &App, body: &Value) -> Reply {
+fn mcp_reply(app: &Arc<App>, body: &Value) -> Reply {
     let Some(enabled) = body.get("enabled").and_then(Value::as_bool) else {
         return Reply::Json(
             400,
             json!({"ok": false, "error": "enabled must be true or false"}),
         );
     };
-    app.set_mcp(enabled);
+    App::set_mcp(app, enabled);
     Reply::Json(200, json!({"ok": true, "enabled": app.mcp_enabled()}))
 }
 
@@ -2952,6 +2975,51 @@ mod tests {
         });
         assert!(seen.contains(r#"{"enabled":false}"#), "{seen}");
         drop(guard);
+    }
+
+    #[test]
+    fn mcp_turns_off_while_a_query_holds_the_session() {
+        let root = tempfile::tempdir().unwrap();
+        let app = Arc::new(App::new(
+            Session::new_memory_headless("memory"),
+            root.path().to_path_buf(),
+            true,
+            "token".into(),
+        ));
+        let _ = app.mcp_url.set("http://127.0.0.1:9/mcp".into());
+        let stream = app.mcp_hub.subscribe(&[]);
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let held = Arc::clone(&app);
+        let holder = thread::spawn(move || {
+            let _guard = super::lock_state(&held);
+            ready_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+        });
+        ready_rx.recv().unwrap();
+
+        let started = Instant::now();
+        App::set_mcp(&app, false);
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "turning MCP off waited on the session lock"
+        );
+        assert!(!app.mcp_enabled());
+        assert!(
+            stream.recv_timeout(Duration::from_millis(200)).is_err(),
+            "the agent stream stayed open after MCP was turned off"
+        );
+
+        release_tx.send(()).unwrap();
+        holder.join().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while super::lock_state(&app).session.serves_mcp {
+            assert!(
+                Instant::now() < deadline,
+                "serves_mcp stayed true after the query released the session"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 
     #[test]
