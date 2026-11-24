@@ -6,6 +6,13 @@ A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists. Each line is a commit; the
 latest commit of each pull request, stacked ones included, names that pull request.
 
+## Unreleased (2026-11-24)
+
+Agents: Claude Opus 5.5
+
+- [4ce9a86](https://github.com/jspreddy/dql/commit/4ce9a8673b16b2c42d7d898b76996fecb51ef8fa) feat(web): open an MCP menu from the pill, with the switch and the config to copy ([#304](https://github.com/jspreddy/dql/pull/304))
+- [887fa7a](https://github.com/jspreddy/dql/commit/887fa7aa66e3b36235f6f2963b8c2dfa17039ccf) feat(web): show MCP on or off next to the endpoint and turn it on and off
+
 ## dqlrs 0.7.12-alpha.1 (2026-11-23)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
