@@ -217,8 +217,10 @@ is down, and opens the UI on `dqlrs-web/examples`. Details:
 `/mcp` on the web host, using that process's session. An agent can search,
 lint, and edit `.dql` files. It cannot run a query.
 
-In `dqlrs web`, the MCP pill next to the endpoint shows whether `/mcp` is on,
-and a click turns it on or off. `--mcp` only sets where it starts. Off, `/mcp`
+In `dqlrs web`, the MCP pill next to the endpoint shows whether `/mcp` is on.
+It opens a menu with a switch to turn MCP on or off, the `/mcp` address, and
+the Cursor (`.cursor/mcp.json`) or Claude (`.mcp.json`) config to copy, with
+this server's token in it. `--mcp` only sets where MCP starts. Off, `/mcp`
 answers 404 and open agent streams close. Grants and pending access requests
 stay, so turning MCP back on picks up where it was.
 

@@ -73,6 +73,8 @@ pub(crate) struct App {
     mcp_hub: super::mcp_stream::Hub,
     /// Whether `/mcp` answers. `--mcp` sets it at start; the header's MCP pill turns it on and off.
     mcp: AtomicBool,
+    /// `http://<bound address>/mcp`, set once the listener is bound.
+    mcp_url: std::sync::OnceLock<String>,
     token: String,
 }
 
@@ -115,6 +117,7 @@ pub fn serve(
     // backlog until `accept` runs.
     let listener = TcpListener::bind(listen)?;
     let bound = listener.local_addr().unwrap_or(listen);
+    let _ = app.mcp_url.set(format!("http://{bound}/mcp"));
     let loaded = if load_tables {
         Some(load_tables_with_progress(&app, &Progress::stdout()))
     } else {
@@ -404,6 +407,7 @@ impl App {
             access: super::access::Store::new(),
             mcp_hub: super::mcp_stream::Hub::new(),
             mcp: AtomicBool::new(mcp),
+            mcp_url: std::sync::OnceLock::new(),
             token,
         }
     }
@@ -615,6 +619,22 @@ impl App {
     }
 }
 
+/// The MCP menu: whether /mcp answers, its address, and the Cursor and Claude config for it.
+fn mcp_info(app: &App) -> Value {
+    let url = app
+        .mcp_url
+        .get()
+        .cloned()
+        .unwrap_or_else(|| "http://127.0.0.1/mcp".to_string());
+    let (cursor, claude) = crate::mcp::http_client_snippets(&url, &app.token);
+    json!({
+        "ok": true,
+        "enabled": app.mcp_enabled(),
+        "url": url,
+        "config": { "cursor": cursor, "claude": claude },
+    })
+}
+
 fn mcp_reply(app: &App, body: &Value) -> Reply {
     let Some(enabled) = body.get("enabled").and_then(Value::as_bool) else {
         return Reply::Json(
@@ -754,6 +774,7 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
     match path {
         "/api/config" => Reply::Json(200, config_payload(app)),
         "/api/mcp-access" => Reply::Json(200, mcp_access_payload(app)),
+        "/api/mcp" => Reply::Json(200, mcp_info(app)),
         "/api/identity" => Reply::Json(200, identity_reply(app)),
         "/api/dynamo" => Reply::Json(200, dynamo_reply(app)),
         "/api/tree" => match files::tree(&app.root) {
@@ -2836,8 +2857,27 @@ mod tests {
             "{config}"
         );
 
-        // A browser tab hears the change on its event stream.
+        // The menu reads the address and both configs, with this server's token in them.
+        let info: Value = serde_json::from_str(&http_body(addr, "GET", "/api/mcp", "")).unwrap();
+        assert_eq!(info["enabled"], false, "{info}");
+        assert_eq!(info["url"], format!("http://{addr}/mcp"), "{info}");
         let token = server_token(addr);
+        let cursor = info["config"]["cursor"].as_str().unwrap();
+        let claude = info["config"]["claude"].as_str().unwrap();
+        for text in [cursor, claude] {
+            let parsed: Value = serde_json::from_str(text).unwrap();
+            let server = &parsed["mcpServers"]["dqlrs"];
+            assert_eq!(server["url"], format!("http://{addr}/mcp"), "{text}");
+            assert_eq!(
+                server["headers"]["Authorization"],
+                format!("Bearer {token}"),
+                "{text}"
+            );
+        }
+        assert!(claude.contains(r#""type": "http""#), "{claude}");
+        assert!(!cursor.contains(r#""type""#), "{cursor}");
+
+        // A browser tab hears the change on its event stream.
         let mut events = TcpStream::connect(addr).unwrap();
         events
             .set_read_timeout(Some(Duration::from_millis(200)))
@@ -4103,6 +4143,7 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         super::super::events::start(&app);
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
+        let _ = app.mcp_url.set(format!("http://{addr}/mcp"));
         test_tokens()
             .lock()
             .unwrap_or_else(|err| err.into_inner())
