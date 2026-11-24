@@ -1490,6 +1490,53 @@ mod tests {
         assert!(text.contains("image: \"amazon/dynamodb-local:latest\""));
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn stop_does_not_kill_a_unix_process_that_is_not_dynamodb_local() {
+        // `sleep` is alive and is not `java -jar DynamoDBLocal.jar`. Stop must refuse it.
+        // The recorded pid is only checked with `kill -0` plus an open port today, then killed.
+        let child = Command::new("sleep")
+            .arg("60")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        struct Reap(Option<std::process::Child>);
+        impl Drop for Reap {
+            fn drop(&mut self) {
+                if let Some(mut child) = self.0.take() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        }
+        let mut reap = Reap(Some(child));
+        let server = Server {
+            port: 59991,
+            kind: Kind::Java,
+            status: Status::Running,
+            owner: Owner::Dqlrs,
+            pid: Some(pid),
+            container: None,
+            data: "data".to_string(),
+            workspace: None,
+            started_at: None,
+            record: None,
+        };
+        let result = stop(&server);
+        let still_alive = reap.0.as_mut().unwrap().try_wait().unwrap().is_none();
+        assert!(
+            still_alive,
+            "stop killed pid {pid} (sleep), which is not DynamoDB Local; result={result:?}"
+        );
+        assert!(
+            result.is_err(),
+            "stop reported success for a process that is not DynamoDB Local"
+        );
+    }
+
     #[test]
     fn table_lists_every_column() {
         let servers = merge(

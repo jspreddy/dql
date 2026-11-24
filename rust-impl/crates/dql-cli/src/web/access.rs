@@ -389,4 +389,47 @@ mod tests {
         assert_eq!(store.deny(&id).unwrap(), None);
         assert_eq!(store.answer(&id).unwrap()["status"], "denied");
     }
+
+    fn ran_request(query: &str) -> (Store, String) {
+        let store = Store::new();
+        let id = store.open(query, "mcp-a").unwrap();
+        store
+            .ran(&id, json!({"line": "clean"}), json!([]), 0)
+            .unwrap();
+        (store, id)
+    }
+
+    #[test]
+    fn grant_reserves_the_request_so_deny_cannot_also_pass() {
+        let (store, id) = ran_request("SCAN * FROM orders");
+        assert!(store.grant(&id).is_ok());
+        let denied = store.deny(&id);
+        assert!(
+            denied.is_err(),
+            "deny also passed after grant started: {denied:?}"
+        );
+    }
+
+    #[test]
+    fn a_second_grant_does_not_also_pass() {
+        let (store, id) = ran_request("SCAN * FROM orders");
+        assert!(store.grant(&id).is_ok());
+        let again = store.grant(&id);
+        assert!(again.is_err(), "a second grant also passed: {again:?}");
+    }
+
+    #[test]
+    fn request_access_rejects_save() {
+        let saved = Store::check_query("SCAN * FROM orders SAVE 'people.json'");
+        assert!(saved.is_err(), "SAVE was accepted: {saved:?}");
+    }
+
+    #[test]
+    fn request_access_rejects_save_create_parents() {
+        let saved = Store::check_query("SELECT * FROM orders SAVE 'people.json' CREATE PARENTS");
+        assert!(
+            saved.is_err(),
+            "SAVE CREATE PARENTS was accepted: {saved:?}"
+        );
+    }
 }
