@@ -3490,7 +3490,9 @@ async function loadFileResults(path) {
 }
 
 async function clearFileResults(path) {
-  if (!path || runButton.disabled) return;
+  // The editor Run button is also disabled for a view-only file. Clearing a
+  // folder, or another .dql file, must still work. A run in progress must not.
+  if (!path || !stopButton.classList.contains("hidden")) return;
   try {
     const payload = await api("/api/query-results/clear", { method: "POST", body: { path } });
     const cleared = payload.paths || [];

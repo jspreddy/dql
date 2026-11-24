@@ -908,6 +908,26 @@ test("runs the selected file from the context menu", async ({ page, app }, testI
   await expect(page.locator('[data-testid="run-status-ok"]')).toHaveCount(4);
 });
 
+test("clears a folder's results while a markdown, csv, or json file is open", async ({ page, app }) => {
+  fs.writeFileSync(path.join(app.workspace, "notes.md"), "# Notes\n");
+  fs.writeFileSync(path.join(app.workspace, "users.csv"), "id,name\na,ada\n");
+  fs.writeFileSync(path.join(app.workspace, "cities.json"), "{\"id\":\"a\"}\n");
+  await page.reload();
+  await showTypes(page, ["md", "csv", "json"]);
+  for (const file of ["notes.md", "users.csv", "cities.json"]) {
+    await node(page, file).click();
+    await node(page, "queries").click({ button: "right" });
+    await expect(page.locator("#menu-clear-results")).toBeVisible();
+    const cleared = page.waitForRequest((request) => {
+      if (request.method() !== "POST" || !request.url().includes("/api/query-results/clear")) return false;
+      return request.postDataJSON()?.path === "queries";
+    });
+    await page.locator("#menu-clear-results").click();
+    await cleared;
+    await expect(page.locator("#file-menu")).toBeHidden();
+  }
+});
+
 test("opens Run folder while a markdown, csv, or json file is open", async ({ page, app }) => {
   fs.writeFileSync(path.join(app.workspace, "notes.md"), "# Notes\n");
   fs.writeFileSync(path.join(app.workspace, "users.csv"), "id,name\na,ada\n");
