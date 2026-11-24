@@ -1626,6 +1626,7 @@ async function boot() {
   try {
     const config = await api("/api/config");
     applyEnvironment(config);
+    paintMcpToggle(Boolean(config.mcp?.enabled));
     void loadDynamo();
     startEvents();
     await refreshTree();
@@ -1660,6 +1661,93 @@ function applyEnvironment(config) {
     endpointButton.removeAttribute("aria-expanded");
   }
 }
+
+// MCP pill next to the endpoint: a dot for on or off. It opens a menu with the on/off switch, the
+// /mcp address, and the Cursor or Claude config to copy. Every tab hears a change through the
+// event stream, so they all show the same state.
+const mcpToggle = document.querySelector("#mcp-toggle");
+const mcpPop = document.querySelector("#mcp-pop");
+const mcpSwitch = document.querySelector("#mcp-switch");
+const mcpCopy = document.querySelector("#mcp-copy");
+const MCP_FILES = { cursor: ".cursor/mcp.json", claude: ".mcp.json" };
+let mcpConfig = { cursor: "", claude: "" };
+let mcpClient = "cursor";
+
+function paintMcpToggle(enabled) {
+  mcpToggle.hidden = false;
+  mcpToggle.dataset.state = enabled ? "on" : "off";
+  mcpToggle.textContent = enabled ? "MCP on" : "MCP off";
+  mcpToggle.setAttribute("aria-label", enabled ? "MCP on. Open the MCP menu" : "MCP off. Open the MCP menu");
+  mcpSwitch.checked = enabled;
+}
+
+function paintMcpConfig() {
+  for (const button of mcpPop.querySelectorAll("[data-client]")) {
+    button.setAttribute("aria-pressed", button.dataset.client === mcpClient ? "true" : "false");
+  }
+  document.querySelector("#mcp-pop-file").textContent = MCP_FILES[mcpClient];
+  document.querySelector("#mcp-pop-config").textContent = mcpConfig[mcpClient] || "";
+}
+
+async function loadMcpInfo() {
+  try {
+    const info = await api("/api/mcp");
+    paintMcpToggle(Boolean(info.enabled));
+    document.querySelector("#mcp-pop-url").textContent = info.url || "";
+    mcpConfig = info.config || mcpConfig;
+    paintMcpConfig();
+  } catch (error) {
+    reportError(error);
+  }
+}
+
+mcpPop.addEventListener("toggle", (event) => {
+  const open = event.newState === "open";
+  mcpToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  if (!open) return;
+  const chip = mcpToggle.getBoundingClientRect();
+  mcpPop.style.top = `${Math.round(chip.bottom + 6)}px`;
+  mcpPop.style.left = `${Math.round(Math.max(8, chip.right - mcpPop.offsetWidth))}px`;
+  void loadMcpInfo();
+});
+
+mcpSwitch.addEventListener("change", async () => {
+  const enabled = mcpSwitch.checked;
+  mcpSwitch.disabled = true;
+  try {
+    const reply = await api("/api/mcp", { method: "POST", body: { enabled } });
+    paintMcpToggle(Boolean(reply.enabled));
+  } catch (error) {
+    mcpSwitch.checked = !enabled;
+    reportError(error);
+  } finally {
+    mcpSwitch.disabled = false;
+  }
+});
+
+for (const button of mcpPop.querySelectorAll("[data-client]")) {
+  button.addEventListener("click", () => {
+    mcpClient = button.dataset.client;
+    paintMcpConfig();
+  });
+}
+
+mcpCopy.addEventListener("click", async () => {
+  const text = mcpConfig[mcpClient] || "";
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    copied = true;
+  } catch {
+    copied = false;
+  }
+  mcpCopy.dataset.copied = copied ? "yes" : "no";
+  setTip(mcpCopy, copied ? "Copied" : "Copy failed");
+  setTimeout(() => {
+    delete mcpCopy.dataset.copied;
+    setTip(mcpCopy, "Copy");
+  }, 1500);
+});
 
 // The local endpoint's DynamoDB Local server: a dot on the chip (running or not answering) and,
 // in the chip's popover, what `dqlrs dynamo` knows about it and the commands to manage it.
@@ -3678,6 +3766,8 @@ function handleEventFrame(frame) {
     }
   } else if (event === "grant-request") {
     onGrantRequest(payload);
+  } else if (event === "mcp") {
+    paintMcpToggle(Boolean(payload.enabled));
   } else if (event === "mcp-read") {
     appendMcpRead(payload);
   }

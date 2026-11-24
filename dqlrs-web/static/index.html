@@ -58,6 +58,7 @@
           <svg class="icon theme-sun" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/light_mode.svg#icon"></use></svg>
         </button>
       </div>
+      <button type="button" class="mcp-toggle" id="mcp-toggle" data-state="off" popovertarget="mcp-pop" aria-haspopup="dialog" aria-controls="mcp-pop" aria-expanded="false" hidden>MCP off</button>
       <button type="button" class="endpoint" id="endpoint" data-kind="local">localhost:8000</button>
     </div>
     <div id="settings-pop" class="settings-pop" popover="auto" aria-label="Settings">
@@ -96,6 +97,34 @@
       </div>
     </div>
     <div id="env-pop" class="env-pop" popover="auto" aria-labelledby="env-pop-title"></div>
+    <div id="mcp-pop" class="env-pop mcp-pop" popover="auto" role="dialog" aria-labelledby="mcp-pop-title">
+      <div class="env-pop-head">
+        <span class="env-pop-kicker">Agents</span>
+        <span id="mcp-pop-title">MCP server</span>
+      </div>
+      <div class="mcp-pop-body">
+        <label class="mcp-switch">
+          <span class="mcp-switch-text">Serve MCP</span>
+          <input type="checkbox" id="mcp-switch" role="switch" />
+          <span class="mcp-switch-track" aria-hidden="true"></span>
+        </label>
+        <p class="mcp-pop-about">Lets Cursor, Claude, and other MCP agents use this workspace: search tables and queries, lint and edit .dql files, and read only the temp tables you grant. They cannot run a query. Off, agents are disconnected; grants stay.</p>
+        <p class="mcp-pop-url"><span class="mcp-pop-label">Address</span> <code id="mcp-pop-url"></code></p>
+        <div class="mcp-pop-config-head">
+          <span class="mcp-pop-label">Config</span>
+          <span class="mcp-pop-clients table-query-seg" role="group" aria-label="Agent">
+            <button type="button" id="mcp-client-cursor" data-client="cursor" aria-pressed="true">Cursor</button>
+            <button type="button" id="mcp-client-claude" data-client="claude" aria-pressed="false">Claude</button>
+          </span>
+          <span id="mcp-pop-file" class="mcp-pop-file">.cursor/mcp.json</span>
+          <button type="button" id="mcp-copy" class="mcp-copy" aria-label="Copy MCP config" data-tip="Copy">
+            <svg class="icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><use href="/vendor/icons/content_copy.svg#icon"></use></svg>
+          </button>
+        </div>
+        <pre id="mcp-pop-config" class="mcp-pop-config" tabindex="0"></pre>
+        <p class="mcp-pop-note">The config holds this server's token. Keep it out of shared files.</p>
+      </div>
+    </div>
   </header>
   <section id="grant-panel" class="grant-panel" hidden aria-label="Access requested via MCP">
     <div class="grant-panel-head">

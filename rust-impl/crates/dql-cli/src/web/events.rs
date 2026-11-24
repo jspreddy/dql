@@ -93,6 +93,14 @@ impl Hub {
         publish(&mut self.lock(), frame("grants", &json!({})));
     }
 
+    /// MCP was turned on or off, so every tab can update its MCP pill.
+    pub(crate) fn mcp(&self, enabled: bool) {
+        publish(
+            &mut self.lock(),
+            frame("mcp", &json!({ "enabled": enabled })),
+        );
+    }
+
     /// An agent asked to run a query, or that request changed.
     pub(crate) fn grant_request(&self, requests: &Value) {
         publish(

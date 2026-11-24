@@ -419,10 +419,17 @@ pub fn web_mcp_hint(listen: &str) -> String {
 
 /// Cursor and Claude snippets for the HTTP MCP endpoint.
 pub fn http_client_config(url: &str, token: &str) -> String {
+    let (cursor, claude) = http_client_snippets(url, token);
+    format!("Cursor (.cursor/mcp.json):\n{cursor}\n\nClaude (.mcp.json):\n{claude}")
+}
+
+/// The `mcpServers` JSON for Cursor (`.cursor/mcp.json`) and Claude (`.mcp.json`), in that
+/// order, for an HTTP `/mcp` at `url` with the bearer `token`.
+pub fn http_client_snippets(url: &str, token: &str) -> (String, String) {
     let headers = json!({ "Authorization": format!("Bearer {token}") });
     let cursor = pretty_servers(json!({ "url": url, "headers": headers.clone() }));
     let claude = pretty_servers(json!({ "type": "http", "url": url, "headers": headers }));
-    format!("Cursor (.cursor/mcp.json):\n{cursor}\n\nClaude (.mcp.json):\n{claude}")
+    (cursor, claude)
 }
 
 /// Cursor and Claude snippet for a stdio `dqlrs --mcp` process.

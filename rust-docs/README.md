@@ -217,6 +217,13 @@ is down, and opens the UI on `dqlrs-web/examples`. Details:
 `/mcp` on the web host, using that process's session. An agent can search,
 lint, and edit `.dql` files. It cannot run a query.
 
+In `dqlrs web`, the MCP pill next to the endpoint shows whether `/mcp` is on.
+It opens a menu with a switch to turn MCP on or off, the `/mcp` address, and
+the Cursor (`.cursor/mcp.json`) or Claude (`.mcp.json`) config to copy, with
+this server's token in it. `--mcp` only sets where MCP starts. Off, `/mcp`
+answers 404 and open agent streams close. Grants and pending access requests
+stay, so turning MCP back on picks up where it was.
+
 ### MCP grants
 
 Grant read access to a temp table while this server runs:
@@ -231,10 +238,11 @@ GRANT MCP READ ON TEMPTABLE late_orders;
 Only temp tables can be granted. A grant is not saved. `DROP TEMPTABLE`
 removes it, and a new temp table of the same name is not granted.
 
-In `dqlrs web --mcp` the agent then calls `list_granted_tables` and
+With MCP on in `dqlrs web`, the agent then calls `list_granted_tables` and
 `read_granted_table`. Those tools read the in-memory rows only. A read returns
 100 rows by default and 1000 at most. Anywhere else, `GRANT` still succeeds and
-adds: no agent can read it here, because only `dqlrs web --mcp` serves grants.
+adds: no agent can read it here, because only `dqlrs web` with MCP on serves
+grants.
 
 ## Headless worker (`--serve`)
 
