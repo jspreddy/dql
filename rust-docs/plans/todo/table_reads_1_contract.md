@@ -2,7 +2,7 @@
 
 **Priority:** High  
 **Area:** `dqlrs-web` table browser, `dqlrs web` server  
-**Status:** Not started. Step 1 of [`table_reads_server.md`](table_reads_server.md).
+**Status:** Done on `table-reads/1-contract`. Step 1 of [`table_reads_server.md`](table_reads_server.md).
 
 ## Goal
 

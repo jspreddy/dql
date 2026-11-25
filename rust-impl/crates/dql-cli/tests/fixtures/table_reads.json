@@ -1,0 +1,3394 @@
+[
+  {
+    "name": "scan with no rows reads the table",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts",
+    "error": ""
+  },
+  {
+    "name": "scan with a string filter",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "status",
+          "op": "eq",
+          "value": "open",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE status = 'open'",
+    "error": ""
+  },
+  {
+    "name": "scan reverse orders by the source range key",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "reverse",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "status",
+          "op": "eq",
+          "value": "open",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE status = 'open' ORDER BY sk DESC",
+    "error": ""
+  },
+  {
+    "name": "scan on the table source",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "-",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts USING -",
+    "error": ""
+  },
+  {
+    "name": "scan on an index",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "by-status",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts USING by-status",
+    "error": ""
+  },
+  {
+    "name": "scan with a number filter",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "sk",
+          "op": "gt",
+          "value": "3",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE sk > 3",
+    "error": ""
+  },
+  {
+    "name": "scan with between on a number key",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [
+        {
+          "attribute": "sk",
+          "op": "between",
+          "value": "1",
+          "value2": "8",
+          "role": "range"
+        }
+      ],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE sk BETWEEN 1 AND 8",
+    "error": ""
+  },
+  {
+    "name": "scan filter on an attribute not in the definition",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "note",
+          "op": "eq",
+          "value": "hello",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE note = 'hello'",
+    "error": ""
+  },
+  {
+    "name": "scan filter on an extra attribute with a number value",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "count",
+          "op": "eq",
+          "value": "3",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": [
+        "count"
+      ]
+    },
+    "dql": "SCAN * FROM posts WHERE count = 3",
+    "error": ""
+  },
+  {
+    "name": "scan filter on an extra attribute with true",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "flag",
+          "op": "eq",
+          "value": "true",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": [
+        "flag"
+      ]
+    },
+    "dql": "SCAN * FROM posts WHERE flag = TRUE",
+    "error": ""
+  },
+  {
+    "name": "filter ops: exists",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "status",
+          "op": "exists",
+          "value": "",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE attribute_exists(status)",
+    "error": ""
+  },
+  {
+    "name": "filter ops: not exists",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "status",
+          "op": "not_exists",
+          "value": "",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE attribute_not_exists(status)",
+    "error": ""
+  },
+  {
+    "name": "filter ops: attribute type",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "status",
+          "op": "attribute_type",
+          "value": "S",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE attribute_type(status, 'S')",
+    "error": ""
+  },
+  {
+    "name": "filter ops: contains",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "kind",
+          "op": "contains",
+          "value": "ITEM",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE contains(kind, 'ITEM')",
+    "error": ""
+  },
+  {
+    "name": "filter ops: begins with",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "kind",
+          "op": "begins_with",
+          "value": "ITEM#",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE begins_with(kind, 'ITEM#')",
+    "error": ""
+  },
+  {
+    "name": "filter ops: size greater",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "kind",
+          "op": "size",
+          "value": "2",
+          "value2": "",
+          "sizeOp": "gt"
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE size(kind) > 2",
+    "error": ""
+  },
+  {
+    "name": "filter ops: size at most",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "kind",
+          "op": "size",
+          "value": "2",
+          "value2": "",
+          "sizeOp": "le"
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE size(kind) <= 2",
+    "error": ""
+  },
+  {
+    "name": "filter ops: not equal",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "status",
+          "op": "ne",
+          "value": "shut",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE status <> 'shut'",
+    "error": ""
+  },
+  {
+    "name": "an empty filter value is left out",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "status",
+          "op": "eq",
+          "value": "",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts",
+    "error": ""
+  },
+  {
+    "name": "query needs a hash key value",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "query",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "",
+    "error": "Query needs a hash key value."
+  },
+  {
+    "name": "query on the table hash key",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "query",
+      "order": "forward",
+      "keys": [
+        {
+          "attribute": "id",
+          "op": "eq",
+          "value": "ada",
+          "value2": "",
+          "role": "hash",
+          "locked": true
+        }
+      ],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts WHERE id = 'ada'",
+    "error": ""
+  },
+  {
+    "name": "query with key, filter, index, and reverse",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "by-status",
+      "mode": "query",
+      "order": "reverse",
+      "keys": [
+        {
+          "attribute": "status",
+          "op": "eq",
+          "value": "open",
+          "value2": "",
+          "role": "hash",
+          "locked": true
+        },
+        {
+          "attribute": "sk",
+          "op": "between",
+          "value": "1",
+          "value2": "8",
+          "role": "range"
+        }
+      ],
+      "filters": [
+        {
+          "attribute": "kind",
+          "op": "begins_with",
+          "value": "ITEM#",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts WHERE status = 'open' AND sk BETWEEN 1 AND 8 AND begins_with(kind, 'ITEM#') USING by-status DESC",
+    "error": ""
+  },
+  {
+    "name": "query on a local index",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "kind-index",
+      "mode": "query",
+      "order": "forward",
+      "keys": [
+        {
+          "attribute": "id",
+          "op": "eq",
+          "value": "a",
+          "value2": "",
+          "role": "hash"
+        },
+        {
+          "attribute": "kind",
+          "op": "begins_with",
+          "value": "x",
+          "value2": "",
+          "role": "range"
+        }
+      ],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts WHERE id = 'a' AND begins_with(kind, 'x') USING kind-index",
+    "error": ""
+  },
+  {
+    "name": "query without hash metadata needs a hash key",
+    "table": {
+      "name": "bare",
+      "kind": "dynamodb",
+      "keys": [],
+      "indexes": [],
+      "attributes": []
+    },
+    "read": {
+      "source": "",
+      "mode": "query",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "",
+    "error": "Query needs a hash key."
+  },
+  {
+    "name": "query without hash metadata takes a typed hash name",
+    "table": {
+      "name": "bare",
+      "kind": "dynamodb",
+      "keys": [],
+      "indexes": [],
+      "attributes": []
+    },
+    "read": {
+      "source": "",
+      "mode": "query",
+      "order": "forward",
+      "keys": [
+        {
+          "attribute": "pk",
+          "op": "eq",
+          "value": "ada",
+          "value2": "",
+          "role": "hash"
+        }
+      ],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SELECT * FROM bare WHERE pk = 'ada'",
+    "error": ""
+  },
+  {
+    "name": "keys on a hash-only table",
+    "table": {
+      "name": "people",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        }
+      ],
+      "indexes": [],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "ada\ntom",
+      "extra": []
+    },
+    "dql": "SELECT * FROM people KEYS IN 'ada', 'tom'",
+    "error": ""
+  },
+  {
+    "name": "keys needs at least one key",
+    "table": {
+      "name": "people",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        }
+      ],
+      "indexes": [],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "",
+    "error": "Keys needs at least one key."
+  },
+  {
+    "name": "keys with three parts in one key",
+    "table": {
+      "name": "people",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        }
+      ],
+      "indexes": [],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "(ada, tom, sue)",
+      "extra": []
+    },
+    "dql": "",
+    "error": "Line 1: a key has at most two parts: (hash, range)."
+  },
+  {
+    "name": "keys pairs on a range table",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "(ada, 1)\n(tom, 3)",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts KEYS IN ('ada', 1), ('tom', 3)",
+    "error": ""
+  },
+  {
+    "name": "keys nested pairs",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "((ada, 1), (tom, 3))",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts KEYS IN ('ada', 1), ('tom', 3)",
+    "error": ""
+  },
+  {
+    "name": "keys lone hash values on a range table",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "a,b,c",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts KEYS IN 'a', 'b', 'c'",
+    "error": ""
+  },
+  {
+    "name": "keys mix a pair and a lone hash",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "(ada, 1), tom",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts KEYS IN ('ada', 1), 'tom'",
+    "error": ""
+  },
+  {
+    "name": "keys on an index is one select per key",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "by-status",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "open, shut",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts WHERE status = 'open' USING by-status; SELECT * FROM posts WHERE status = 'shut' USING by-status",
+    "error": ""
+  },
+  {
+    "name": "keys pair on an index",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "by-status",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "(open, 1)",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts WHERE status = 'open' AND sk = 1 USING by-status",
+    "error": ""
+  },
+  {
+    "name": "keys on the table source",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "-",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "a",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts KEYS IN 'a'",
+    "error": ""
+  },
+  {
+    "name": "keys repeats are left out",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "a, a, b",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts KEYS IN 'a', 'b'",
+    "error": ""
+  },
+  {
+    "name": "keys repeated pairs written differently are one key",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "(a, 1), ('a', 1), (\"a\", '1')",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts KEYS IN ('a', 1)",
+    "error": ""
+  },
+  {
+    "name": "keys 1 and 1.0 are one number",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "(a, 1), (a, 1.0), (a, 2)",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts KEYS IN ('a', 1), ('a', 2)",
+    "error": ""
+  },
+  {
+    "name": "keys a lone hash covers its pairs",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "(a, 1), a, (b, 1)",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts KEYS IN 'a', ('b', 1)",
+    "error": ""
+  },
+  {
+    "name": "keys an unclosed paren",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "(a,1",
+      "extra": []
+    },
+    "dql": "",
+    "error": "Line 1 has an unclosed (."
+  },
+  {
+    "name": "keys a number key rejects text",
+    "table": {
+      "name": "nums",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "n",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-t",
+          "kind": "global",
+          "hashKey": "t"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "n",
+          "type": "NUMBER"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "t",
+          "type": "NUMBER"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "(ada, 1)",
+      "extra": []
+    },
+    "dql": "",
+    "error": "n is a number. \"ada\" is not."
+  },
+  {
+    "name": "keys a number range rejects text",
+    "table": {
+      "name": "nums",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "n",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-t",
+          "kind": "global",
+          "hashKey": "t"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "n",
+          "type": "NUMBER"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "t",
+          "type": "NUMBER"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "(1, x)",
+      "extra": []
+    },
+    "dql": "",
+    "error": "sk is a number. \"x\" is not."
+  },
+  {
+    "name": "keys a quoted number is a number",
+    "table": {
+      "name": "nums",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "n",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-t",
+          "kind": "global",
+          "hashKey": "t"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "n",
+          "type": "NUMBER"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "t",
+          "type": "NUMBER"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "('1', 2)",
+      "extra": []
+    },
+    "dql": "SELECT * FROM nums KEYS IN (1, 2)",
+    "error": ""
+  },
+  {
+    "name": "keys on a number index rejects text",
+    "table": {
+      "name": "nums",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "n",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-t",
+          "kind": "global",
+          "hashKey": "t"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "n",
+          "type": "NUMBER"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "t",
+          "type": "NUMBER"
+        }
+      ]
+    },
+    "read": {
+      "source": "by-t",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "open",
+      "extra": []
+    },
+    "dql": "",
+    "error": "t is a number. \"open\" is not."
+  },
+  {
+    "name": "query a number hash rejects text",
+    "table": {
+      "name": "nums",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "n",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-t",
+          "kind": "global",
+          "hashKey": "t"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "n",
+          "type": "NUMBER"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "t",
+          "type": "NUMBER"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "query",
+      "order": "forward",
+      "keys": [
+        {
+          "attribute": "n",
+          "op": "eq",
+          "value": "abc",
+          "value2": "",
+          "role": "hash",
+          "locked": true
+        }
+      ],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "",
+    "error": "n is a number. \"abc\" is not."
+  },
+  {
+    "name": "query a number between rejects text",
+    "table": {
+      "name": "nums",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "n",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-t",
+          "kind": "global",
+          "hashKey": "t"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "n",
+          "type": "NUMBER"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "t",
+          "type": "NUMBER"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "query",
+      "order": "forward",
+      "keys": [
+        {
+          "attribute": "n",
+          "op": "eq",
+          "value": "1",
+          "value2": "",
+          "role": "hash",
+          "locked": true
+        },
+        {
+          "attribute": "sk",
+          "op": "between",
+          "value": "1",
+          "value2": "z",
+          "role": "range"
+        }
+      ],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "",
+    "error": "sk is a number. \"z\" is not."
+  },
+  {
+    "name": "scan a number key row rejects text",
+    "table": {
+      "name": "nums",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "n",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-t",
+          "kind": "global",
+          "hashKey": "t"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "n",
+          "type": "NUMBER"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "t",
+          "type": "NUMBER"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [
+        {
+          "attribute": "n",
+          "op": "gt",
+          "value": "x",
+          "value2": "",
+          "role": "hash"
+        }
+      ],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "",
+    "error": "n is a number. \"x\" is not."
+  },
+  {
+    "name": "reserved names stay bare",
+    "table": {
+      "name": "order",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "key",
+          "role": "hash"
+        }
+      ],
+      "indexes": [],
+      "attributes": [
+        {
+          "name": "key",
+          "type": "STRING"
+        },
+        {
+          "name": "size",
+          "type": "NUMBER"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [
+        {
+          "attribute": "key",
+          "op": "eq",
+          "value": "a",
+          "value2": "",
+          "role": "hash"
+        }
+      ],
+      "filters": [
+        {
+          "attribute": "size",
+          "op": "eq",
+          "value": "1",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM order WHERE key = 'a' AND size = 1",
+    "error": ""
+  },
+  {
+    "name": "a filtered scan when the key name is not an identifier",
+    "table": {
+      "name": "spaced",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "user id",
+          "role": "hash"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-email",
+          "kind": "global",
+          "hashKey": "e mail"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "user id",
+          "type": "STRING"
+        },
+        {
+          "name": "e mail",
+          "type": "STRING"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "status",
+          "op": "eq",
+          "value": "open",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM spaced WHERE status = 'open'",
+    "error": ""
+  },
+  {
+    "name": "a query on a key that is not an identifier",
+    "table": {
+      "name": "spaced",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "user id",
+          "role": "hash"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-email",
+          "kind": "global",
+          "hashKey": "e mail"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "user id",
+          "type": "STRING"
+        },
+        {
+          "name": "e mail",
+          "type": "STRING"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "query",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "",
+    "error": "user id cannot be used as a key name"
+  },
+  {
+    "name": "a reversed scan on a key that is not an identifier",
+    "table": {
+      "name": "spaced",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "user id",
+          "role": "hash"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-email",
+          "kind": "global",
+          "hashKey": "e mail"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "user id",
+          "type": "STRING"
+        },
+        {
+          "name": "e mail",
+          "type": "STRING"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "reverse",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "",
+    "error": "user id cannot be used as a key name"
+  },
+  {
+    "name": "keys on an index whose key is not an identifier",
+    "table": {
+      "name": "spaced",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "user id",
+          "role": "hash"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-email",
+          "kind": "global",
+          "hashKey": "e mail"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "user id",
+          "type": "STRING"
+        },
+        {
+          "name": "e mail",
+          "type": "STRING"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "by-email",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "a@x",
+      "extra": []
+    },
+    "dql": "",
+    "error": "e mail cannot be used as a key name"
+  },
+  {
+    "name": "a filter name that is not an identifier",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "odd name",
+          "op": "eq",
+          "value": "x",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "",
+    "error": "odd name cannot be used as a filter name"
+  },
+  {
+    "name": "a filter name with a quote",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "o'brien",
+          "op": "eq",
+          "value": "ada",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "",
+    "error": "o'brien cannot be used as a filter name"
+  },
+  {
+    "name": "a string value with a quote",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "status",
+          "op": "eq",
+          "value": "it's",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE status = 'it\\'s'",
+    "error": "",
+    "fixes": "value with a quote"
+  },
+  {
+    "name": "a string value with a backslash",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "status",
+          "op": "eq",
+          "value": "a\\b",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE status = 'a\\\\b'",
+    "error": "",
+    "fixes": "value with a backslash"
+  },
+  {
+    "name": "a keys value with a quote",
+    "table": {
+      "name": "people",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        }
+      ],
+      "indexes": [],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "\"o'brien\"",
+      "extra": []
+    },
+    "dql": "SELECT * FROM people KEYS IN 'o\\'brien'",
+    "error": "",
+    "fixes": "value with a quote"
+  },
+  {
+    "name": "an attribute type with a quote",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "status",
+          "op": "attribute_type",
+          "value": "S'",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "SCAN * FROM posts WHERE attribute_type(status, 'S\\'')",
+    "error": "",
+    "fixes": "value with a quote"
+  }
+]
