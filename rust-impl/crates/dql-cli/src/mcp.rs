@@ -412,9 +412,18 @@ fn update_query_file(root: &Path, arguments: &Value) -> Result<Value, ToolError>
     Ok(json!({ "path": path, "text": text }))
 }
 
-/// One line for `dqlrs web` when `/mcp` is not enabled.
+/// The text after the MCP label when `dqlrs web` starts with `/mcp` off.
+/// The header pill turns it on; `--mcp` only chooses the starting state.
+pub fn web_mcp_off_detail(url: &str) -> String {
+    format!("off. The MCP pill turns it on at {url}")
+}
+
+/// One line for `dqlrs web` when `/mcp` starts off.
 pub fn web_mcp_hint(listen: &str) -> String {
-    format!("MCP        off. Pass --mcp to serve http://{listen}/mcp")
+    format!(
+        "MCP        {}",
+        web_mcp_off_detail(&format!("http://{listen}/mcp"))
+    )
 }
 
 /// Cursor and Claude snippets for the HTTP MCP endpoint.
@@ -1326,10 +1335,11 @@ DROP TABLE other;
     }
 
     #[test]
-    fn web_hint_names_the_mcp_flag_and_url() {
+    fn web_hint_names_the_mcp_pill_and_url() {
         let hint = web_mcp_hint("127.0.0.1:8765");
-        assert!(hint.contains("--mcp"));
+        assert!(hint.contains("The MCP pill turns it on"));
         assert!(hint.contains("http://127.0.0.1:8765/mcp"));
+        assert!(!hint.contains("--mcp"));
     }
 
     #[test]
