@@ -3390,5 +3390,203 @@
     "dql": "SCAN * FROM posts WHERE attribute_type(status, 'S\\'')",
     "error": "",
     "fixes": "value with a quote"
+  },
+  {
+    "name": "a number filter typed with text",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "sk",
+          "op": "gt",
+          "value": "abc",
+          "value2": ""
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "",
+    "error": "sk is a number. \"abc\" is not.",
+    "fixes": "number filter with text"
+  },
+  {
+    "name": "a size compared with text",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "scan",
+      "order": "forward",
+      "keys": [],
+      "filters": [
+        {
+          "attribute": "kind",
+          "op": "size",
+          "value": "many",
+          "value2": "",
+          "sizeOp": "gt"
+        }
+      ],
+      "batchKeys": "",
+      "extra": []
+    },
+    "dql": "",
+    "error": "size(kind) is a number. \"many\" is not.",
+    "fixes": "size with text"
+  },
+  {
+    "name": "a number key written with an exponent",
+    "table": {
+      "name": "posts",
+      "kind": "dynamodb",
+      "keys": [
+        {
+          "name": "id",
+          "role": "hash"
+        },
+        {
+          "name": "sk",
+          "role": "range"
+        }
+      ],
+      "indexes": [
+        {
+          "name": "by-status",
+          "kind": "global",
+          "hashKey": "status",
+          "rangeKey": "sk"
+        },
+        {
+          "name": "kind-index",
+          "kind": "local",
+          "hashKey": "id",
+          "rangeKey": "kind"
+        }
+      ],
+      "attributes": [
+        {
+          "name": "id",
+          "type": "STRING"
+        },
+        {
+          "name": "sk",
+          "type": "NUMBER"
+        },
+        {
+          "name": "status",
+          "type": "STRING"
+        },
+        {
+          "name": "kind",
+          "type": "STRING"
+        }
+      ]
+    },
+    "read": {
+      "source": "",
+      "mode": "keys",
+      "order": "forward",
+      "keys": [],
+      "filters": [],
+      "batchKeys": "(a, 1e3)",
+      "extra": []
+    },
+    "dql": "SELECT * FROM posts KEYS IN ('a', 1000)",
+    "error": "",
+    "fixes": "number with an exponent"
   }
 ]

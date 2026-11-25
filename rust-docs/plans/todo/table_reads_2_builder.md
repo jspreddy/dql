@@ -2,7 +2,7 @@
 
 **Priority:** High  
 **Area:** `rust-impl/crates/dql-cli/src/web/`  
-**Status:** Not started. Step 2 of [`table_reads_server.md`](table_reads_server.md). Needs step 1.
+**Status:** Done on `table-reads/2-builder`. Step 2 of [`table_reads_server.md`](table_reads_server.md). Needs step 1.
 
 ## Goal
 
