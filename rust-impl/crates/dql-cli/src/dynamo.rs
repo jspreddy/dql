@@ -769,6 +769,20 @@ fn start_docker(
     })
 }
 
+/// `ps -ww -p <pid>` output, or `None` when `ps` itself cannot be run.
+fn unix_process_command(pid: u32) -> Option<String> {
+    let output = Command::new("ps")
+        .args(["-ww", "-p", &pid.to_string(), "-o", "pid=,command="])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
 /// Stop a server and wait for its port to close. Data stays.
 pub(crate) fn stop(server: &Server) -> color_eyre::Result<()> {
     if server.status == Status::Stopped {
@@ -779,6 +793,19 @@ pub(crate) fn stop(server: &Server) -> color_eyre::Result<()> {
             let pid = server
                 .pid
                 .ok_or_else(|| eyre!("no pid for port {}", server.port))?;
+            if cfg!(unix) {
+                if let Some(listing) = unix_process_command(pid) {
+                    let is_server = parse_java_processes(&listing)
+                        .iter()
+                        .any(|process| process.pid == pid);
+                    if !is_server {
+                        bail!(
+                            "pid {pid} on port {} is not DynamoDB Local; the recorded process is gone",
+                            server.port
+                        );
+                    }
+                }
+            }
             let status = if cfg!(unix) {
                 Command::new("kill").arg(pid.to_string()).status()
             } else {
