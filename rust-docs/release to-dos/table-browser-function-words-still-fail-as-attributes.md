@@ -1,6 +1,6 @@
 # The table browser cannot filter on `size`, `not`, or a condition function name
 
-Status: open. Found on `v-rust` at `90c492c` while reviewing #314 (`a93e9ff`).
+Status: fixed on `fix/release-review-followups`. Found on `v-rust` at `90c492c` while reviewing #314 (`a93e9ff`).
 
 ## What goes wrong
 
