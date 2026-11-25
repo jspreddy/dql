@@ -5,9 +5,6 @@
 //! names and values the way the `dql-parser` lexer reads them. The preview, Run, and Explain all
 //! come from here (rust-docs/plans/todo/table_reads_server.md).
 
-// The endpoints that call `plan` arrive in step 3 of that plan, which removes this allowance.
-#![cfg_attr(not(test), allow(dead_code))]
-
 use std::collections::HashSet;
 
 use serde::Deserialize;

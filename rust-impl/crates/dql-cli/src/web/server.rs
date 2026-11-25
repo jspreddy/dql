@@ -27,6 +27,7 @@ use super::shape::{
     split_statements, Column, ExecText, ListedTable, TableShape, PAGE_SIZE,
 };
 use super::structure;
+use super::table_read::{self, TableRead};
 use crate::serve::protocol::{envelope_from_error, ServeEnvelope};
 use crate::session::Session;
 use crate::table_cache::LoadEvent;
@@ -1226,6 +1227,15 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
     if path == "/api/mcp" {
         return mcp_reply(app, &parse_json(body));
     }
+    if path == "/api/table-read" {
+        return table_read_reply(app, body);
+    }
+    if path == "/api/rows" {
+        return rows_reply(app, body);
+    }
+    if path == "/api/explain" {
+        return explain_reply(app, body);
+    }
     if path == "/api/mcp-access/run" {
         return run_access(app, &parse_json(body));
     }
@@ -1536,6 +1546,81 @@ fn deny_access(app: &Arc<App>, body: &Value) -> Reply {
     Reply::Json(200, mcp_access_payload(app))
 }
 
+/// The read in a request body: the body itself for `/api/table-read`, or its `read` field.
+fn read_from(body: &[u8], field: Option<&str>) -> Result<(TableRead, Value), String> {
+    let value: Value =
+        serde_json::from_slice(body).map_err(|err| format!("the body is not JSON: {err}"))?;
+    let read = match field {
+        Some(field) => value.get(field).cloned().unwrap_or(Value::Null),
+        None => value.clone(),
+    };
+    let read: TableRead =
+        serde_json::from_value(read).map_err(|err| format!("the read is not valid: {err}"))?;
+    Ok((read, value))
+}
+
+/// The preview: what a read would run, or why it cannot. Runs nothing.
+fn table_read_reply(app: &App, body: &[u8]) -> Reply {
+    let read = match read_from(body, None) {
+        Ok((read, _)) => read,
+        Err(message) => return Reply::Json(400, json!({"ok": false, "error": message})),
+    };
+    let table = {
+        let mut state = lock_state(app);
+        read_table(&mut state, &read.table)
+    };
+    let planned = table.and_then(|table| table_read::plan(&table, &read));
+    match planned {
+        Ok(statements) => Reply::Json(
+            200,
+            json!({"ok": true, "dql": statements.join("; "), "statements": statements, "error": ""}),
+        ),
+        Err(error) => Reply::Json(
+            200,
+            json!({"ok": true, "dql": "", "statements": [], "error": error}),
+        ),
+    }
+}
+
+fn rows_reply(app: &App, body: &[u8]) -> Reply {
+    let (read, value) = match read_from(body, Some("read")) {
+        Ok(found) => found,
+        Err(message) => return Reply::Json(400, json!({"ok": false, "error": message})),
+    };
+    let page = value
+        .get("page")
+        .and_then(Value::as_u64)
+        .map(|page| page as usize)
+        .unwrap_or(0);
+    // A fresh read starts uncancelled; /api/stop cancels it like an editor run.
+    app.cancel.clear();
+    let mut state = lock_state(app);
+    let statements = match planned_read(&mut state, &read, rows_fetch_limit(page)) {
+        Ok(statements) => statements,
+        Err(message) => return Reply::Json(400, json!({"ok": false, "error": message})),
+    };
+    match run_table_rows(&mut state, &read.table, page, statements) {
+        Ok(payload) => Reply::Json(200, payload),
+        Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
+    }
+}
+
+fn explain_reply(app: &App, body: &[u8]) -> Reply {
+    let read = match read_from(body, Some("read")) {
+        Ok((read, _)) => read,
+        Err(message) => return Reply::Json(400, json!({"ok": false, "error": message})),
+    };
+    let mut state = lock_state(app);
+    let statements = match planned_read(&mut state, &read, PAGE_SIZE.saturating_add(1)) {
+        Ok(statements) => statements,
+        Err(message) => return Reply::Json(400, json!({"ok": false, "error": message})),
+    };
+    match run_table_explain(&mut state, &read.table, statements) {
+        Ok(payload) => Reply::Json(200, payload),
+        Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
+    }
+}
+
 fn handle_run(app: Arc<App>, dql: String, script: &str) -> Reply {
     let statements = split_statements(&dql);
     if statements.is_empty() {
@@ -1706,12 +1791,63 @@ fn load_shape(state: &mut WebState, name: &str) -> Option<TableShape> {
 }
 
 fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Result<Value, String> {
+    let fetch_limit = rows_fetch_limit(page);
+    let (statements, _) = browser_read_dql(name, dql, fetch_limit)?;
+    run_table_rows(state, name, page, statements)
+}
+
+/// How many rows a page reads: every row up to its end, and one more to know whether there is a
+/// next page.
+fn rows_fetch_limit(page: usize) -> usize {
+    PAGE_SIZE
+        .saturating_mul(page)
+        .saturating_add(PAGE_SIZE)
+        .saturating_add(1)
+}
+
+/// The table, the statements a read runs, and the page limit, from the browser's read.
+fn planned_read(
+    state: &mut WebState,
+    read: &TableRead,
+    limit: usize,
+) -> Result<Vec<String>, String> {
+    let table = read_table(state, &read.table)?;
+    let statements = table_read::plan(&table, read)?;
+    Ok(browser_statements(&read.table, statements, limit)?.0)
+}
+
+/// The table's definition as `/api/tables?name=` lists it. A table with no definition yet reads
+/// as one with no keys, as the browser treats it.
+fn read_table(state: &mut WebState, name: &str) -> Result<ListedTable, String> {
+    let name = name.trim();
+    if !safe_table_name(name) {
+        return Err(format!("unsupported table name {name:?}"));
+    }
+    let listed = crate::meta::ls::web_table_by_name(&mut state.session, name)?;
+    Ok(listed
+        .tables
+        .into_iter()
+        .find(|table| table.name == name)
+        .unwrap_or_else(|| ListedTable {
+            name: name.to_string(),
+            keys: Vec::new(),
+            kind: String::new(),
+            granted: false,
+            indexes: Vec::new(),
+            attributes: Vec::new(),
+        }))
+}
+
+fn run_table_rows(
+    state: &mut WebState,
+    name: &str,
+    page: usize,
+    statements: Vec<String>,
+) -> Result<Value, String> {
     if !safe_table_name(name) {
         return Err(format!("unsupported table name {name:?}"));
     }
     let start = PAGE_SIZE.saturating_mul(page);
-    let fetch_limit = start.saturating_add(PAGE_SIZE).saturating_add(1);
-    let (statements, _) = browser_read_dql(name, dql, fetch_limit)?;
     let mut items = Vec::new();
     let started = std::time::Instant::now();
     let (mut read_units, mut write_units) = (0.0, 0.0);
@@ -1760,6 +1896,14 @@ fn table_explain(state: &mut WebState, name: &str, dql: &str) -> Result<Value, S
         return Err(format!("unsupported table name {name:?}"));
     }
     let (statements, _) = browser_read_dql(name, dql, PAGE_SIZE.saturating_add(1))?;
+    run_table_explain(state, name, statements)
+}
+
+fn run_table_explain(
+    state: &mut WebState,
+    name: &str,
+    statements: Vec<String>,
+) -> Result<Value, String> {
     let mut plans = Vec::new();
     for statement in &statements {
         let envelope = state
@@ -1782,7 +1926,17 @@ fn browser_read_dql(name: &str, dql: &str, limit: usize) -> Result<(Vec<String>,
     if text.is_empty() {
         return Ok((vec![format!("SCAN * FROM {name} LIMIT {limit}")], true));
     }
-    let parts = split_statements(text);
+    browser_statements(name, split_statements(text), limit)
+}
+
+/// The statements of one table-browser read, checked and limited: each a SELECT or SCAN of
+/// `name` with no SAVE or LIMIT. A single statement gets the page LIMIT; KEYS IN and a list of
+/// statements cannot be limited, so they read everything they name.
+fn browser_statements(
+    name: &str,
+    parts: Vec<String>,
+    limit: usize,
+) -> Result<(Vec<String>, bool), String> {
     if parts.is_empty() {
         return Err("only SELECT or SCAN in the table browser".to_string());
     }
@@ -2871,6 +3025,111 @@ mod tests {
         );
         assert!(later.contains("\\\"status\\\": \\\"revoked\\\""), "{later}");
         assert!(later.contains("mcp_r1"), "{later}");
+        drop(guard);
+    }
+
+    #[test]
+    fn the_table_browser_sends_its_read_and_the_server_builds_it() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let setup = "CREATE TABLE posts (id STRING HASH KEY, sk NUMBER RANGE KEY) GLOBAL INDEX ('by-status', status STRING, sk NUMBER); INSERT INTO posts (id, sk, status, note) VALUES ('a', 1, 'open', 'it\\'s here'), ('a', 2, 'shut', 'plain'), ('b', 3, 'open', 'back\\\\slash');";
+        let setup_body = format!("{{\"dql\":{}}}", serde_json::to_string(setup).unwrap());
+        let created = http_body(addr, "POST", "/api/run", &setup_body);
+        assert!(created.contains("\"ok\":true"), "{created}");
+        let post = |path: &str, body: Value| -> (String, Value) {
+            let raw = http(addr, "POST", path, &body.to_string());
+            let json = raw
+                .split_once("\r\n\r\n")
+                .and_then(|(_, rest)| serde_json::from_str(rest.trim()).ok())
+                .unwrap_or(Value::Null);
+            (raw, json)
+        };
+
+        // The preview: the statement, built on the server, and no message.
+        let (_, preview) = post(
+            "/api/table-read",
+            json!({"table": "posts", "mode": "scan", "filters": [{"attribute": "status", "op": "eq", "value": "open"}]}),
+        );
+        assert_eq!(
+            preview["dql"], "SCAN * FROM posts WHERE status = 'open'",
+            "{preview}"
+        );
+        assert_eq!(preview["error"], "", "{preview}");
+
+        // A message instead of a statement, named by the server.
+        let (_, bad) = post(
+            "/api/table-read",
+            json!({"table": "posts", "mode": "query"}),
+        );
+        assert_eq!(bad["dql"], "", "{bad}");
+        assert_eq!(bad["error"], "Query needs a hash key value.", "{bad}");
+
+        // Run: the rows of that read, and the statement that ran, with the page LIMIT.
+        let (_, rows) = post(
+            "/api/rows",
+            json!({"read": {"table": "posts", "mode": "scan", "filters": [{"attribute": "status", "op": "eq", "value": "open"}]}, "page": 0}),
+        );
+        assert_eq!(rows["items"].as_array().map(Vec::len), Some(2), "{rows}");
+        assert_eq!(
+            rows["dql"], "SCAN * FROM posts WHERE status = 'open' LIMIT 51",
+            "{rows}"
+        );
+
+        // A value with a quote, and one with a backslash, read the rows that hold them.
+        for (value, id) in [("it's here", "a"), ("back\\slash", "b")] {
+            let (_, found) = post(
+                "/api/rows",
+                json!({"read": {"table": "posts", "mode": "scan", "filters": [{"attribute": "note", "op": "eq", "value": value}]}}),
+            );
+            let items = found["items"].as_array().cloned().unwrap_or_default();
+            assert_eq!(items.len(), 1, "{value}: {found}");
+            assert_eq!(items[0]["id"], id, "{value}: {found}");
+        }
+
+        // Keys on an index: one statement per key, run together, no LIMIT.
+        let (_, keys) = post(
+            "/api/rows",
+            json!({"read": {"table": "posts", "mode": "keys", "source": "by-status", "batchKeys": "open, shut"}}),
+        );
+        assert_eq!(keys["items"].as_array().map(Vec::len), Some(3), "{keys}");
+        assert_eq!(
+            keys["dql"],
+            "SELECT * FROM posts WHERE status = 'open' USING by-status; SELECT * FROM posts WHERE status = 'shut' USING by-status",
+            "{keys}"
+        );
+
+        // A read that cannot run is a 400 with the message, and runs nothing.
+        let (raw, refused) = post(
+            "/api/rows",
+            json!({"read": {"table": "posts", "mode": "scan", "filters": [{"attribute": "odd name", "op": "eq", "value": "x"}]}}),
+        );
+        assert!(raw.starts_with("HTTP/1.1 400"), "{raw}");
+        assert_eq!(
+            refused["error"], "odd name cannot be used as a filter name",
+            "{refused}"
+        );
+
+        // Explain: the plan of what Run reads.
+        let (_, explain) = post(
+            "/api/explain",
+            json!({"read": {"table": "posts", "mode": "query", "source": "by-status", "keys": [{"attribute": "status", "op": "eq", "value": "open", "role": "hash"}]}}),
+        );
+        assert_eq!(
+            explain["plans"][0]["statement"],
+            "SELECT * FROM posts WHERE status = 'open' USING by-status LIMIT 51",
+            "{explain}"
+        );
+        assert!(
+            explain["plans"][0]["plan"]
+                .as_str()
+                .unwrap_or("")
+                .contains("by-status"),
+            "{explain}"
+        );
+
+        // A body that is not a read is a 400.
+        let (raw, _) = post("/api/rows", json!({"read": "posts"}));
+        assert!(raw.starts_with("HTTP/1.1 400"), "{raw}");
         drop(guard);
     }
 
