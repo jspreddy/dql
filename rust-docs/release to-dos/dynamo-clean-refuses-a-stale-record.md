@@ -1,6 +1,6 @@
 # Dynamo clean can never remove a record whose pid was reused
 
-Status: open. Found on `v-rust` at `90c492c` while reviewing #313 (`792584f`).
+Status: fixed on `fix/release-review-followups`. Found on `v-rust` at `90c492c` while reviewing #313 (`792584f`).
 
 ## What goes wrong
 
