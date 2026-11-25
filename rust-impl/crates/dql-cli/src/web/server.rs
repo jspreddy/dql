@@ -1479,6 +1479,7 @@ fn grant_access(app: &Arc<App>, body: &Value) -> Reply {
     let mut state = lock_state(app);
     let envelope = execute_watched(app, &mut state, &statement);
     if !envelope.ok {
+        app.access.abort_grant(id);
         return Reply::Json(
             502,
             json!({"ok": false, "error": envelope_error(&envelope)}),

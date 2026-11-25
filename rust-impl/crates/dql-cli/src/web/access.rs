@@ -34,6 +34,9 @@ struct Request {
     agent: String,
     phase: Phase,
     owns_table: bool,
+    /// A grant has been accepted and `GRANT` has not finished or failed yet.
+    /// Deny and a second grant wait until that settles.
+    granting: bool,
 }
 
 struct Inner {
@@ -65,7 +68,12 @@ impl Store {
         }
         let text = statements[0].trim().trim_end_matches(';').trim();
         match parse_statement(text) {
-            Ok(Statement::Select { .. } | Statement::Scan { .. }) => Ok(text.to_string()),
+            Ok(Statement::Select { options, .. } | Statement::Scan { options, .. }) => {
+                if options.save_file.is_some() {
+                    return Err("request_access cannot SAVE".to_string());
+                }
+                Ok(text.to_string())
+            }
             Ok(_) => Err("request_access takes one SELECT or SCAN".to_string()),
             Err(err) => Err(err.to_string()),
         }
@@ -84,6 +92,7 @@ impl Store {
                 agent: agent.to_string(),
                 phase: Phase::Open,
                 owns_table: false,
+                granting: false,
             },
         );
         self.changed.notify_all();
@@ -174,18 +183,26 @@ impl Store {
     }
 
     /// `Some(table)` when this request may be granted.
+    ///
+    /// The request stays `Ran` until `finish_grant` or `abort_grant`, and no
+    /// second grant or deny can pass in that window.
     pub fn grant(&self, id: &str) -> Result<String, String> {
-        let inner = self.lock();
+        let mut inner = self.lock();
         let request = inner
             .requests
-            .get(id)
+            .get_mut(id)
             .ok_or_else(|| format!("unknown request {id}"))?;
-        match &request.phase {
-            Phase::Ran { table, .. } => Ok(table.clone()),
-            Phase::Granted { .. } => Err(format!("{id} is already granted")),
-            Phase::Denied => Err(format!("{id} is already denied")),
-            Phase::Open => Err("run the query before granting".to_string()),
+        if request.granting {
+            return Err(format!("{id} is already being granted"));
         }
+        let table = match &request.phase {
+            Phase::Ran { table, .. } => table.clone(),
+            Phase::Granted { .. } => return Err(format!("{id} is already granted")),
+            Phase::Denied => return Err(format!("{id} is already denied")),
+            Phase::Open => return Err("run the query before granting".to_string()),
+        };
+        request.granting = true;
+        Ok(table)
     }
 
     /// Mark the request granted after `GRANT` succeeded.
@@ -193,12 +210,23 @@ impl Store {
         let mut inner = self.lock();
         if let Some(request) = inner.requests.get_mut(id) {
             if let Phase::Ran { table, .. } = &request.phase {
+                request.granting = false;
                 request.phase = Phase::Granted {
                     table: table.clone(),
                 };
             }
         }
         self.changed.notify_all();
+    }
+
+    /// `GRANT` failed. The request can be granted or denied again.
+    pub fn abort_grant(&self, id: &str) {
+        let mut inner = self.lock();
+        if let Some(request) = inner.requests.get_mut(id) {
+            if matches!(request.phase, Phase::Ran { .. }) {
+                request.granting = false;
+            }
+        }
     }
 
     /// Drop the temp table this request created, when it has one.
@@ -208,6 +236,9 @@ impl Store {
             .requests
             .get_mut(id)
             .ok_or_else(|| format!("unknown request {id}"))?;
+        if request.granting {
+            return Err(format!("{id} is being granted"));
+        }
         if matches!(request.phase, Phase::Granted { .. }) {
             return Err(format!("{id} is already granted"));
         }
