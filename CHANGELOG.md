@@ -11,6 +11,12 @@ latest commit of each pull request, stacked ones included, names that pull reque
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [19be28b](https://github.com/jspreddy/dql/commit/19be28b3601a800fd8700aaf12a2667b363866ad) fix(dynamo): forget a stale record instead of failing stop and clean ([#324](https://github.com/jspreddy/dql/pull/324))
+- [7f0a56d](https://github.com/jspreddy/dql/commit/7f0a56db860bff890ed1bf338638abb0a3f768f1) fix(parser): read size, not, and condition function names as attributes
+- [0c1e2ce](https://github.com/jspreddy/dql/commit/0c1e2ce888cb90ea39686ea1cde0b1b1a64d1b4f) fix(web): check only the names a table-browser statement uses
+- [c0c3563](https://github.com/jspreddy/dql/commit/c0c3563215522c88dbb778705f675809de02e6bc) fix(web): end an agent stream that subscribes after MCP is turned off
+- [22bf252](https://github.com/jspreddy/dql/commit/22bf252a4d1591be0315d4cb06b31f10c9794af9) fix(mcp): clear a grant reservation when its temp table is dropped
+- [42400eb](https://github.com/jspreddy/dql/commit/42400ebfbd308450677beab5b90be1593ee8d90f) docs: mark the release notes fixed and note what the fixes left open
 - [a93e9ff](https://github.com/jspreddy/dql/commit/a93e9ff328bbcd6725629c45d4459949871a2a95) fix(web): keep invalid names out of table, key, and filter statements ([#314](https://github.com/jspreddy/dql/pull/314))
 - [792584f](https://github.com/jspreddy/dql/commit/792584ffc91a26cdfc00f1c90de0772c7d236181) fix(dynamo): refuse to kill a pid that is not DynamoDB Local ([#313](https://github.com/jspreddy/dql/pull/313))
 - [85fe411](https://github.com/jspreddy/dql/commit/85fe41185aa08a9e060b71dd1ad0dc0bbd83aa95) fix(mcp): keep grant and deny exclusive, and reject SAVE ([#312](https://github.com/jspreddy/dql/pull/312))
