@@ -11,6 +11,7 @@ latest commit of each pull request, stacked ones included, names that pull reque
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [0e191ea](https://github.com/jspreddy/dql/commit/0e191ea013c7c7c9640fe06865c40b95f648c105) fix(web): clear results while a view-only file is open ([#311](https://github.com/jspreddy/dql/pull/311))
 - [8fe4fe6](https://github.com/jspreddy/dql/commit/8fe4fe6f418e66751cdb5a81939f132d2b0a20a7) test: show the four release bugs failing ([#310](https://github.com/jspreddy/dql/pull/310))
 - [ff3d110](https://github.com/jspreddy/dql/commit/ff3d110878f4444ae33abdfed79592d6e1018cc7) fix(web): say the MCP pill turns MCP on ([#309](https://github.com/jspreddy/dql/pull/309))
 - [b97b3b8](https://github.com/jspreddy/dql/commit/b97b3b85772be1f15d4b50f1e5b293c1760646a3) fix(web): turn MCP off without waiting on a running query ([#308](https://github.com/jspreddy/dql/pull/308))
