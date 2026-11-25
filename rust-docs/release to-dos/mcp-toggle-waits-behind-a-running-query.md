@@ -1,6 +1,6 @@
 # Turning MCP on or off waits behind a running query, and the gate flips first
 
-Status: open. Found on `0.7.12-alpha.1` in the MCP pill from #304 (`887fa7a`, `4ce9a86`).
+Status: fixed in #308 (`b97b3b8`). One gap remains: [`mcp-stream-survives-turning-mcp-off.md`](mcp-stream-survives-turning-mcp-off.md).
 
 ## What goes wrong
 

@@ -134,6 +134,10 @@ impl Store {
             .requests
             .get(id)
             .ok_or_else(|| format!("unknown request {id}"))?;
+        // Run replaces the temp table. A waiting GRANT would then grant a result nobody saw.
+        if request.granting {
+            return Err(format!("{id} is being granted"));
+        }
         match request.phase {
             Phase::Open => Ok(false),
             Phase::Ran { .. } => Ok(true),
@@ -220,13 +224,13 @@ impl Store {
     }
 
     /// `GRANT` failed. The request can be granted or denied again.
+    /// Whatever the phase: the table may have been dropped while GRANT waited.
     pub fn abort_grant(&self, id: &str) {
         let mut inner = self.lock();
         if let Some(request) = inner.requests.get_mut(id) {
-            if matches!(request.phase, Phase::Ran { .. }) {
-                request.granting = false;
-            }
+            request.granting = false;
         }
+        self.changed.notify_all();
     }
 
     /// Drop the temp table this request created, when it has one.
@@ -294,6 +298,8 @@ impl Store {
                 if !exists(table) {
                     request.phase = Phase::Open;
                     request.owns_table = false;
+                    // A GRANT waiting on this table can only fail now.
+                    request.granting = false;
                     changed = true;
                 }
             }
@@ -411,6 +417,47 @@ mod tests {
         assert_eq!(answer["status"], "granted");
         assert_eq!(answer["table"], "mcp_r1");
         assert_eq!(store.answer(id).unwrap()["status"], "granted");
+    }
+
+    #[test]
+    fn a_grant_whose_table_is_dropped_can_be_denied_after() {
+        let store = Store::new();
+        let id = store.open("SCAN * FROM orders", "mcp-a").unwrap();
+        store
+            .ran(&id, serde_json::json!({}), serde_json::json!([]), 0)
+            .unwrap();
+        // Grant is reserved and waits for the session; a script drops mcp_r1; GRANT fails.
+        store.grant(&id).unwrap();
+        store.note_missing(|_| false);
+        store.abort_grant(&id);
+        assert_eq!(store.deny(&id).unwrap(), None);
+        assert_eq!(store.answer(&id).unwrap()["status"], "denied");
+
+        // The same drop, then a fresh Run: Grant works again.
+        let id = store.open("SCAN * FROM orders", "mcp-a").unwrap();
+        store
+            .ran(&id, serde_json::json!({}), serde_json::json!([]), 0)
+            .unwrap();
+        store.grant(&id).unwrap();
+        store.note_missing(|_| false);
+        store.abort_grant(&id);
+        store
+            .ran(&id, serde_json::json!({}), serde_json::json!([]), 0)
+            .unwrap();
+        assert!(store.grant(&id).is_ok());
+    }
+
+    #[test]
+    fn run_waits_while_a_grant_is_in_flight() {
+        let store = Store::new();
+        let id = store.open("SCAN * FROM orders", "mcp-a").unwrap();
+        store
+            .ran(&id, serde_json::json!({}), serde_json::json!([]), 0)
+            .unwrap();
+        store.grant(&id).unwrap();
+        assert_eq!(store.can_run(&id), Err(format!("{id} is being granted")));
+        store.abort_grant(&id);
+        assert_eq!(store.can_run(&id), Ok(true));
     }
 
     #[test]

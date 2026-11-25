@@ -1,6 +1,6 @@
 # Grant and Deny can both pass, and Run can write a file first
 
-Status: open. Found on `0.7.12-alpha.1` while reviewing MCP grants.
+Status: fixed in #312 (`85fe411`). That fix brought a regression: [`mcp-grant-reservation-sticks-after-a-drop.md`](mcp-grant-reservation-sticks-after-a-drop.md).
 
 ## What goes wrong
 

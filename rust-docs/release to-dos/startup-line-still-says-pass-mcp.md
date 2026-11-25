@@ -1,6 +1,6 @@
 # The startup line still says MCP is only available with `--mcp`
 
-Status: open. Found on `0.7.12-alpha.1` in the MCP pill from #304.
+Status: fixed in #309 (`ff3d110`).
 
 ## What goes wrong
 

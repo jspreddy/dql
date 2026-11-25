@@ -606,11 +606,13 @@ impl App {
         if was == enabled {
             return;
         }
+        // The flag first: a stream that subscribes after the close then sees MCP off and
+        // leaves (`write_mcp_events` checks again after subscribing).
+        app.mcp.store(enabled, Ordering::SeqCst);
         if !enabled {
             app.mcp_hub.close_all();
         }
         app.hub.mcp(enabled);
-        app.mcp.store(enabled, Ordering::SeqCst);
         note_serves_mcp(app);
         let style = crate::style::Style::stdout();
         let state = if enabled { "on" } else { "off" };
@@ -2304,6 +2306,11 @@ Connection: close\r\n\
             .collect::<Vec<_>>()
     };
     let rx = app.mcp_hub.subscribe(&current);
+    // Reading the grants can wait on a running query. MCP may have been turned off meanwhile,
+    // after its streams were closed; this one subscribed too late to be closed, so it ends here.
+    if !app.mcp_enabled() {
+        return Ok(());
+    }
     stream_events(stream, &app, rx)
 }
 
@@ -2975,6 +2982,80 @@ mod tests {
         });
         assert!(seen.contains(r#"{"enabled":false}"#), "{seen}");
         drop(guard);
+    }
+
+    #[test]
+    fn an_agent_stream_waiting_on_a_query_ends_when_mcp_is_turned_off() {
+        let root = tempfile::tempdir().unwrap();
+        let token = crate::api_token::load().unwrap();
+        let app = Arc::new(App::new(
+            Session::new_memory_headless("memory"),
+            root.path().to_path_buf(),
+            true,
+            token.clone(),
+        ));
+        super::super::events::start(&app);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let served = Arc::clone(&app);
+        let stop_thread = Arc::clone(&stop);
+        let server = thread::spawn(move || accept(served, listener, stop_thread));
+
+        // A query holds the session.
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let held = Arc::clone(&app);
+        let holder = thread::spawn(move || {
+            let _guard = super::lock_state(&held);
+            ready_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+        });
+        ready_rx.recv().unwrap();
+
+        // An agent opens its stream while MCP is on. It waits on the session to replay grants.
+        let mut stream = TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_millis(200)))
+            .unwrap();
+        write!(
+            stream,
+            "GET /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nAccept: text/event-stream\r\nConnection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut buf = String::new();
+        let mut bytes = [0u8; 2048];
+        read_until(&mut stream, &mut buf, &mut bytes, |text| {
+            text.contains("200 OK")
+        });
+        assert!(buf.contains("text/event-stream"), "{buf}");
+
+        // MCP is turned off, then the query ends. The stream must not stay open.
+        App::set_mcp(&app, false);
+        release_tx.send(()).unwrap();
+        holder.join().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut closed = false;
+        while Instant::now() < deadline {
+            match stream.read(&mut bytes) {
+                Ok(0) => {
+                    closed = true;
+                    break;
+                }
+                Ok(_) => {}
+                Err(err)
+                    if err.kind() == std::io::ErrorKind::WouldBlock
+                        || err.kind() == std::io::ErrorKind::TimedOut => {}
+                Err(_) => {
+                    closed = true;
+                    break;
+                }
+            }
+        }
+        assert!(closed, "the agent stream stayed open with MCP off");
+        stop.store(true, Ordering::SeqCst);
+        let _ = TcpStream::connect(addr);
+        server.join().unwrap();
     }
 
     #[test]

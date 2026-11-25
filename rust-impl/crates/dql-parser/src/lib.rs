@@ -1833,7 +1833,8 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_primary_condition(&mut self) -> Result<Condition, ParseError> {
-        if self.accept_keyword("NOT") {
+        // `not = 1` compares an attribute named `not`; `NOT a = 1` negates.
+        if self.peek_keyword("NOT") && !self.comparison_after_word() && self.accept_keyword("NOT") {
             return Ok(Condition::Not(Box::new(self.parse_primary_condition()?)));
         }
         if self.peek_tuple_in() {
@@ -1914,7 +1915,8 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_comparison(&mut self) -> Result<Condition, ParseError> {
-        if self.accept_keyword("SIZE") {
+        // `size(tags) > 2` is the function; `size = 1` compares an attribute named `size`.
+        if self.peek_keyword("SIZE") && self.symbol_after_word('(') && self.accept_keyword("SIZE") {
             self.expect_symbol('(')?;
             let field = self.parse_field_path()?;
             self.expect_symbol(')')?;
@@ -2039,18 +2041,20 @@ impl<'a> Parser<'a> {
     }
 
     fn peek_function_condition(&self) -> bool {
-        matches!(
-            self.peek(),
-            Some(Token::Ident(value))
-                if matches!(
-                    value.to_ascii_uppercase().as_str(),
-                    "BEGINS_WITH"
-                        | "ATTRIBUTE_EXISTS"
-                        | "ATTRIBUTE_NOT_EXISTS"
-                        | "ATTRIBUTE_TYPE"
-                        | "CONTAINS"
-                )
-        )
+        // A function only when a `(` follows: `contains = 'x'` names an attribute.
+        self.symbol_after_word('(')
+            && matches!(
+                self.peek(),
+                Some(Token::Ident(value))
+                    if matches!(
+                        value.to_ascii_uppercase().as_str(),
+                        "BEGINS_WITH"
+                            | "ATTRIBUTE_EXISTS"
+                            | "ATTRIBUTE_NOT_EXISTS"
+                            | "ATTRIBUTE_TYPE"
+                            | "CONTAINS"
+                    )
+            )
     }
 
     fn parse_compare_op(&mut self) -> Result<CompareOp, ParseError> {
@@ -2441,6 +2445,23 @@ impl<'a> Parser<'a> {
         matches!(self.peek(), Some(Token::Symbol(found)) if *found == symbol)
     }
 
+    /// Whether the token after the current word is `symbol`.
+    fn symbol_after_word(&self, symbol: char) -> bool {
+        matches!(self.tokens.get(self.pos + 1), Some(Token::Symbol(found)) if *found == symbol)
+    }
+
+    /// Whether the token after the current word starts a comparison, `BETWEEN`, or `IN`, so the
+    /// word is an attribute name rather than a keyword.
+    fn comparison_after_word(&self) -> bool {
+        match self.tokens.get(self.pos + 1) {
+            Some(Token::Symbol(symbol)) => matches!(symbol, '=' | '<' | '>' | '!'),
+            Some(Token::Ident(word)) => {
+                word.eq_ignore_ascii_case("BETWEEN") || word.eq_ignore_ascii_case("IN")
+            }
+            _ => false,
+        }
+    }
+
     fn accept_star(&mut self) -> bool {
         if matches!(self.peek(), Some(Token::Star)) {
             self.pos += 1;
@@ -2758,6 +2779,80 @@ fn split_top_level_commas(raw: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The condition of a SCAN or SELECT.
+    fn condition_of(text: &str) -> Condition {
+        match parse_statement(text).unwrap_or_else(|err| panic!("{text}: {err}")) {
+            Statement::Scan { condition, .. } | Statement::Select { condition, .. } => {
+                condition.unwrap_or_else(|| panic!("{text}: no condition"))
+            }
+            other => panic!("{text}: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn function_words_are_attribute_names_without_a_call() {
+        for word in [
+            "size",
+            "not",
+            "contains",
+            "begins_with",
+            "attribute_exists",
+            "attribute_not_exists",
+            "attribute_type",
+        ] {
+            for text in [
+                format!("SCAN * FROM posts WHERE {word} = 1"),
+                format!("SELECT * FROM posts WHERE {word} = 'a'"),
+                format!("SCAN * FROM posts WHERE id = 'a' AND {word} <> 2"),
+                format!("SCAN * FROM posts WHERE {word} != 2"),
+                format!("SCAN * FROM posts WHERE {word} >= 2"),
+                format!("SCAN * FROM posts WHERE {word} BETWEEN 1 AND 5"),
+                format!("SCAN * FROM posts WHERE {word} IN (1, 2)"),
+            ] {
+                let field = match condition_of(&text) {
+                    Condition::Compare { field, .. }
+                    | Condition::Between { field, .. }
+                    | Condition::In { field, .. } => field,
+                    Condition::And(parts) => match &parts[1] {
+                        Condition::Compare { field, .. } => field.clone(),
+                        other => panic!("{text}: {other:?}"),
+                    },
+                    other => panic!("{text}: {other:?}"),
+                };
+                assert_eq!(field, word, "{text}");
+            }
+        }
+    }
+
+    #[test]
+    fn function_words_with_a_call_are_still_functions() {
+        assert!(matches!(
+            condition_of("SCAN * FROM posts WHERE size(tags) > 2"),
+            Condition::Size { field, .. } if field == "tags"
+        ));
+        assert!(matches!(
+            condition_of("SCAN * FROM posts WHERE contains(tags, 'a')"),
+            Condition::Function { name, .. } if name.eq_ignore_ascii_case("contains")
+        ));
+        assert!(matches!(
+            condition_of("SCAN * FROM posts WHERE begins_with(name, 'a')"),
+            Condition::Function { .. }
+        ));
+        assert!(matches!(
+            condition_of("SCAN * FROM posts WHERE NOT status = 'a'"),
+            Condition::Not(_)
+        ));
+        assert!(matches!(
+            condition_of("SCAN * FROM posts WHERE NOT contains(tags, 'a')"),
+            Condition::Not(_)
+        ));
+        // An attribute named size, read through the size function.
+        assert!(matches!(
+            condition_of("SCAN * FROM posts WHERE size(size) > 2"),
+            Condition::Size { field, .. } if field == "size"
+        ));
+    }
 
     #[test]
     fn parses_create_table() {

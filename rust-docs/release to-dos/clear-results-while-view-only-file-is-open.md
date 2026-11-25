@@ -1,6 +1,6 @@
 # Clear results does nothing while a view-only file is open
 
-Status: open. Found on `0.7.12-alpha.1` while reviewing the Run folder fix from #295 (`5e8e924`).
+Status: fixed in #307 and #311 (the same commit, `e9f58fb` and `0e191ea`, merged twice). The Playwright test checks that the clear request is sent, not that the saved results are gone.
 
 ## What goes wrong
 

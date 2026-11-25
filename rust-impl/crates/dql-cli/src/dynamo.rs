@@ -783,10 +783,20 @@ fn unix_process_command(pid: u32) -> Option<String> {
     Some(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// What `stop` found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Stopped {
+    /// The server was stopped, or was already stopped.
+    Done,
+    /// The recorded pid is now some other process. Nothing was killed, and the record is
+    /// forgotten; whatever owns the port now is left alone.
+    Gone,
+}
+
 /// Stop a server and wait for its port to close. Data stays.
-pub(crate) fn stop(server: &Server) -> color_eyre::Result<()> {
+pub(crate) fn stop(server: &Server) -> color_eyre::Result<Stopped> {
     if server.status == Status::Stopped {
-        return Ok(());
+        return Ok(Stopped::Done);
     }
     match server.kind {
         Kind::Java => {
@@ -799,10 +809,10 @@ pub(crate) fn stop(server: &Server) -> color_eyre::Result<()> {
                         .iter()
                         .any(|process| process.pid == pid);
                     if !is_server {
-                        bail!(
-                            "pid {pid} on port {} is not DynamoDB Local; the recorded process is gone",
-                            server.port
-                        );
+                        if server.record.is_some() {
+                            remove_record(server.port);
+                        }
+                        return Ok(Stopped::Gone);
                     }
                 }
             }
@@ -844,7 +854,7 @@ pub(crate) fn stop(server: &Server) -> color_eyre::Result<()> {
     if local::port_open(server.port) {
         bail!("port {} is still open after 15 seconds", server.port);
     }
-    Ok(())
+    Ok(Stopped::Done)
 }
 
 fn docker(args: &[&str]) -> color_eyre::Result<String> {
@@ -871,7 +881,12 @@ pub(crate) fn clean(server: &Server, purge: bool) -> color_eyre::Result<Vec<Stri
         .as_ref()
         .ok_or_else(|| eyre!("port {} was not started by dqlrs; `dqlrs dynamo stop {}` stops it, but its data is left alone", server.port, server.port))?;
     let mut done = Vec::new();
-    stop(server)?;
+    if stop(server)? == Stopped::Gone {
+        done.push(format!(
+            "Port {}: the recorded process is gone; nothing was stopped",
+            server.port
+        ));
+    }
     match record.kind {
         Kind::Java => {
             if let Some(dir) = &record.data_dir {
@@ -1246,7 +1261,14 @@ pub fn run(args: &[String]) -> color_eyre::Result<()> {
                     progress.note(&format!("Port {} is already stopped", server.port));
                     continue;
                 }
-                stop(&server)?;
+                // A stale record does not stop the loop: the next port still gets stopped.
+                if stop(&server)? == Stopped::Gone {
+                    progress.note(&format!(
+                        "Port {}: the recorded process is gone, so nothing was stopped and its record is forgotten",
+                        server.port
+                    ));
+                    continue;
+                }
                 progress.say_check(&format!(
                     "Stopped DynamoDB Local on port {} ({}); its data stays",
                     server.port,
@@ -1519,6 +1541,68 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn clean_forgets_a_record_whose_pid_is_not_dynamodb_local() {
+        // The recorded pid now belongs to `sleep`. Clean must not kill it, and must still
+        // remove the record's data folder instead of failing on the stale pid.
+        let child = Command::new("sleep")
+            .arg("60")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        struct Reap(Option<std::process::Child>);
+        impl Drop for Reap {
+            fn drop(&mut self) {
+                if let Some(mut child) = self.0.take() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        }
+        let mut reap = Reap(Some(child));
+        let data = tempfile::tempdir().unwrap();
+        let data_dir = data.path().join("db");
+        std::fs::create_dir_all(&data_dir).unwrap();
+        let record = Record {
+            kind: Kind::Java,
+            port: 59992,
+            pid: Some(pid),
+            data_dir: Some(data_dir.clone()),
+            compose_file: None,
+            container: None,
+            data: data_dir.display().to_string(),
+            workspace: None,
+            started_at: 0,
+        };
+        let server = Server {
+            port: 59992,
+            kind: Kind::Java,
+            status: Status::Running,
+            owner: Owner::Dqlrs,
+            pid: Some(pid),
+            container: None,
+            data: data_dir.display().to_string(),
+            workspace: None,
+            started_at: None,
+            record: Some(record),
+        };
+        let done = clean(&server, false).unwrap();
+        assert!(
+            reap.0.as_mut().unwrap().try_wait().unwrap().is_none(),
+            "clean killed pid {pid} (sleep)"
+        );
+        assert!(!data_dir.exists(), "clean left the data folder: {done:?}");
+        assert!(
+            done.iter()
+                .any(|line| line.contains("recorded process is gone")),
+            "{done:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn stop_does_not_kill_a_unix_process_that_is_not_dynamodb_local() {
         // `sleep` is alive and is not `java -jar DynamoDBLocal.jar`. Stop must refuse it.
         // The recorded pid is only checked with `kill -0` plus an open port today, then killed.
@@ -1558,9 +1642,10 @@ mod tests {
             still_alive,
             "stop killed pid {pid} (sleep), which is not DynamoDB Local; result={result:?}"
         );
-        assert!(
-            result.is_err(),
-            "stop reported success for a process that is not DynamoDB Local"
+        assert_eq!(
+            result.unwrap(),
+            Stopped::Gone,
+            "stop must say the recorded process is gone"
         );
     }
 
