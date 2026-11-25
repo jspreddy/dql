@@ -1,6 +1,6 @@
 # An agent stream can stay open after MCP is turned off
 
-Status: open. Found on `v-rust` at `90c492c` while reviewing #308 (`b97b3b8`).
+Status: fixed on `fix/release-review-followups`. Found on `v-rust` at `90c492c` while reviewing #308 (`b97b3b8`).
 
 ## What goes wrong
 
