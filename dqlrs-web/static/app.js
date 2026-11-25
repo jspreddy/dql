@@ -1527,7 +1527,7 @@ const tableQuery = attachTableQuery(document.querySelector("#table-query"), {
   // The server builds the statement from the read: the preview shows exactly what Run runs.
   async preview(read) {
     const payload = await api("/api/table-read", { method: "POST", body: read });
-    return { dql: payload.dql || "", error: payload.error || "" };
+    return { dql: payload.dql || "", error: payload.error || "", keysLeftOut: payload.keysLeftOut || 0 };
   },
   onChange({ table, read, dql, error }) {
     tableQueryDraft = {

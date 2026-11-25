@@ -36,223 +36,7 @@ export const FILTER_OPS = [...COMPARE_OPS, ...FUNCTION_OPS];
 
 export const ATTR_TYPES = ["S", "N", "B", "BOOL", "NULL", "L", "M", "SS", "NS", "BS"];
 
-const IDENT = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 
-// The parser accepts any identifier, including words the highlighter paints as
-// keywords. A name that is not an identifier cannot be quoted into a statement:
-// the lexer treats quotes as strings and does not treat '' as an escape.
-export function quoteIdent(name) {
-  const text = String(name || "");
-  return IDENT.test(text) ? text : "";
-}
-
-function unusableName(name) {
-  const text = String(name || "").trim();
-  if (!text || IDENT.test(text)) return "";
-  return text;
-}
-
-export function quoteValue(raw, type) {
-  const text = String(raw ?? "");
-  const trimmed = text.trim();
-  const kind = String(type || "").toUpperCase();
-  if (kind === "NUMBER" || kind === "N") return trimmed;
-  if ((kind === "BOOL" || kind === "BOOLEAN") && /^(true|false)$/i.test(trimmed)) {
-    return trimmed.toUpperCase();
-  }
-  if (!kind) {
-    if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) return trimmed;
-    if (/^(true|false|null)$/i.test(trimmed)) return trimmed.toUpperCase();
-  }
-  return "'" + text.replaceAll("'", "''") + "'";
-}
-
-const NUMBER_TEXT = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
-
-/**
- * Why `raw` cannot be a value of key `name` with attribute `type`, or "" when it can. Only a
- * NUMBER key can reject a value: a string key quotes whatever is typed. Without this check a
- * number key passes the text into the statement unquoted, and the error only shows after Run.
- */
-export function keyValueError(name, type, raw) {
-  const kind = String(type || "").toUpperCase();
-  const text = String(raw ?? "").trim();
-  if ((kind === "NUMBER" || kind === "N") && text && !NUMBER_TEXT.test(text)) {
-    return `${name} is a number. ${JSON.stringify(text)} is not.`;
-  }
-  return "";
-}
-
-export function parseBatchKeys(text) {
-  const src = String(text || "");
-  let i = 0;
-  const keys = [];
-  const errors = [];
-
-  const isSep = (ch) => ch === "," || ch === "\n" || ch === "\r";
-  const isSpace = (ch) => ch === " " || ch === "\t";
-
-  function lineAt(index) {
-    let line = 1;
-    for (let pos = 0; pos < index && pos < src.length; pos += 1) {
-      if (src[pos] === "\n") line += 1;
-    }
-    return line;
-  }
-
-  function skipIdle() {
-    while (i < src.length && (isSpace(src[i]) || isSep(src[i]))) i += 1;
-  }
-
-  function skipSpace() {
-    while (i < src.length && isSpace(src[i])) i += 1;
-  }
-
-  function parseQuoted(quote) {
-    i += 1;
-    let out = "";
-    while (i < src.length) {
-      const ch = src[i];
-      if (ch === quote && src[i + 1] === quote) {
-        out += quote;
-        i += 2;
-        continue;
-      }
-      if (ch === quote) {
-        i += 1;
-        return out;
-      }
-      out += ch;
-      i += 1;
-    }
-    return null;
-  }
-
-  function parseBare() {
-    const start = i;
-    while (i < src.length) {
-      const ch = src[i];
-      if (isSep(ch) || ch === "(" || ch === ")") break;
-      i += 1;
-    }
-    return src.slice(start, i).trim();
-  }
-
-  function parseValue() {
-    skipSpace();
-    if (i >= src.length) return { ok: true, value: "" };
-    const ch = src[i];
-    if (ch === "'" || ch === '"') {
-      const start = i;
-      const value = parseQuoted(ch);
-      if (value === null) return { ok: false, error: `Line ${lineAt(start)} has an unclosed quote.` };
-      return { ok: true, value };
-    }
-    if (isSep(ch) || ch === "(" || ch === ")") return { ok: true, value: "" };
-    return { ok: true, value: parseBare() };
-  }
-
-  function collapseGroup(elems, openAt) {
-    if (elems.every((elem) => elem.type === "value")) {
-      // A tuple is a (hash, range) pair. Three or more plain values in one group is not a key.
-      if (elems.length > 2) {
-        errors.push(`Line ${lineAt(openAt)}: a key has at most two parts: (hash, range).`);
-        return [];
-      }
-      if (elems.length === 2) return [[elems[0].value, elems[1].value]];
-      return elems.map((elem) => [elem.value]);
-    }
-    const nested = [];
-    for (const elem of elems) {
-      if (elem.type === "value") nested.push([elem.value]);
-      else nested.push(...elem.keys);
-    }
-    return nested;
-  }
-
-  function parseGroup(openAt) {
-    const elems = [];
-    while (i < src.length) {
-      skipIdle();
-      if (i >= src.length) {
-        errors.push(`Line ${lineAt(openAt)} has an unclosed (.`);
-        return collapseGroup(elems, openAt);
-      }
-      if (src[i] === ")") {
-        i += 1;
-        return collapseGroup(elems, openAt);
-      }
-      if (src[i] === "(") {
-        const nestedAt = i;
-        i += 1;
-        elems.push({ type: "keys", keys: parseGroup(nestedAt) });
-        continue;
-      }
-      const value = parseValue();
-      if (!value.ok) {
-        errors.push(value.error);
-        return collapseGroup(elems, openAt);
-      }
-      if (value.value) elems.push({ type: "value", value: value.value });
-    }
-    errors.push(`Line ${lineAt(openAt)} has an unclosed (.`);
-    return collapseGroup(elems, openAt);
-  }
-
-  skipIdle();
-  while (i < src.length) {
-    skipIdle();
-    if (i >= src.length) break;
-    const start = i;
-    if (src[i] === ")") {
-      errors.push(`Line ${lineAt(start)} has an extra ).`);
-      i += 1;
-      continue;
-    }
-    if (src[i] === "(") {
-      i += 1;
-      keys.push(...parseGroup(start));
-      continue;
-    }
-    const value = parseValue();
-    if (!value.ok) {
-      errors.push(value.error);
-      break;
-    }
-    if (value.value) keys.push([value.value]);
-  }
-  return { keys, errors };
-}
-
-/**
- * `keys` without repeats, and how many were dropped. Two keys are the same when they name the
- * same values (as DynamoDB sees them: 1 and 1.0 are one number). A pair whose hash value is also
- * listed alone is dropped too: the lone value already reads every item under that hash key.
- * DynamoDB rejects a batch get whose key list repeats a key, so this is more than tidying up.
- */
-export function dedupeKeys(keys, table, extra, source) {
-  const src = source || tableSource(table);
-  const canonical = (value, name) => {
-    const type = String(attributeType(table, extra, name) || "").toUpperCase();
-    const text = String(value ?? "").trim();
-    if ((type === "NUMBER" || type === "N") && text && Number.isFinite(Number(text))) return `N:${Number(text)}`;
-    return `S:${String(value ?? "")}`;
-  };
-  const hashes = new Set(
-    (src.rangeKey ? keys || [] : []).filter((fields) => fields.length === 1).map((fields) => canonical(fields[0], src.hashKey)),
-  );
-  const seen = new Set();
-  const unique = [];
-  for (const fields of keys || []) {
-    const hash = canonical(fields[0], src.hashKey);
-    if (fields.length > 1 && hashes.has(hash)) continue;
-    const id = fields.map((value, index) => canonical(value, index === 0 ? src.hashKey : src.rangeKey)).join("\u0000");
-    if (seen.has(id)) continue;
-    seen.add(id);
-    unique.push(fields);
-  }
-  return { keys: unique, dropped: (keys || []).length - unique.length };
-}
 
 /**
  * Pieces of the Keys box text for highlighting, covering every character in order:
@@ -371,28 +155,6 @@ export function keyHighlightSpans(text) {
   }));
 }
 
-export function formatKeysInClause(keys, table, extra, source) {
-  const src = source || tableSource(table);
-  return (keys || []).map((fields) => {
-    const quoted = fields.map((value, index) => {
-      const name = index === 0 ? src.hashKey : src.rangeKey;
-      return quoteValue(value, attributeType(table, extra, name));
-    });
-    return quoted.length === 1 ? quoted[0] : `(${quoted.join(", ")})`;
-  }).join(", ");
-}
-
-export function formatIndexKeySelect(tableName, source, fields, table, extra) {
-  const hash = source && source.hashKey ? source.hashKey : "id";
-  const hashVal = quoteValue(fields[0], attributeType(table, extra, hash));
-  let sql = `SELECT * FROM ${quoteIdent(tableName)} WHERE ${quoteIdent(hash)} = ${hashVal}`;
-  if (fields.length > 1 && source && source.rangeKey) {
-    sql += ` AND ${quoteIdent(source.rangeKey)} = ${quoteValue(fields[1], attributeType(table, extra, source.rangeKey))}`;
-  }
-  if (usesIndex(source)) sql += usingClause(source);
-  return sql;
-}
-
 export function batchKeyHint(table, sourceName) {
   const source = sourceOf(table, sourceName, "query");
   const hash = source.hashKey || "hash";
@@ -400,27 +162,6 @@ export function batchKeyHint(table, sourceName) {
     return `${hash} keys, or (${hash}, ${source.rangeKey}) pairs`;
   }
   return `${hash} keys: a, b, c`;
-}
-
-export function keysModeError(table, parsed, sourceName, extra) {
-  const result = parsed || parseBatchKeys("");
-  if (result.errors.length) return result.errors[0];
-  if (!result.keys.length) return "Keys needs at least one key.";
-  const source = sourceOf(table, sourceName, "query");
-  const tablePk = !usesIndex(source);
-  const hasRange = Boolean(source.rangeKey);
-  if (!hasRange && result.keys.some((key) => key.length > 1)) {
-    return tablePk ? "This table only has a hash key." : "This index only has a hash key.";
-  }
-  for (const fields of result.keys) {
-    for (const [index, value] of fields.entries()) {
-      const name = index === 0 ? source.hashKey : source.rangeKey;
-      if (!name) continue;
-      const message = keyValueError(name, attributeType(table, extra, name), value);
-      if (message) return message;
-    }
-  }
-  return "";
 }
 
 export function opById(id, ops) {
@@ -440,20 +181,6 @@ export function opsFor(kind, role, mode) {
  * Keys mode reads by primary key, where the table and "--" are the same read (KEYS IN).
  */
 export const TABLE_SOURCE = "-";
-
-/** True when `source` names an index rather than "--" or the table. */
-export function usesIndex(source) {
-  return Boolean(source && source.name && source.name !== TABLE_SOURCE);
-}
-
-/** ` USING …` for `source`, or "" for "--". */
-export function usingClause(source) {
-  if (!source || !source.name) return "";
-  if (source.name === TABLE_SOURCE) return " USING " + TABLE_SOURCE;
-  const name = quoteIdent(source.name);
-  if (!name) return "";
-  return " USING " + name;
-}
 
 export function tableSource(table) {
   const keys = Array.isArray(table && table.keys) ? table.keys : [];
@@ -563,33 +290,6 @@ export function keyAttributeSuggestions(table, sourceName, mode, extraNames) {
   return names;
 }
 
-export function formatCondition(row, table, extra) {
-  if (!row || !row.attribute) return "";
-  const ops = opsFor(row.kind || "filter", row.role, row.mode);
-  const op = opById(row.op, ops);
-  const field = quoteIdent(row.attribute);
-  if (!field) return "";
-  const type = attributeType(table, extra, row.attribute);
-  const values = op.values === 0 ? 0 : op.values === 2 ? 2 : 1;
-  if (values === 1 && !String(row.value ?? "").length && !op.type && !op.size) return "";
-  if (op.size && !String(row.value ?? "").length) return "";
-  if (values === 2 && (!String(row.value ?? "").length || !String(row.value2 ?? "").length)) return "";
-  if (op.size) {
-    const cmp = SIZE_COMPARE_OPS.find((item) => item.id === (row.sizeOp || "gt")) || SIZE_COMPARE_OPS.find((item) => item.id === "gt");
-    return `size(${field}) ${cmp.dql} ${quoteValue(row.value, "NUMBER")}`;
-  }
-  if (op.fn && values === 0) return `${op.dql}(${field})`;
-  if (op.fn && op.type) {
-    const ty = String(row.value || "S").trim() || "S";
-    return `${op.dql}(${field}, '${ty.replaceAll("'", "''")}')`;
-  }
-  if (op.fn) return `${op.dql}(${field}, ${quoteValue(row.value, type)})`;
-  if (op.id === "between") {
-    return `${field} BETWEEN ${quoteValue(row.value, type)} AND ${quoteValue(row.value2, type)}`;
-  }
-  return `${field} ${op.dql} ${quoteValue(row.value, type)}`;
-}
-
 export function defaultReadState() {
   return {
     source: "",
@@ -629,115 +329,6 @@ export function ensureQueryKeys(table, state) {
     ...next.keys,
   ];
   return next;
-}
-
-// Every name the statement will contain, with what it is. The statement and readError use the
-// same list, so a name that cannot be written is always reported, and a name the statement does
-// not use (a key attribute in a plain Scan) never blocks it.
-function statementNames(tableName, table, current, source) {
-  const names = [[tableName || (table && table.name) || "", "table"]];
-  for (const row of current.keys || []) names.push([row && row.attribute, "key"]);
-  for (const row of current.filters || []) names.push([row && row.attribute, "filter"]);
-  if (source && source.name && source.name !== TABLE_SOURCE) names.push([source.name, "index"]);
-  if (source && current.mode === "keys" && usesIndex(source)) {
-    // An index key read is a SELECT ... WHERE on the index keys.
-    names.push([source.hashKey, "key"], [source.rangeKey, "key"]);
-  }
-  if (source && current.mode === "scan" && current.order === "reverse") {
-    names.push([source.rangeKey || source.hashKey, "key"]);
-  }
-  return names.filter(([name]) => String(name || "").trim());
-}
-
-function unusableStatementName(tableName, table, current) {
-  const source = sourceOf(table, current.source, current.mode === "keys" ? "query" : current.mode);
-  for (const [value, kind] of statementNames(tableName, table, current, source)) {
-    const bad = unusableName(value);
-    if (bad) return `${bad} cannot be used as a ${kind} name`;
-  }
-  return "";
-}
-
-export function buildReadStatement(tableName, table, state, extra) {
-  const name = tableName || (table && table.name) || "";
-  if (!name || !IDENT.test(name)) return "";
-  const current = ensureQueryKeys(table, state || defaultReadState());
-  if (unusableStatementName(name, table, current)) return "";
-  if (current.mode === "keys") {
-    const parsed = parseBatchKeys(current.batchKeys);
-    if (keysModeError(table, parsed, current.source, extra)) return "";
-    const source = sourceOf(table, current.source, "query");
-    const { keys } = dedupeKeys(parsed.keys, table, extra, source);
-    if (usesIndex(source)) {
-      return keys
-        .map((fields) => formatIndexKeySelect(name, source, fields, table, extra))
-        .join("; ");
-    }
-    // One KEYS IN for the table. dqlrs reads whole keys with a batch get and, on a table with a
-    // range key, every item under a lone hash value.
-    return `SELECT * FROM ${quoteIdent(name)} KEYS IN ${formatKeysInClause(keys, table, extra, source)}`;
-  }
-  const source = sourceOf(table, current.source, current.mode);
-  const verb = current.mode === "query" ? "SELECT" : "SCAN";
-  const keys = (current.keys || []).map((row) => formatCondition({
-    ...row,
-    kind: "key",
-    mode: current.mode,
-    role: row.role || sourceKeys(table, current.source, current.mode).find((key) => key.name === row.attribute)?.role,
-  }, table, extra)).filter(Boolean);
-  const filters = (current.filters || []).map((row) => formatCondition({
-    ...row,
-    kind: "filter",
-    mode: current.mode,
-  }, table, extra)).filter(Boolean);
-  const where = [...keys, ...filters];
-  let sql = `${verb} * FROM ${quoteIdent(name)}`;
-  if (where.length) sql += " WHERE " + where.join(" AND ");
-  sql += usingClause(source);
-  if (current.order === "reverse") {
-    if (current.mode === "query") sql += " DESC";
-    else {
-      const field = source.rangeKey || source.hashKey;
-      if (field) sql += " ORDER BY " + quoteIdent(field) + " DESC";
-    }
-  }
-  return sql;
-}
-
-export function readError(table, state, extra) {
-  const current = ensureQueryKeys(table, state || defaultReadState());
-  const unusable = unusableStatementName((table && table.name) || "", table, current);
-  if (unusable) return unusable;
-  if (current.mode === "keys") {
-    return keysModeError(table, parseBatchKeys(current.batchKeys), current.source, extra);
-  }
-  if (current.mode === "query") {
-    const hash = sourceKeys(table, current.source, current.mode).find((key) => key.role === "hash");
-    const row = hash
-      ? (current.keys || []).find((item) => item.attribute === hash.name)
-      : (current.keys || []).find((item) => String(item.attribute || "").trim());
-    if (!row || !String(row.attribute || "").trim()) return "Query needs a hash key.";
-    if (!String(row.value ?? "").length) return "Query needs a hash key value.";
-  }
-  return keyRowsError(table, current, extra);
-}
-
-// The key rows of Query and Scan compare a typed key with what was typed. A NUMBER key must get
-// a number, the same check Keys mode makes.
-function keyRowsError(table, current, extra) {
-  for (const row of current.keys || []) {
-    const name = String(row.attribute || "").trim();
-    if (!name) continue;
-    const op = opById(row.op, opsFor("key", row.role, current.mode));
-    if (op.fn || op.size || op.type || op.values === 0) continue;
-    const type = attributeType(table, extra, name);
-    const values = op.values === 2 ? [row.value, row.value2] : [row.value];
-    for (const value of values) {
-      const message = keyValueError(name, type, value);
-      if (message) return message;
-    }
-  }
-  return "";
 }
 
 function option(select, value, label, selected) {
@@ -857,8 +448,8 @@ const PREVIEW_DELAY_MS = 120;
 export function attachTableQuery(host, handlers = {}) {
   const onRun = handlers.onRun || (() => {});
   const onChange = handlers.onChange || (() => {});
-  // `preview(read)` resolves to `{ dql, error }` from the server. Without it (unit tests), the
-  // local builder answers.
+  // `preview(read)` resolves to `{ dql, error, keysLeftOut }` from the server, which builds every
+  // statement. Without it there is no preview and Run stays off.
   const previewRead = handlers.preview || null;
   let table = null;
   let extra = new Map();
@@ -893,14 +484,6 @@ export function attachTableQuery(host, handlers = {}) {
 
   function currentSource() {
     return sourceOf(table, state.source, state.mode);
-  }
-
-  function statement() {
-    return buildReadStatement(table && table.name, table, state, extra);
-  }
-
-  function error() {
-    return readError(table, state, extra);
   }
 
   function unusedKeys() {
@@ -1088,14 +671,15 @@ export function attachTableQuery(host, handlers = {}) {
   }
 
   // The last answer for the current read, and the request that is still out, if any.
-  let shown = { dql: "", error: "" };
+  let shown = { dql: "", error: "", keysLeftOut: 0 };
   let previewSeq = 0;
   let previewTimer = null;
   let pending = null;
   let ranFollowsPreview = false;
 
   function showPreview(result) {
-    shown = { dql: result.dql || "", error: result.error || "" };
+    shown = { dql: result.dql || "", error: result.error || "", keysLeftOut: Number(result.keysLeftOut) || 0 };
+    paintBatchHint();
     paintPreview(preview, shown.dql);
     errorNode.textContent = shown.error;
     errorNode.hidden = !shown.error;
@@ -1114,7 +698,7 @@ export function attachTableQuery(host, handlers = {}) {
   function refresh(immediate) {
     if (!table || !table.name) return;
     if (!previewRead) {
-      showPreview({ dql: statement(), error: error() });
+      showPreview({ dql: "", error: "" });
       return;
     }
     const seq = ++previewSeq;
@@ -1149,16 +733,10 @@ export function attachTableQuery(host, handlers = {}) {
     return kind === "key" ? state.keys : state.filters;
   }
 
-  // The hint under the Keys box says how many repeated keys the statement leaves out.
+  // The hint under the Keys box says how many repeated keys the server's statement leaves out.
   function paintBatchHint() {
     const hint = batchKeyHint(table, state.source);
-    let dropped = 0;
-    if (state.mode === "keys") {
-      const parsed = parseBatchKeys(state.batchKeys);
-      if (!parsed.errors.length) {
-        dropped = dedupeKeys(parsed.keys, table, extra, sourceOf(table, state.source, "query")).dropped;
-      }
-    }
+    const dropped = state.mode === "keys" ? shown.keysLeftOut : 0;
     batchHint.textContent = dropped
       ? `${hint} · ${dropped} repeated ${dropped === 1 ? "key" : "keys"} left out`
       : hint;

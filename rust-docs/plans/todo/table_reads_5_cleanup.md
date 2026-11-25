@@ -2,7 +2,7 @@
 
 **Priority:** High  
 **Area:** `dqlrs-web/static/table-query.js`, `web/server.rs`, tests  
-**Status:** Not started. Step 5 of [`table_reads_server.md`](table_reads_server.md). Needs steps 3 and 4.
+**Status:** Done on `table-reads/5-cleanup`. Step 5 of [`table_reads_server.md`](table_reads_server.md). Needs steps 3 and 4.
 
 ## Change
 

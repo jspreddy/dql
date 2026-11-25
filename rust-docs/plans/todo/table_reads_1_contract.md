@@ -57,8 +57,9 @@ Mark those with `"fixes"` naming the bug, such as `"value with a quote"`.
 
 ## Tests
 
-- A Node test runs every case through the current `buildReadStatement` and `readError` and
-  checks `dql` and `error`, skipping cases marked `fixes`.
+- A Node test ran every case through the JavaScript `buildReadStatement` and `readError`,
+  skipping cases marked `fixes`, until step 5 removed that builder. The file is now the Rust
+  builder's test data.
 - The Rust builder in step 2 runs every case, including the `fixes` cases.
 
 ## Out of scope

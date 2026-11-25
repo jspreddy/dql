@@ -11,8 +11,9 @@ use serde::Deserialize;
 
 use super::shape::ListedTable;
 
-/// The read the table browser sends.
-#[derive(Clone, Debug, Default, Deserialize)]
+/// The read the table browser sends. A field it leaves out takes the picker's starting value: a
+/// forward Scan of the table.
+#[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TableRead {
     pub table: String,
@@ -27,6 +28,21 @@ pub struct TableRead {
     pub batch_keys: String,
     /// Attribute names seen in rows that the definition does not list. They have no type.
     pub extra: Vec<String>,
+}
+
+impl Default for TableRead {
+    fn default() -> Self {
+        Self {
+            table: String::new(),
+            mode: "scan".to_string(),
+            source: String::new(),
+            order: "forward".to_string(),
+            keys: Vec::new(),
+            filters: Vec::new(),
+            batch_keys: String::new(),
+            extra: Vec::new(),
+        }
+    }
 }
 
 /// One key or filter row.
@@ -730,6 +746,12 @@ impl<'a> Prepared<'a> {
         if self.read.table.trim().is_empty() {
             return Some("Choose a table.".to_string());
         }
+        if !matches!(self.read.mode.as_str(), "scan" | "query" | "keys") {
+            return Some(format!(
+                "mode must be scan, query, or keys, not {:?}",
+                self.read.mode
+            ));
+        }
         if let Some(error) = self.name_error() {
             return Some(error);
         }
@@ -983,6 +1005,21 @@ impl<'a> Prepared<'a> {
     }
 }
 
+/// How many keys the Keys box lists that the read leaves out: repeats, and pairs a lone hash
+/// value already covers. Zero outside Keys mode or while the box does not parse.
+pub fn keys_left_out(table: &ListedTable, read: &TableRead) -> usize {
+    if read.mode != "keys" {
+        return 0;
+    }
+    let parsed = parse_batch_keys(&read.batch_keys);
+    if !parsed.errors.is_empty() {
+        return 0;
+    }
+    let source = source_of(table, &read.source, "query");
+    let listed = parsed.keys.len();
+    listed - dedupe_keys(parsed.keys, table, &source).len()
+}
+
 /// The statements a read runs, in order, or the message that says why it cannot run. Never an
 /// empty list without a message.
 pub fn plan(table: &ListedTable, read: &TableRead) -> Result<Vec<String>, String> {
@@ -1108,6 +1145,28 @@ mod tests {
         for bad in ["", "abc", "1e", "e3", "1.2.3", "--1", "+", "."] {
             assert_eq!(decimal(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn keys_left_out_counts_repeats_and_covered_pairs() {
+        let case = cases()
+            .into_iter()
+            .find(|case| case.table.name == "posts")
+            .unwrap();
+        let read = |batch_keys: &str| TableRead {
+            table: "posts".to_string(),
+            mode: "keys".to_string(),
+            batch_keys: batch_keys.to_string(),
+            ..TableRead::default()
+        };
+        assert_eq!(keys_left_out(&case.table, &read("a, a, b")), 1);
+        assert_eq!(keys_left_out(&case.table, &read("(a, 1), a, (b, 1)")), 1);
+        assert_eq!(
+            keys_left_out(&case.table, &read("(a, 1), (a, 1.0), (a, 2)")),
+            1
+        );
+        assert_eq!(keys_left_out(&case.table, &read("a, b")), 0);
+        assert_eq!(keys_left_out(&case.table, &read("(a, 1")), 0);
     }
 
     #[test]

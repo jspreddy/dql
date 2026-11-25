@@ -2,7 +2,7 @@
 
 **Priority:** High  
 **Area:** `dqlrs web` table browser (`dqlrs-web/static/table-query.js`, `web/server.rs`)  
-**Status:** Not started. This is the overview. The step plans below own the work.
+**Status:** Steps 1 to 5 done on stacked branches `table-reads/1-contract` to `table-reads/5-cleanup`. Step 6 is deferred. This is the overview. The step plans below own the work.
 
 ## Problem
 

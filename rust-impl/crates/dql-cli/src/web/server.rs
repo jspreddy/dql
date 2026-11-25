@@ -871,9 +871,8 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
         }
         "/api/explain" => {
             let name = query_value(query, "table");
-            let dql = query_value(query, "dql");
             let mut state = lock_state(app);
-            match table_explain(&mut state, &name, &dql) {
+            match table_explain(&mut state, &name) {
                 Ok(payload) => Reply::Json(200, payload),
                 Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
             }
@@ -884,11 +883,10 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
                 .parse::<i64>()
                 .unwrap_or(0)
                 .max(0) as usize;
-            let dql = query_value(query, "dql");
             // A fresh read starts uncancelled; /api/stop cancels it like an editor run.
             app.cancel.clear();
             let mut state = lock_state(app);
-            match table_rows(&mut state, &name, page, &dql) {
+            match table_rows(&mut state, &name, page) {
                 Ok(payload) => Reply::Json(200, payload),
                 Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
             }
@@ -1569,15 +1567,24 @@ fn table_read_reply(app: &App, body: &[u8]) -> Reply {
         let mut state = lock_state(app);
         read_table(&mut state, &read.table)
     };
-    let planned = table.and_then(|table| table_read::plan(&table, &read));
+    let planned = table.and_then(|table| {
+        let left_out = table_read::keys_left_out(&table, &read);
+        table_read::plan(&table, &read).map(|statements| (statements, left_out))
+    });
     match planned {
-        Ok(statements) => Reply::Json(
+        Ok((statements, left_out)) => Reply::Json(
             200,
-            json!({"ok": true, "dql": statements.join("; "), "statements": statements, "error": ""}),
+            json!({
+                "ok": true,
+                "dql": statements.join("; "),
+                "statements": statements,
+                "error": "",
+                "keysLeftOut": left_out,
+            }),
         ),
         Err(error) => Reply::Json(
             200,
-            json!({"ok": true, "dql": "", "statements": [], "error": error}),
+            json!({"ok": true, "dql": "", "statements": [], "error": error, "keysLeftOut": 0}),
         ),
     }
 }
@@ -1790,10 +1797,19 @@ fn load_shape(state: &mut WebState, name: &str) -> Option<TableShape> {
     Some(shape)
 }
 
-fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Result<Value, String> {
-    let fetch_limit = rows_fetch_limit(page);
-    let (statements, _) = browser_read_dql(name, dql, fetch_limit)?;
-    run_table_rows(state, name, page, statements)
+/// A table's pages before the picker has a read: `SCAN * FROM name`, a page at a time. A read
+/// from the picker goes to `POST /api/rows`.
+fn table_rows(state: &mut WebState, name: &str, page: usize) -> Result<Value, String> {
+    let statement = first_pages(name, rows_fetch_limit(page))?;
+    run_table_rows(state, name, page, vec![statement])
+}
+
+/// `SCAN * FROM name LIMIT limit`, for a table with no read yet.
+fn first_pages(name: &str, limit: usize) -> Result<String, String> {
+    if !safe_table_name(name) {
+        return Err(format!("unsupported table name {name:?}"));
+    }
+    Ok(format!("SCAN * FROM {name} LIMIT {limit}"))
 }
 
 /// How many rows a page reads: every row up to its end, and one more to know whether there is a
@@ -1891,12 +1907,9 @@ fn run_table_rows(
 
 /// EXPLAIN for the table browser: the plan of each statement its first page would run, with the
 /// same LIMIT as `/api/rows`, so the plan matches what Run reads.
-fn table_explain(state: &mut WebState, name: &str, dql: &str) -> Result<Value, String> {
-    if !safe_table_name(name) {
-        return Err(format!("unsupported table name {name:?}"));
-    }
-    let (statements, _) = browser_read_dql(name, dql, PAGE_SIZE.saturating_add(1))?;
-    run_table_explain(state, name, statements)
+fn table_explain(state: &mut WebState, name: &str) -> Result<Value, String> {
+    let statement = first_pages(name, PAGE_SIZE.saturating_add(1))?;
+    run_table_explain(state, name, vec![statement])
 }
 
 fn run_table_explain(
@@ -1918,15 +1931,6 @@ fn run_table_explain(
         }));
     }
     Ok(json!({"name": name, "plans": plans}))
-}
-
-/// SCAN/SELECT of `name` only. Paged reads append LIMIT; KEYS IN and multi-query keys cannot.
-fn browser_read_dql(name: &str, dql: &str, limit: usize) -> Result<(Vec<String>, bool), String> {
-    let text = dql.trim().trim_end_matches(';').trim();
-    if text.is_empty() {
-        return Ok((vec![format!("SCAN * FROM {name} LIMIT {limit}")], true));
-    }
-    browser_statements(name, split_statements(text), limit)
 }
 
 /// The statements of one table-browser read, checked and limited: each a SELECT or SCAN of
@@ -4140,14 +4144,10 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         assert_eq!(page_json["items"].as_array().unwrap().len(), 3);
         assert_eq!(page_json["dql"], "SCAN * FROM posts LIMIT 51");
 
-        let queried = http_body(
+        let queried = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("SELECT * FROM posts WHERE id = 'a'")
-            ),
-            "",
+            json!({"table": "posts", "mode": "query", "keys": [{"attribute": "id", "op": "eq", "value": "a", "role": "hash"}]}),
+            0,
         );
         let queried_json: Value = serde_json::from_str(&queried).expect(&queried);
         assert_eq!(queried_json["items"].as_array().unwrap().len(), 2);
@@ -4160,52 +4160,36 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             "{queried}"
         );
 
-        let newest = http_body(
+        let newest = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("SELECT * FROM posts WHERE id = 'a' DESC")
-            ),
-            "",
+            json!({"table": "posts", "mode": "query", "order": "reverse", "keys": [{"attribute": "id", "op": "eq", "value": "a", "role": "hash"}]}),
+            0,
         );
         let newest_json: Value = serde_json::from_str(&newest).expect(&newest);
         assert_eq!(newest_json["items"][0]["sk"], 2);
         assert_eq!(newest_json["items"][1]["sk"], 1);
 
-        let filtered = http_body(
+        let filtered = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("SCAN * FROM posts WHERE status = 'open'")
-            ),
-            "",
+            json!({"table": "posts", "mode": "scan", "filters": [{"attribute": "status", "op": "eq", "value": "open"}]}),
+            0,
         );
         let filtered_json: Value = serde_json::from_str(&filtered).expect(&filtered);
         assert_eq!(filtered_json["items"].as_array().unwrap().len(), 2);
 
-        let indexed = http_body(
+        let indexed = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("SELECT * FROM posts WHERE sk = 1 USING by-sk")
-            ),
-            "",
+            json!({"table": "posts", "mode": "query", "source": "by-sk", "keys": [{"attribute": "sk", "op": "eq", "value": "1", "role": "hash"}]}),
+            0,
         );
         let indexed_json: Value = serde_json::from_str(&indexed).expect(&indexed);
         assert_eq!(indexed_json["items"].as_array().unwrap().len(), 1);
         assert_eq!(indexed_json["items"][0]["id"], "a");
 
-        let by_keys = http_body(
+        let by_keys = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("SELECT * FROM posts KEYS IN ('a', 1), ('b', 3)")
-            ),
-            "",
+            json!({"table": "posts", "mode": "keys", "batchKeys": "(a, 1), (b, 3)"}),
+            0,
         );
         let by_keys_json: Value = serde_json::from_str(&by_keys).expect(&by_keys);
         assert_eq!(by_keys_json["items"].as_array().unwrap().len(), 2);
@@ -4215,54 +4199,38 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         );
         assert_eq!(by_keys_json["has_more"], false);
 
-        let grouped_keys = http_body(
+        let grouped_keys = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("SELECT * FROM posts KEYS IN ((a, 1), (b, 3)),")
-            ),
-            "",
+            json!({"table": "posts", "mode": "keys", "batchKeys": "((a, 1), (b, 3)),"}),
+            0,
         );
         let grouped_keys_json: Value = serde_json::from_str(&grouped_keys).expect(&grouped_keys);
         assert_eq!(grouped_keys_json["items"].as_array().unwrap().len(), 2);
 
-        let by_index_keys = http_body(
+        let by_index_keys = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode(
-                    "SELECT * FROM posts WHERE sk = 1 USING by-sk; SELECT * FROM posts WHERE sk = 3 USING by-sk"
-                )
-            ),
-            "",
+            json!({"table": "posts", "mode": "keys", "source": "by-sk", "batchKeys": "1, 3"}),
+            0,
         );
         let by_index_keys_json: Value = serde_json::from_str(&by_index_keys).expect(&by_index_keys);
         assert_eq!(by_index_keys_json["items"].as_array().unwrap().len(), 2);
         assert_eq!(by_index_keys_json["has_more"], false);
 
-        let write = http_body(
-            addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("INSERT INTO posts (id) VALUES ('z')")
-            ),
-            "",
+        let write = rows_read(addr, json!({"table": "posts", "mode": "insert"}), 0);
+        assert!(
+            write.contains("mode must be scan, query, or keys"),
+            "{write}"
         );
-        assert!(write.contains("only SELECT or SCAN"), "{write}");
 
-        let other = http_body(
+        let other = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("SCAN * FROM comments")
-            ),
-            "",
+            json!({"table": "posts", "mode": "scan", "filters": [{"attribute": "odd name", "op": "eq", "value": "x"}]}),
+            0,
         );
-        assert!(other.contains("read must use table posts"), "{other}");
+        assert!(
+            other.contains("odd name cannot be used as a filter name"),
+            "{other}"
+        );
         drop(guard);
     }
 
@@ -4284,14 +4252,9 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         let created = http_body(addr, "POST", "/api/run", &body);
         assert!(created.contains("\"ok\":true"), "{created}");
 
-        let dql = query_encode("SELECT * FROM nums WHERE gid = 'g'");
+        let read = json!({"table": "nums", "mode": "query", "keys": [{"attribute": "gid", "op": "eq", "value": "g", "role": "hash"}]});
         let page_ids = |page: usize| {
-            let body = http_body(
-                addr,
-                "GET",
-                &format!("/api/rows?table=nums&page={page}&dql={dql}"),
-                "",
-            );
+            let body = rows_read(addr, read.clone(), page);
             let json: Value = serde_json::from_str(&body).unwrap_or_else(|_| panic!("{body}"));
             let ids: Vec<i64> = json["items"]
                 .as_array()
@@ -4654,21 +4617,18 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         String::from_utf8_lossy(&buf).into_owned()
     }
 
-    /// Response body with chunk framing removed. `/api/run` flushes each NDJSON
-    /// event as its own chunk, so a raw read can split a JSON string.
-    fn query_encode(text: &str) -> String {
-        let mut out = String::new();
-        for byte in text.bytes() {
-            match byte {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                    out.push(byte as char);
-                }
-                _ => out.push_str(&format!("%{byte:02X}")),
-            }
-        }
-        out
+    /// `POST /api/rows` with a table-browser read and a page; the reply body.
+    fn rows_read(addr: SocketAddr, read: Value, page: usize) -> String {
+        http_body(
+            addr,
+            "POST",
+            "/api/rows",
+            &json!({"read": read, "page": page}).to_string(),
+        )
     }
 
+    /// Response body with chunk framing removed. `/api/run` flushes each NDJSON
+    /// event as its own chunk, so a raw read can split a JSON string.
     fn http_body(addr: SocketAddr, method: &str, path: &str, body: &str) -> String {
         let raw = http(addr, method, path, body);
         let Some((headers, rest)) = raw.split_once("\r\n\r\n") else {
