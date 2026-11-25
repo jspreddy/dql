@@ -358,3 +358,61 @@ test("keyHighlightSpans marks keys, tuple parts, punctuation, and errors", () =>
   assert.deepEqual(marks("a)"), ["a:hash#0", "):error"]);
   assert.deepEqual(marks(""), []);
 });
+
+// The parser accepts a reserved word as a bare identifier. Quoting it makes Run fail.
+const scan = (over) => buildReadStatement("posts", table, { ...defaultReadState(), ...over });
+
+test("a reserved filter name stays a bare identifier", () => {
+  assert.equal(
+    scan({ filters: [{ attribute: "size", op: "eq", value: "1" }] }),
+    "SCAN * FROM posts WHERE size = 1",
+  );
+});
+
+test("a reserved key name stays a bare identifier", () => {
+  assert.equal(
+    scan({ keys: [{ attribute: "key", op: "eq", value: "a", role: "hash" }] }),
+    "SCAN * FROM posts WHERE key = 'a'",
+  );
+});
+
+test("a reserved table name stays a bare identifier", () => {
+  assert.equal(buildReadStatement("order", table, defaultReadState()), "SCAN * FROM order");
+});
+
+// A name the parser cannot accept must not be spliced into the statement.
+test("a table name that is not an identifier is not spliced into the statement", () => {
+  assert.equal(buildReadStatement("odd name", table, defaultReadState()), "");
+});
+
+test("a key name containing a quote is not spliced into the statement", () => {
+  assert.equal(
+    scan({ keys: [{ attribute: "o'brien", op: "eq", value: "ada", role: "hash" }] }),
+    "",
+  );
+});
+
+test("a filter name containing a quote is not spliced into the statement", () => {
+  assert.equal(
+    scan({ filters: [{ attribute: "o'brien", op: "eq", value: "ada" }] }),
+    "",
+  );
+});
+
+test("an unusable table name is reported", () => {
+  assert.match(readError({ ...table, name: "odd name" }, defaultReadState()), /odd name/);
+});
+
+test("an unusable key name is reported", () => {
+  assert.match(
+    readError(table, { ...defaultReadState(), keys: [{ attribute: "o'brien", op: "eq", value: "ada" }] }),
+    /o'brien/,
+  );
+});
+
+test("an unusable filter name is reported", () => {
+  assert.match(
+    readError(table, { ...defaultReadState(), filters: [{ attribute: "odd name", op: "eq", value: "x" }] }),
+    /odd name/,
+  );
+});
