@@ -6,11 +6,12 @@ A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists. Each line is a commit; the
 latest commit of each pull request, stacked ones included, names that pull request.
 
-## Unreleased (2026-11-24)
+## Unreleased (2026-11-25)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [85fe411](https://github.com/jspreddy/dql/commit/85fe41185aa08a9e060b71dd1ad0dc0bbd83aa95) fix(mcp): keep grant and deny exclusive, and reject SAVE ([#312](https://github.com/jspreddy/dql/pull/312))
 - [0e191ea](https://github.com/jspreddy/dql/commit/0e191ea013c7c7c9640fe06865c40b95f648c105) fix(web): clear results while a view-only file is open ([#311](https://github.com/jspreddy/dql/pull/311))
 - [8fe4fe6](https://github.com/jspreddy/dql/commit/8fe4fe6f418e66751cdb5a81939f132d2b0a20a7) test: show the four release bugs failing ([#310](https://github.com/jspreddy/dql/pull/310))
 - [ff3d110](https://github.com/jspreddy/dql/commit/ff3d110878f4444ae33abdfed79592d6e1018cc7) fix(web): say the MCP pill turns MCP on ([#309](https://github.com/jspreddy/dql/pull/309))
