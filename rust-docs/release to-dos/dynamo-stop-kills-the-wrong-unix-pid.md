@@ -1,6 +1,6 @@
 # Dynamo stop kills the wrong process on Unix
 
-Status: open. Found on `0.7.12-alpha.1` while reviewing `dqlrs dynamo`.
+Status: fixed in #313 (`792584f`), test in #310. Follow-up: [`dynamo-clean-refuses-a-stale-record.md`](dynamo-clean-refuses-a-stale-record.md).
 
 ## What goes wrong
 

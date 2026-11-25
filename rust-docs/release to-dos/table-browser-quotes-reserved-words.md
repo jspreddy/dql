@@ -1,6 +1,6 @@
 # Table browser quotes reserved words the parser rejects
 
-Status: open. Found on `0.7.12-alpha.1` while reviewing the table browser.
+Status: partly fixed in #314 (`a93e9ff`). Most keywords now stay bare and parse. `size`, `not`, and the condition function names still fail: [`table-browser-function-words-still-fail-as-attributes.md`](table-browser-function-words-still-fail-as-attributes.md).
 
 ## What goes wrong
 

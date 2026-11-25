@@ -1,6 +1,6 @@
 # Invalid identifiers corrupt table, key, and filter queries
 
-Status: open. Found on `0.7.12-alpha.1` while reviewing the table browser.
+Status: fixed in #314 (`a93e9ff`). That fix brought a regression: [`table-browser-drops-filters-when-a-key-name-is-not-an-identifier.md`](table-browser-drops-filters-when-a-key-name-is-not-an-identifier.md).
 
 ## What goes wrong
 
