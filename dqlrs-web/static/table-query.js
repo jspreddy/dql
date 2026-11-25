@@ -1,8 +1,6 @@
 // Table browser read picker: SCAN/SELECT from source, keys, filters, and order.
 
-import { highlightParts, knownWords } from "./dql-tokens.js";
-
-const RESERVED = new Set(knownWords());
+import { highlightParts } from "./dql-tokens.js";
 
 export const COMPARE_OPS = [
   { id: "eq", label: "=", dql: "=" },
@@ -40,10 +38,18 @@ export const ATTR_TYPES = ["S", "N", "B", "BOOL", "NULL", "L", "M", "SS", "NS", 
 
 const IDENT = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 
+// The parser accepts any identifier, including words the highlighter paints as
+// keywords. A name that is not an identifier cannot be quoted into a statement:
+// the lexer treats quotes as strings and does not treat '' as an escape.
 export function quoteIdent(name) {
   const text = String(name || "");
-  if (IDENT.test(text) && !RESERVED.has(text.toUpperCase())) return text;
-  return "'" + text.replaceAll("'", "''") + "'";
+  return IDENT.test(text) ? text : "";
+}
+
+function unusableName(name) {
+  const text = String(name || "").trim();
+  if (!text || IDENT.test(text)) return "";
+  return text;
 }
 
 export function quoteValue(raw, type) {
@@ -443,7 +449,10 @@ export function usesIndex(source) {
 /** ` USING …` for `source`, or "" for "--". */
 export function usingClause(source) {
   if (!source || !source.name) return "";
-  return " USING " + (source.name === TABLE_SOURCE ? TABLE_SOURCE : quoteIdent(source.name));
+  if (source.name === TABLE_SOURCE) return " USING " + TABLE_SOURCE;
+  const name = quoteIdent(source.name);
+  if (!name) return "";
+  return " USING " + name;
 }
 
 export function tableSource(table) {
@@ -559,6 +568,7 @@ export function formatCondition(row, table, extra) {
   const ops = opsFor(row.kind || "filter", row.role, row.mode);
   const op = opById(row.op, ops);
   const field = quoteIdent(row.attribute);
+  if (!field) return "";
   const type = attributeType(table, extra, row.attribute);
   const values = op.values === 0 ? 0 : op.values === 2 ? 2 : 1;
   if (values === 1 && !String(row.value ?? "").length && !op.type && !op.size) return "";
@@ -621,10 +631,22 @@ export function ensureQueryKeys(table, state) {
   return next;
 }
 
+function statementNames(tableName, table, current, source) {
+  const names = [tableName || (table && table.name) || ""];
+  for (const row of [...(current.keys || []), ...(current.filters || [])]) {
+    names.push(row && row.attribute);
+  }
+  if (source && source.name && source.name !== TABLE_SOURCE) names.push(source.name);
+  if (source) names.push(source.hashKey, source.rangeKey);
+  return names;
+}
+
 export function buildReadStatement(tableName, table, state, extra) {
   const name = tableName || (table && table.name) || "";
-  if (!name) return "";
+  if (!name || !IDENT.test(name)) return "";
   const current = ensureQueryKeys(table, state || defaultReadState());
+  const sourceForNames = sourceOf(table, current.source, current.mode === "keys" ? "query" : current.mode);
+  if (statementNames(name, table, current, sourceForNames).some((item) => unusableName(item))) return "";
   if (current.mode === "keys") {
     const parsed = parseBatchKeys(current.batchKeys);
     if (keysModeError(table, parsed, current.source, extra)) return "";
@@ -668,6 +690,17 @@ export function buildReadStatement(tableName, table, state, extra) {
 
 export function readError(table, state, extra) {
   const current = ensureQueryKeys(table, state || defaultReadState());
+  const source = sourceOf(table, current.source, current.mode === "keys" ? "query" : current.mode);
+  const labels = [
+    [(table && table.name) || "", "table"],
+    ...((current.keys || []).map((row) => [row && row.attribute, "key"])),
+    ...((current.filters || []).map((row) => [row && row.attribute, "filter"])),
+  ];
+  if (source && source.name && source.name !== TABLE_SOURCE) labels.push([source.name, "index"]);
+  for (const [value, kind] of labels) {
+    const bad = unusableName(value);
+    if (bad) return `${bad} cannot be used as a ${kind} name`;
+  }
   if (current.mode === "keys") {
     return keysModeError(table, parseBatchKeys(current.batchKeys), current.source, extra);
   }

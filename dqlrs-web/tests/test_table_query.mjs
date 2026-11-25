@@ -41,12 +41,12 @@ const table = {
   ],
 };
 
-test("quoteIdent quotes reserved words and odd names", () => {
+test("quoteIdent leaves parser identifiers bare", () => {
   assert.equal(quoteIdent("id"), "id");
   assert.equal(quoteIdent("by-status"), "by-status");
-  assert.equal(quoteIdent("size"), "'size'");
-  assert.equal(quoteIdent("from"), "'from'");
-  assert.equal(quoteIdent("odd name"), "'odd name'");
+  assert.equal(quoteIdent("size"), "size");
+  assert.equal(quoteIdent("from"), "from");
+  assert.equal(quoteIdent("odd name"), "");
 });
 
 test("quoteValue follows the attribute type", () => {
