@@ -11,6 +11,7 @@ latest commit of each pull request, stacked ones included, names that pull reque
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [a93e9ff](https://github.com/jspreddy/dql/commit/a93e9ff328bbcd6725629c45d4459949871a2a95) fix(web): keep invalid names out of table, key, and filter statements ([#314](https://github.com/jspreddy/dql/pull/314))
 - [792584f](https://github.com/jspreddy/dql/commit/792584ffc91a26cdfc00f1c90de0772c7d236181) fix(dynamo): refuse to kill a pid that is not DynamoDB Local ([#313](https://github.com/jspreddy/dql/pull/313))
 - [85fe411](https://github.com/jspreddy/dql/commit/85fe41185aa08a9e060b71dd1ad0dc0bbd83aa95) fix(mcp): keep grant and deny exclusive, and reject SAVE ([#312](https://github.com/jspreddy/dql/pull/312))
 - [0e191ea](https://github.com/jspreddy/dql/commit/0e191ea013c7c7c9640fe06865c40b95f648c105) fix(web): clear results while a view-only file is open ([#311](https://github.com/jspreddy/dql/pull/311))
