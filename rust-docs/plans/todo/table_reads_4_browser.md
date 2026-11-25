@@ -2,7 +2,7 @@
 
 **Priority:** High  
 **Area:** `dqlrs-web/static/table-query.js`, `dqlrs-web/static/app.js`  
-**Status:** Not started. Step 4 of [`table_reads_server.md`](table_reads_server.md). Needs step 1; ships with step 3.
+**Status:** Done on `table-reads/4-browser`. Step 4 of [`table_reads_server.md`](table_reads_server.md). Needs step 1; ships with step 3.
 
 ## Goal
 

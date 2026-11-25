@@ -231,7 +231,7 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   // While a page loads, Cancel takes the pills' place; it drops the read and stops it on the server.
   let release;
   const held = new Promise((resolve) => { release = resolve; });
-  await page.route("**/api/rows?*", async (route) => {
+  await page.route("**/api/rows*", async (route) => {
     await held;
     await route.continue().catch(() => {});
   });
@@ -250,7 +250,7 @@ test("pages a table fifty rows at a time from a searched name", async ({ page, a
   await expect(page.locator("#rows-body")).toHaveText("Read cancelled.");
   await expect(page.locator("#table-query-cancel")).toBeHidden();
   release();
-  await page.unroute("**/api/rows?*");
+  await page.unroute("**/api/rows*");
 });
 
 test("pages a thousand numeric ids forward and back", async ({ page, app }, testInfo) => {
@@ -283,10 +283,10 @@ test("pages a thousand numeric ids forward and back", async ({ page, app }, test
   await page.locator("#table-query-query").click();
   await page.locator('[data-testid="table-query-key-row"] [data-testid="table-query-value"]').fill("g");
   await expect(page.locator("#table-query-dql")).toHaveText(`SELECT * FROM ${name} WHERE gid = 'g'`);
-  const selectPages = trackRowPages(page, { dql: "SELECT" });
+  const selectPages = trackRowPages(page, { mode: "query" });
   const queried = page.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return response.ok() && url.pathname === "/api/rows" && (url.searchParams.get("dql") || "").includes("SELECT");
+    const found = rowsRequest(response.request());
+    return response.ok() && found?.read?.mode === "query";
   });
   await page.locator("#table-query-run").click();
   await queried;
@@ -322,9 +322,8 @@ test("pages a thousand numeric ids forward and back", async ({ page, app }, test
   expect(selectPages).toEqual(Array.from({ length: 20 }, (_, index) => index));
 
   const rerun = page.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return response.ok() && url.pathname === "/api/rows" && url.searchParams.get("page") === "0"
-      && (url.searchParams.get("dql") || "").includes("SELECT");
+    const found = rowsRequest(response.request());
+    return response.ok() && found?.page === 0 && found.read?.mode === "query";
   });
   await page.locator("#table-query-run").click();
   await rerun;
@@ -1661,15 +1660,26 @@ test("names insert, update, delete, count, and drop results", async ({ page, app
   await expect(notes.filter({ hasText: "did not exist" })).toHaveCount(1);
 });
 
+// A /api/rows request's page and the picker's read: POST {read, page} for a read the picker
+// built, or GET ?table=&page= for a table's first pages (read is null).
+function rowsRequest(request) {
+  const url = new URL(request.url());
+  if (url.pathname !== "/api/rows") return null;
+  if (request.method() === "POST") {
+    const body = request.postDataJSON() || {};
+    return { page: Number(body.page || 0), read: body.read || null };
+  }
+  return { page: Number(url.searchParams.get("page") || "0"), read: null };
+}
+
+// The pages of /api/rows requests; `options.mode` keeps only reads in that mode.
 function trackRowPages(page, options = {}) {
   const pages = [];
-  const needle = options.dql || "";
   page.on("request", (request) => {
-    const url = new URL(request.url());
-    if (url.pathname !== "/api/rows") return;
-    const dql = url.searchParams.get("dql") || "";
-    if (needle && !dql.includes(needle)) return;
-    pages.push(Number(url.searchParams.get("page") || "0"));
+    const found = rowsRequest(request);
+    if (!found) return;
+    if (options.mode && found.read?.mode !== options.mode) return;
+    pages.push(found.page);
   });
   return pages;
 }
@@ -1937,4 +1947,98 @@ test("table browser splits controls from the query as built and its plan", async
   await page.locator("#table-query-height").dblclick();
   expect(Math.abs((await panel.boundingBox()).height - natural.height)).toBeLessThan(2);
   expect(await page.evaluate(() => localStorage.getItem("dqlrs-web.table-query-height"))).toBeNull();
+});
+
+// The server builds the read: the preview, the message, and Run all come from it.
+test("the server builds the table browser's read, quoting values the parser reads", async ({ page, app }, testInfo) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(
+    page,
+    [
+      `DROP TABLE IF EXISTS ${name};`,
+      `CREATE TABLE ${name} (id STRING HASH KEY, n NUMBER RANGE KEY);`,
+      `INSERT INTO ${name} (id, n, note) VALUES ('a', 1, 'it\\'s here'), ('b', 2, 'plain');`,
+    ].join("\n"),
+  );
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "2 rows inserted" })).toBeVisible();
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await page.locator(`#table-${name}`).click();
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(2);
+
+  const previews = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/table-read") previews.push(request.postDataJSON());
+  });
+
+  // A filter value with a quote: the preview comes from the server, and Run reads that row.
+  await page.locator("#table-query-add-filter").click();
+  const filter = page.locator('[data-testid="table-query-filter-row"]');
+  await filter.locator('[data-testid="table-query-attr"]').fill("note");
+  await filter.locator('[data-testid="table-query-value"]').fill("it's here");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name} WHERE note = 'it\\'s here'`);
+  expect(previews.at(-1)).toMatchObject({ table: name, mode: "scan", filters: [{ attribute: "note", value: "it's here" }] });
+  const ran = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/rows" && request.method() === "POST");
+  await page.locator("#table-query-run").click();
+  expect((await ran).postDataJSON().read.filters[0].value).toBe("it's here");
+  await expect(page.locator("#rows-table tbody tr")).toHaveCount(1);
+  await expect(page.locator("#rows-table tbody")).toContainText("it's here");
+  await page.screenshot({ path: playwrightArtifact(`table-read-server-quote-${testInfo.project.name}.png`) });
+
+  // A number key typed with text: the server's message is shown, and Run is off.
+  await page.locator("#table-query-query").click();
+  await page.locator('[data-testid="table-query-key-row"]').first().locator('[data-testid="table-query-value"]').fill("a");
+  await page.locator("#table-query-add-key").click();
+  const range = page.locator('[data-testid="table-query-key-row"]').nth(1);
+  await range.locator('[data-testid="table-query-attr"]').fill("n");
+  await range.locator('[data-testid="table-query-value"]').fill("lots");
+  await expect(page.locator("#table-query-error")).toHaveText('n is a number. "lots" is not.');
+  await expect(page.locator("#table-query-run")).toBeDisabled();
+  await range.locator('[data-testid="table-query-value"]').fill("1");
+  await expect(page.locator("#table-query-error")).toBeHidden();
+  await expect(page.locator("#table-query-run")).toBeEnabled();
+});
+
+test("a slow preview answer never replaces a newer one", async ({ page, app }) => {
+  await page.goto(`${app.baseURL}/`);
+  await expect(page.locator("#file-name")).toHaveText("edit.dql");
+  const name = uniqueTable();
+  app.trackTable(name);
+  await replaceEditor(page, [`DROP TABLE IF EXISTS ${name};`, `CREATE TABLE ${name} (id STRING HASH KEY);`].join("\n"));
+  await pressMod(page, "A");
+  await page.locator("#run").click();
+  await expect(page.locator('[data-testid="result-note"]').filter({ hasText: "Created table" })).toBeVisible();
+  await page.locator("#table-search").evaluate((input, value) => {
+    input.value = value;
+  }, name);
+  await page.locator("#mode-tables").click();
+  await page.locator(`#table-${name}`).click();
+  await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name}`);
+
+  // Hold the first answer for "old" until after the answer for "new" has been shown.
+  let release;
+  const held = new Promise((resolve) => { release = resolve; });
+  await page.route("**/api/table-read", async (route) => {
+    const read = route.request().postDataJSON();
+    if (read.filters?.[0]?.value === "old") await held;
+    await route.continue();
+  });
+  await page.locator("#table-query-add-filter").click();
+  const filter = page.locator('[data-testid="table-query-filter-row"]');
+  await filter.locator('[data-testid="table-query-attr"]').fill("id");
+  await filter.locator('[data-testid="table-query-value"]').fill("old");
+  await page.waitForTimeout(250);
+  await filter.locator('[data-testid="table-query-value"]').fill("new");
+  await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name} WHERE id = 'new'`);
+  release();
+  await page.waitForTimeout(300);
+  await expect(page.locator("#table-query-dql")).toHaveText(`SCAN * FROM ${name} WHERE id = 'new'`);
+  await page.unroute("**/api/table-read");
 });

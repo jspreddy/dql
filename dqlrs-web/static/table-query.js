@@ -825,9 +825,41 @@ function textareaKeysEditor(textarea) {
   };
 }
 
+/**
+ * The read the browser sends: what the picker holds, for `POST /api/table-read`, `/api/rows`,
+ * and `/api/explain`. The server looks up the table's definition itself.
+ */
+export function readRequest(table, state, extra) {
+  const current = ensureQueryKeys(table, state || defaultReadState());
+  const strip = (row) => ({
+    attribute: row.attribute || "",
+    op: row.op || "eq",
+    value: String(row.value ?? ""),
+    value2: String(row.value2 ?? ""),
+    role: row.role || "",
+    sizeOp: row.sizeOp || "",
+  });
+  return {
+    table: (table && table.name) || "",
+    mode: current.mode,
+    source: current.source || "",
+    order: current.order || "forward",
+    keys: (current.keys || []).map(strip),
+    filters: (current.filters || []).map(strip),
+    batchKeys: current.batchKeys || "",
+    extra: extra instanceof Map ? [...extra.keys()] : [...(extra || [])],
+  };
+}
+
+// How long the preview waits after the last keystroke before it asks the server.
+const PREVIEW_DELAY_MS = 120;
+
 export function attachTableQuery(host, handlers = {}) {
   const onRun = handlers.onRun || (() => {});
   const onChange = handlers.onChange || (() => {});
+  // `preview(read)` resolves to `{ dql, error }` from the server. Without it (unit tests), the
+  // local builder answers.
+  const previewRead = handlers.preview || null;
   let table = null;
   let extra = new Map();
   let state = defaultReadState();
@@ -1051,15 +1083,66 @@ export function attachTableQuery(host, handlers = {}) {
     paintSources();
     syncModeButtons();
     paintRows();
-    const sql = statement();
-    paintPreview(preview, sql);
     preview.dataset.testid = "table-query-dql";
-    const message = error();
-    errorNode.textContent = message;
-    errorNode.hidden = !message;
-    runBtn.classList.toggle("is-pending", Boolean(sql) && sql !== ran);
-    runBtn.disabled = Boolean(message);
-    onChange({ table, state, dql: sql, error: message });
+    refresh(true);
+  }
+
+  // The last answer for the current read, and the request that is still out, if any.
+  let shown = { dql: "", error: "" };
+  let previewSeq = 0;
+  let previewTimer = null;
+  let pending = null;
+  let ranFollowsPreview = false;
+
+  function showPreview(result) {
+    shown = { dql: result.dql || "", error: result.error || "" };
+    paintPreview(preview, shown.dql);
+    errorNode.textContent = shown.error;
+    errorNode.hidden = !shown.error;
+    if (ranFollowsPreview) {
+      ran = shown.dql;
+      ranFollowsPreview = false;
+    }
+    runBtn.classList.toggle("is-pending", Boolean(shown.dql) && shown.dql !== ran);
+    runBtn.disabled = Boolean(shown.error) || !shown.dql;
+    host.dataset.preview = "ready";
+    onChange({ table, state, read: readRequest(table, state, extra), dql: shown.dql, error: shown.error });
+  }
+
+  // Ask for the preview of the read as it is now. Only the newest answer is shown; an older one
+  // that arrives late is dropped. Run waits for the answer that is out.
+  function refresh(immediate) {
+    if (!table || !table.name) return;
+    if (!previewRead) {
+      showPreview({ dql: statement(), error: error() });
+      return;
+    }
+    const seq = ++previewSeq;
+    runBtn.disabled = true;
+    host.dataset.preview = "pending";
+    clearTimeout(previewTimer);
+    let settle;
+    pending = new Promise((resolve) => {
+      settle = resolve;
+    });
+    const ask = async () => {
+      const read = readRequest(table, state, extra);
+      let result;
+      try {
+        result = await previewRead(read);
+      } catch (failure) {
+        result = { dql: "", error: (failure && failure.message) || String(failure) };
+      }
+      if (seq !== previewSeq) {
+        settle();
+        return;
+      }
+      pending = null;
+      showPreview(result);
+      settle();
+    };
+    if (immediate) void ask();
+    else previewTimer = setTimeout(ask, PREVIEW_DELAY_MS);
   }
 
   function rowList(kind) {
@@ -1083,14 +1166,7 @@ export function attachTableQuery(host, handlers = {}) {
 
   function livePreview() {
     paintBatchHint();
-    const sql = statement();
-    paintPreview(preview, sql);
-    const message = error();
-    errorNode.textContent = message;
-    errorNode.hidden = !message;
-    runBtn.classList.toggle("is-pending", Boolean(sql) && sql !== ran);
-    runBtn.disabled = Boolean(message);
-    onChange({ table, state, dql: sql, error: message });
+    refresh(false);
   }
 
   function applyAttribute(kind, id, name, node) {
@@ -1204,17 +1280,24 @@ export function attachTableQuery(host, handlers = {}) {
     focusAttr = row.id;
     paint();
   });
-  host.addEventListener("submit", (event) => {
+  host.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const message = error();
-    if (message) {
-      errorNode.textContent = message;
+    // A keystroke may still be waiting for its preview. Run what the read is now.
+    if (previewTimer || pending) {
+      clearTimeout(previewTimer);
+      previewTimer = null;
+      refresh(true);
+    }
+    while (pending) await pending;
+    if (shown.error) {
+      errorNode.textContent = shown.error;
       errorNode.hidden = false;
       return;
     }
-    ran = statement();
+    if (!shown.dql) return;
+    ran = shown.dql;
     runBtn.classList.remove("is-pending");
-    onRun({ table, state, dql: ran });
+    onRun({ table, state, read: readRequest(table, state, extra), dql: ran });
   });
 
   paint();
@@ -1224,8 +1307,9 @@ export function attachTableQuery(host, handlers = {}) {
       table = nextTable || null;
       extra = new Map();
       state = defaultReadState();
+      ran = "";
+      ranFollowsPreview = Boolean(table && table.name);
       paint();
-      ran = table && table.name ? statement() : "";
       runBtn.classList.remove("is-pending");
     },
     updateTable(nextTable) {
@@ -1243,11 +1327,12 @@ export function attachTableQuery(host, handlers = {}) {
       if (added) refreshAttributeLists();
     },
     markRan(dql) {
-      ran = dql || statement();
-      runBtn.classList.toggle("is-pending", statement() !== ran);
+      ran = dql || shown.dql;
+      runBtn.classList.toggle("is-pending", shown.dql !== ran);
     },
-    statement,
-    error,
+    statement: () => shown.dql,
+    error: () => shown.error,
+    read: () => readRequest(table, state, extra),
     state() {
       return {
         ...state,
