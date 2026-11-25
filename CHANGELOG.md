@@ -8,8 +8,12 @@ latest commit of each pull request, stacked ones included, names that pull reque
 
 ## Unreleased (2026-11-24)
 
-Agents: Claude Opus 5.5
+Contributors: [Sai Jonnala](https://github.com/jspreddy)\
+Agents: Claude Opus 5.5, Cursor Agent
 
+- [fb17652](https://github.com/jspreddy/dql/commit/fb1765214a3f45bfbe5454f30720f2fb9100d7e9) docs: split the four new release notes ([#306](https://github.com/jspreddy/dql/pull/306))
+- [4ef044b](https://github.com/jspreddy/dql/commit/4ef044ba228d8e3c606fe7de5708d675c2678d33) docs: note bugs in the table browser, MCP grants, and dynamo stop
+- [7c1b46b](https://github.com/jspreddy/dql/commit/7c1b46b0216259d9788ab5c1c12bca2c14a92ca0) docs: note release blockers found in 0.7.12-alpha.1
 - [4ce9a86](https://github.com/jspreddy/dql/commit/4ce9a8673b16b2c42d7d898b76996fecb51ef8fa) feat(web): open an MCP menu from the pill, with the switch and the config to copy ([#304](https://github.com/jspreddy/dql/pull/304))
 - [887fa7a](https://github.com/jspreddy/dql/commit/887fa7aa66e3b36235f6f2963b8c2dfa17039ccf) feat(web): show MCP on or off next to the endpoint and turn it on and off
 
