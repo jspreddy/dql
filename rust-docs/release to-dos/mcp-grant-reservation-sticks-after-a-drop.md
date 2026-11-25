@@ -1,6 +1,6 @@
 # A grant reservation sticks after its temp table is dropped
 
-Status: open. Found on `v-rust` at `90c492c` while reviewing #312 (`85fe411`).
+Status: fixed on `fix/release-review-followups`. Found on `v-rust` at `90c492c` while reviewing #312 (`85fe411`).
 
 ## What goes wrong
 
