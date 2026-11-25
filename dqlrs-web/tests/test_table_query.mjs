@@ -416,3 +416,51 @@ test("an unusable filter name is reported", () => {
     /odd name/,
   );
 });
+
+// DynamoDB allows any attribute name, so a key can be "user id". A statement that does not name
+// the key must still build; one that does must say which key cannot be used.
+const spacedKey = {
+  name: "people",
+  keys: [{ name: "user id", role: "hash" }],
+  indexes: [{ name: "by-email", kind: "global", hashKey: "e mail", rangeKey: "" }],
+  attributes: [
+    { name: "user id", type: "STRING" },
+    { name: "e mail", type: "STRING" },
+    { name: "status", type: "STRING" },
+  ],
+};
+
+test("a filtered Scan builds when the table key name is not an identifier", () => {
+  const state = { ...defaultReadState(), mode: "scan", filters: [{ attribute: "status", op: "eq", value: "open" }] };
+  assert.equal(buildReadStatement("people", spacedKey, state), "SCAN * FROM people WHERE status = 'open'");
+  assert.equal(readError(spacedKey, state), "");
+});
+
+test("a Query or reversed Scan on a key that is not an identifier names the key", () => {
+  const query = { ...defaultReadState(), mode: "query" };
+  assert.equal(buildReadStatement("people", spacedKey, query), "");
+  assert.equal(readError(spacedKey, query), "user id cannot be used as a key name");
+  const reverse = { ...defaultReadState(), mode: "scan", order: "reverse" };
+  assert.equal(buildReadStatement("people", spacedKey, reverse), "");
+  assert.equal(readError(spacedKey, reverse), "user id cannot be used as a key name");
+});
+
+test("a Keys read through an index whose key is not an identifier names the key", () => {
+  const keys = { ...defaultReadState(), mode: "keys", source: "by-email", batchKeys: "a@x" };
+  assert.equal(buildReadStatement("people", spacedKey, keys), "");
+  assert.equal(readError(spacedKey, keys), "e mail cannot be used as a key name");
+});
+
+test("an empty statement always comes with an error", () => {
+  const states = [
+    { ...defaultReadState(), mode: "scan" },
+    { ...defaultReadState(), mode: "scan", filters: [{ attribute: "status", op: "eq", value: "open" }] },
+    { ...defaultReadState(), mode: "query" },
+    { ...defaultReadState(), mode: "scan", order: "reverse" },
+    { ...defaultReadState(), mode: "keys", source: "by-email", batchKeys: "a@x" },
+  ];
+  for (const state of states) {
+    const sql = buildReadStatement("people", spacedKey, state);
+    assert.ok(sql || readError(spacedKey, state), `no statement and no error for ${JSON.stringify(state)}`);
+  }
+});

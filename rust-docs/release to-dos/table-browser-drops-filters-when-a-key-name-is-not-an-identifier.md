@@ -1,6 +1,6 @@
 # The table browser drops filters when a key name is not an identifier
 
-Status: open. Found on `v-rust` at `90c492c` while reviewing #314 (`a93e9ff`).
+Status: fixed on `fix/release-review-followups`. Found on `v-rust` at `90c492c` while reviewing #314 (`a93e9ff`).
 
 ## What goes wrong
 

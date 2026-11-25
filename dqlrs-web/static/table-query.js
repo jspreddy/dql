@@ -631,22 +631,38 @@ export function ensureQueryKeys(table, state) {
   return next;
 }
 
+// Every name the statement will contain, with what it is. The statement and readError use the
+// same list, so a name that cannot be written is always reported, and a name the statement does
+// not use (a key attribute in a plain Scan) never blocks it.
 function statementNames(tableName, table, current, source) {
-  const names = [tableName || (table && table.name) || ""];
-  for (const row of [...(current.keys || []), ...(current.filters || [])]) {
-    names.push(row && row.attribute);
+  const names = [[tableName || (table && table.name) || "", "table"]];
+  for (const row of current.keys || []) names.push([row && row.attribute, "key"]);
+  for (const row of current.filters || []) names.push([row && row.attribute, "filter"]);
+  if (source && source.name && source.name !== TABLE_SOURCE) names.push([source.name, "index"]);
+  if (source && current.mode === "keys" && usesIndex(source)) {
+    // An index key read is a SELECT ... WHERE on the index keys.
+    names.push([source.hashKey, "key"], [source.rangeKey, "key"]);
   }
-  if (source && source.name && source.name !== TABLE_SOURCE) names.push(source.name);
-  if (source) names.push(source.hashKey, source.rangeKey);
-  return names;
+  if (source && current.mode === "scan" && current.order === "reverse") {
+    names.push([source.rangeKey || source.hashKey, "key"]);
+  }
+  return names.filter(([name]) => String(name || "").trim());
+}
+
+function unusableStatementName(tableName, table, current) {
+  const source = sourceOf(table, current.source, current.mode === "keys" ? "query" : current.mode);
+  for (const [value, kind] of statementNames(tableName, table, current, source)) {
+    const bad = unusableName(value);
+    if (bad) return `${bad} cannot be used as a ${kind} name`;
+  }
+  return "";
 }
 
 export function buildReadStatement(tableName, table, state, extra) {
   const name = tableName || (table && table.name) || "";
   if (!name || !IDENT.test(name)) return "";
   const current = ensureQueryKeys(table, state || defaultReadState());
-  const sourceForNames = sourceOf(table, current.source, current.mode === "keys" ? "query" : current.mode);
-  if (statementNames(name, table, current, sourceForNames).some((item) => unusableName(item))) return "";
+  if (unusableStatementName(name, table, current)) return "";
   if (current.mode === "keys") {
     const parsed = parseBatchKeys(current.batchKeys);
     if (keysModeError(table, parsed, current.source, extra)) return "";
@@ -690,17 +706,8 @@ export function buildReadStatement(tableName, table, state, extra) {
 
 export function readError(table, state, extra) {
   const current = ensureQueryKeys(table, state || defaultReadState());
-  const source = sourceOf(table, current.source, current.mode === "keys" ? "query" : current.mode);
-  const labels = [
-    [(table && table.name) || "", "table"],
-    ...((current.keys || []).map((row) => [row && row.attribute, "key"])),
-    ...((current.filters || []).map((row) => [row && row.attribute, "filter"])),
-  ];
-  if (source && source.name && source.name !== TABLE_SOURCE) labels.push([source.name, "index"]);
-  for (const [value, kind] of labels) {
-    const bad = unusableName(value);
-    if (bad) return `${bad} cannot be used as a ${kind} name`;
-  }
+  const unusable = unusableStatementName((table && table.name) || "", table, current);
+  if (unusable) return unusable;
   if (current.mode === "keys") {
     return keysModeError(table, parseBatchKeys(current.batchKeys), current.source, extra);
   }
