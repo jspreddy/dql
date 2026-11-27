@@ -6,11 +6,18 @@ A "Bump version" commit closes a section. Changes after that bump belong to the
 next bump, or to Unreleased when no later bump exists. Each line is a commit; the
 latest commit of each pull request, stacked ones included, names that pull request.
 
-## Unreleased (2026-11-25)
+## Unreleased (2026-11-27)
 
 Contributors: [Sai Jonnala](https://github.com/jspreddy)\
 Agents: Claude Opus 5.5, Cursor Agent
 
+- [77e8e52](https://github.com/jspreddy/dql/commit/77e8e526ff5ee98f6a418f1027aaef3b2920832b) test(web): cover the API's untested routes and error replies ([#334](https://github.com/jspreddy/dql/pull/334))
+- [6d9d881](https://github.com/jspreddy/dql/commit/6d9d88186077130b3e2e2c1c33a10f321c60e622) refactor(web): remove the JavaScript read builder and the dql= path ([#331](https://github.com/jspreddy/dql/pull/331))
+- [111a577](https://github.com/jspreddy/dql/commit/111a577babe910f511d7777691646368780217d1) feat(web): the table browser sends its read and shows the server's preview ([#330](https://github.com/jspreddy/dql/pull/330))
+- [0870f4d](https://github.com/jspreddy/dql/commit/0870f4d0d58ad7278bd9fb2d720e926fb9c82a16) feat(web): answer table browser reads from the Rust builder ([#329](https://github.com/jspreddy/dql/pull/329))
+- [da79fd7](https://github.com/jspreddy/dql/commit/da79fd71b3eac062db425d63f7de4b8b33079ea1) feat(web): build table browser reads in Rust ([#328](https://github.com/jspreddy/dql/pull/328))
+- [80bfb31](https://github.com/jspreddy/dql/commit/80bfb31094154465c93b2c675b15533000bbfc33) test(web): golden cases for table browser reads ([#327](https://github.com/jspreddy/dql/pull/327))
+- [3a61e39](https://github.com/jspreddy/dql/commit/3a61e39174cd2e1c5cf5367e333d8de28ee5aa31) docs(plans): move the table browser to structured reads ([#326](https://github.com/jspreddy/dql/pull/326))
 - [19be28b](https://github.com/jspreddy/dql/commit/19be28b3601a800fd8700aaf12a2667b363866ad) fix(dynamo): forget a stale record instead of failing stop and clean ([#324](https://github.com/jspreddy/dql/pull/324))
 - [7f0a56d](https://github.com/jspreddy/dql/commit/7f0a56db860bff890ed1bf338638abb0a3f768f1) fix(parser): read size, not, and condition function names as attributes
 - [0c1e2ce](https://github.com/jspreddy/dql/commit/0c1e2ce888cb90ea39686ea1cde0b1b1a64d1b4f) fix(web): check only the names a table-browser statement uses
