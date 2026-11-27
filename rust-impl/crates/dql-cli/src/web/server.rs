@@ -4499,6 +4499,393 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         }
     }
 
+    /// The JSON body of a reply that `http` read, after its status line was checked.
+    fn json_reply(raw: &str, status: u16) -> Value {
+        assert!(
+            raw.starts_with(&format!("HTTP/1.1 {status}")),
+            "expected {status}: {raw}"
+        );
+        let body = raw
+            .split_once("\r\n\r\n")
+            .map(|(_, body)| body)
+            .unwrap_or("");
+        serde_json::from_str(body).unwrap_or_else(|err| panic!("{err}: {raw}"))
+    }
+
+    /// Every `/api` route, by method. A route added to dispatch belongs here too, so the token
+    /// test below covers it.
+    const API_ROUTES: &[(&str, &str)] = &[
+        ("GET", "/api/events?id=client-0001"),
+        ("GET", "/api/config"),
+        ("GET", "/api/mcp-access"),
+        ("GET", "/api/mcp"),
+        ("GET", "/api/identity"),
+        ("GET", "/api/dynamo"),
+        ("GET", "/api/tree"),
+        ("GET", "/api/structure?path=data.csv"),
+        ("GET", "/api/file-rows?path=data.csv"),
+        ("GET", "/api/file?path=notes.dql"),
+        ("GET", "/api/presence"),
+        ("GET", "/api/query-results?path=notes.dql"),
+        ("GET", "/api/search?q=notes"),
+        ("GET", "/api/table-cache"),
+        ("GET", "/api/tables"),
+        ("GET", "/api/explain?table=posts"),
+        ("GET", "/api/rows?table=posts"),
+        ("POST", "/api/stop"),
+        ("POST", "/api/mcp"),
+        ("POST", "/api/table-read"),
+        ("POST", "/api/rows"),
+        ("POST", "/api/explain"),
+        ("POST", "/api/mcp-access/run"),
+        ("POST", "/api/mcp-access/grant"),
+        ("POST", "/api/mcp-access/deny"),
+        ("POST", "/api/run"),
+        ("POST", "/api/presence"),
+        ("POST", "/api/file"),
+        ("POST", "/api/mkdir"),
+        ("POST", "/api/duplicate"),
+        ("POST", "/api/move"),
+        ("POST", "/api/delete"),
+        ("POST", "/api/query-results"),
+        ("POST", "/api/query-results/clear"),
+        ("POST", "/api/lint"),
+        ("POST", "/api/local-tables/clear"),
+        ("POST", "/api/result-cache/clear"),
+        ("POST", "/api/table-cache/clear"),
+        ("PUT", "/api/file"),
+        ("GET", "/api/not-a-route"),
+        ("DELETE", "/api/file"),
+    ];
+
+    #[test]
+    fn the_route_list_names_every_dispatched_route() {
+        // The `/api/...` literals in the GET, POST, and PUT dispatchers, read from this file.
+        let source = include_str!("server.rs");
+        let code = &source[..source.find("\nmod tests").unwrap()];
+        let between = |start: &str, end: &str| {
+            let from = code.find(start).unwrap();
+            let to = from + code[from..].find(end).unwrap();
+            &code[from..to]
+        };
+        let literals = |text: &str| {
+            text.split('"')
+                .skip(1)
+                .step_by(2)
+                // A route, not the bare "/api/" prefix the token check uses.
+                .filter(|part| part.starts_with("/api/") && part.len() > "/api/".len())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        };
+        let listed = |method: &str, route: &str| {
+            API_ROUTES.iter().any(|(listed_method, path)| {
+                *listed_method == method && path.split('?').next() == Some(route)
+            })
+        };
+        let dispatchers = [
+            ("GET", between("fn dispatch(app", "fn events_reply")),
+            ("GET", between("fn dispatch_get(", "fn dispatch_mcp(")),
+            ("POST", between("fn dispatch_post(", "fn dispatch_put(")),
+            ("PUT", between("fn dispatch_put(", "\n}\n")),
+        ];
+        let mut found = 0;
+        for (method, text) in dispatchers {
+            for route in literals(text) {
+                found += 1;
+                assert!(
+                    listed(method, &route),
+                    "API_ROUTES is missing {method} {route}"
+                );
+            }
+        }
+        assert!(found > 30, "read only {found} routes from the dispatchers");
+    }
+
+    #[test]
+    fn every_api_route_refuses_a_request_without_the_token() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("notes.dql"), "SELECT 1;\n").unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        // A body that would change something, so a route that skipped the check would show it.
+        let body = r#"{"path":"made.dql","from":"notes.dql","to":"moved.dql","text":"x","dql":"CREATE TABLE made (id STRING HASH KEY);","id":"client-0001","request":"r1"}"#;
+        for (method, path) in API_ROUTES {
+            for (label, bearer) in [("no token", None), ("a wrong token", Some("not-the-token"))] {
+                let raw = http_bearer(addr, method, path, body, "", bearer);
+                let reply = json_reply(&raw, 401);
+                assert_eq!(
+                    reply["error"], "unauthorized",
+                    "{method} {path} with {label}"
+                );
+            }
+        }
+        assert!(!root.path().join("made.dql").exists());
+        assert!(!root.path().join("moved.dql").exists());
+        assert!(root.path().join("notes.dql").is_file());
+        let tables = http_body(addr, "GET", "/api/tables", "");
+        assert!(!tables.contains("\"made\""), "{tables}");
+        drop(guard);
+    }
+
+    #[test]
+    fn file_routes_refuse_paths_outside_the_workspace() {
+        let outer = tempfile::tempdir().unwrap();
+        let root = outer.path().join("workspace");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("inside.dql"), "SELECT 1;\n").unwrap();
+        let secret = outer.path().join("secret.dql");
+        fs::write(&secret, "SECRET\n").unwrap();
+        fs::write(outer.path().join("secret.csv"), "id,name\n1,SECRET\n").unwrap();
+        let absolute = secret.to_string_lossy().replace('\\', "/");
+        let (addr, guard) = spawn_server(root.clone());
+
+        let reads = [
+            "/api/file?path=../secret.dql".to_string(),
+            format!("/api/file?path={absolute}"),
+            "/api/file-rows?path=../secret.csv".to_string(),
+            "/api/structure?path=../secret.csv".to_string(),
+            "/api/query-results?path=../secret.dql".to_string(),
+        ];
+        for path in &reads {
+            let raw = http(addr, "GET", path, "");
+            json_reply(&raw, 400);
+            assert!(!raw.contains("SECRET"), "GET {path} read outside: {raw}");
+        }
+
+        let writes = [
+            ("POST", "/api/file", r#"{"path":"../made.dql"}"#),
+            (
+                "PUT",
+                "/api/file",
+                r#"{"path":"../secret.dql","text":"changed"}"#,
+            ),
+            ("POST", "/api/mkdir", r#"{"path":"../made"}"#),
+            ("POST", "/api/duplicate", r#"{"path":"../secret.dql"}"#),
+            (
+                "POST",
+                "/api/move",
+                r#"{"from":"../secret.dql","to":"taken.dql"}"#,
+            ),
+            (
+                "POST",
+                "/api/move",
+                r#"{"from":"inside.dql","to":"../moved.dql"}"#,
+            ),
+            ("POST", "/api/delete", r#"{"path":"../secret.dql"}"#),
+            ("POST", "/api/query-results/clear", r#"{"path":"../"}"#),
+            (
+                "POST",
+                "/api/run",
+                r#"{"dql":"SELECT 1;","path":"../secret.dql"}"#,
+            ),
+        ];
+        for (method, path, body) in writes {
+            let raw = http(addr, method, path, body);
+            json_reply(&raw, 400);
+            assert!(!raw.contains("SECRET"), "{method} {path} {body}: {raw}");
+        }
+
+        assert_eq!(fs::read_to_string(&secret).unwrap(), "SECRET\n");
+        assert!(root.join("inside.dql").is_file());
+        assert!(!root.join("taken.dql").exists());
+        let mut outside: Vec<String> = fs::read_dir(outer.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        outside.sort();
+        assert_eq!(outside, ["secret.csv", "secret.dql", "workspace"]);
+        drop(guard);
+    }
+
+    #[test]
+    fn dynamo_and_the_cache_clears_answer_and_empty_their_caches() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("users.csv"), "id,name\n1,Ada\n").unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+
+        // A memory session has no DynamoDB Local endpoint.
+        let dynamo = json_reply(&http(addr, "GET", "/api/dynamo", ""), 200);
+        assert_eq!(dynamo, json!({"local": false}));
+
+        let script =
+            "CREATE TABLE posts (id STRING HASH KEY); CREATE LOCALTABLE users AS 'users.csv';";
+        let body = json!({"dql": script}).to_string();
+        let ran = http_body(addr, "POST", "/api/run", &body);
+        assert!(!ran.contains("\"ok\":false"), "{ran}");
+        let tables = http_body(addr, "GET", "/api/tables", "");
+        assert!(tables.contains("\"name\":\"users\""), "{tables}");
+
+        let cleared = json_reply(&http(addr, "POST", "/api/local-tables/clear", ""), 200);
+        assert_eq!(cleared, json!({"ok": true, "tables": ["users"]}));
+        let tables = http_body(addr, "GET", "/api/tables", "");
+        assert!(!tables.contains("\"name\":\"users\""), "{tables}");
+        assert!(tables.contains("\"name\":\"posts\""), "{tables}");
+        let again = json_reply(&http(addr, "POST", "/api/local-tables/clear", ""), 200);
+        assert_eq!(again, json!({"ok": true, "tables": []}));
+
+        http(addr, "POST", "/api/file", r#"{"path":"notes.dql"}"#);
+        let saved = http(
+            addr,
+            "POST",
+            "/api/query-results",
+            r#"{"path":"notes.dql","query":"SELECT 1","success":true,"result":{"ok":true}}"#,
+        );
+        json_reply(&saved, 200);
+        let cleared = json_reply(&http(addr, "POST", "/api/result-cache/clear", ""), 200);
+        assert_eq!(cleared, json!({"ok": true, "files": 1}));
+        let listed = json_reply(
+            &http(addr, "GET", "/api/query-results?path=notes.dql", ""),
+            200,
+        );
+        assert_eq!(listed["results"], json!([]));
+        let again = json_reply(&http(addr, "POST", "/api/result-cache/clear", ""), 200);
+        assert_eq!(again, json!({"ok": true, "files": 0}));
+
+        let cleared = json_reply(&http(addr, "POST", "/api/table-cache/clear", ""), 200);
+        assert_eq!(cleared, json!({"ok": true}));
+        let cache = json_reply(&http(addr, "GET", "/api/table-cache", ""), 200);
+        assert_eq!(cache["text"], "No table list cached.");
+        // Clearing the cache forgets definitions, not tables.
+        let tables = http_body(addr, "GET", "/api/tables", "");
+        assert!(tables.contains("\"name\":\"posts\""), "{tables}");
+        drop(guard);
+    }
+
+    #[test]
+    fn access_routes_refuse_requests_they_cannot_act_on() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server_mcp(root.path().to_path_buf(), true);
+
+        let missing = json_reply(&http(addr, "POST", "/api/mcp-access/run", "{}"), 400);
+        assert_eq!(missing["error"], "missing request");
+        for route in ["run", "grant", "deny"] {
+            let raw = http(
+                addr,
+                "POST",
+                &format!("/api/mcp-access/{route}"),
+                r#"{"request":"r9"}"#,
+            );
+            let reply = json_reply(&raw, 409);
+            assert_eq!(reply["error"], "unknown request r9", "{route}");
+        }
+
+        http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}"#,
+        );
+        let setup = json!({"dql": "CREATE TABLE people (id STRING HASH KEY);"}).to_string();
+        let created = http_body(addr, "POST", "/api/run", &setup);
+        assert!(created.contains("\"ok\":true"), "{created}");
+        let waiting = thread::spawn(move || {
+            http(
+                addr,
+                "POST",
+                "/mcp",
+                r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"request_access","arguments":{"query":"SCAN * FROM people"}}}"#,
+            )
+        });
+        let started = Instant::now();
+        while !http(addr, "GET", "/api/mcp-access", "").contains("\"id\":\"r1\"") {
+            assert!(
+                started.elapsed() < Duration::from_secs(2),
+                "request r1 never listed"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        // A grant needs a run first, so the person sees what they grant.
+        let early = json_reply(
+            &http(addr, "POST", "/api/mcp-access/grant", r#"{"request":"r1"}"#),
+            409,
+        );
+        assert_eq!(early["error"], "run the query before granting");
+
+        let denied = http(addr, "POST", "/api/mcp-access/deny", r#"{"request":"r1"}"#);
+        json_reply(&denied, 200);
+        let answer = waiting.join().unwrap();
+        assert!(answer.contains("denied"), "{answer}");
+        for route in ["run", "grant", "deny"] {
+            let raw = http(
+                addr,
+                "POST",
+                &format!("/api/mcp-access/{route}"),
+                r#"{"request":"r1"}"#,
+            );
+            let reply = json_reply(&raw, 409);
+            assert_eq!(reply["error"], "r1 is already denied", "{route}");
+        }
+        drop(guard);
+    }
+
+    #[test]
+    fn requests_the_server_cannot_read_get_an_error_status() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+
+        // Client ids are 8 to 64 letters, digits, `-` or `_`.
+        for id in ["", "short", "has%20space", "../escape-id"] {
+            let raw = http(addr, "GET", &format!("/api/events?id={id}"), "");
+            assert_eq!(
+                json_reply(&raw, 400)["error"],
+                "client id is invalid",
+                "{id:?}"
+            );
+            let body = json!({"id": id}).to_string();
+            let raw = http(addr, "POST", "/api/presence", &body);
+            assert_eq!(
+                json_reply(&raw, 400)["error"],
+                "client id is invalid",
+                "{id:?}"
+            );
+        }
+
+        for dql in ["", "   ", ";"] {
+            let body = json!({"dql": dql}).to_string();
+            let raw = http(addr, "POST", "/api/run", &body);
+            assert_eq!(json_reply(&raw, 502)["error"], "nothing to run", "{dql:?}");
+        }
+
+        for query in ["", "?path=a.csv&table=posts"] {
+            let raw = http(addr, "GET", &format!("/api/structure{query}"), "");
+            let reply = json_reply(&raw, 400);
+            assert_eq!(
+                reply["error"], "pass one query result, table, or data file",
+                "{query}"
+            );
+        }
+
+        let not_json = json_reply(&http(addr, "POST", "/api/explain", "not json"), 400);
+        assert!(
+            !not_json["error"].as_str().unwrap_or("").is_empty(),
+            "{not_json}"
+        );
+        let insert = json!({"read": {"table": "posts", "mode": "insert"}}).to_string();
+        let refused = json_reply(&http(addr, "POST", "/api/explain", &insert), 400);
+        assert_eq!(
+            refused["error"],
+            "mode must be scan, query, or keys, not \"insert\""
+        );
+
+        // Unknown routes and methods answer 404 JSON, never the page.
+        let unknown = [
+            ("GET", "/api/not-a-route"),
+            ("POST", "/api/not-a-route"),
+            ("PUT", "/api/tree"),
+            ("DELETE", "/api/file?path=notes.dql"),
+            ("PATCH", "/api/file"),
+        ];
+        for (method, path) in unknown {
+            let raw = http(addr, method, path, "{}");
+            assert_eq!(
+                json_reply(&raw, 404)["error"],
+                "not found",
+                "{method} {path}"
+            );
+        }
+        drop(guard);
+    }
+
     fn spawn_server(root: PathBuf) -> (SocketAddr, ServerGuard) {
         spawn_server_mcp(root, false)
     }
