@@ -13,7 +13,7 @@
 | [`dqlrs-web/`](dqlrs-web/) | Web UI assets and Playwright tests |
 | [`screenshots/`](screenshots/) | README screenshots (`cli/`, `web/`, `notebook/`) |
 | [`scripts/`](scripts/) | Shared installers, version bump, helpers |
-| [`dev-env/`](dev-env/) | Maintainer environment: setup script and Docker sandbox template |
+| [`dev-env/`](dev-env/) | Maintainer environment: setup script and Docker sandbox template ([SANDBOX.md](SANDBOX.md)) |
 | [`.github/workflows/`](.github/workflows/) | Python and Rust CI |
 
 ## Local install from a clone
@@ -71,7 +71,7 @@ Where to call it:
 
 | Place | Setting |
 | --- | --- |
-| Docker sandbox | Built into the template image below. In the sandbox, run `dev-env/init.sh repo` once to warm the checkout |
+| Docker sandbox | Built into the template image ([SANDBOX.md](SANDBOX.md)). In the sandbox, run `dev-env/init.sh repo` once to warm the checkout |
 | Claude Code cloud environment | Setup script, which starts in the directory that holds the checkouts: `bash dql/dev-env/init.sh` |
 | Cursor cloud agent | Install command: `bash dev-env/init.sh` |
 | Ubuntu, Debian, or WSL | `dev-env/init.sh` from the checkout |
@@ -85,40 +85,11 @@ registries. A step that can't download fails, the script names it, and the other
 
 ### Docker sandbox template
 
-[`dev-env/Dockerfile`](dev-env/Dockerfile) starts from Docker's Claude Code sandbox template
-(`docker/sandbox-templates:claude-code`: Ubuntu, a non-root `agent` user with sudo, Node.js,
-Python, uv, Java, and Claude Code) and runs `init.sh --no-repo` on top. The repository is mounted
-when the sandbox starts; it isn't copied into the image.
-
-```bash
-just dev-image
-```
-
-`sbx` keeps its own image store, so load the local image into it before the first run:
-
-```bash
-docker image save dql-dev -o dql-dev.tar
-```
-
-```bash
-sbx template load dql-dev.tar
-```
-
-```bash
-sbx run --template dql-dev claude
-```
-
-Run `sbx run --template dql-dev cursor` for the Cursor CLI instead. Credentials stay on the
-host: `sbx secret set` stores them, and the sandbox proxy adds them to requests.
-
-To try the image without `sbx`:
-
-```bash
-docker run --rm -it -v "$PWD":/home/agent/workspace dql-dev bash
-```
-
-Build arguments: `BASE_IMAGE` picks another base, and `INIT_ARGS` (default `--no-repo`) sets the
-steps, for example `--build-arg INIT_ARGS="--no-repo --skip browser"`.
+[`dev-env/Dockerfile`](dev-env/Dockerfile) builds `dql-dev`, a Docker sandbox template: Docker's
+Claude Code template (`docker/sandbox-templates:claude-code`) with `init.sh --no-repo` run on top.
+`just dev-image` builds it. [SANDBOX.md](SANDBOX.md) covers installing `sbx` on macOS, Windows,
+and Linux, building and loading the template, running Claude Code or the Cursor CLI in a
+clone-mode sandbox, and running several sandboxes at once.
 
 ## Verification
 
