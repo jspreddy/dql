@@ -32,6 +32,7 @@ Each line says where to look, not what is there.
 
 ### Tooling
 
+- `dev-env/`: the maintainer setup script (`init.sh`) and Docker sandbox template. See `MAINTAINER.md`, "Dev environment".
 - The `Justfile` is the entry point for everything: build, test, lint, DynamoDB Local (`just dynamo`), web tests, the changelog and versions.
 - Many tests need DynamoDB Local. Don't run tests against it while `just verify` is running.
 - `CHANGELOG.md` is generated (`just changelog`). Never edit it by hand. A bot workflow updates it on `v-rust`.

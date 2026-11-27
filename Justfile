@@ -57,6 +57,23 @@ java: (_title "java")
 local-install: (_title "local-install")
     "{{justfile_directory()}}/scripts/install.sh"
 
+# Install the maintainer toolchain and warm the checkout (dev-env/init.sh). Flags need `--`: just dev-init -- --check
+[group('local')]
+dev-init *args: (_title "dev-init")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # `just recipe -- --flag` includes the separator in the variadic args.
+    args=({{args}})
+    if [[ ${#args[@]} -gt 0 && "${args[0]}" == "--" ]]; then
+        args=("${args[@]:1}")
+    fi
+    exec "{{justfile_directory()}}/dev-env/init.sh" "${args[@]+"${args[@]}"}"
+
+# Build the maintainer Docker sandbox template (dev-env/Dockerfile) as the given tag
+[group('local')]
+dev-image tag="dql-dev": (_title "dev-image")
+    docker build -t "{{tag}}" "{{justfile_directory()}}/dev-env"
+
 # Sync the Python dev environment
 [group('python')]
 py-sync: (_title "py-sync")
