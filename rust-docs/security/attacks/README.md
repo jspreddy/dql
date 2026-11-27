@@ -129,6 +129,45 @@ rows; **Medium** and **Low** are narrower.
 | 08 | [Notebook: Jupyter tokens, kernel keys, and autosaved outputs](08-notebook-runtime-files-and-autosave.md) | High | A shell as the user |
 | 09 | [DynamoDB Local: no auth, published on all interfaces, plaintext on disk](09-dynamodb-local-exposure.md) | Medium | Network or shell access |
 | 10 | [Smaller leaks: history, stderr, process arguments](10-history-stderr-and-argv-leaks.md) | Low | A shell, or another user's `ps` |
+| 11 | [AWS credentials in the `dqlrs` process environment](11-credentials-in-the-dqlrs-process-environment.md) | Critical | A shell, while an `aws-vault exec`'d `dqlrs` runs |
+| 12 | [The agent runs `aws-vault` itself](12-agent-runs-aws-vault-itself.md) | Critical or blocked, by `aws-vault` setup | A shell |
+
+### Under `aws-vault exec <profile> -- dqlrs`
+
+With this setup the person's AWS credentials exist only in the `dqlrs` process that `aws-vault`
+starts. The agent's shell, and any `dqlrs` or AWS CLI the agent starts, has none. That removes one
+route and leaves the rest:
+
+| # | Under `aws-vault exec` | Why |
+| --- | --- | --- |
+| 01 | **Stays Critical** | The scraped token drives the running `dqlrs`, which holds the credentials |
+| 02 | **Stays Critical** | Same: the MCP token drives the running server |
+| 03 | **Stays Critical** | The token reaches the running server; the cache key needs no AWS |
+| 04 | **Narrowed** | An agent-started `dqlrs` or AWS CLI has no credentials. It still works through 11, 12, and backends without credentials |
+| 05 | **Stays High** | Reading cached results needs the cache key, not AWS |
+| 06 | **Stays High** | The person's `dqlrs` runs the agent's file with the person's credentials |
+| 07 | **Stays Medium** | Unchanged |
+| 08 | **Stays High, worse** | JupyterLab, its kernels, and its terminals inherit the credentials |
+| 09 | **Stays Medium** | DynamoDB Local does not use AWS credentials |
+| 10 | **Stays Low** | Unchanged |
+| 11 | **New, Critical** | Reproduced on Linux: another process of the same user read the credentials from `/proc/<pid>/environ` |
+| 12 | **New, depends on setup** | If `aws-vault` answers without a prompt (unlocked keychain, cached session, `--ec2-server`), the agent runs it too |
+
+So `aws-vault exec` closes the agent's direct route to AWS, and only that. Every attack that goes
+through the running `dqlrs` (01, 02, 03, 06, 07) or needs no AWS credentials (05, 09, 10) is
+unchanged. Two new ones appear: reading the credentials out of `dqlrs` (11), and asking
+`aws-vault` the same way the person did (12).
+
+For `aws-vault exec` to remove AWS from the agent's reach, all of these must hold:
+
+1. `dqlrs` makes itself non-dumpable and keeps credentials out of its children (11).
+2. Every `aws-vault exec` needs the person: MFA, a locking keychain, short sessions, no
+   `--ec2-server`, no file passphrase in the environment (12).
+3. No other credential source exists: no static keys in `~/.aws/credentials`, no SSO cache the
+   agent can use, no `credential_process` that answers silently.
+4. The agent is not started from inside `aws-vault exec`.
+
+Even then, 01, 02, 03, 05, 06, 07, 09, and 10 need the fixes in their own files.
 
 ### Checked and held
 
@@ -171,8 +210,9 @@ shell at all (01, 02, 06, 07) and narrow the rest. In priority order:
 
 1. Separate credentials: a per-process browser session secret that is never served without proof
    of the person, and a distinct MCP credential that `/api/*` rejects (01, 02).
-2. Validate `Host` and `Origin` on every route (01).
-3. Freeze a temp table when it is granted (07), and require a click in the grant panel, not a
+2. Make `dqlrs` non-dumpable at startup and strip `AWS_*` from its children (11).
+3. Validate `Host` and `Origin` on every route (01).
+4. Freeze a temp table when it is granted (07), and require a click in the grant panel, not a
    statement in a script, to grant (06).
-4. Stop writing data where a same-user process can read it without the person: notebook
+5. Stop writing data where a same-user process can read it without the person: notebook
    autosave of outputs (08), DynamoDB Local's published port and plaintext data (09).

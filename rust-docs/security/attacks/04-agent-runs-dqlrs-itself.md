@@ -21,6 +21,20 @@ Under all of these sit the AWS credentials (`~/.aws/credentials`, SSO caches, en
 variables) that `dqlrs` uses. An agent can read DynamoDB with the AWS CLI or SDK and never touch
 `dqlrs`.
 
+## Under `aws-vault exec`
+
+When the person starts `dqlrs` with `aws-vault exec <profile> -- dqlrs …`, the credentials are only
+in that process's environment. A `dqlrs -c`, `dqlrs --serve`, or `dqlrs web` that the agent starts
+has none, and its first DynamoDB call fails. So does the agent's own AWS CLI. This attack then
+holds only through other routes:
+
+- reading the credentials from the running `dqlrs`, or from its children (11);
+- running `aws-vault` itself, or any other credential source the SDK finds (12);
+- a backend that needs no credentials: the memory backend, or DynamoDB Local (09).
+
+A second `dqlrs web` without credentials still reads the cached results (05) and still serves
+`.dql` files: neither needs AWS.
+
 ## Reproduced
 
 `DQL_BACKEND=memory dqlrs -c "…; SCAN * FROM users"` printed the rows. A second

@@ -19,6 +19,11 @@ credentials and its saved notebooks are files that any process of the user can r
    project). Every query result shown in a cell is then on disk, unencrypted, and so are copies in
    `.ipynb_checkpoints/`. The person did not explicitly save those rows.
 
+4. **Credentials under `aws-vault exec`.** `aws-vault exec <profile> -- dqlrs notebook` passes the
+   credentials to JupyterLab, a Python process that does not hide its environment (11). Every
+   kernel and every **JupyterLab terminal** inherits them. With the server token from (1), an
+   agent opens a terminal through Jupyter's `/api/terminals` and runs `env`, or runs `aws` in it.
+
 ## Reproduced
 
 From the code and Jupyter's defaults; the notebook was not started in this review. `dqlrs
@@ -36,6 +41,9 @@ config (`notebook/jupyter_server_config.py`) changes neither the token handling 
 - Do not keep outputs on disk by default. Strip outputs on save with a contents-manager hook
   (`FileContentsManager.pre_save_hook` that clears outputs from DQL cells), or turn autosave off
   for DQL notebooks and say so in the banner.
+- Turn off Jupyter terminals (`c.ServerApp.terminals_enabled = False`), and do not pass `AWS_*`
+  to JupyterLab. Give credentials to the kernel (`dqlrs`) through a pipe, and let the kernel
+  make itself non-dumpable (11).
 - Keep the runtime folder `0700`. Note in the docs that this only stops other users.
 - The token and kernel keys fall under 03's limit: a same-user process can read them. The real
   fix is the agent-identity separation in the README.
