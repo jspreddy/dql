@@ -3,6 +3,10 @@
 **Status:** done. Every plan here has shipped. They are kept as the record of
 the design. "Today" columns inside them describe the code before the work.
 
+These plans treat a process running as the same OS user as the user. The
+agent model in [`security/attacks/`](../../../security/attacks/README.md)
+does not, and lists the attacks that follow from that.
+
 What shipped:
 
 - Both caches are AES-256-GCM ciphertext on disk, directories `0700` and files
