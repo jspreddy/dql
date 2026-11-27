@@ -27,6 +27,7 @@ use super::shape::{
     split_statements, Column, ExecText, ListedTable, TableShape, PAGE_SIZE,
 };
 use super::structure;
+use super::table_read::{self, TableRead};
 use crate::serve::protocol::{envelope_from_error, ServeEnvelope};
 use crate::session::Session;
 use crate::table_cache::LoadEvent;
@@ -870,9 +871,8 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
         }
         "/api/explain" => {
             let name = query_value(query, "table");
-            let dql = query_value(query, "dql");
             let mut state = lock_state(app);
-            match table_explain(&mut state, &name, &dql) {
+            match table_explain(&mut state, &name) {
                 Ok(payload) => Reply::Json(200, payload),
                 Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
             }
@@ -883,11 +883,10 @@ fn dispatch_get(app: &App, path: &str, query: &str) -> Reply {
                 .parse::<i64>()
                 .unwrap_or(0)
                 .max(0) as usize;
-            let dql = query_value(query, "dql");
             // A fresh read starts uncancelled; /api/stop cancels it like an editor run.
             app.cancel.clear();
             let mut state = lock_state(app);
-            match table_rows(&mut state, &name, page, &dql) {
+            match table_rows(&mut state, &name, page) {
                 Ok(payload) => Reply::Json(200, payload),
                 Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
             }
@@ -1226,6 +1225,15 @@ fn dispatch_post(app: &Arc<App>, path: &str, body: &[u8]) -> Reply {
     if path == "/api/mcp" {
         return mcp_reply(app, &parse_json(body));
     }
+    if path == "/api/table-read" {
+        return table_read_reply(app, body);
+    }
+    if path == "/api/rows" {
+        return rows_reply(app, body);
+    }
+    if path == "/api/explain" {
+        return explain_reply(app, body);
+    }
     if path == "/api/mcp-access/run" {
         return run_access(app, &parse_json(body));
     }
@@ -1536,6 +1544,90 @@ fn deny_access(app: &Arc<App>, body: &Value) -> Reply {
     Reply::Json(200, mcp_access_payload(app))
 }
 
+/// The read in a request body: the body itself for `/api/table-read`, or its `read` field.
+fn read_from(body: &[u8], field: Option<&str>) -> Result<(TableRead, Value), String> {
+    let value: Value =
+        serde_json::from_slice(body).map_err(|err| format!("the body is not JSON: {err}"))?;
+    let read = match field {
+        Some(field) => value.get(field).cloned().unwrap_or(Value::Null),
+        None => value.clone(),
+    };
+    let read: TableRead =
+        serde_json::from_value(read).map_err(|err| format!("the read is not valid: {err}"))?;
+    Ok((read, value))
+}
+
+/// The preview: what a read would run, or why it cannot. Runs nothing.
+fn table_read_reply(app: &App, body: &[u8]) -> Reply {
+    let read = match read_from(body, None) {
+        Ok((read, _)) => read,
+        Err(message) => return Reply::Json(400, json!({"ok": false, "error": message})),
+    };
+    let table = {
+        let mut state = lock_state(app);
+        read_table(&mut state, &read.table)
+    };
+    let planned = table.and_then(|table| {
+        let left_out = table_read::keys_left_out(&table, &read);
+        table_read::plan(&table, &read).map(|statements| (statements, left_out))
+    });
+    match planned {
+        Ok((statements, left_out)) => Reply::Json(
+            200,
+            json!({
+                "ok": true,
+                "dql": statements.join("; "),
+                "statements": statements,
+                "error": "",
+                "keysLeftOut": left_out,
+            }),
+        ),
+        Err(error) => Reply::Json(
+            200,
+            json!({"ok": true, "dql": "", "statements": [], "error": error, "keysLeftOut": 0}),
+        ),
+    }
+}
+
+fn rows_reply(app: &App, body: &[u8]) -> Reply {
+    let (read, value) = match read_from(body, Some("read")) {
+        Ok(found) => found,
+        Err(message) => return Reply::Json(400, json!({"ok": false, "error": message})),
+    };
+    let page = value
+        .get("page")
+        .and_then(Value::as_u64)
+        .map(|page| page as usize)
+        .unwrap_or(0);
+    // A fresh read starts uncancelled; /api/stop cancels it like an editor run.
+    app.cancel.clear();
+    let mut state = lock_state(app);
+    let statements = match planned_read(&mut state, &read, rows_fetch_limit(page)) {
+        Ok(statements) => statements,
+        Err(message) => return Reply::Json(400, json!({"ok": false, "error": message})),
+    };
+    match run_table_rows(&mut state, &read.table, page, statements) {
+        Ok(payload) => Reply::Json(200, payload),
+        Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
+    }
+}
+
+fn explain_reply(app: &App, body: &[u8]) -> Reply {
+    let read = match read_from(body, Some("read")) {
+        Ok((read, _)) => read,
+        Err(message) => return Reply::Json(400, json!({"ok": false, "error": message})),
+    };
+    let mut state = lock_state(app);
+    let statements = match planned_read(&mut state, &read, PAGE_SIZE.saturating_add(1)) {
+        Ok(statements) => statements,
+        Err(message) => return Reply::Json(400, json!({"ok": false, "error": message})),
+    };
+    match run_table_explain(&mut state, &read.table, statements) {
+        Ok(payload) => Reply::Json(200, payload),
+        Err(message) => Reply::Json(502, json!({"ok": false, "error": message})),
+    }
+}
+
 fn handle_run(app: Arc<App>, dql: String, script: &str) -> Reply {
     let statements = split_statements(&dql);
     if statements.is_empty() {
@@ -1705,13 +1797,73 @@ fn load_shape(state: &mut WebState, name: &str) -> Option<TableShape> {
     Some(shape)
 }
 
-fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Result<Value, String> {
+/// A table's pages before the picker has a read: `SCAN * FROM name`, a page at a time. A read
+/// from the picker goes to `POST /api/rows`.
+fn table_rows(state: &mut WebState, name: &str, page: usize) -> Result<Value, String> {
+    let statement = first_pages(name, rows_fetch_limit(page))?;
+    run_table_rows(state, name, page, vec![statement])
+}
+
+/// `SCAN * FROM name LIMIT limit`, for a table with no read yet.
+fn first_pages(name: &str, limit: usize) -> Result<String, String> {
+    if !safe_table_name(name) {
+        return Err(format!("unsupported table name {name:?}"));
+    }
+    Ok(format!("SCAN * FROM {name} LIMIT {limit}"))
+}
+
+/// How many rows a page reads: every row up to its end, and one more to know whether there is a
+/// next page.
+fn rows_fetch_limit(page: usize) -> usize {
+    PAGE_SIZE
+        .saturating_mul(page)
+        .saturating_add(PAGE_SIZE)
+        .saturating_add(1)
+}
+
+/// The table, the statements a read runs, and the page limit, from the browser's read.
+fn planned_read(
+    state: &mut WebState,
+    read: &TableRead,
+    limit: usize,
+) -> Result<Vec<String>, String> {
+    let table = read_table(state, &read.table)?;
+    let statements = table_read::plan(&table, read)?;
+    Ok(browser_statements(&read.table, statements, limit)?.0)
+}
+
+/// The table's definition as `/api/tables?name=` lists it. A table with no definition yet reads
+/// as one with no keys, as the browser treats it.
+fn read_table(state: &mut WebState, name: &str) -> Result<ListedTable, String> {
+    let name = name.trim();
+    if !safe_table_name(name) {
+        return Err(format!("unsupported table name {name:?}"));
+    }
+    let listed = crate::meta::ls::web_table_by_name(&mut state.session, name)?;
+    Ok(listed
+        .tables
+        .into_iter()
+        .find(|table| table.name == name)
+        .unwrap_or_else(|| ListedTable {
+            name: name.to_string(),
+            keys: Vec::new(),
+            kind: String::new(),
+            granted: false,
+            indexes: Vec::new(),
+            attributes: Vec::new(),
+        }))
+}
+
+fn run_table_rows(
+    state: &mut WebState,
+    name: &str,
+    page: usize,
+    statements: Vec<String>,
+) -> Result<Value, String> {
     if !safe_table_name(name) {
         return Err(format!("unsupported table name {name:?}"));
     }
     let start = PAGE_SIZE.saturating_mul(page);
-    let fetch_limit = start.saturating_add(PAGE_SIZE).saturating_add(1);
-    let (statements, _) = browser_read_dql(name, dql, fetch_limit)?;
     let mut items = Vec::new();
     let started = std::time::Instant::now();
     let (mut read_units, mut write_units) = (0.0, 0.0);
@@ -1755,11 +1907,16 @@ fn table_rows(state: &mut WebState, name: &str, page: usize, dql: &str) -> Resul
 
 /// EXPLAIN for the table browser: the plan of each statement its first page would run, with the
 /// same LIMIT as `/api/rows`, so the plan matches what Run reads.
-fn table_explain(state: &mut WebState, name: &str, dql: &str) -> Result<Value, String> {
-    if !safe_table_name(name) {
-        return Err(format!("unsupported table name {name:?}"));
-    }
-    let (statements, _) = browser_read_dql(name, dql, PAGE_SIZE.saturating_add(1))?;
+fn table_explain(state: &mut WebState, name: &str) -> Result<Value, String> {
+    let statement = first_pages(name, PAGE_SIZE.saturating_add(1))?;
+    run_table_explain(state, name, vec![statement])
+}
+
+fn run_table_explain(
+    state: &mut WebState,
+    name: &str,
+    statements: Vec<String>,
+) -> Result<Value, String> {
     let mut plans = Vec::new();
     for statement in &statements {
         let envelope = state
@@ -1776,13 +1933,14 @@ fn table_explain(state: &mut WebState, name: &str, dql: &str) -> Result<Value, S
     Ok(json!({"name": name, "plans": plans}))
 }
 
-/// SCAN/SELECT of `name` only. Paged reads append LIMIT; KEYS IN and multi-query keys cannot.
-fn browser_read_dql(name: &str, dql: &str, limit: usize) -> Result<(Vec<String>, bool), String> {
-    let text = dql.trim().trim_end_matches(';').trim();
-    if text.is_empty() {
-        return Ok((vec![format!("SCAN * FROM {name} LIMIT {limit}")], true));
-    }
-    let parts = split_statements(text);
+/// The statements of one table-browser read, checked and limited: each a SELECT or SCAN of
+/// `name` with no SAVE or LIMIT. A single statement gets the page LIMIT; KEYS IN and a list of
+/// statements cannot be limited, so they read everything they name.
+fn browser_statements(
+    name: &str,
+    parts: Vec<String>,
+    limit: usize,
+) -> Result<(Vec<String>, bool), String> {
     if parts.is_empty() {
         return Err("only SELECT or SCAN in the table browser".to_string());
     }
@@ -2875,6 +3033,111 @@ mod tests {
     }
 
     #[test]
+    fn the_table_browser_sends_its_read_and_the_server_builds_it() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        let setup = "CREATE TABLE posts (id STRING HASH KEY, sk NUMBER RANGE KEY) GLOBAL INDEX ('by-status', status STRING, sk NUMBER); INSERT INTO posts (id, sk, status, note) VALUES ('a', 1, 'open', 'it\\'s here'), ('a', 2, 'shut', 'plain'), ('b', 3, 'open', 'back\\\\slash');";
+        let setup_body = format!("{{\"dql\":{}}}", serde_json::to_string(setup).unwrap());
+        let created = http_body(addr, "POST", "/api/run", &setup_body);
+        assert!(created.contains("\"ok\":true"), "{created}");
+        let post = |path: &str, body: Value| -> (String, Value) {
+            let raw = http(addr, "POST", path, &body.to_string());
+            let json = raw
+                .split_once("\r\n\r\n")
+                .and_then(|(_, rest)| serde_json::from_str(rest.trim()).ok())
+                .unwrap_or(Value::Null);
+            (raw, json)
+        };
+
+        // The preview: the statement, built on the server, and no message.
+        let (_, preview) = post(
+            "/api/table-read",
+            json!({"table": "posts", "mode": "scan", "filters": [{"attribute": "status", "op": "eq", "value": "open"}]}),
+        );
+        assert_eq!(
+            preview["dql"], "SCAN * FROM posts WHERE status = 'open'",
+            "{preview}"
+        );
+        assert_eq!(preview["error"], "", "{preview}");
+
+        // A message instead of a statement, named by the server.
+        let (_, bad) = post(
+            "/api/table-read",
+            json!({"table": "posts", "mode": "query"}),
+        );
+        assert_eq!(bad["dql"], "", "{bad}");
+        assert_eq!(bad["error"], "Query needs a hash key value.", "{bad}");
+
+        // Run: the rows of that read, and the statement that ran, with the page LIMIT.
+        let (_, rows) = post(
+            "/api/rows",
+            json!({"read": {"table": "posts", "mode": "scan", "filters": [{"attribute": "status", "op": "eq", "value": "open"}]}, "page": 0}),
+        );
+        assert_eq!(rows["items"].as_array().map(Vec::len), Some(2), "{rows}");
+        assert_eq!(
+            rows["dql"], "SCAN * FROM posts WHERE status = 'open' LIMIT 51",
+            "{rows}"
+        );
+
+        // A value with a quote, and one with a backslash, read the rows that hold them.
+        for (value, id) in [("it's here", "a"), ("back\\slash", "b")] {
+            let (_, found) = post(
+                "/api/rows",
+                json!({"read": {"table": "posts", "mode": "scan", "filters": [{"attribute": "note", "op": "eq", "value": value}]}}),
+            );
+            let items = found["items"].as_array().cloned().unwrap_or_default();
+            assert_eq!(items.len(), 1, "{value}: {found}");
+            assert_eq!(items[0]["id"], id, "{value}: {found}");
+        }
+
+        // Keys on an index: one statement per key, run together, no LIMIT.
+        let (_, keys) = post(
+            "/api/rows",
+            json!({"read": {"table": "posts", "mode": "keys", "source": "by-status", "batchKeys": "open, shut"}}),
+        );
+        assert_eq!(keys["items"].as_array().map(Vec::len), Some(3), "{keys}");
+        assert_eq!(
+            keys["dql"],
+            "SELECT * FROM posts WHERE status = 'open' USING by-status; SELECT * FROM posts WHERE status = 'shut' USING by-status",
+            "{keys}"
+        );
+
+        // A read that cannot run is a 400 with the message, and runs nothing.
+        let (raw, refused) = post(
+            "/api/rows",
+            json!({"read": {"table": "posts", "mode": "scan", "filters": [{"attribute": "odd name", "op": "eq", "value": "x"}]}}),
+        );
+        assert!(raw.starts_with("HTTP/1.1 400"), "{raw}");
+        assert_eq!(
+            refused["error"], "odd name cannot be used as a filter name",
+            "{refused}"
+        );
+
+        // Explain: the plan of what Run reads.
+        let (_, explain) = post(
+            "/api/explain",
+            json!({"read": {"table": "posts", "mode": "query", "source": "by-status", "keys": [{"attribute": "status", "op": "eq", "value": "open", "role": "hash"}]}}),
+        );
+        assert_eq!(
+            explain["plans"][0]["statement"],
+            "SELECT * FROM posts WHERE status = 'open' USING by-status LIMIT 51",
+            "{explain}"
+        );
+        assert!(
+            explain["plans"][0]["plan"]
+                .as_str()
+                .unwrap_or("")
+                .contains("by-status"),
+            "{explain}"
+        );
+
+        // A body that is not a read is a 400.
+        let (raw, _) = post("/api/rows", json!({"read": "posts"}));
+        assert!(raw.starts_with("HTTP/1.1 400"), "{raw}");
+        drop(guard);
+    }
+
+    #[test]
     fn mcp_turns_on_and_off_from_the_web_app() {
         let root = tempfile::tempdir().unwrap();
         let (addr, guard) = spawn_server_mcp(root.path().to_path_buf(), false);
@@ -3881,14 +4144,10 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         assert_eq!(page_json["items"].as_array().unwrap().len(), 3);
         assert_eq!(page_json["dql"], "SCAN * FROM posts LIMIT 51");
 
-        let queried = http_body(
+        let queried = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("SELECT * FROM posts WHERE id = 'a'")
-            ),
-            "",
+            json!({"table": "posts", "mode": "query", "keys": [{"attribute": "id", "op": "eq", "value": "a", "role": "hash"}]}),
+            0,
         );
         let queried_json: Value = serde_json::from_str(&queried).expect(&queried);
         assert_eq!(queried_json["items"].as_array().unwrap().len(), 2);
@@ -3901,52 +4160,36 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
             "{queried}"
         );
 
-        let newest = http_body(
+        let newest = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("SELECT * FROM posts WHERE id = 'a' DESC")
-            ),
-            "",
+            json!({"table": "posts", "mode": "query", "order": "reverse", "keys": [{"attribute": "id", "op": "eq", "value": "a", "role": "hash"}]}),
+            0,
         );
         let newest_json: Value = serde_json::from_str(&newest).expect(&newest);
         assert_eq!(newest_json["items"][0]["sk"], 2);
         assert_eq!(newest_json["items"][1]["sk"], 1);
 
-        let filtered = http_body(
+        let filtered = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("SCAN * FROM posts WHERE status = 'open'")
-            ),
-            "",
+            json!({"table": "posts", "mode": "scan", "filters": [{"attribute": "status", "op": "eq", "value": "open"}]}),
+            0,
         );
         let filtered_json: Value = serde_json::from_str(&filtered).expect(&filtered);
         assert_eq!(filtered_json["items"].as_array().unwrap().len(), 2);
 
-        let indexed = http_body(
+        let indexed = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("SELECT * FROM posts WHERE sk = 1 USING by-sk")
-            ),
-            "",
+            json!({"table": "posts", "mode": "query", "source": "by-sk", "keys": [{"attribute": "sk", "op": "eq", "value": "1", "role": "hash"}]}),
+            0,
         );
         let indexed_json: Value = serde_json::from_str(&indexed).expect(&indexed);
         assert_eq!(indexed_json["items"].as_array().unwrap().len(), 1);
         assert_eq!(indexed_json["items"][0]["id"], "a");
 
-        let by_keys = http_body(
+        let by_keys = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("SELECT * FROM posts KEYS IN ('a', 1), ('b', 3)")
-            ),
-            "",
+            json!({"table": "posts", "mode": "keys", "batchKeys": "(a, 1), (b, 3)"}),
+            0,
         );
         let by_keys_json: Value = serde_json::from_str(&by_keys).expect(&by_keys);
         assert_eq!(by_keys_json["items"].as_array().unwrap().len(), 2);
@@ -3956,54 +4199,38 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         );
         assert_eq!(by_keys_json["has_more"], false);
 
-        let grouped_keys = http_body(
+        let grouped_keys = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("SELECT * FROM posts KEYS IN ((a, 1), (b, 3)),")
-            ),
-            "",
+            json!({"table": "posts", "mode": "keys", "batchKeys": "((a, 1), (b, 3)),"}),
+            0,
         );
         let grouped_keys_json: Value = serde_json::from_str(&grouped_keys).expect(&grouped_keys);
         assert_eq!(grouped_keys_json["items"].as_array().unwrap().len(), 2);
 
-        let by_index_keys = http_body(
+        let by_index_keys = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode(
-                    "SELECT * FROM posts WHERE sk = 1 USING by-sk; SELECT * FROM posts WHERE sk = 3 USING by-sk"
-                )
-            ),
-            "",
+            json!({"table": "posts", "mode": "keys", "source": "by-sk", "batchKeys": "1, 3"}),
+            0,
         );
         let by_index_keys_json: Value = serde_json::from_str(&by_index_keys).expect(&by_index_keys);
         assert_eq!(by_index_keys_json["items"].as_array().unwrap().len(), 2);
         assert_eq!(by_index_keys_json["has_more"], false);
 
-        let write = http_body(
-            addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("INSERT INTO posts (id) VALUES ('z')")
-            ),
-            "",
+        let write = rows_read(addr, json!({"table": "posts", "mode": "insert"}), 0);
+        assert!(
+            write.contains("mode must be scan, query, or keys"),
+            "{write}"
         );
-        assert!(write.contains("only SELECT or SCAN"), "{write}");
 
-        let other = http_body(
+        let other = rows_read(
             addr,
-            "GET",
-            &format!(
-                "/api/rows?table=posts&page=0&dql={}",
-                query_encode("SCAN * FROM comments")
-            ),
-            "",
+            json!({"table": "posts", "mode": "scan", "filters": [{"attribute": "odd name", "op": "eq", "value": "x"}]}),
+            0,
         );
-        assert!(other.contains("read must use table posts"), "{other}");
+        assert!(
+            other.contains("odd name cannot be used as a filter name"),
+            "{other}"
+        );
         drop(guard);
     }
 
@@ -4025,14 +4252,9 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         let created = http_body(addr, "POST", "/api/run", &body);
         assert!(created.contains("\"ok\":true"), "{created}");
 
-        let dql = query_encode("SELECT * FROM nums WHERE gid = 'g'");
+        let read = json!({"table": "nums", "mode": "query", "keys": [{"attribute": "gid", "op": "eq", "value": "g", "role": "hash"}]});
         let page_ids = |page: usize| {
-            let body = http_body(
-                addr,
-                "GET",
-                &format!("/api/rows?table=nums&page={page}&dql={dql}"),
-                "",
-            );
+            let body = rows_read(addr, read.clone(), page);
             let json: Value = serde_json::from_str(&body).unwrap_or_else(|_| panic!("{body}"));
             let ids: Vec<i64> = json["items"]
                 .as_array()
@@ -4277,6 +4499,393 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         }
     }
 
+    /// The JSON body of a reply that `http` read, after its status line was checked.
+    fn json_reply(raw: &str, status: u16) -> Value {
+        assert!(
+            raw.starts_with(&format!("HTTP/1.1 {status}")),
+            "expected {status}: {raw}"
+        );
+        let body = raw
+            .split_once("\r\n\r\n")
+            .map(|(_, body)| body)
+            .unwrap_or("");
+        serde_json::from_str(body).unwrap_or_else(|err| panic!("{err}: {raw}"))
+    }
+
+    /// Every `/api` route, by method. A route added to dispatch belongs here too, so the token
+    /// test below covers it.
+    const API_ROUTES: &[(&str, &str)] = &[
+        ("GET", "/api/events?id=client-0001"),
+        ("GET", "/api/config"),
+        ("GET", "/api/mcp-access"),
+        ("GET", "/api/mcp"),
+        ("GET", "/api/identity"),
+        ("GET", "/api/dynamo"),
+        ("GET", "/api/tree"),
+        ("GET", "/api/structure?path=data.csv"),
+        ("GET", "/api/file-rows?path=data.csv"),
+        ("GET", "/api/file?path=notes.dql"),
+        ("GET", "/api/presence"),
+        ("GET", "/api/query-results?path=notes.dql"),
+        ("GET", "/api/search?q=notes"),
+        ("GET", "/api/table-cache"),
+        ("GET", "/api/tables"),
+        ("GET", "/api/explain?table=posts"),
+        ("GET", "/api/rows?table=posts"),
+        ("POST", "/api/stop"),
+        ("POST", "/api/mcp"),
+        ("POST", "/api/table-read"),
+        ("POST", "/api/rows"),
+        ("POST", "/api/explain"),
+        ("POST", "/api/mcp-access/run"),
+        ("POST", "/api/mcp-access/grant"),
+        ("POST", "/api/mcp-access/deny"),
+        ("POST", "/api/run"),
+        ("POST", "/api/presence"),
+        ("POST", "/api/file"),
+        ("POST", "/api/mkdir"),
+        ("POST", "/api/duplicate"),
+        ("POST", "/api/move"),
+        ("POST", "/api/delete"),
+        ("POST", "/api/query-results"),
+        ("POST", "/api/query-results/clear"),
+        ("POST", "/api/lint"),
+        ("POST", "/api/local-tables/clear"),
+        ("POST", "/api/result-cache/clear"),
+        ("POST", "/api/table-cache/clear"),
+        ("PUT", "/api/file"),
+        ("GET", "/api/not-a-route"),
+        ("DELETE", "/api/file"),
+    ];
+
+    #[test]
+    fn the_route_list_names_every_dispatched_route() {
+        // The `/api/...` literals in the GET, POST, and PUT dispatchers, read from this file.
+        let source = include_str!("server.rs");
+        let code = &source[..source.find("\nmod tests").unwrap()];
+        let between = |start: &str, end: &str| {
+            let from = code.find(start).unwrap();
+            let to = from + code[from..].find(end).unwrap();
+            &code[from..to]
+        };
+        let literals = |text: &str| {
+            text.split('"')
+                .skip(1)
+                .step_by(2)
+                // A route, not the bare "/api/" prefix the token check uses.
+                .filter(|part| part.starts_with("/api/") && part.len() > "/api/".len())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        };
+        let listed = |method: &str, route: &str| {
+            API_ROUTES.iter().any(|(listed_method, path)| {
+                *listed_method == method && path.split('?').next() == Some(route)
+            })
+        };
+        let dispatchers = [
+            ("GET", between("fn dispatch(app", "fn events_reply")),
+            ("GET", between("fn dispatch_get(", "fn dispatch_mcp(")),
+            ("POST", between("fn dispatch_post(", "fn dispatch_put(")),
+            ("PUT", between("fn dispatch_put(", "\n}\n")),
+        ];
+        let mut found = 0;
+        for (method, text) in dispatchers {
+            for route in literals(text) {
+                found += 1;
+                assert!(
+                    listed(method, &route),
+                    "API_ROUTES is missing {method} {route}"
+                );
+            }
+        }
+        assert!(found > 30, "read only {found} routes from the dispatchers");
+    }
+
+    #[test]
+    fn every_api_route_refuses_a_request_without_the_token() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("notes.dql"), "SELECT 1;\n").unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+        // A body that would change something, so a route that skipped the check would show it.
+        let body = r#"{"path":"made.dql","from":"notes.dql","to":"moved.dql","text":"x","dql":"CREATE TABLE made (id STRING HASH KEY);","id":"client-0001","request":"r1"}"#;
+        for (method, path) in API_ROUTES {
+            for (label, bearer) in [("no token", None), ("a wrong token", Some("not-the-token"))] {
+                let raw = http_bearer(addr, method, path, body, "", bearer);
+                let reply = json_reply(&raw, 401);
+                assert_eq!(
+                    reply["error"], "unauthorized",
+                    "{method} {path} with {label}"
+                );
+            }
+        }
+        assert!(!root.path().join("made.dql").exists());
+        assert!(!root.path().join("moved.dql").exists());
+        assert!(root.path().join("notes.dql").is_file());
+        let tables = http_body(addr, "GET", "/api/tables", "");
+        assert!(!tables.contains("\"made\""), "{tables}");
+        drop(guard);
+    }
+
+    #[test]
+    fn file_routes_refuse_paths_outside_the_workspace() {
+        let outer = tempfile::tempdir().unwrap();
+        let root = outer.path().join("workspace");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("inside.dql"), "SELECT 1;\n").unwrap();
+        let secret = outer.path().join("secret.dql");
+        fs::write(&secret, "SECRET\n").unwrap();
+        fs::write(outer.path().join("secret.csv"), "id,name\n1,SECRET\n").unwrap();
+        let absolute = secret.to_string_lossy().replace('\\', "/");
+        let (addr, guard) = spawn_server(root.clone());
+
+        let reads = [
+            "/api/file?path=../secret.dql".to_string(),
+            format!("/api/file?path={absolute}"),
+            "/api/file-rows?path=../secret.csv".to_string(),
+            "/api/structure?path=../secret.csv".to_string(),
+            "/api/query-results?path=../secret.dql".to_string(),
+        ];
+        for path in &reads {
+            let raw = http(addr, "GET", path, "");
+            json_reply(&raw, 400);
+            assert!(!raw.contains("SECRET"), "GET {path} read outside: {raw}");
+        }
+
+        let writes = [
+            ("POST", "/api/file", r#"{"path":"../made.dql"}"#),
+            (
+                "PUT",
+                "/api/file",
+                r#"{"path":"../secret.dql","text":"changed"}"#,
+            ),
+            ("POST", "/api/mkdir", r#"{"path":"../made"}"#),
+            ("POST", "/api/duplicate", r#"{"path":"../secret.dql"}"#),
+            (
+                "POST",
+                "/api/move",
+                r#"{"from":"../secret.dql","to":"taken.dql"}"#,
+            ),
+            (
+                "POST",
+                "/api/move",
+                r#"{"from":"inside.dql","to":"../moved.dql"}"#,
+            ),
+            ("POST", "/api/delete", r#"{"path":"../secret.dql"}"#),
+            ("POST", "/api/query-results/clear", r#"{"path":"../"}"#),
+            (
+                "POST",
+                "/api/run",
+                r#"{"dql":"SELECT 1;","path":"../secret.dql"}"#,
+            ),
+        ];
+        for (method, path, body) in writes {
+            let raw = http(addr, method, path, body);
+            json_reply(&raw, 400);
+            assert!(!raw.contains("SECRET"), "{method} {path} {body}: {raw}");
+        }
+
+        assert_eq!(fs::read_to_string(&secret).unwrap(), "SECRET\n");
+        assert!(root.join("inside.dql").is_file());
+        assert!(!root.join("taken.dql").exists());
+        let mut outside: Vec<String> = fs::read_dir(outer.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        outside.sort();
+        assert_eq!(outside, ["secret.csv", "secret.dql", "workspace"]);
+        drop(guard);
+    }
+
+    #[test]
+    fn dynamo_and_the_cache_clears_answer_and_empty_their_caches() {
+        let root = tempfile::tempdir().unwrap();
+        fs::write(root.path().join("users.csv"), "id,name\n1,Ada\n").unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+
+        // A memory session has no DynamoDB Local endpoint.
+        let dynamo = json_reply(&http(addr, "GET", "/api/dynamo", ""), 200);
+        assert_eq!(dynamo, json!({"local": false}));
+
+        let script =
+            "CREATE TABLE posts (id STRING HASH KEY); CREATE LOCALTABLE users AS 'users.csv';";
+        let body = json!({"dql": script}).to_string();
+        let ran = http_body(addr, "POST", "/api/run", &body);
+        assert!(!ran.contains("\"ok\":false"), "{ran}");
+        let tables = http_body(addr, "GET", "/api/tables", "");
+        assert!(tables.contains("\"name\":\"users\""), "{tables}");
+
+        let cleared = json_reply(&http(addr, "POST", "/api/local-tables/clear", ""), 200);
+        assert_eq!(cleared, json!({"ok": true, "tables": ["users"]}));
+        let tables = http_body(addr, "GET", "/api/tables", "");
+        assert!(!tables.contains("\"name\":\"users\""), "{tables}");
+        assert!(tables.contains("\"name\":\"posts\""), "{tables}");
+        let again = json_reply(&http(addr, "POST", "/api/local-tables/clear", ""), 200);
+        assert_eq!(again, json!({"ok": true, "tables": []}));
+
+        http(addr, "POST", "/api/file", r#"{"path":"notes.dql"}"#);
+        let saved = http(
+            addr,
+            "POST",
+            "/api/query-results",
+            r#"{"path":"notes.dql","query":"SELECT 1","success":true,"result":{"ok":true}}"#,
+        );
+        json_reply(&saved, 200);
+        let cleared = json_reply(&http(addr, "POST", "/api/result-cache/clear", ""), 200);
+        assert_eq!(cleared, json!({"ok": true, "files": 1}));
+        let listed = json_reply(
+            &http(addr, "GET", "/api/query-results?path=notes.dql", ""),
+            200,
+        );
+        assert_eq!(listed["results"], json!([]));
+        let again = json_reply(&http(addr, "POST", "/api/result-cache/clear", ""), 200);
+        assert_eq!(again, json!({"ok": true, "files": 0}));
+
+        let cleared = json_reply(&http(addr, "POST", "/api/table-cache/clear", ""), 200);
+        assert_eq!(cleared, json!({"ok": true}));
+        let cache = json_reply(&http(addr, "GET", "/api/table-cache", ""), 200);
+        assert_eq!(cache["text"], "No table list cached.");
+        // Clearing the cache forgets definitions, not tables.
+        let tables = http_body(addr, "GET", "/api/tables", "");
+        assert!(tables.contains("\"name\":\"posts\""), "{tables}");
+        drop(guard);
+    }
+
+    #[test]
+    fn access_routes_refuse_requests_they_cannot_act_on() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server_mcp(root.path().to_path_buf(), true);
+
+        let missing = json_reply(&http(addr, "POST", "/api/mcp-access/run", "{}"), 400);
+        assert_eq!(missing["error"], "missing request");
+        for route in ["run", "grant", "deny"] {
+            let raw = http(
+                addr,
+                "POST",
+                &format!("/api/mcp-access/{route}"),
+                r#"{"request":"r9"}"#,
+            );
+            let reply = json_reply(&raw, 409);
+            assert_eq!(reply["error"], "unknown request r9", "{route}");
+        }
+
+        http(
+            addr,
+            "POST",
+            "/mcp",
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}"#,
+        );
+        let setup = json!({"dql": "CREATE TABLE people (id STRING HASH KEY);"}).to_string();
+        let created = http_body(addr, "POST", "/api/run", &setup);
+        assert!(created.contains("\"ok\":true"), "{created}");
+        let waiting = thread::spawn(move || {
+            http(
+                addr,
+                "POST",
+                "/mcp",
+                r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"request_access","arguments":{"query":"SCAN * FROM people"}}}"#,
+            )
+        });
+        let started = Instant::now();
+        while !http(addr, "GET", "/api/mcp-access", "").contains("\"id\":\"r1\"") {
+            assert!(
+                started.elapsed() < Duration::from_secs(2),
+                "request r1 never listed"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+
+        // A grant needs a run first, so the person sees what they grant.
+        let early = json_reply(
+            &http(addr, "POST", "/api/mcp-access/grant", r#"{"request":"r1"}"#),
+            409,
+        );
+        assert_eq!(early["error"], "run the query before granting");
+
+        let denied = http(addr, "POST", "/api/mcp-access/deny", r#"{"request":"r1"}"#);
+        json_reply(&denied, 200);
+        let answer = waiting.join().unwrap();
+        assert!(answer.contains("denied"), "{answer}");
+        for route in ["run", "grant", "deny"] {
+            let raw = http(
+                addr,
+                "POST",
+                &format!("/api/mcp-access/{route}"),
+                r#"{"request":"r1"}"#,
+            );
+            let reply = json_reply(&raw, 409);
+            assert_eq!(reply["error"], "r1 is already denied", "{route}");
+        }
+        drop(guard);
+    }
+
+    #[test]
+    fn requests_the_server_cannot_read_get_an_error_status() {
+        let root = tempfile::tempdir().unwrap();
+        let (addr, guard) = spawn_server(root.path().to_path_buf());
+
+        // Client ids are 8 to 64 letters, digits, `-` or `_`.
+        for id in ["", "short", "has%20space", "../escape-id"] {
+            let raw = http(addr, "GET", &format!("/api/events?id={id}"), "");
+            assert_eq!(
+                json_reply(&raw, 400)["error"],
+                "client id is invalid",
+                "{id:?}"
+            );
+            let body = json!({"id": id}).to_string();
+            let raw = http(addr, "POST", "/api/presence", &body);
+            assert_eq!(
+                json_reply(&raw, 400)["error"],
+                "client id is invalid",
+                "{id:?}"
+            );
+        }
+
+        for dql in ["", "   ", ";"] {
+            let body = json!({"dql": dql}).to_string();
+            let raw = http(addr, "POST", "/api/run", &body);
+            assert_eq!(json_reply(&raw, 502)["error"], "nothing to run", "{dql:?}");
+        }
+
+        for query in ["", "?path=a.csv&table=posts"] {
+            let raw = http(addr, "GET", &format!("/api/structure{query}"), "");
+            let reply = json_reply(&raw, 400);
+            assert_eq!(
+                reply["error"], "pass one query result, table, or data file",
+                "{query}"
+            );
+        }
+
+        let not_json = json_reply(&http(addr, "POST", "/api/explain", "not json"), 400);
+        assert!(
+            !not_json["error"].as_str().unwrap_or("").is_empty(),
+            "{not_json}"
+        );
+        let insert = json!({"read": {"table": "posts", "mode": "insert"}}).to_string();
+        let refused = json_reply(&http(addr, "POST", "/api/explain", &insert), 400);
+        assert_eq!(
+            refused["error"],
+            "mode must be scan, query, or keys, not \"insert\""
+        );
+
+        // Unknown routes and methods answer 404 JSON, never the page.
+        let unknown = [
+            ("GET", "/api/not-a-route"),
+            ("POST", "/api/not-a-route"),
+            ("PUT", "/api/tree"),
+            ("DELETE", "/api/file?path=notes.dql"),
+            ("PATCH", "/api/file"),
+        ];
+        for (method, path) in unknown {
+            let raw = http(addr, method, path, "{}");
+            assert_eq!(
+                json_reply(&raw, 404)["error"],
+                "not found",
+                "{method} {path}"
+            );
+        }
+        drop(guard);
+    }
+
     fn spawn_server(root: PathBuf) -> (SocketAddr, ServerGuard) {
         spawn_server_mcp(root, false)
     }
@@ -4395,21 +5004,18 @@ GET /vendor/codemirror-language.js HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: cl
         String::from_utf8_lossy(&buf).into_owned()
     }
 
-    /// Response body with chunk framing removed. `/api/run` flushes each NDJSON
-    /// event as its own chunk, so a raw read can split a JSON string.
-    fn query_encode(text: &str) -> String {
-        let mut out = String::new();
-        for byte in text.bytes() {
-            match byte {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                    out.push(byte as char);
-                }
-                _ => out.push_str(&format!("%{byte:02X}")),
-            }
-        }
-        out
+    /// `POST /api/rows` with a table-browser read and a page; the reply body.
+    fn rows_read(addr: SocketAddr, read: Value, page: usize) -> String {
+        http_body(
+            addr,
+            "POST",
+            "/api/rows",
+            &json!({"read": read, "page": page}).to_string(),
+        )
     }
 
+    /// Response body with chunk framing removed. `/api/run` flushes each NDJSON
+    /// event as its own chunk, so a raw read can split a JSON string.
     fn http_body(addr: SocketAddr, method: &str, path: &str, body: &str) -> String {
         let raw = http(addr, method, path, body);
         let Some((headers, rest)) = raw.split_once("\r\n\r\n") else {

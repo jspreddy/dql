@@ -20,6 +20,7 @@ pub(crate) mod search;
 mod server;
 pub(crate) mod shape;
 mod structure;
+pub(crate) mod table_read;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;

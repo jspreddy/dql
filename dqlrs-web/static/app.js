@@ -92,6 +92,8 @@ const state = {
   searchTimer: 0,
   table: "",
   tableDql: "",
+  // The table browser's read as the server builds it, or null for the table's first page.
+  tableRead: null,
   entries: [],
   mcpReads: [],
   page: 0,
@@ -1208,7 +1210,7 @@ const TABLE_QUERY_SIDE_MIN = 0.1;
 // The right pane is never wider than this share of the panel.
 const TABLE_QUERY_SIDE_MAX = 0.55;
 let tableQueryPane = "dql";
-let tableQueryDraft = { table: "", dql: "", error: "" };
+let tableQueryDraft = { table: "", read: null, dql: "", error: "" };
 let tableExplainTimer = 0;
 let tableExplainSeq = 0;
 
@@ -1466,7 +1468,7 @@ function scheduleTableExplain() {
 async function loadTableExplain() {
   clearTimeout(tableExplainTimer);
   if (tableQueryPane !== "explain" || tableQuerySideHidden()) return;
-  const { table, dql, error } = tableQueryDraft;
+  const { table, read, error } = tableQueryDraft;
   const seq = ++tableExplainSeq;
   if (!table) {
     tableQueryExplain.replaceChildren(note("Open a table to see its plan.", false));
@@ -1478,9 +1480,9 @@ async function loadTableExplain() {
   }
   tableQueryExplain.replaceChildren(note("Explaining…", false));
   try {
-    const query = new URLSearchParams({ table });
-    if (dql) query.set("dql", dql);
-    const payload = await api("/api/explain?" + query.toString());
+    const payload = read
+      ? await api("/api/explain", { method: "POST", body: { read } })
+      : await api("/api/explain?" + new URLSearchParams({ table }).toString());
     if (seq !== tableExplainSeq) return;
     const parts = [];
     for (const item of payload.plans || []) {
@@ -1522,12 +1524,23 @@ document.querySelector("#table-query").addEventListener("keydown", (event) => {
 });
 const tableQuery = attachTableQuery(document.querySelector("#table-query"), {
   createKeysEditor,
-  onChange({ table, dql, error }) {
-    tableQueryDraft = { table: table?.name || state.table || "", dql: dql || "", error: error || "" };
+  // The server builds the statement from the read: the preview shows exactly what Run runs.
+  async preview(read) {
+    const payload = await api("/api/table-read", { method: "POST", body: read });
+    return { dql: payload.dql || "", error: payload.error || "", keysLeftOut: payload.keysLeftOut || 0 };
+  },
+  onChange({ table, read, dql, error }) {
+    tableQueryDraft = {
+      table: table?.name || state.table || "",
+      read: read || null,
+      dql: dql || "",
+      error: error || "",
+    };
     // Explain runs only while its tab is showing.
     if (tableQueryPane === "explain" && !tableQuerySideHidden()) scheduleTableExplain();
   },
-  onRun({ dql }) {
+  onRun({ read, dql }) {
+    state.tableRead = read || null;
     state.tableDql = dql || "";
     state.page = 0;
     rowsCache.beginRun(state.table, state.tableDql);
@@ -6257,6 +6270,7 @@ function mergeListedTable(name, table) {
     state.table = listed[0] ? listed[0].name : "";
     state.page = 0;
     state.tableDql = "";
+    state.tableRead = null;
     if (state.table) tableQuery.reset(listedTable(state.table));
     else tableQuery.reset(null);
   } else if (state.table === name) {
@@ -6330,6 +6344,7 @@ async function loadTables(options = {}) {
       state.table = state.listedTables[0] ? state.listedTables[0].name : "";
       state.page = 0;
       state.tableDql = "";
+      state.tableRead = null;
     }
     paintTableList();
     if (!state.table) {
@@ -6485,6 +6500,7 @@ function selectTable(name) {
   state.page = 0;
   if (switched) {
     state.tableDql = "";
+    state.tableRead = null;
     tableQuery.reset(listedTable(name));
     rowsCache.beginRun(state.table, state.tableDql);
   }
@@ -6736,6 +6752,7 @@ async function loadRows() {
   document.querySelector("#rows-meta").textContent = "50 rows at a time";
   const table = state.table;
   const dql = state.tableDql;
+  const read = state.tableRead;
   const page = state.page;
   const cached = rowsCache.get(table, dql, page);
   if (cached) {
@@ -6748,9 +6765,13 @@ async function loadRows() {
   const controller = new AbortController();
   setRowsLoading(controller);
   try {
-    const query = new URLSearchParams({ table, page: String(page) });
-    if (dql) query.set("dql", dql);
-    const payload = await api("/api/rows?" + query.toString(), { signal: controller.signal });
+    // A read from the picker goes as JSON; the server builds and runs it. With no read, the
+    // table's first pages.
+    const payload = read
+      ? await api("/api/rows", { method: "POST", body: { read, page }, signal: controller.signal })
+      : await api("/api/rows?" + new URLSearchParams({ table, page: String(page) }).toString(), {
+        signal: controller.signal,
+      });
     if (rowsAbort === controller) setRowsLoading(null);
     if (rowsCache.generation !== generation) return;
     rowsCache.set(table, dql, page, payload);

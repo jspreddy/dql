@@ -57,13 +57,13 @@ impl ExecText {
     }
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct KeyRole {
     pub name: String,
     pub role: String,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListedIndex {
     pub name: String,
     pub kind: String,
@@ -73,21 +73,22 @@ pub struct ListedIndex {
     pub range_key: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListedAttribute {
     pub name: String,
     #[serde(rename = "type")]
     pub data_type: String,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ListedTable {
     pub name: String,
     pub keys: Vec<KeyRole>,
     /// `dynamodb`, `local`, or `temp`.
+    #[serde(default)]
     pub kind: String,
     /// True when an MCP agent may read this temp table.
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub granted: bool,
     #[serde(default)]
     pub indexes: Vec<ListedIndex>,
