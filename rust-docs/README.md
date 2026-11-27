@@ -21,6 +21,7 @@ This repository ([jspreddy/dql](https://github.com/jspreddy/dql)) is a fork of
 | [release-plans.md](release-plans.md) | Plans for prebuilt binaries and a `dqlrs update` command |
 | [`metrics/`](metrics/) | How long the rewrite took and what it cost: [by day](metrics/rewrite-metrics.html), [by hour](metrics/rewrite-metrics-hours.html), [Plotly charts](metrics/work-metrics.html) |
 | [`plans/`](plans/README.md) | Architecture notes, testing strategy, open design debt, and the archive of finished plans (including the security design) |
+| [`security/attacks/`](security/attacks/README.md) | Ways an agent on the same machine can get around the data-access model, with fixes |
 
 ## Install
 
