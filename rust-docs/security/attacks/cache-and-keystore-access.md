@@ -22,8 +22,10 @@
 
 ## Circumvention mechanics
 
-1. **Direct cache decryption:** A local agent reads `cache-key` using the platform's silent lookup (`~/.config/dqlrs/cache.key`, `secret-tool`, `CryptUnprotectData`, or `/usr/bin/security`), strips the `dqlrs-seal-v1\n` header and 12-byte nonce from `<workspace>/.dqlrs-cache/<conn>/results/<hash>/query_result_*.json`, and decrypts the AES-256-GCM ciphertext to obtain all cached rows from prior human runs.
-2. **Zero-crypto cache decryption via `dqlrs` itself:** Even without implementing AES-256-GCM, an agent with subprocess execution can launch `dqlrs web --dir <workspace> --listen 127.0.0.1:0` (or use the shared `api-token` against the already-running `dqlrs web` server) and call `GET /api/query-results?path=<script.dql>` so `dqlrs` unseals the cache and returns plaintext JSON.
+1. **Direct cache decryption (works with zero AWS credentials):** Even when AWS credentials are isolated inside `aws-vault` (for example `aws-vault.keychain-db` on macOS), `dqlrs` stores `cache-key` in the **default unlocked login keystore** (`login.keychain-db`, Secret Service, DPAPI, or `~/.config/dqlrs/cache.key`). A local agent subprocess reads `cache-key` using that silent lookup, strips the `dqlrs-seal-v1\n` header and 12-byte nonce from `<workspace>/.dqlrs-cache/<conn>/results/<hash>/query_result_*.json`, and decrypts the AES-256-GCM ciphertext to obtain all cached rows from prior human runs.
+2. **Unsealing via the running `dqlrs web` server (or local-endpoint `dqlrs web`):**
+   - `Session::attach_connection_storage` (`session.rs`) derives `<conn-sha256>` from `session_identity()` (the caller's STS ARN on AWS). Under `aws-vault exec`, a bare uncredentialed `dqlrs web` subprocess resolves `session_identity()` to `"unknown"` and cannot auto-attach to an AWS connection's cache directory (though it still attaches to DynamoDB Local caches via `-H localhost -p 8000`).
+   - Against live AWS caches, an agent holding the shared `api-token` calls `GET /api/query-results?path=<script.dql>` on the human's **already-running** `aws-vault`-backed `dqlrs web` server, which unseals and returns the cached rows as JSON.
 3. **Mining `~/.dql/history`:** Reading `~/.dql/history` reveals partition/sort keys, filter values, emails, identifiers, and literal item payloads from human `SELECT`, `INSERT`, and `UPDATE` commands run in the CLI REPL. (On multi-user Unix hosts with a permissive umask, `0644` also exposes `~/.dql/history` to other OS users.)
 
 ## Remediation
